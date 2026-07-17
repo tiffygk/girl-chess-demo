@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Chess } from "chess.js";
 import { describeMove } from "./describeMove";
-import { victimKind, sortByValue, materialDiff, pieceValue } from "./captures";
+import { victimKind, sortByValue, materialDiff, pieceValue, rollbackCapture, type CapturedBySide } from "./captures";
 import type { PieceKind } from "../board/pieces";
 
 describe("victimKind", () => {
@@ -102,5 +102,34 @@ describe("materialDiff", () => {
 
   it("mallow leads when she's captured more material than you have", () => {
     expect(materialDiff({ w: ["q", "r"], b: ["p"] })).toEqual({ leader: "mallow", points: 13 });
+  });
+});
+
+describe("rollbackCapture", () => {
+  // Fix wave (code review, verbatim intent): GamePage's handleMove pushes
+  // the player's capture victim onto captured.b optimistically, before the
+  // server round-trip, then never removed it on either failure branch —
+  // leaving a phantom tray piece and a wrong +N badge for the rest of the
+  // game. This helper is the rollback both branches now call.
+  it("drops the last entry on the given side when a victim was recorded", () => {
+    const prev: CapturedBySide = { w: [], b: ["p", "n"] };
+    expect(rollbackCapture(prev, "b", "n")).toEqual({ w: [], b: ["p"] });
+  });
+
+  it("is a no-op when victim is null (the move wasn't a capture)", () => {
+    const prev: CapturedBySide = { w: ["q"], b: ["p"] };
+    expect(rollbackCapture(prev, "b", null)).toEqual(prev);
+    expect(rollbackCapture(prev, "b", null)).toBe(prev); // same reference, not just equal
+  });
+
+  it("only touches the requested side, leaving the other side's captures untouched", () => {
+    const prev: CapturedBySide = { w: ["q"], b: ["p", "r"] };
+    expect(rollbackCapture(prev, "b", "r")).toEqual({ w: ["q"], b: ["p"] });
+  });
+
+  it("does not mutate its input", () => {
+    const prev: CapturedBySide = { w: [], b: ["p", "n"] };
+    rollbackCapture(prev, "b", "n");
+    expect(prev).toEqual({ w: [], b: ["p", "n"] });
   });
 });

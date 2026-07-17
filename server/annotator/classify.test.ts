@@ -33,6 +33,20 @@ describe("classify.ts LLM-free gate", () => {
       expect(line).not.toMatch(/from\s+["']\.\.?\/coach/);
     }
   });
+
+  // Fix wave (code review, verbatim intent): adjudicate.ts carries the same
+  // "engine math only, no LLM call, ever" hard constraint (see its own
+  // header comment) as classify.ts and manager.ts's judge path above — the
+  // same source-scan gate belongs here too so a future edit can't quietly
+  // reintroduce a coach import on the adjudication seam either.
+  it("adjudicate.ts never imports from server/coach", () => {
+    const src = fs.readFileSync(path.join(__dirname, "adjudicate.ts"), "utf-8");
+    const importLines = src.split("\n").filter((line) => /^\s*import\b/.test(line));
+    expect(importLines.length).toBeGreaterThan(0);
+    for (const line of importLines) {
+      expect(line).not.toMatch(/from\s+["']\.\.?\/coach/);
+    }
+  });
 });
 
 describe("ADVICE_LEVELS seam", () => {
