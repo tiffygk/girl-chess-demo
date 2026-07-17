@@ -267,4 +267,18 @@ describe("api", () => {
     expect(res.body.facts.bestUci).toMatch(/^[a-h][1-8][a-h][1-8][nbrq]?$/);
     expect(res.body.facts.bestFromSquare).toBe(res.body.facts.bestUci.slice(0, 2));
   }, 40000);
+
+  it("snaps a non-band elo to the nearest maia weights band", async () => {
+    const s = await request(app).post("/api/session").send({});
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1234 });
+    expect(g.body.elo).toBe(1200);
+  }, 30000);
+
+  it("defaults garbage elo to 1100 and passes real bands through", async () => {
+    const s = await request(app).post("/api/session").send({});
+    const bad = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: "mallow" });
+    expect(bad.body.elo).toBe(1100);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1500 });
+    expect(g.body.elo).toBe(1500);
+  }, 60000);
 });
