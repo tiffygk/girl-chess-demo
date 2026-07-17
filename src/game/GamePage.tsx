@@ -569,6 +569,28 @@ export function GamePage() {
     setHintFetching(false);
   }, []);
 
+  // Wave C, tasks 5-6 (owner): "if I hit Enter on the keyboard... I'm not
+  // always having to click confirm in order to go to the next move." Enter =
+  // play it, Escape = take it back. Window-level and pending-gated; the
+  // guard skips form fields so a future input (elo select, coach chat) never
+  // fights it.
+  useEffect(() => {
+    if (!pending) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleConfirmPending();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        handleRetractPending();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [pending, handleConfirmPending, handleRetractPending]);
+
   // A2 (pending retarget): Board resolved a click to "a different legal
   // destination for the same origin" (resolvePendingClick's "retarget"
   // action) — retract the current pending and start a fresh one at the new
