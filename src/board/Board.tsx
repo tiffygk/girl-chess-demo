@@ -2,13 +2,15 @@ import {
   forwardRef,
   useCallback,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
-import { Chess } from "chess.js";
+import { Chess, type Square } from "chess.js";
 import { Piece, type PieceColor, type PieceKind } from "./pieces";
 import { beep } from "./sounds";
 import type { MoveRender } from "../game/describeMove";
+import { resolveClickMove } from "../game/resolveClick";
 
 interface PieceEntry {
   id: string;
@@ -247,20 +249,57 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
 
   const turn = fen.split(" ")[1] === "b" ? "b" : "w";
 
+  // Rebuilt whenever fen changes (only ever while the board is idle — clicks
+  // are gated behind animatingRef.current — so this always reflects the
+  // settled position a selection is made against). Used both to resolve
+  // clicks (castle-by-rook-click, reselect) and to compute legal-move
+  // highlights for the current selection.
+  const chess = useMemo(() => new Chess(fen), [fen]);
+
+  // Legal destination squares for the current selection, split into plain
+  // moves and captures (en passant counts as a capture) so they can render
+  // with different mint treatments. When the selection is the king and
+  // castling is legal, the rook's square is added to `normal` too — that's
+  // the affordance for Part 1's castle-by-rook-click.
+  const legalTargets = useMemo(() => {
+    const normal = new Set<string>();
+    const capture = new Set<string>();
+    if (!selectedSquare) return { normal, capture };
+    if (!chess.get(selectedSquare as Square)) return { normal, capture };
+    const moves = chess.moves({ square: selectedSquare as Square, verbose: true });
+    const rank = selectedSquare[1];
+    for (const m of moves) {
+      if (m.flags.includes("c") || m.flags.includes("e")) {
+        capture.add(m.to);
+        continue;
+      }
+      normal.add(m.to);
+      if (m.flags.includes("k")) normal.add(`h${rank}`);
+      else if (m.flags.includes("q")) normal.add(`a${rank}`);
+    }
+    return { normal, capture };
+  }, [chess, selectedSquare]);
+
   const handlePieceClick = useCallback(
     (square: string, color: PieceColor) => {
       if (animatingRef.current) return;
       if (selectedSquare && selectedSquare !== square) {
-        const from = selectedSquare;
+        const result = resolveClickMove(chess, selectedSquare, square);
+        if (result === "reselect") {
+          if (color !== turn) return; // defensive: reselect only ever targets an own piece
+          setSelectedSquare(square);
+          beep("select");
+          return;
+        }
         setSelectedSquare(null);
-        onMove(from, square);
+        if (result) onMove(result.from, result.to);
         return;
       }
       if (color !== turn) return;
       setSelectedSquare(square);
       beep("select");
     },
-    [selectedSquare, onMove, turn]
+    [selectedSquare, onMove, turn, chess]
   );
 
   const handleSquareClick = useCallback(
@@ -290,6 +329,8 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 light ? "light" : "dark",
                 corruptIdx.has(idx) ? "corrupt" : "",
                 square === selectedSquare ? "target-hint" : "",
+                legalTargets.capture.has(square) ? "hint-capture" : "",
+                legalTargets.normal.has(square) ? "hint" : "",
                 square === checkSquare ? "check-ring" : "",
                 square === checkSquare && checkmate ? "mate" : "",
               ]
