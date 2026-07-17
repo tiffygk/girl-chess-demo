@@ -2,6 +2,7 @@ import { Chess } from "chess.js";
 import { resolveClickMove, isCastleAttempt } from "./resolveClick";
 
 export type PendingClickResult =
+  | { action: "confirm" }
   | { action: "retarget"; to: string }
   | { action: "cancel" }
   | { action: "select"; square: string; castleBlocked: boolean }
@@ -29,11 +30,16 @@ export function resolvePendingClick(
   pending: { from: string; to: string },
   clickedSquare: string
 ): PendingClickResult {
-  // Click the origin piece again, or the held ghost sitting at the pending
-  // destination: both cancel the pending move entirely (owner: "to
-  // unselect that piece I just click on that piece again").
-  if (clickedSquare === pending.from || clickedSquare === pending.to) {
+  // Click the origin piece again: cancel (owner, increment 1.5, verbatim:
+  // "to unselect that piece I just click on that piece again").
+  if (clickedSquare === pending.from) {
     return { action: "cancel" };
+  }
+  // Click the held ghost at the destination again: confirm (owner,
+  // increment 2 playtest 2026-07-17: "if I double click the space, I want
+  // that to automatically confirm" — supersedes 1.5's cancel-on-ghost).
+  if (clickedSquare === pending.to) {
+    return { action: "confirm" };
   }
 
   const result = resolveClickMove(chess, pending.from, clickedSquare);
@@ -64,9 +70,9 @@ export function resolvePendingClick(
   // retract a perfectly legal pending move out from under the player.
   if (result.to === pending.to) {
     // Same destination the pending move already targets, reached via a
-    // different clicked square (e.g. re-clicking the castling rook while
-    // that exact castle is already pending) — nothing changes.
-    return { action: "noop" };
+    // different clicked square (re-clicking the castling rook while that
+    // exact castle is pending): same gesture repeated, so confirm.
+    return { action: "confirm" };
   }
 
   const probe = new Chess(chess.fen());

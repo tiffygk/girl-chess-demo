@@ -96,9 +96,14 @@ interface BoardProps {
    */
   onRetarget?: (to: string) => void;
   /** A2: fired when a click while pending cancels it outright (clicking the
-   * origin piece again, or the held ghost at `to`) — same effect as "take
-   * it back". */
+   * origin piece again) — same effect as "take it back". */
   onCancelPending?: () => void;
+  /** Wave C: fired when a click while pending confirms it outright
+   * (re-clicking the held ghost at `to`, or re-clicking the castling rook
+   * while that exact castle is pending) — owner, increment 2 playtest
+   * 2026-07-17: "if I double click the space, I want that to automatically
+   * confirm". */
+  onConfirmPending?: () => void;
   /** A5: fired with a short human-readable reason when a click is
    * meaningful but couldn't do what it looked like it was trying to do
    * (currently: king selected, own rook clicked, castling isn't legal
@@ -200,6 +205,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     pending,
     onRetarget,
     onCancelPending,
+    onConfirmPending,
     onInputHint,
     lastMove,
     hintReveal,
@@ -622,7 +628,9 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       // see src/game/resolvePendingClick.ts for the branch-by-branch spec.
       if (pending) {
         const decision = resolvePendingClick(chess, pending, square);
-        if (decision.action === "cancel") {
+        if (decision.action === "confirm") {
+          onConfirmPending?.();
+        } else if (decision.action === "cancel") {
           onCancelPending?.();
         } else if (decision.action === "retarget") {
           onRetarget?.(decision.to);
@@ -667,7 +675,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       setSelectedSquare(square);
       beep("select");
     },
-    [selectedSquare, onMove, turn, chess, pending, onRetarget, onCancelPending, onInputHint]
+    [selectedSquare, onMove, turn, chess, pending, onRetarget, onCancelPending, onConfirmPending, onInputHint]
   );
 
   const handleSquareClick = useCallback(
@@ -676,7 +684,8 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
 
       if (pending) {
         const decision = resolvePendingClick(chess, pending, square);
-        if (decision.action === "cancel") onCancelPending?.();
+        if (decision.action === "confirm") onConfirmPending?.();
+        else if (decision.action === "cancel") onCancelPending?.();
         else if (decision.action === "retarget") onRetarget?.(decision.to);
         // "select" can't arise from an empty-square click (no piece to
         // reselect there); "noop" already does nothing.
@@ -688,7 +697,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       setSelectedSquare(null);
       onMove(from, square);
     },
-    [selectedSquare, onMove, pending, chess, onCancelPending, onRetarget]
+    [selectedSquare, onMove, pending, chess, onCancelPending, onConfirmPending, onRetarget]
   );
 
   const corruptIdx = lastCapture ? new Set([...AMBIENT_CORRUPT, squareToIdx(lastCapture.square)]) : AMBIENT_CORRUPT;
