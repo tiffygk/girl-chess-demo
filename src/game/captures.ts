@@ -43,6 +43,30 @@ export interface CapturedBySide {
   b: PieceKind[]; // black pieces captured (by you)
 }
 
+/**
+ * Rolls back an optimistic capture-tray push after the move that added it
+ * turns out to have failed (network error, or the server rejected it). Used
+ * by GamePage.tsx's handleMove: the player's capture victim is pushed onto
+ * `captured.b` optimistically, before the server round-trip, so both
+ * failure branches need to undo exactly that push and nothing else.
+ *
+ * Pure: given the victim that was (or wasn't) added, drops the last entry
+ * on `side` — a plain tail-slice, safe here specifically because the only
+ * thing that can land in `captured[side]` between the optimistic push and
+ * this rollback is nothing: callers only ever invoke this while still
+ * holding the move's own busy-guard, so no concurrent move can interleave
+ * another push in between. `victim` null (no capture happened) is a no-op,
+ * returning `prev` unchanged.
+ */
+export function rollbackCapture(
+  prev: CapturedBySide,
+  side: keyof CapturedBySide,
+  victim: PieceKind | null
+): CapturedBySide {
+  if (!victim) return prev;
+  return { ...prev, [side]: prev[side].slice(0, -1) };
+}
+
 export interface MaterialDiff {
   leader: "you" | "mallow" | null;
   points: number;

@@ -14,7 +14,7 @@ import {
   type Verdict,
 } from "./api";
 import { describeMove, type MoveRender } from "./describeMove";
-import { victimKind, materialDiff, type CapturedBySide } from "./captures";
+import { victimKind, materialDiff, rollbackCapture, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
 import { reconcile } from "./reconcile";
 import { findTakedownPiece, type Takedown } from "./terminal";
@@ -341,21 +341,31 @@ export function GamePage() {
           );
         } catch {
           // No server response at all — nothing authoritative to adopt.
+          // Roll back the optimistic capture we added above: `victim` was
+          // only ever pushed onto captured.b, never captured.w (the reply
+          // victim is appended later, strictly after the res.ok check below
+          // returns true), so rollbackCapture here always removes exactly
+          // the phantom entry this attempt added and nothing else.
+          setCaptured((prev) => rollbackCapture(prev, "b", victim));
           setFen(adoptServerFen(mirror, undefined));
           setResyncTick((t) => t + 1);
-          setStatus("connection hiccup — try that move again");
+          setStatus("connection hiccup. try that move again");
           setLastMove(null); // the move never actually landed — nothing to highlight
           return;
         }
         lastReplyAtRef.current = Date.now();
 
         if (!res.ok) {
+          // Same rollback as the catch branch above, for the same reason:
+          // this return is still strictly before captured.w's reply-victim
+          // append, so captured.b's last entry is still exactly our victim.
+          setCaptured((prev) => rollbackCapture(prev, "b", victim));
           // Server-authoritative desync guard: adopt res.fen when the
           // server gave us one (it's the true post-rejection state), only
           // falling back to a local undo when it didn't send a usable fen.
           setFen(adoptServerFen(mirror, res.fen));
           setResyncTick((t) => t + 1);
-          setStatus("that didn't land — try another move");
+          setStatus("that didn't land. try another move");
           setLastMove(null); // reverted — the highlighted move didn't actually happen
           return;
         }
@@ -614,6 +624,20 @@ export function GamePage() {
   // the 4 flows a given (coachOn, confirmOn) pair maps to.
   const handleBoardMove = useCallback(
     (from: string, to: string) => {
+      // Disarm any armed "take the win?" end-game confirm the instant the
+      // board takes input: the server re-derives the outcome fresh on
+      // execute, but the client's armed copy (win/draw/resign label) was
+      // computed from whatever the position was at arm-time. If the player
+      // makes a move instead of confirming, that armed state is now stale —
+      // clear it (and its confirm-window timer) rather than let a later,
+      // unrelated click on the end-game button execute against a preview
+      // that no longer describes the current position.
+      if (endGameTimerRef.current) {
+        window.clearTimeout(endGameTimerRef.current);
+        endGameTimerRef.current = null;
+      }
+      setEndGameOutcome(null);
+
       if (postVerdict) setPostVerdict(null); // clear the previous move's post-judge badge
       const flow = resolveMoveFlow(coachOn, confirmOn);
       if (flow === "one-tap") {
@@ -677,10 +701,10 @@ export function GamePage() {
   //
   // Second click within the window: calls adjudicate again with
   // execute:true. The server re-derives the outcome fresh rather than
-  // trusting anything this client remembers from the preview — if the
-  // position somehow shifted between the two clicks (it can't today, since
-  // input is locked while armed, but the contract holds regardless), the
-  // execution reflects reality, not the stale preview.
+  // trusting anything this client remembers from the preview — board input
+  // is NOT locked while armed (handleBoardMove disarms on any board move,
+  // see there), so the position genuinely can shift between the two clicks;
+  // the execution reflects reality, not the stale preview.
   const handleEndGameClick = useCallback(() => {
     if (!gameId || busyRef.current || gameOver || endGameBusyRef.current) return;
 
@@ -887,7 +911,7 @@ export function GamePage() {
                       the plain check above (no badge) — cadence (JUDGE_MIN_MS)
                       is identical for every tier, only what appears differs. */}
                   {verdict?.tier === "nudge" && (
-                    <span className="judge-badge judge-badge-nudge">hm — you sure?</span>
+                    <span className="judge-badge judge-badge-nudge">hm, you sure?</span>
                   )}
                   {verdict?.tier === "warning" && (
                     <span className="judge-badge judge-badge-warning">careful. this one hurts.</span>
@@ -929,7 +953,7 @@ export function GamePage() {
             <div className="judge-indicator post-judge" role="status" aria-live="polite">
               {postVerdict.tier === "silent" && <span className="judge-check">✓</span>}
               {postVerdict.tier === "nudge" && (
-                <span className="judge-badge judge-badge-nudge">hm — you sure?</span>
+                <span className="judge-badge judge-badge-nudge">hm, you sure?</span>
               )}
               {postVerdict.tier === "warning" && (
                 <span className="judge-badge judge-badge-warning">careful. this one hurts.</span>

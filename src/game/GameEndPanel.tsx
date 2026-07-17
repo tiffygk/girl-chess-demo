@@ -10,8 +10,8 @@ interface StubSection {
 // hand-rolled JSX per section) so a future increment adds a row here
 // instead of restructuring this component.
 const STUB_SECTIONS: StubSection[] = [
-  { key: "analysis", label: "analysis — coming with the coach" },
-  { key: "streaks", label: "streaks and rating — coming with the dashboard" },
+  { key: "analysis", label: "analysis, coming with the coach" },
+  { key: "streaks", label: "streaks and rating, coming with the dashboard" },
 ];
 
 function resultText(result: string): string {
