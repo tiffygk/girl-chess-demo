@@ -13,9 +13,22 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.post("/api/session", (_req, res) => res.json({ sessionId: createSession() }));
 
+// Only these weights files exist in weights/; any other value makes lc0 fail
+// to load and silently swaps in the strength-limited stockfish fallback
+// (which floors at 1320 — the opposite of what a low-elo request wants).
+export const ALLOWED_ELOS = [1100, 1200, 1300, 1400, 1500];
+
+export function snapElo(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 1100;
+  return ALLOWED_ELOS.reduce((closest, band) =>
+    Math.abs(band - n) < Math.abs(closest - n) ? band : closest
+  );
+}
+
 app.post("/api/game", async (req, res) => {
   const { sessionId, elo } = req.body;
-  res.json(await gm.newGame(Number(sessionId), Number(elo) || 1100));
+  res.json(await gm.newGame(Number(sessionId), snapElo(elo)));
 });
 
 app.post("/api/game/:id/move", async (req, res) => {

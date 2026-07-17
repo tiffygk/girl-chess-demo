@@ -33,7 +33,7 @@ export class GameManager {
     const opponent = await this.opponentFor(elo);
     const gameId = createGame(sessionId, (opponent.fallback ? "fallback-" : "maia-") + elo);
     this.games.set(gameId, { chess: new Chess(), opponent, ply: 0, finished: false });
-    return { gameId, fen: new Chess().fen(), fallback: opponent.fallback };
+    return { gameId, fen: new Chess().fen(), fallback: opponent.fallback, elo };
   }
 
   private record(gameId: number, live: LiveGame, san: string, uci: string, timeSpentMs: number) {
