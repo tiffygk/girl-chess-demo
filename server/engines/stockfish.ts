@@ -29,10 +29,14 @@ export class StockfishEvaluator {
       const p = line.match(/ pv (.+)$/);
       if (p) pv = p[1].split(" ");
     };
-    this.engine.onLine(capture);
-    this.engine.send(`position fen ${fen}`);
-    this.engine.send(`go movetime ${movetimeMs}`);
-    const best = await this.engine.waitFor((l) => l.startsWith("bestmove"), movetimeMs + 8000);
-    return { cp, mate, bestMove: best.split(" ")[1], pv };
+    const unsubscribe = this.engine.onLine(capture);
+    try {
+      this.engine.send(`position fen ${fen}`);
+      this.engine.send(`go movetime ${movetimeMs}`);
+      const best = await this.engine.waitFor((l) => l.startsWith("bestmove"), movetimeMs + 8000);
+      return { cp, mate, bestMove: best.split(" ")[1], pv };
+    } finally {
+      unsubscribe();
+    }
   }
 }
