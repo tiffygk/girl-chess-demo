@@ -82,6 +82,17 @@ app.post("/api/game/:id/adjudicate", async (req, res) => {
   }
 });
 
+// Increment 2.5: compute a deep, verified hint for the game's live position.
+// Separate from POST /:id/hint below, which stays the fire-and-forget
+// reveal-logging seam for the Lab's hint-escalation metric.
+app.post("/api/game/:id/hint-facts", async (req, res) => {
+  try {
+    res.json(await gm.computeHint(Number(req.params.id)));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 // Wave C, task C-B: fire-and-forget observability for the Lab's
 // hint-escalation metric — one game_events row per hint reveal.
 app.post("/api/game/:id/hint", (req, res) => {
