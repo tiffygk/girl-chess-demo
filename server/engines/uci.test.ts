@@ -8,4 +8,10 @@ describe("UciEngine", () => {
     e.quit();
     expect(true).toBe(true);
   }, 15000);
+
+  it("rejects init() cleanly when the binary does not exist (no process crash)", async () => {
+    const e = new UciEngine("this-binary-does-not-exist-xyz");
+    await expect(e.init()).rejects.toThrow();
+    e.quit();
+  });
 });
