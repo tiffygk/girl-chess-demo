@@ -36,7 +36,7 @@ export class GameManager {
     // async eval; never awaited on the move path (latency rule)
     this.evaluator.evaluate(fenAfter, 600)
       .then((ev) => attachEval(gameId, ply, ev))
-      .catch(() => undefined);
+      .catch((err) => console.warn("[girl-chess] eval failed:", err.message));
   }
 
   private gameOver(chess: Chess): { result: string } | undefined {

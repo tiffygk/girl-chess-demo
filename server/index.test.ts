@@ -19,4 +19,15 @@ describe("api", () => {
       .send({ from: "e2", to: "e4" }).expect(200);
     expect(m.body.ok).toBe(false);
   });
+
+  it("returns ok:false and the pre-move server fen for an illegal move", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const fenBefore = g.body.fen;
+    const m = await request(app).post(`/api/game/${g.body.gameId}/move`)
+      .send({ from: "e2", to: "e5" }).expect(200);
+    expect(m.body.ok).toBe(false);
+    expect(m.body.fen).toBe(fenBefore);
+  });
 });
