@@ -76,4 +76,63 @@ describe("MaiaOpponent", () => {
       probe.quit();
     }
   }, 30000);
+
+  // task B9 fix wave: server/game/manager.ts's opponentFor() caches ONE
+  // MaiaOpponent per ELO band and reuses it across EVERY game for the
+  // server's process lifetime -- it is not a fresh instance per game (see
+  // task-b9-report.md, "Fix wave" section, correcting the original report's
+  // wrong claim to the contrary). Investigation found that lc0's
+  // temperature-sampling RNG is not independently reseeded per `go nodes 1`
+  // call: it draws from a single stream that advances with call count, and
+  // a warmed instance can hit stretches where that stream degenerates --
+  // the SAME position returning the SAME reply on EVERY query for dozens of
+  // consecutive calls (measured empirically: 40/40 identical replies at one
+  // call-count window, ~250 calls into a session). This is genuine variance
+  // decay, not a measurement artifact -- see the report for the full
+  // characterization (probes 1-7).
+  //
+  // Fix: pickMove() now sends `ucinewgame` before every query when not on
+  // the fallback engine (see maia.ts). This was verified to prevent the
+  // collapse entirely across 1600+ sustained calls during investigation.
+  // This test is the regression check: warm the SHARED `maia` instance
+  // (same one already exercised by the tests above) across several dozen
+  // distinct self-play positions -- mirroring how opponentFor's cached
+  // instance accumulates call history across many real games -- then
+  // confirm a fixed reference position still varies under repeated query.
+  //
+  // Statistical sizing: the worst single-move policy share observed across
+  // 1600+ warmed-instance draws during investigation was ~33% (13/40 at one
+  // checkpoint). Even at a conservative assumed 50% share for the top move,
+  // P(20/20 identical replies) <= 0.5^20 ~= 9.5e-7 -- a negligible
+  // false-failure rate for this assertion.
+  it("retains reply variance on a warmed, shared instance across many prior distinct positions", async () => {
+    const openingSeeds = [
+      ["d4", "d5", "c4"],
+      ["Nf3", "Nf6", "g3"],
+      ["e4", "c5", "Nf3"],
+      ["c4", "e5", "Nc3"],
+    ];
+    for (const seed of openingSeeds) {
+      const game = new Chess();
+      for (const m of seed) game.move(m);
+      for (let ply = 0; ply < 10 && !game.isGameOver(); ply++) {
+        const uci = await maia.pickMove(game.fen());
+        const move = game.move({
+          from: uci.slice(0, 2),
+          to: uci.slice(2, 4),
+          promotion: uci[4] as any,
+        });
+        if (!move) break;
+      }
+    }
+
+    const ref = new Chess();
+    ref.move("e4");
+    const fen = ref.fen();
+    const replies = new Set<string>();
+    for (let i = 0; i < 20; i++) {
+      replies.add(await maia.pickMove(fen));
+    }
+    expect(replies.size).toBeGreaterThan(1);
+  }, 60000);
 });
