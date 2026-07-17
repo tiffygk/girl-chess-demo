@@ -144,6 +144,80 @@
 .gc-app .judge-badge-nudge { background: #E7DFFF; color: #6952C4; }
 .gc-app .judge-badge-warning { background: #FF3DA6; color: #fff; }
 
+/* judge-post (C3, coach-only mode): the badge shows up next to the status
+   line since there's no pending indicator to hang it off of. Reuses
+   .judge-indicator's layout, just a hair tighter above it. */
+.gc-app .judge-indicator.post-judge { margin-top: 8px; }
+
+/* C3: the Silent Partner toggle pill + settings gear, "near the board" —
+   sits above board-with-trays, same squishy button language as the rest
+   of the app but scaled down (tap target generous, footprint small). */
+.gc-app .coach-toggle-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.gc-app .coach-pill {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
+  padding: 9px 18px; border: none; border-radius: 999px; cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease, color .12s ease;
+}
+.gc-app .coach-pill:hover { transform: translateY(-1px); }
+.gc-app .coach-pill:active { transform: translateY(2px); }
+.gc-app .coach-pill:disabled { opacity: .5; cursor: default; transform: none; }
+/* on = Guardian Angel (watching), the same lavender-badge family as
+   .judge-badge-nudge; off = Silent Partner, a quieter unfilled pill. */
+.gc-app .coach-pill-on {
+  background: #E7DFFF; color: #6952C4;
+  box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.2);
+}
+.gc-app .coach-pill-on:hover { box-shadow: 0 5px 0 #C9BFEF, 0 8px 14px rgba(90,70,180,.24); }
+.gc-app .coach-pill-off {
+  background: #fff; color: #A594C4;
+  box-shadow: 0 3px 0 #E3D9F5, 0 6px 10px rgba(90,70,180,.12);
+}
+.gc-app .coach-pill-off:hover { box-shadow: 0 5px 0 #E3D9F5, 0 8px 14px rgba(90,70,180,.16); }
+
+.gc-app .settings-gear {
+  width: 36px; height: 36px; padding: 0; border: none; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; line-height: 1; background: #fff; color: #7A6BB5; cursor: pointer;
+  box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.18);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.gc-app .settings-gear:hover { transform: translateY(-1px); }
+.gc-app .settings-gear:active { transform: translateY(2px); }
+
+/* in-world popover, not a modal — small, anchored under the gear, never
+   covers the board. Dismissed on outside click (see GamePage.tsx). */
+.gc-app .settings-popover {
+  position: absolute;
+  top: 46px;
+  left: 0;
+  z-index: 5;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px 18px;
+  box-shadow: 0 4px 0 #C9BFEF, 0 12px 22px rgba(90,70,180,.28);
+  text-align: left;
+}
+.gc-app .settings-switch {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12.5px; font-weight: 700; color: #4A3B7E;
+  cursor: pointer; user-select: none;
+}
+.gc-app .settings-switch input {
+  width: 17px; height: 17px; accent-color: #FF3DA6; cursor: pointer;
+}
+.gc-app .settings-switch input:disabled { cursor: default; }
+.gc-app .settings-switch:has(input:disabled) { opacity: .5; }
+
 /* captured-piece trays flank the board in fixed-width columns so a tray
    filling up never nudges the board sideways — content wraps within the
    column instead of growing it. Each row holds ~8 sprites before wrapping.

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { app, ready } from "./index";
+import { getVerdicts } from "./store/db";
 
 describe("api", () => {
   it("creates a session, a game, and plays a move", async () => {
@@ -80,6 +81,25 @@ describe("api", () => {
       .send({ from: "e2", to: "e5" }).expect(200);
     expect(j.body.ok).toBe(false);
   });
+
+  // C3: trace-tagging — the /judge route accepts and stores a `mode` field
+  // so the Lab can tell a pre-move (pending) judgment apart from a
+  // post-move one. Omitting it defaults to "guardian".
+  it("accepts and stores the mode field on POST /api/game/:id/judge", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    await request(app).post(`/api/game/${g.body.gameId}/judge`)
+      .send({ from: "e2", to: "e4", mode: "post" }).expect(200);
+    await request(app).post(`/api/game/${g.body.gameId}/judge`)
+      .send({ from: "d2", to: "d4" }).expect(200);
+
+    const rows = getVerdicts(g.body.gameId);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].mode).toBe("post");
+    expect(rows[1].mode).toBe("guardian");
+  }, 20000);
 
   it("judging then confirming through /move produces exactly one recorded player move (no double-apply)", async () => {
     await ready;

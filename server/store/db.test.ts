@@ -74,4 +74,41 @@ describe("store", () => {
     expect(rows[1].move).toBe("d4");
     expect(rows[1].tier).toBe("nudge");
   });
+
+  // C3: verdicts gain a `mode` column so the Lab can tell a pre-move
+  // (pending) judgment apart from a post-move (coach-only) one. Defaults
+  // to "guardian" when the caller doesn't pass one, matching every other
+  // judge call site that predates coach-only mode.
+  it("defaults a verdict's mode to 'guardian' when not passed, and stores an explicit mode like 'post'", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    insertVerdict({
+      gameId: g,
+      ply: 1,
+      fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      move: "e4",
+      tier: "silent",
+      deltaCp: 12,
+      mateAgainst: false,
+      latencyMs: 700,
+      adviceLevel: "standard",
+    });
+    insertVerdict({
+      gameId: g,
+      ply: 1,
+      fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      move: "d4",
+      tier: "nudge",
+      deltaCp: 80,
+      mateAgainst: false,
+      latencyMs: 690,
+      adviceLevel: "standard",
+      mode: "post",
+    });
+    const rows = getVerdicts(g);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].mode).toBe("guardian");
+    expect(rows[1].mode).toBe("post");
+  });
 });

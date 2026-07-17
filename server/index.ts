@@ -29,9 +29,9 @@ app.post("/api/game/:id/move", async (req, res) => {
 });
 
 app.post("/api/game/:id/judge", async (req, res) => {
-  const { from, to, promotion } = req.body;
+  const { from, to, promotion, mode } = req.body;
   try {
-    const result = await gm.judgeMove(Number(req.params.id), from, to, promotion);
+    const result = await gm.judgeMove(Number(req.params.id), from, to, promotion, mode);
     res.json(result);
   } catch (error) {
     res.status(500).json({ ok: false, error: "internal" });

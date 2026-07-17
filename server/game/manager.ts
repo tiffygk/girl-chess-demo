@@ -85,7 +85,13 @@ export class GameManager {
   // position — the live game itself is never mutated, so judging never
   // advances the game and confirming afterward through playerMove() is a
   // normal, independent move application (no double-apply risk).
-  async judgeMove(gameId: number, from: string, to: string, promotion?: string) {
+  // `mode` (C3): trace-tagging only, distinguishes a pre-move (pending)
+  // judgment from a post-move one (coach-only mode judges in parallel with
+  // /move, after the move already played). Passed straight through to
+  // insertVerdict, which defaults it to "guardian" when omitted — every
+  // pre-C3 call site (judge-confirm's pending-render judge) keeps working
+  // unchanged.
+  async judgeMove(gameId: number, from: string, to: string, promotion?: string, mode?: string) {
     const live = this.games.get(gameId);
     if (!live) return { ok: false };
     const clone = new Chess(live.chess.fen());
@@ -111,6 +117,7 @@ export class GameManager {
       mateAgainst: verdict.mateAgainst,
       latencyMs: verdict.latencyMs,
       adviceLevel: DEFAULT_ADVICE_LEVEL,
+      mode,
     });
     return { ok: true, verdict };
   }
