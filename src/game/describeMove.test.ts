@@ -84,4 +84,47 @@ describe("describeMove", () => {
     expect(render.capturedSquare).toBeUndefined();
     expect(render.secondary).toBeUndefined();
   });
+
+  it("white pawn promotes to queen", () => {
+    const chess = new Chess("7k/P7/8/8/8/8/8/7K w - - 0 1");
+    const m = chess.move({ from: "a7", to: "a8", promotion: "q" });
+
+    const render = describeMove(m);
+
+    expect(render.from).toBe("a7");
+    expect(render.to).toBe("a8");
+    expect(render.promotion).toBe("q");
+  });
+
+  it("black pawn promotes to queen", () => {
+    const chess = new Chess("7k/8/8/8/8/8/p7/7K b - - 0 1");
+    const m = chess.move({ from: "a2", to: "a1", promotion: "q" });
+
+    const render = describeMove(m);
+
+    expect(render.from).toBe("a2");
+    expect(render.to).toBe("a1");
+    expect(render.promotion).toBe("q");
+  });
+
+  it("promotion with capture reports both promotion and capture", () => {
+    const chess = new Chess("1n5k/P7/8/8/8/8/8/7K w - - 0 1");
+    const m = chess.move({ from: "a7", to: "b8", promotion: "q" });
+
+    expect(m.isCapture()).toBe(true);
+
+    const render = describeMove(m);
+
+    expect(render.promotion).toBe("q");
+    expect(render.capture).toBe(true);
+  });
+
+  it("a normal move leaves promotion undefined", () => {
+    const chess = new Chess();
+    const m = chess.move("e4");
+
+    const render = describeMove(m);
+
+    expect(render.promotion).toBeUndefined();
+  });
 });

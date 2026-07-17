@@ -157,6 +157,21 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     [patchEntry]
   );
 
+  // After a piece has landed on `to`, if the move was a promotion, swap its
+  // sprite to the promoted kind with a short glitch-morph (reusing the
+  // existing glitch-in animation) so the pawn visibly "corrupts into" the
+  // new piece. Kind is updated in Board state so later renders stay correct.
+  const morphPromotion = useCallback(
+    async (to: string, promotion: string) => {
+      const landed = entriesRef.current.find((e) => e.square === to);
+      if (!landed) return;
+      patchEntry(landed.id, { kind: promotion as PieceKind, glitchIn: true });
+      await sleep(420);
+      patchEntry(landed.id, { glitchIn: false });
+    },
+    [patchEntry]
+  );
+
   const glide = useCallback(
     async (move: MoveRender) => {
       animatingRef.current = true;
@@ -164,9 +179,10 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       const tasks = [glideEntry(move.from, move.to)];
       if (move.secondary) tasks.push(glideEntry(move.secondary.from, move.secondary.to));
       await Promise.all(tasks);
+      if (move.promotion) await morphPromotion(move.to, move.promotion);
       animatingRef.current = false;
     },
-    [glideEntry]
+    [glideEntry, morphPromotion]
   );
 
   const glitchCapture = useCallback(
@@ -209,9 +225,13 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
         await glideEntry(move.secondary.from, move.secondary.to);
       }
 
+      if (move.promotion) {
+        await morphPromotion(move.to, move.promotion);
+      }
+
       animatingRef.current = false;
     },
-    [patchEntry, updateEntries, burst, glideEntry]
+    [patchEntry, updateEntries, burst, glideEntry, morphPromotion]
   );
 
   const confetti = useCallback(() => {
