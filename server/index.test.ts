@@ -30,4 +30,23 @@ describe("api", () => {
     expect(m.body.ok).toBe(false);
     expect(m.body.fen).toBe(fenBefore);
   });
+
+  it("resigns a game via POST /api/game/:id/resign", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const r = await request(app).post(`/api/game/${g.body.gameId}/resign`).send({}).expect(200);
+    expect(r.body.ok).toBe(true);
+    expect(r.body.result).toBe("0-1");
+  });
+
+  it("offers a draw via POST /api/game/:id/draw-offer and accepts near startpos", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const r = await request(app).post(`/api/game/${g.body.gameId}/draw-offer`).send({}).expect(200);
+    expect(r.body.ok).toBe(true);
+    expect(r.body.accepted).toBe(true);
+    expect(r.body.result).toBe("1/2-1/2");
+  }, 20000);
 });

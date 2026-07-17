@@ -80,6 +80,20 @@
 .gc-app button.primary:active { box-shadow: 0 2px 0 #C22B7E, 0 6px 12px rgba(255,61,166,.3); }
 .gc-app button:disabled { opacity: .5; cursor: default; transform: none; }
 
+/* small squishy variant — resign / offer-draw controls, scaled down but
+   same press-down shadow language as the primary button. */
+.gc-app button.small {
+  font-size: 12.5px; padding: 8px 16px;
+  box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.2);
+}
+.gc-app button.small:hover { box-shadow: 0 5px 0 #C9BFEF, 0 8px 14px rgba(90,70,180,.24); }
+.gc-app button.small:active { box-shadow: 0 1px 0 #C9BFEF, 0 4px 8px rgba(90,70,180,.18); }
+/* "you sure?" morph — no modal, the button itself flips color to ask */
+.gc-app button.small.confirming { background: #FF3DA6; color: #fff; box-shadow: 0 3px 0 #C22B7E, 0 6px 10px rgba(255,61,166,.3); }
+.gc-app button.small.confirming:hover { box-shadow: 0 5px 0 #C22B7E, 0 8px 14px rgba(255,61,166,.35); }
+
+.gc-app .game-controls { margin: 4px 0 0; }
+
 /* captured-piece trays flank the board in fixed-width columns so a tray
    filling up never nudges the board sideways — content wraps within the
    column instead of growing it. Each row holds ~8 sprites before wrapping.
@@ -114,6 +128,16 @@
   margin-left: -8px; /* slight overlap */
 }
 .gc-app .tray-piece:first-child { margin-left: 0; }
+
+/* wraps the opponent's capture tray so the decline bark can sit right
+   beside it — "near the opponent side" of the board. */
+.gc-app .opponent-side { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.gc-app .bark-bubble {
+  font-size: 12px; font-weight: 700; color: #7A6BB5;
+  background: #fff; padding: 7px 14px; border-radius: 14px;
+  box-shadow: 0 3px 0 rgba(201,191,239,.45), 0 6px 10px rgba(90,70,180,.15);
+  max-width: 190px; text-align: center; line-height: 1.4;
+}
 .gc-app .tray-piece svg {
   width: 100%;
   height: 100%;

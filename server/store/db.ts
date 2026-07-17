@@ -25,6 +25,9 @@ export function openDb(path = "data/girlchess.db") {
       id INTEGER PRIMARY KEY, session_id INTEGER REFERENCES sessions(id),
       mode TEXT, seconds INTEGER DEFAULT 0, day TEXT DEFAULT (date('now')),
       UNIQUE(session_id, mode, day));
+    CREATE TABLE IF NOT EXISTS game_events(
+      id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id),
+      type TEXT, detail TEXT, at TEXT DEFAULT (datetime('now')));
   `);
   return db;
 }
@@ -52,3 +55,7 @@ export const addModeMinutes = (sessionId: number, mode: string, seconds: number)
   ).run(sessionId, mode, seconds);
 export const getGameMoves = (gameId: number) =>
   db.prepare("SELECT * FROM moves WHERE game_id = ? ORDER BY ply").all(gameId) as any[];
+export const logGameEvent = (gameId: number, type: string, detail?: string) =>
+  db.prepare("INSERT INTO game_events(game_id, type, detail) VALUES(?,?,?)").run(gameId, type, detail ?? null);
+export const getGameEvents = (gameId: number) =>
+  db.prepare("SELECT * FROM game_events WHERE game_id = ? ORDER BY id").all(gameId) as any[];
