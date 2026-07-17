@@ -12,6 +12,7 @@ import { beep } from "./sounds";
 import type { MoveRender } from "../game/describeMove";
 import { resolveClickMove, isCastleAttempt } from "../game/resolveClick";
 import { resolvePendingClick } from "../game/resolvePendingClick";
+import type { Takedown } from "../game/terminal";
 
 interface PieceEntry {
   id: string;
@@ -24,6 +25,13 @@ interface PieceEntry {
   land: boolean;
   glitchIn: boolean;
   noTrans: boolean;
+  /**
+   * Wave D: overrides the CSS transition-duration for this entry's
+   * left/top glide while `moving` — lets the cinematic replay run its
+   * lead-up plies at a quickened pace without a second animation path
+   * (see glideEntry). Undefined = the CSS default (500ms).
+   */
+  moveDurationMs?: number;
 }
 
 export interface BoardHandle {
@@ -37,9 +45,23 @@ export interface BoardHandle {
    * `to`, so the replay just re-plays the shatter flourish in place.
    */
   takedown(move: { from: string; to: string }): Promise<void>;
-  confetti(): void;
-  storm(): void;
-  shimmer(): void;
+  /**
+   * Wave D: "replay the takedown" as a lead-up cinematic. Resets the board
+   * to `startFen`, plays `moves` back-to-back (all but the last at a
+   * quickened cinematic pace with a small beat between plies; the last —
+   * the mate move — at normal pace), then runs the same takedown
+   * glide+shatter finale as a first-time checkmate. `animatingRef` stays
+   * true for the whole call, so clicks stay gated through every beat, not
+   * just each individual glide. Repeatable: every call resets fresh from
+   * `startFen`, so re-running never depends on where the last run left off.
+   * Ends on the true final position, same as a first-time takedown.
+   */
+  replayCinematic(startFen: string, moves: MoveRender[], takedownMove: Takedown): Promise<void>;
+  /** `big`: Wave D's replay-finish celebration — denser/longer than the
+   * first-time one. Parameterized rather than a separate copy-pasted path. */
+  confetti(opts?: { big?: boolean }): void;
+  storm(opts?: { big?: boolean }): void;
+  shimmer(opts?: { big?: boolean }): void;
 }
 
 interface BoardProps {
@@ -142,6 +164,38 @@ function entriesFromFen(fen: string): PieceEntry[] {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+// Wave D pacing: normal single-move glide (unchanged from before this wave)
+// vs. the cinematic replay's lead-up pace. Owner feedback, verbatim: "play
+// the last three moves or four moves without delays in between but not too
+// fast" — the lead-up plies run quickened-but-readable, back-to-back with
+// only a small beat, while the FINAL (mate) ply plays at full normal speed
+// and flows straight into the takedown glide+shatter.
+const NORMAL_GLIDE_MS = 500;
+const NORMAL_LAND_MS = 280;
+const CINEMATIC_GLIDE_MS = 260;
+const CINEMATIC_LAND_MS = 150;
+const CINEMATIC_BEAT_MS = 150;
+
+interface CaptureTimings {
+  preGlitchMs: number;
+  gapMs: number;
+  shakeMs: number;
+}
+const NORMAL_CAPTURE_TIMINGS: CaptureTimings = { preGlitchMs: 300, gapMs: 120, shakeMs: 430 };
+const CINEMATIC_CAPTURE_TIMINGS: CaptureTimings = { preGlitchMs: 165, gapMs: 70, shakeMs: 240 };
+
+// Wave D: replay-finish celebration intensities — same confetti/storm/
+// shimmer, parameterized rather than duplicated. "big" is denser/longer;
+// used only when the replay cinematic completes (see GamePage).
+const CONFETTI_COUNT = 90;
+const CONFETTI_BIG_COUNT = 180;
+const CONFETTI_LIFE_MS = 2200;
+const CONFETTI_BIG_LIFE_MS = 3400;
+const STORM_MS = 2000;
+const STORM_BIG_MS = 3200;
+const SHIMMER_MS = 1800;
+const SHIMMER_BIG_MS = 2800;
+
 export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
   {
     fen,
@@ -161,7 +215,16 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
   const [entries, setEntries] = useState<PieceEntry[]>(() => entriesFromFen(fen));
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
-  const [glow, setGlow] = useState(false);
+  const [glow, setGlow] = useState<false | "normal" | "big">(false);
+  // Wave D: true for the whole span of a replayCinematic call (lead-up plies
+  // + beats + final move + takedown finale). The board's checkSquare/
+  // checkmate/lastMove/hintReveal props still describe the TRUE final
+  // position (GamePage's fen never changes for a replay) — while entries
+  // are temporarily reset to an earlier position mid-cinematic, those
+  // derived overlays would otherwise render against the wrong frame (e.g. a
+  // "locked mate ring" on a king that hasn't been mated yet in the frame
+  // currently on screen). This flag suppresses them for the duration.
+  const [cinematicActive, setCinematicActive] = useState(false);
 
   const entriesRef = useRef(entries);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -227,14 +290,17 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
   // Relocates a single entry from -> to with the plain glide animation,
   // without touching animatingRef (callers own that lifecycle so multiple
   // entries — e.g. king + rook on a castle — can glide concurrently).
+  // durationMs/landMs default to the normal single-move pace; the cinematic
+  // replay's lead-up plies pass the quickened constants instead — same
+  // animation path, parameterized, not duplicated.
   const glideEntry = useCallback(
-    async (from: string, to: string) => {
+    async (from: string, to: string, durationMs = NORMAL_GLIDE_MS, landMs = NORMAL_LAND_MS) => {
       const mover = entriesRef.current.find((e) => e.square === from);
       if (!mover) return;
-      patchEntry(mover.id, { square: to, moving: true });
-      await sleep(500);
+      patchEntry(mover.id, { square: to, moving: true, moveDurationMs: durationMs });
+      await sleep(durationMs);
       patchEntry(mover.id, { moving: false, land: true });
-      await sleep(280);
+      await sleep(landMs);
       patchEntry(mover.id, { land: false });
     },
     [patchEntry]
@@ -255,26 +321,39 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     [patchEntry]
   );
 
-  const glide = useCallback(
-    async (move: MoveRender) => {
-      animatingRef.current = true;
+  // Animation body only — does NOT touch animatingRef. Shared by the public
+  // `glide` (which wraps it with the ref for a single move) and
+  // `replayCinematic` (which holds the ref for the whole multi-move
+  // sequence, beats included, instead of dropping it between plies).
+  const glideAnim = useCallback(
+    async (move: MoveRender, durationMs = NORMAL_GLIDE_MS, landMs = NORMAL_LAND_MS) => {
       beep("move");
-      const tasks = [glideEntry(move.from, move.to)];
-      if (move.secondary) tasks.push(glideEntry(move.secondary.from, move.secondary.to));
+      const tasks = [glideEntry(move.from, move.to, durationMs, landMs)];
+      if (move.secondary) tasks.push(glideEntry(move.secondary.from, move.secondary.to, durationMs, landMs));
       await Promise.all(tasks);
       if (move.promotion) await morphPromotion(move.to, move.promotion);
-      animatingRef.current = false;
     },
     [glideEntry, morphPromotion]
   );
 
-  const glitchCapture = useCallback(
+  const glide = useCallback(
     async (move: MoveRender) => {
+      animatingRef.current = true;
+      await glideAnim(move);
+      animatingRef.current = false;
+    },
+    [glideAnim]
+  );
+
+  // Animation body only — no animatingRef, same split rationale as
+  // glideAnim above. `timings` defaults to the normal capture pace; the
+  // cinematic replay's lead-up plies pass the quickened constants.
+  const glitchCaptureAnim = useCallback(
+    async (move: MoveRender, timings: CaptureTimings = NORMAL_CAPTURE_TIMINGS) => {
       const { from, to } = move;
       const capturedSquare = move.capturedSquare ?? to;
       const mover = entriesRef.current.find((e) => e.square === from);
       if (!mover) return;
-      animatingRef.current = true;
       const fromIdx = squareToIdx(from);
       const victimIdx = squareToIdx(capturedSquare);
       const victim = entriesRef.current.find(
@@ -283,11 +362,11 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
 
       patchEntry(mover.id, { moving: true, preGlitch: true });
       beep("glitch");
-      await sleep(300);
+      await sleep(timings.preGlitchMs);
 
       burst(fromIdx, 12);
       patchEntry(mover.id, { preGlitch: false, hidden: true });
-      await sleep(120);
+      await sleep(timings.gapMs);
 
       if (victim) {
         burst(victimIdx, 20);
@@ -300,7 +379,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       patchEntry(mover.id, { hidden: false, glitchIn: true });
       requestAnimationFrame(() => patchEntry(mover.id, { noTrans: false }));
       setShake(true);
-      await sleep(430);
+      await sleep(timings.shakeMs);
       patchEntry(mover.id, { glitchIn: false, moving: false });
       setShake(false);
 
@@ -311,10 +390,17 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       if (move.promotion) {
         await morphPromotion(move.to, move.promotion);
       }
-
-      animatingRef.current = false;
     },
     [patchEntry, updateEntries, burst, glideEntry, morphPromotion]
+  );
+
+  const glitchCapture = useCallback(
+    async (move: MoveRender) => {
+      animatingRef.current = true;
+      await glitchCaptureAnim(move);
+      animatingRef.current = false;
+    },
+    [glitchCaptureAnim]
   );
 
   // Checkmate-only terminal sequence (Part 1): glide the attacker onto the
@@ -364,17 +450,76 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     [patchEntry, updateEntries, burst]
   );
 
+  // Wave D: "replay the takedown" as a lead-up cinematic instead of just
+  // re-playing the shatter in place. Owner feedback, verbatim: "play the
+  // last three moves or four moves without delays in between but not too
+  // fast... that way I just see the act of the Queen checkmating the King
+  // but I get to see what was my lead up."
+  //
+  // Resets entries to `startFen` (the position before the first replayed
+  // ply — see replayPlan in src/game/replay.ts) and replays `moves`
+  // back-to-back: every ply but the last at the quickened cinematic pace
+  // with a small beat after it, the FINAL ply (the mate move) at full
+  // normal pace, flowing straight into the existing `takedown` glide+
+  // shatter finale — no separate animation path, no beat before it.
+  //
+  // animatingRef stays true for the ENTIRE call (set once here, not toggled
+  // per-ply by glideAnim/glitchCaptureAnim, which deliberately don't touch
+  // it) so clicks stay gated through the beats too, not just each
+  // individual glide. `takedown` itself still toggles the ref around its
+  // own body, but since it's already true when we call it and it clears the
+  // ref only once its shatter finishes, that's exactly where the whole
+  // cinematic should end anyway.
+  //
+  // Always resets fresh from `startFen`, so calling this again (re-running
+  // the replay) never depends on where the previous run left off — unlike
+  // the plain `takedown`, there's no "already at destination" branch to
+  // reason about here.
+  const replayCinematic = useCallback(
+    async (startFen: string, moves: MoveRender[], takedownMove: Takedown) => {
+      if (moves.length === 0) return;
+      animatingRef.current = true;
+      setCinematicActive(true);
+      try {
+        const initial = entriesFromFen(startFen);
+        entriesRef.current = initial;
+        setEntries(initial);
+
+        const leadUp = moves.slice(0, -1);
+        const finale = moves[moves.length - 1];
+
+        for (const move of leadUp) {
+          if (move.capture) await glitchCaptureAnim(move, CINEMATIC_CAPTURE_TIMINGS);
+          else await glideAnim(move, CINEMATIC_GLIDE_MS, CINEMATIC_LAND_MS);
+          await sleep(CINEMATIC_BEAT_MS);
+        }
+
+        if (finale.capture) await glitchCaptureAnim(finale);
+        else await glideAnim(finale);
+
+        await takedown(takedownMove);
+      } finally {
+        setCinematicActive(false);
+        animatingRef.current = false;
+      }
+    },
+    [glideAnim, glitchCaptureAnim, takedown]
+  );
+
   // Full-screen win celebration — appended to document.body (not innerRef's
   // board rect) so it covers the whole viewport, not just the board. Fully
   // self-cleans: every particle removes itself on animation finish, and the
-  // overlay removes itself after ~2.2s.
-  const confetti = useCallback(() => {
+  // overlay removes itself after ~2.2s (~3.4s for `big` — Wave D's
+  // replay-finish celebration, denser and longer-lived than the first-time
+  // one, same overlay/parameters just scaled up rather than duplicated).
+  const confetti = useCallback((opts?: { big?: boolean }) => {
+    const big = opts?.big ?? false;
     const overlay = document.createElement("div");
-    overlay.className = "gc-confetti-overlay";
+    overlay.className = "gc-confetti-overlay" + (big ? " big" : "");
     document.body.appendChild(overlay);
     const w = window.innerWidth;
     const h = window.innerHeight;
-    const count = 90;
+    const count = big ? CONFETTI_BIG_COUNT : CONFETTI_COUNT;
     for (let i = 0; i < count; i++) {
       const px = document.createElement("div");
       px.className = "gc-confetti-piece";
@@ -385,7 +530,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       px.style.top = "-20px";
       overlay.appendChild(px);
       const drift = (Math.random() - 0.5) * 160;
-      const duration = 1500 + Math.random() * 700;
+      const duration = (big ? 1900 : 1500) + Math.random() * (big ? 900 : 700);
       px
         .animate(
           [
@@ -399,31 +544,35 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
         )
         .addEventListener("finish", () => px.remove());
     }
-    setTimeout(() => overlay.remove(), 2200);
+    setTimeout(() => overlay.remove(), big ? CONFETTI_BIG_LIFE_MS : CONFETTI_LIFE_MS);
   }, []);
 
   // Loss celebration: an "electric storm" — screen-edge lightning flicker in
   // the glitch palette, driven entirely by the gcStormFlicker CSS keyframe
-  // (see sugar-glitch.css). Non-blocking, ~2s, self-removing.
-  const storm = useCallback(() => {
+  // (see sugar-glitch.css). Non-blocking, ~2s, self-removing (~3.2s for
+  // `big`, via the CSS `.big` modifier stretching the same keyframe).
+  const storm = useCallback((opts?: { big?: boolean }) => {
+    const big = opts?.big ?? false;
     const overlay = document.createElement("div");
-    overlay.className = "gc-storm-overlay";
+    overlay.className = "gc-storm-overlay" + (big ? " big" : "");
     document.body.appendChild(overlay);
-    setTimeout(() => overlay.remove(), 2000);
+    setTimeout(() => overlay.remove(), big ? STORM_BIG_MS : STORM_MS);
   }, []);
 
   // Draw celebration (or lack thereof): a soft glow pulse on the board frame
   // itself rather than a full-screen effect — a draw isn't a win or a loss,
-  // so it gets a quieter acknowledgment.
-  const shimmer = useCallback(() => {
-    setGlow(true);
-    setTimeout(() => setGlow(false), 1800);
+  // so it gets a quieter acknowledgment. `big` stretches the same
+  // boardShimmer keyframe via the CSS `.big` modifier.
+  const shimmer = useCallback((opts?: { big?: boolean }) => {
+    const big = opts?.big ?? false;
+    setGlow(big ? "big" : "normal");
+    setTimeout(() => setGlow(false), big ? SHIMMER_BIG_MS : SHIMMER_MS);
   }, []);
 
   useImperativeHandle(
     ref,
-    () => ({ glide, glitchCapture, takedown, confetti, storm, shimmer }),
-    [glide, glitchCapture, takedown, confetti, storm, shimmer]
+    () => ({ glide, glitchCapture, takedown, replayCinematic, confetti, storm, shimmer }),
+    [glide, glitchCapture, takedown, replayCinematic, confetti, storm, shimmer]
   );
 
   const turn = fen.split(" ")[1] === "b" ? "b" : "w";
@@ -579,7 +728,14 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
 
   return (
     <div className="stage">
-      <div className={"board-frame" + (shake ? " shake" : "") + (glow ? " shimmer" : "")}>
+      <div
+        className={
+          "board-frame" +
+          (shake ? " shake" : "") +
+          (glow ? " shimmer" : "") +
+          (glow === "big" ? " big" : "")
+        }
+      >
         <div className="board-inner" ref={innerRef}>
           <div className="squares">
             {Array.from({ length: 64 }, (_, idx) => {
@@ -587,9 +743,15 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               const row = Math.floor(idx / 8);
               const col = idx % 8;
               const light = (row + col) % 2 === 0;
-              const isCheckRing = square === checkSquare && !matedKingGone;
-              const isLastMove = !!lastMove && (square === lastMove.from || square === lastMove.to);
-              const isHintReveal = !!hintReveal && (square === hintReveal.from || square === hintReveal.to);
+              // Wave D: suppressed mid-cinematic — these overlays are all
+              // derived from GamePage's fen/lastMove/hintReveal, which still
+              // describe the TRUE final position while entries are
+              // temporarily showing an earlier lead-up frame.
+              const isCheckRing = !cinematicActive && square === checkSquare && !matedKingGone;
+              const isLastMove =
+                !cinematicActive && !!lastMove && (square === lastMove.from || square === lastMove.to);
+              const isHintReveal =
+                !cinematicActive && !!hintReveal && (square === hintReveal.from || square === hintReveal.to);
               const classes = [
                 "sq",
                 light ? "light" : "dark",
@@ -642,7 +804,16 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                   key={e.id}
                   className={classes}
                   data-square={e.square}
-                  style={{ left: col * 12.5 + "%", top: row * 12.5 + "%", visibility: e.hidden ? "hidden" : "visible" }}
+                  style={{
+                    left: col * 12.5 + "%",
+                    top: row * 12.5 + "%",
+                    visibility: e.hidden ? "hidden" : "visible",
+                    // Wave D: overrides the CSS transition-duration (left/top
+                    // glide) for the cinematic replay's quickened lead-up
+                    // plies — see glideEntry. Undefined leaves the CSS
+                    // default (500ms) for every ordinary move.
+                    transitionDuration: e.moveDurationMs ? `${e.moveDurationMs}ms` : undefined,
+                  }}
                   onClick={() => handlePieceClick(e.square, e.color)}
                 >
                   <Piece kind={e.kind} color={e.color} />
