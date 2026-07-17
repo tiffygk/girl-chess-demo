@@ -1,8 +1,8 @@
 import { UciEngine } from "./uci";
 import { ENGINE_PATHS } from "./paths";
-import type { Evaluation } from "./types";
+import type { Evaluation, Evaluator } from "./types";
 
-export class StockfishEvaluator {
+export class StockfishEvaluator implements Evaluator {
   private engine = new UciEngine(ENGINE_PATHS.stockfish);
   private queue: Promise<unknown> = Promise.resolve();
 

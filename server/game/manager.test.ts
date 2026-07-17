@@ -28,4 +28,22 @@ describe("GameManager", () => {
     const r = await gm.playerMove(g.gameId, "e2", "e5");
     expect(r.ok).toBe(false);
   }, 20000);
+
+  it("attaches an eval to the player move row in SQLite", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const r = await gm.playerMove(g.gameId, "e2", "e4", undefined, 3000);
+    expect(r.ok).toBe(true);
+
+    const deadline = Date.now() + 12000;
+    let playerMoveRow: any;
+    while (Date.now() < deadline) {
+      const moves = getGameMoves(g.gameId);
+      playerMoveRow = moves.find((m) => m.san === "e4");
+      if (playerMoveRow && (playerMoveRow.eval_cp !== null || playerMoveRow.eval_mate !== null)) break;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+
+    expect(playerMoveRow).toBeTruthy();
+    expect(playerMoveRow.eval_cp !== null || playerMoveRow.eval_mate !== null).toBe(true);
+  }, 20000);
 });
