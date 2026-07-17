@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { Board, type BoardHandle } from "../board/Board";
 import { newSession, newGame, sendMove, modeTimer, type MoveResponse, type GameOverInfo } from "./api";
+import { describeMove } from "./describeMove";
 
 const OPPONENT_ELO = 1100;
 
@@ -69,12 +70,12 @@ export function GamePage() {
       busyRef.current = true;
       setStatus("");
       const board = boardRef.current;
-      const capture = mv.isCapture() || mv.isEnPassant();
+      const render = describeMove(mv);
 
       try {
         if (board) {
-          if (capture) await board.glitchCapture(from, to);
-          else await board.glide(from, to);
+          if (render.capture) await board.glitchCapture(render);
+          else await board.glide(render);
         }
 
         const timeSpentMs = Date.now() - lastReplyAtRef.current;
@@ -104,10 +105,11 @@ export function GamePage() {
           const replyFrom = res.reply.uci.slice(0, 2);
           const replyTo = res.reply.uci.slice(2, 4);
           const replyPromotion = res.reply.uci.length > 4 ? res.reply.uci[4] : "q";
-          mirror.move({ from: replyFrom, to: replyTo, promotion: replyPromotion });
+          const replyMove = mirror.move({ from: replyFrom, to: replyTo, promotion: replyPromotion });
+          const replyRender = describeMove(replyMove);
           if (board) {
-            if (res.reply.capture) await board.glitchCapture(replyFrom, replyTo);
-            else await board.glide(replyFrom, replyTo);
+            if (replyRender.capture) await board.glitchCapture(replyRender);
+            else await board.glide(replyRender);
           }
         }
 

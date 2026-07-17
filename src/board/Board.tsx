@@ -8,6 +8,7 @@ import {
 import { Chess } from "chess.js";
 import { Piece, type PieceColor, type PieceKind } from "./pieces";
 import { beep } from "./sounds";
+import type { MoveRender } from "../game/describeMove";
 
 interface PieceEntry {
   id: string;
@@ -23,8 +24,8 @@ interface PieceEntry {
 }
 
 export interface BoardHandle {
-  glide(from: string, to: string): Promise<void>;
-  glitchCapture(from: string, to: string): Promise<void>;
+  glide(move: MoveRender): Promise<void>;
+  glitchCapture(move: MoveRender): Promise<void>;
   confetti(): void;
 }
 
@@ -140,30 +141,46 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     }
   }, []);
 
-  const glide = useCallback(
+  // Relocates a single entry from -> to with the plain glide animation,
+  // without touching animatingRef (callers own that lifecycle so multiple
+  // entries — e.g. king + rook on a castle — can glide concurrently).
+  const glideEntry = useCallback(
     async (from: string, to: string) => {
       const mover = entriesRef.current.find((e) => e.square === from);
       if (!mover) return;
-      animatingRef.current = true;
       patchEntry(mover.id, { square: to, moving: true });
-      beep("move");
       await sleep(500);
       patchEntry(mover.id, { moving: false, land: true });
       await sleep(280);
       patchEntry(mover.id, { land: false });
-      animatingRef.current = false;
     },
     [patchEntry]
   );
 
+  const glide = useCallback(
+    async (move: MoveRender) => {
+      animatingRef.current = true;
+      beep("move");
+      const tasks = [glideEntry(move.from, move.to)];
+      if (move.secondary) tasks.push(glideEntry(move.secondary.from, move.secondary.to));
+      await Promise.all(tasks);
+      animatingRef.current = false;
+    },
+    [glideEntry]
+  );
+
   const glitchCapture = useCallback(
-    async (from: string, to: string) => {
+    async (move: MoveRender) => {
+      const { from, to } = move;
+      const capturedSquare = move.capturedSquare ?? to;
       const mover = entriesRef.current.find((e) => e.square === from);
       if (!mover) return;
       animatingRef.current = true;
       const fromIdx = squareToIdx(from);
-      const toIdx = squareToIdx(to);
-      const victim = entriesRef.current.find((e) => e.square === to && e.id !== mover.id);
+      const victimIdx = squareToIdx(capturedSquare);
+      const victim = entriesRef.current.find(
+        (e) => e.square === capturedSquare && e.id !== mover.id
+      );
 
       patchEntry(mover.id, { moving: true, preGlitch: true });
       beep("glitch");
@@ -174,7 +191,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       await sleep(120);
 
       if (victim) {
-        burst(toIdx, 20);
+        burst(victimIdx, 20);
         const victimId = victim.id;
         updateEntries((prev) => prev.filter((e) => e.id !== victimId));
       }
@@ -187,9 +204,14 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       await sleep(430);
       patchEntry(mover.id, { glitchIn: false, moving: false });
       setShake(false);
+
+      if (move.secondary) {
+        await glideEntry(move.secondary.from, move.secondary.to);
+      }
+
       animatingRef.current = false;
     },
-    [patchEntry, updateEntries, burst]
+    [patchEntry, updateEntries, burst, glideEntry]
   );
 
   const confetti = useCallback(() => {
