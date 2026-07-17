@@ -75,14 +75,27 @@ export function newGame(sessionId: number, elo: number): Promise<NewGameResponse
   return postJson("/game", { sessionId, elo });
 }
 
+// `override` (C4): set only when this move is a confirm of a pending move
+// the judge marked "warning" (see isOverrideConfirm in moveFlow.ts). The
+// client already holds the verdict at confirm time, so deltaCp/mateAgainst
+// travel along with the flag rather than the server re-deriving them.
+// Omitted entirely for an ordinary move — the server writes no
+// game_events row when it's absent.
 export function sendMove(
   gameId: number,
   from: string,
   to: string,
   promotion?: string,
-  timeSpentMs?: number
+  timeSpentMs?: number,
+  override?: { deltaCp: number | null; mateAgainst: boolean }
 ): Promise<MoveResponse> {
-  return postJson(`/game/${gameId}/move`, { from, to, promotion, timeSpentMs });
+  return postJson(`/game/${gameId}/move`, {
+    from,
+    to,
+    promotion,
+    timeSpentMs,
+    ...(override ? { override: true, deltaCp: override.deltaCp, mateAgainst: override.mateAgainst } : {}),
+  });
 }
 
 export function reportMode(sessionId: number, mode: string, seconds: number): Promise<ModeResponse> {

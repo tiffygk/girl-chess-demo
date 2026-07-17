@@ -20,3 +20,18 @@ export function resolveMoveFlow(coachOn: boolean, confirmOn: boolean): MoveFlow 
   if (!coachOn && confirmOn) return "confirm-only";
   return "one-tap";
 }
+
+// C4 (override logging): an override is confirming a move the judge marked
+// "warning" — the Lab's 20-80% override band reads warnings only, so a
+// "nudge" confirm is deliberately NOT an override. Pulled out as its own
+// pure function (rather than inlined in the confirm handler) so this
+// decision is unit-testable without touching React state, the DOM, or a
+// network call.
+//
+// judge-post mode (coach on, confirm off) never calls this at all — it has
+// no confirm step, so no overrides are possible there; see
+// handleMoveWithPostJudge in GamePage.tsx, which calls handleMove directly
+// with no override argument.
+export function isOverrideConfirm(tier: "silent" | "nudge" | "warning" | null | undefined): boolean {
+  return tier === "warning";
+}

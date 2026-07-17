@@ -19,9 +19,20 @@ app.post("/api/game", async (req, res) => {
 });
 
 app.post("/api/game/:id/move", async (req, res) => {
-  const { from, to, promotion, timeSpentMs } = req.body;
+  const { from, to, promotion, timeSpentMs, override, deltaCp, mateAgainst } = req.body;
   try {
-    const result = await gm.playerMove(Number(req.params.id), from, to, promotion, timeSpentMs ?? 0);
+    const result = await gm.playerMove(
+      Number(req.params.id),
+      from,
+      to,
+      promotion,
+      timeSpentMs ?? 0,
+      // C4: override logging — only ever set when the client marks the
+      // confirm as an override (a "warning"-tier confirm; see
+      // isOverrideConfirm in src/game/moveFlow.ts). Omitted entirely for an
+      // ordinary /move so normal play writes no game_events row.
+      override ? { deltaCp: deltaCp ?? null, mateAgainst: Boolean(mateAgainst) } : undefined
+    );
     res.json(result);
   } catch (error) {
     res.status(500).json({ ok: false, error: "internal" });

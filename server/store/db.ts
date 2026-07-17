@@ -4,6 +4,83 @@ import type { Evaluation } from "../engines/types";
 
 let db: Database.Database;
 
+// Migration guard (C4): CREATE TABLE IF NOT EXISTS silently no-ops on a
+// table that already exists, so an additive column (like verdicts.mode,
+// added in C3) never appears in a db that was first created before that
+// column existed — this fired once during C3 development against a stale
+// dev db. EXPECTED_COLUMNS is the single source of truth this guard checks
+// reality against: keep it in sync with the CREATE TABLE block below
+// whenever a column is added to an existing table (a brand-new table needs
+// no entry here — CREATE TABLE IF NOT EXISTS already handles that case).
+// Each addSql is exactly the column's definition from the CREATE statement,
+// reused verbatim in `ALTER TABLE ... ADD COLUMN <addSql>` so a migrated-up
+// old db ends up with the same column type/default as a freshly created one.
+const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
+  sessions: [
+    { name: "started_at", addSql: "started_at TEXT DEFAULT (datetime('now'))" },
+    { name: "ended_at", addSql: "ended_at TEXT" },
+  ],
+  games: [
+    { name: "session_id", addSql: "session_id INTEGER REFERENCES sessions(id)" },
+    { name: "opponent", addSql: "opponent TEXT" },
+    { name: "result", addSql: "result TEXT" },
+    { name: "source", addSql: "source TEXT DEFAULT 'app'" },
+    { name: "started_at", addSql: "started_at TEXT DEFAULT (datetime('now'))" },
+    { name: "ended_at", addSql: "ended_at TEXT" },
+  ],
+  moves: [
+    { name: "game_id", addSql: "game_id INTEGER REFERENCES games(id)" },
+    { name: "ply", addSql: "ply INTEGER" },
+    { name: "san", addSql: "san TEXT" },
+    { name: "uci", addSql: "uci TEXT" },
+    { name: "fen_after", addSql: "fen_after TEXT" },
+    { name: "time_spent_ms", addSql: "time_spent_ms INTEGER" },
+    { name: "eval_cp", addSql: "eval_cp INTEGER" },
+    { name: "eval_mate", addSql: "eval_mate INTEGER" },
+    { name: "best_move", addSql: "best_move TEXT" },
+    { name: "pv", addSql: "pv TEXT" },
+    { name: "moved_at", addSql: "moved_at TEXT DEFAULT (datetime('now'))" },
+  ],
+  mode_timers: [
+    { name: "session_id", addSql: "session_id INTEGER REFERENCES sessions(id)" },
+    { name: "mode", addSql: "mode TEXT" },
+    { name: "seconds", addSql: "seconds INTEGER DEFAULT 0" },
+    { name: "day", addSql: "day TEXT DEFAULT (date('now'))" },
+  ],
+  game_events: [
+    { name: "game_id", addSql: "game_id INTEGER REFERENCES games(id)" },
+    { name: "type", addSql: "type TEXT" },
+    { name: "detail", addSql: "detail TEXT" },
+    { name: "at", addSql: "at TEXT DEFAULT (datetime('now'))" },
+  ],
+  verdicts: [
+    { name: "game_id", addSql: "game_id INTEGER REFERENCES games(id)" },
+    { name: "ply", addSql: "ply INTEGER" },
+    { name: "fen", addSql: "fen TEXT" },
+    { name: "move", addSql: "move TEXT" },
+    { name: "tier", addSql: "tier TEXT" },
+    { name: "delta_cp", addSql: "delta_cp INTEGER" },
+    { name: "mate_against", addSql: "mate_against INTEGER" },
+    { name: "latency_ms", addSql: "latency_ms INTEGER" },
+    { name: "advice_level", addSql: "advice_level TEXT" },
+    { name: "mode", addSql: "mode TEXT DEFAULT 'guardian'" },
+    { name: "at", addSql: "at TEXT DEFAULT (datetime('now'))" },
+  ],
+};
+
+function migrateSchema(target: Database.Database) {
+  for (const [table, columns] of Object.entries(EXPECTED_COLUMNS)) {
+    const present = new Set(
+      (target.pragma(`table_info(${table})`) as { name: string }[]).map((c) => c.name)
+    );
+    for (const col of columns) {
+      if (!present.has(col.name)) {
+        target.exec(`ALTER TABLE ${table} ADD COLUMN ${col.addSql}`);
+      }
+    }
+  }
+}
+
 export function openDb(path = "data/girlchess.db") {
   if (path !== ":memory:") fs.mkdirSync("data", { recursive: true });
   db = new Database(path);
@@ -34,6 +111,7 @@ export function openDb(path = "data/girlchess.db") {
       latency_ms INTEGER, advice_level TEXT, mode TEXT DEFAULT 'guardian',
       at TEXT DEFAULT (datetime('now')));
   `);
+  migrateSchema(db);
   return db;
 }
 
@@ -45,6 +123,8 @@ export const createGame = (sessionId: number, opponent: string) =>
   Number(db.prepare("INSERT INTO games(session_id, opponent) VALUES(?, ?)").run(sessionId, opponent).lastInsertRowid);
 export const finishGame = (id: number, result: string) =>
   db.prepare("UPDATE games SET result = ?, ended_at = datetime('now') WHERE id = ?").run(result, id);
+export const getGame = (id: number) =>
+  db.prepare("SELECT * FROM games WHERE id = ?").get(id) as any;
 export const recordMove = (m: { gameId: number; ply: number; san: string; uci: string; fenAfter: string; timeSpentMs: number }) =>
   db.prepare(
     "INSERT INTO moves(game_id, ply, san, uci, fen_after, time_spent_ms) VALUES(?,?,?,?,?,?)"
@@ -58,6 +138,10 @@ export const addModeMinutes = (sessionId: number, mode: string, seconds: number)
     `INSERT INTO mode_timers(session_id, mode, seconds) VALUES(?,?,?)
      ON CONFLICT(session_id, mode, day) DO UPDATE SET seconds = seconds + excluded.seconds`
   ).run(sessionId, mode, seconds);
+export const getModeSeconds = (sessionId: number, mode: string) =>
+  (db.prepare("SELECT seconds FROM mode_timers WHERE session_id = ? AND mode = ?").get(sessionId, mode) as
+    | { seconds: number }
+    | undefined)?.seconds ?? 0;
 export const getGameMoves = (gameId: number) =>
   db.prepare("SELECT * FROM moves WHERE game_id = ? ORDER BY ply").all(gameId) as any[];
 export const logGameEvent = (gameId: number, type: string, detail?: string) =>

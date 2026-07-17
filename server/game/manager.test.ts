@@ -154,6 +154,47 @@ describe("GameManager", () => {
     expect(after).toBe(before);
   }, 20000);
 
+  // C4: closes the B6-flagged data-integrity gap — a finished game stayed
+  // in `games` forever with no guard, so resign/offerDraw (and /move) could
+  // still act against a position that still had legal moves left.
+  it("resign, then a further resign/offerDraw/playerMove/judgeMove all fail cleanly", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const first = await gm.resign(g.gameId);
+    expect(first.ok).toBe(true);
+
+    const secondResign = await gm.resign(g.gameId);
+    expect(secondResign.ok).toBe(false);
+
+    const draw = await gm.offerDraw(g.gameId);
+    expect(draw.ok).toBe(false);
+    expect(draw.accepted).toBe(false);
+
+    const move = await gm.playerMove(g.gameId, "e2", "e4");
+    expect(move.ok).toBe(false);
+
+    const judge = await gm.judgeMove(g.gameId, "e2", "e4");
+    expect(judge.ok).toBe(false);
+  }, 20000);
+
+  // C4 Part 1: override logging — playerMove writes a game_events row of
+  // type "override" only when the caller passes the override param (the
+  // client only ever does this for a "warning"-tier confirm), and writes
+  // nothing for an ordinary move.
+  it("playerMove writes a game_events override row when passed an override, and none otherwise", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const r = await gm.playerMove(g.gameId, "e2", "e4", undefined, 500, { deltaCp: 220, mateAgainst: false });
+    expect(r.ok).toBe(true);
+
+    const events = getGameEvents(g.gameId);
+    const overrideEvents = events.filter((e) => e.type === "override");
+    expect(overrideEvents).toHaveLength(1);
+    expect(JSON.parse(overrideEvents[0].detail)).toEqual({ ply: 1, deltaCp: 220, mateAgainst: false });
+
+    const g2 = await gm.newGame(sessionId, 1100);
+    await gm.playerMove(g2.gameId, "e2", "e4", undefined, 500);
+    expect(getGameEvents(g2.gameId).filter((e) => e.type === "override")).toHaveLength(0);
+  }, 20000);
+
   it("judging then confirming through playerMove produces exactly one recorded player move (no double-apply)", async () => {
     const g = await gm.newGame(sessionId, 1100);
 
