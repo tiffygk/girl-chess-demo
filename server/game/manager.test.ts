@@ -1,6 +1,6 @@
 // server/game/manager.test.ts
 import { describe, it, expect, beforeAll } from "vitest";
-import { openDb, createSession, getGameMoves, getGameEvents } from "../store/db";
+import { openDb, createSession, getGameMoves, getGameEvents, getVerdicts } from "../store/db";
 import { GameManager } from "./manager";
 
 describe("GameManager", () => {
@@ -84,17 +84,50 @@ describe("GameManager", () => {
     expect(mv.ok).toBe(true);
   }, 20000);
 
-  it("judgeMove returns ok + a silent verdict without advancing the game", async () => {
+  it("judgeMove returns ok + a real verdict without advancing the game", async () => {
     const g = await gm.newGame(sessionId, 1100);
     const before = (gm as any).games.get(g.gameId).chess.fen();
 
     const r = await gm.judgeMove(g.gameId, "e2", "e4");
     expect(r.ok).toBe(true);
-    expect(r.verdict).toEqual({ tier: "silent", deltaCp: 0, mateAgainst: false, latencyMs: expect.any(Number) });
+    expect(r.verdict?.tier).toBe("silent"); // e4 from startpos is a fine opening move
+    expect(typeof r.verdict?.deltaCp).toBe("number");
+    expect(r.verdict?.mateAgainst).toBe(false);
+    expect(typeof r.verdict?.latencyMs).toBe("number");
 
     const after = (gm as any).games.get(g.gameId).chess.fen();
     expect(after).toBe(before);
     expect(getGameMoves(g.gameId).length).toBe(0);
+  }, 20000);
+
+  it("judgeMove writes a verdict row for every judged move, silent included", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    await gm.judgeMove(g.gameId, "e2", "e4");
+    const rows = getVerdicts(g.gameId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].tier).toBe("silent");
+    expect(rows[0].ply).toBe(1);
+    expect(rows[0].move).toBe("e4");
+    expect(typeof rows[0].delta_cp).toBe("number");
+    expect(rows[0].mate_against).toBe(0);
+    expect(rows[0].advice_level).toBe("standard");
+  }, 20000);
+
+  it("two judges on the same position write two verdict rows", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    await gm.judgeMove(g.gameId, "e2", "e4");
+    await gm.judgeMove(g.gameId, "d2", "d4");
+    const rows = getVerdicts(g.gameId);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].move).toBe("e4");
+    expect(rows[1].move).toBe("d4");
+  }, 20000);
+
+  it("a judged-then-retracted move still keeps its verdict row (judging is capture-first)", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    await gm.judgeMove(g.gameId, "e2", "e4"); // player "retracts" client-side; server was never told
+    const rows = getVerdicts(g.gameId);
+    expect(rows).toHaveLength(1);
   }, 20000);
 
   it("judgeMove rejects an illegal move without touching the game", async () => {
