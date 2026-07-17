@@ -83,4 +83,44 @@ describe("GameManager", () => {
     const mv = await gm.playerMove(g.gameId, "e2", "e4");
     expect(mv.ok).toBe(true);
   }, 20000);
+
+  it("judgeMove returns ok + a silent verdict without advancing the game", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const before = (gm as any).games.get(g.gameId).chess.fen();
+
+    const r = await gm.judgeMove(g.gameId, "e2", "e4");
+    expect(r.ok).toBe(true);
+    expect(r.verdict).toEqual({ tier: "silent", deltaCp: 0, mateAgainst: false, latencyMs: expect.any(Number) });
+
+    const after = (gm as any).games.get(g.gameId).chess.fen();
+    expect(after).toBe(before);
+    expect(getGameMoves(g.gameId).length).toBe(0);
+  }, 20000);
+
+  it("judgeMove rejects an illegal move without touching the game", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const before = (gm as any).games.get(g.gameId).chess.fen();
+
+    const r = await gm.judgeMove(g.gameId, "e2", "e5");
+    expect(r.ok).toBe(false);
+
+    const after = (gm as any).games.get(g.gameId).chess.fen();
+    expect(after).toBe(before);
+  }, 20000);
+
+  it("judging then confirming through playerMove produces exactly one recorded player move (no double-apply)", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+
+    const judged = await gm.judgeMove(g.gameId, "e2", "e4");
+    expect(judged.ok).toBe(true);
+
+    const r = await gm.playerMove(g.gameId, "e2", "e4", undefined, 1000);
+    expect(r.ok).toBe(true);
+    expect(r.playerSan).toBe("e4");
+
+    const moves = getGameMoves(g.gameId);
+    // player move (ply 1) + Maia's reply (ply 2) — judge recorded nothing.
+    expect(moves.length).toBe(2);
+    expect(moves[0].san).toBe("e4");
+  }, 20000);
 });

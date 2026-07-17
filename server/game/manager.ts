@@ -2,6 +2,7 @@ import { Chess } from "chess.js";
 import { MaiaOpponent } from "../engines/maia";
 import { StockfishEvaluator } from "../engines/stockfish";
 import { createGame, finishGame, recordMove, attachEval, logGameEvent } from "../store/db";
+import { classifyMove } from "../annotator/classify";
 
 interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number }
 
@@ -77,6 +78,25 @@ export class GameManager {
       reply: { san: reply.san, uci: replyUci, capture: replyCapture },
       gameOver: over,
     };
+  }
+
+  // Stateless: no pending state is stored server-side (retract is purely
+  // client-side). Validates against a clone of the live game's current
+  // position — the live game itself is never mutated, so judging never
+  // advances the game and confirming afterward through playerMove() is a
+  // normal, independent move application (no double-apply risk).
+  async judgeMove(gameId: number, from: string, to: string, promotion?: string) {
+    const live = this.games.get(gameId);
+    if (!live) return { ok: false };
+    const clone = new Chess(live.chess.fen());
+    let mv;
+    try {
+      mv = clone.move({ from, to, promotion: (promotion as any) ?? "q" });
+    } catch {
+      return { ok: false };
+    }
+    const verdict = await classifyMove(clone, mv, this.evaluator);
+    return { ok: true, verdict };
   }
 
   async resign(gameId: number) {

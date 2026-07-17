@@ -2,7 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { Board, type BoardHandle } from "../board/Board";
 import { Piece, type PieceKind } from "../board/pieces";
-import { newSession, newGame, sendMove, modeTimer, resign, offerDraw, type MoveResponse, type GameOverInfo } from "./api";
+import {
+  newSession,
+  newGame,
+  sendMove,
+  modeTimer,
+  resign,
+  offerDraw,
+  judgeMove,
+  type MoveResponse,
+  type GameOverInfo,
+} from "./api";
 import { describeMove } from "./describeMove";
 import { victimKind } from "./captures";
 import { kingInCheckSquare } from "./checkState";
@@ -23,6 +33,14 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 // animation starts covering it, so a fast server response can't skip the
 // player past ever seeing the check they just delivered.
 const CHECK_VISIBILITY_MS = 450;
+
+// Guardian Angel pending-move (C1): fixed minimum duration the "judging…"
+// indicator holds before flipping to "judged", regardless of how fast (or
+// slow) the server actually answers. NO TIMING TELLS (owner requirement,
+// verbatim): the cadence must be identical for every verdict tier, so the
+// reveal waits for both the response AND this minimum to have elapsed.
+// Labeled starting value, same as CHECK_VISIBILITY_MS above.
+const JUDGE_MIN_MS = 900;
 
 // How long a resign/draw button stays morphed into "you sure?" before it
 // reverts on its own — an in-world confirm step instead of a modal.
@@ -65,11 +83,21 @@ export function GamePage() {
   // Which end-of-game button (if any) is currently morphed to "you sure?".
   const [confirming, setConfirming] = useState<"resign" | "draw" | null>(null);
   const [bark, setBark] = useState<string | null>(null);
+  // Guardian Angel pending-move (C1): the move the player clicked but
+  // hasn't confirmed yet. The mirror/fen are NOT touched while this is set
+  // — Board renders it as a pure overlay (dimmed origin + ghost on `to`).
+  const [pending, setPending] = useState<{ from: string; to: string; promotion?: string } | null>(null);
+  const [judgePhase, setJudgePhase] = useState<"judging" | "judged" | null>(null);
 
   const boardRef = useRef<BoardHandle>(null);
   const mirrorRef = useRef(new Chess());
   const lastReplyAtRef = useRef(Date.now());
   const busyRef = useRef(false);
+  // Bumped on every confirm/retract (and new game) so a judge response that
+  // resolves after the pending move it belongs to was superseded is a
+  // no-op — never flips judgePhase to "judged" for a move that's already
+  // gone.
+  const pendingTokenRef = useRef(0);
   const confirmTimerRef = useRef<number | null>(null);
   const barkTimerRef = useRef<number | null>(null);
   const replayingRef = useRef(false);
@@ -98,6 +126,9 @@ export function GamePage() {
     setCaptured({ w: [], b: [] });
     setConfirming(null);
     setBark(null);
+    pendingTokenRef.current += 1;
+    setPending(null);
+    setJudgePhase(null);
     const g = await newGame(sid, OPPONENT_ELO);
     mirrorRef.current = new Chess(g.fen);
     setFen(g.fen);
@@ -244,6 +275,65 @@ export function GamePage() {
     [gameId, gameOver, celebrate]
   );
 
+  // Guardian Angel pending-move (C1): the destination click Board reports
+  // now starts the pending flow instead of applying to the mirror directly.
+  // Legality is checked against a throwaway clone — the mirror itself is
+  // never touched until confirm — same "illegal locally, never sent to the
+  // server" rule handleMove already follows for the real move.
+  const handlePendingStart = useCallback(
+    (from: string, to: string) => {
+      if (!gameId || busyRef.current || gameOver || pending) return;
+      const probe = new Chess(mirrorRef.current.fen());
+      let mv;
+      try {
+        mv = probe.move({ from, to, promotion: "q" });
+      } catch {
+        return; // illegal locally — never sent to the server
+      }
+
+      const token = (pendingTokenRef.current += 1);
+      setPending({ from, to, promotion: mv.promotion });
+      setJudgePhase("judging");
+
+      (async () => {
+        const startedAt = Date.now();
+        try {
+          await judgeMove(gameId, from, to, mv.promotion);
+        } catch {
+          // No verdict to show — C1's stub is silent-only anyway, and
+          // confirm/retract never depend on this call succeeding.
+        }
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < JUDGE_MIN_MS) await sleep(JUDGE_MIN_MS - elapsed);
+        if (pendingTokenRef.current !== token) return; // superseded — stale, ignore
+        setJudgePhase("judged");
+      })();
+    },
+    [gameId, gameOver, pending]
+  );
+
+  // Confirm: never blocked by the verdict, whatever it says — runs the
+  // existing handleMove flow exactly as today (mirror apply + POST /move +
+  // animation). Clearing pending first (rather than in handleMove) keeps
+  // handleMove itself unchanged from its pre-C1 shape.
+  const handleConfirmPending = useCallback(() => {
+    if (!pending) return;
+    const { from, to } = pending;
+    pendingTokenRef.current += 1;
+    setPending(null);
+    setJudgePhase(null);
+    handleMove(from, to);
+  }, [pending, handleMove]);
+
+  // Retract: purely client-side — the server never stored any pending
+  // state to undo. Selection was already cleared by Board before onMove
+  // fired, so there's nothing else to reset.
+  const handleRetractPending = useCallback(() => {
+    pendingTokenRef.current += 1;
+    setPending(null);
+    setJudgePhase(null);
+  }, []);
+
   useEffect(() => {
     return () => {
       if (confirmTimerRef.current) window.clearTimeout(confirmTimerRef.current);
@@ -361,30 +451,58 @@ export function GamePage() {
           key={`${gameId ?? "loading"}-${resyncTick}`}
           ref={boardRef}
           fen={fen}
-          onMove={handleMove}
+          onMove={handlePendingStart}
           checkSquare={check.square}
           checkmate={check.mate}
+          pending={pending}
+          locked={pending !== null}
         />
         <CaptureTray pieces={captured.b} color="b" label="pieces you've captured" />
       </div>
-      {!gameOver && (
-        <div className="controls game-controls">
-          <button
-            className={`small${confirming === "resign" ? " confirming" : ""}`}
-            disabled={!gameId}
-            onClick={handleResignClick}
-          >
-            {confirming === "resign" ? "you sure?" : "resign"}
-          </button>
-          <button
-            className={`small${confirming === "draw" ? " confirming" : ""}`}
-            disabled={!gameId}
-            onClick={handleDrawClick}
-          >
-            {confirming === "draw" ? "you sure?" : "offer draw"}
-          </button>
+      {pending && (
+        <div className="judge-indicator" role="status" aria-live="polite">
+          {judgePhase === "judged" ? (
+            <span>judged <span className="judge-check">✓</span></span>
+          ) : (
+            <span>
+              judging
+              <span className="judge-dots" aria-hidden="true">
+                <span className="dot">.</span>
+                <span className="dot">.</span>
+                <span className="dot">.</span>
+              </span>
+            </span>
+          )}
         </div>
       )}
+      {!gameOver &&
+        (pending ? (
+          <div className="controls game-controls pending-controls">
+            <button className="small confirm-pending" onClick={handleConfirmPending}>
+              play it
+            </button>
+            <button className="small" onClick={handleRetractPending}>
+              take it back
+            </button>
+          </div>
+        ) : (
+          <div className="controls game-controls">
+            <button
+              className={`small${confirming === "resign" ? " confirming" : ""}`}
+              disabled={!gameId}
+              onClick={handleResignClick}
+            >
+              {confirming === "resign" ? "you sure?" : "resign"}
+            </button>
+            <button
+              className={`small${confirming === "draw" ? " confirming" : ""}`}
+              disabled={!gameId}
+              onClick={handleDrawClick}
+            >
+              {confirming === "draw" ? "you sure?" : "offer draw"}
+            </button>
+          </div>
+        ))}
       <p className="status-line">{status}</p>
       {gameOver && (
         <GameEndPanel
