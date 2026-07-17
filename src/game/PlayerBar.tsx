@@ -17,6 +17,8 @@ interface PlayerBarProps {
   moveNumber?: number | null;
   /** Mallow-only decline bark, anchored to this bar. */
   bark?: string | null;
+  /** Rating chip next to the name; null/undefined renders nothing. */
+  elo?: number | null;
 }
 
 // Stable keys independent of display position: pairing each captured piece
@@ -41,6 +43,7 @@ export function PlayerBar({
   chip,
   moveNumber,
   bark,
+  elo,
 }: PlayerBarProps) {
   const name = seat === "mallow" ? "mallow" : "you";
   const label = seat === "mallow" ? "pieces mallow has captured" : "pieces you've captured";
@@ -50,6 +53,7 @@ export function PlayerBar({
     <div className={`player-bar ${seat}${active ? " active" : ""}`}>
       <div className="bar-identity">
         <span className="bar-name">{name}</span>
+        {elo != null && <span className="bar-elo">{elo}</span>}
         {typeof moveNumber === "number" && <span className="bar-move-count">move {moveNumber}</span>}
       </div>
       <div className="bar-captures" aria-label={label}>
