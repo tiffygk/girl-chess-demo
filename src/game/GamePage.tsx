@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { Board, type BoardHandle } from "../board/Board";
+import { Piece, type PieceKind } from "../board/pieces";
 import { newSession, newGame, sendMove, modeTimer, type MoveResponse, type GameOverInfo } from "./api";
 import { describeMove } from "./describeMove";
+import { victimKind } from "./captures";
 import { kingInCheckSquare } from "./checkState";
 import { reconcile } from "./reconcile";
+
+interface Captured {
+  w: PieceKind[]; // white pieces captured (by the opponent)
+  b: PieceKind[]; // black pieces captured (by the player)
+}
 
 const OPPONENT_ELO = 1100;
 
@@ -48,6 +55,7 @@ export function GamePage() {
   const [status, setStatus] = useState("finding an opponent...");
   const [gameOver, setGameOver] = useState<GameOverInfo | null>(null);
   const [resyncTick, setResyncTick] = useState(0);
+  const [captured, setCaptured] = useState<Captured>({ w: [], b: [] });
 
   const boardRef = useRef<BoardHandle>(null);
   const mirrorRef = useRef(new Chess());
@@ -62,6 +70,7 @@ export function GamePage() {
   const startGame = useCallback(async (sid: number) => {
     setGameOver(null);
     setStatus("finding an opponent...");
+    setCaptured({ w: [], b: [] });
     const g = await newGame(sid, OPPONENT_ELO);
     mirrorRef.current = new Chess(g.fen);
     setFen(g.fen);
@@ -93,6 +102,9 @@ export function GamePage() {
     async (from: string, to: string) => {
       if (!gameId || busyRef.current || gameOver) return;
       const mirror = mirrorRef.current;
+      // Snapshot before mutating: the victim's kind (and, for en passant,
+      // even its presence at capturedSquare) can only be read pre-move.
+      const preMove = new Chess(mirror.fen());
       let mv;
       try {
         mv = mirror.move({ from, to, promotion: "q" });
@@ -104,6 +116,10 @@ export function GamePage() {
       setStatus("");
       const board = boardRef.current;
       const render = describeMove(mv);
+      const victim = victimKind(preMove, render);
+      if (victim) {
+        setCaptured((prev) => ({ ...prev, b: [...prev.b, victim] }));
+      }
 
       try {
         if (board) {
@@ -155,8 +171,14 @@ export function GamePage() {
           const replyFrom = res.reply.uci.slice(0, 2);
           const replyTo = res.reply.uci.slice(2, 4);
           const replyPromotion = res.reply.uci.length > 4 ? res.reply.uci[4] : "q";
+          // Same pre-move snapshot rule as the player's move, above.
+          const preReply = new Chess(mirror.fen());
           const replyMove = mirror.move({ from: replyFrom, to: replyTo, promotion: replyPromotion });
           const replyRender = describeMove(replyMove);
+          const replyVictim = victimKind(preReply, replyRender);
+          if (replyVictim) {
+            setCaptured((prev) => ({ ...prev, w: [...prev.w, replyVictim] }));
+          }
           if (board) {
             if (replyRender.capture) await board.glitchCapture(replyRender);
             else await board.glide(replyRender);
@@ -192,14 +214,18 @@ export function GamePage() {
   return (
     <div className="game-page">
       {fallback && <div className="fallback-banner">fallback opponents (lc0 unavailable)</div>}
-      <Board
-        key={`${gameId ?? "loading"}-${resyncTick}`}
-        ref={boardRef}
-        fen={fen}
-        onMove={handleMove}
-        checkSquare={check.square}
-        checkmate={check.mate}
-      />
+      <div className="board-with-trays">
+        <CaptureTray pieces={captured.w} color="w" label="pieces mallow has captured" />
+        <Board
+          key={`${gameId ?? "loading"}-${resyncTick}`}
+          ref={boardRef}
+          fen={fen}
+          onMove={handleMove}
+          checkSquare={check.square}
+          checkmate={check.mate}
+        />
+        <CaptureTray pieces={captured.b} color="b" label="pieces you've captured" />
+      </div>
       <p className="status-line">{status}</p>
       {gameOver && (
         <div className="game-over pop-in">
@@ -209,6 +235,22 @@ export function GamePage() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// A side tray of captured-piece sprites. `pieces` is append-only (capture
+// order preserved, newest last), so index-based keys are stable — a
+// re-render only ever mounts one new node, which is what lets the `pop-in`
+// pop keyframe play once per capture instead of replaying on every render.
+function CaptureTray({ pieces, color, label }: { pieces: PieceKind[]; color: "w" | "b"; label: string }) {
+  return (
+    <div className="tray" aria-label={label}>
+      {pieces.map((kind, i) => (
+        <div key={`${color}-${i}`} className="tray-piece pop-in">
+          <Piece kind={kind} color={color} />
+        </div>
+      ))}
     </div>
   );
 }

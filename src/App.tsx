@@ -7,10 +7,12 @@ function App() {
     <div className="gc-app">
       <PieceDefs />
       <span className="px">GIRL CHESS</span>
-      <h1 className="glitch" data-text="Girl Chess">
-        Girl Chess
-      </h1>
-      <p className="sub">tutor with benefits</p>
+      <div className="wordmark">
+        <h1 className="glitch" data-text="Girl Chess">
+          Girl Chess
+        </h1>
+        <p className="tagline">tutor with benefits</p>
+      </div>
       <GamePage />
     </div>
   );
