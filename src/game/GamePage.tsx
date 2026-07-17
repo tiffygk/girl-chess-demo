@@ -7,6 +7,8 @@ import { describeMove } from "./describeMove";
 import { victimKind } from "./captures";
 import { kingInCheckSquare } from "./checkState";
 import { reconcile } from "./reconcile";
+import { findTakedownPiece, type Takedown } from "./terminal";
+import { GameEndPanel } from "./GameEndPanel";
 
 interface Captured {
   w: PieceKind[]; // white pieces captured (by the opponent)
@@ -30,12 +32,6 @@ const CONFIRM_MS = 3000;
 const BARK_MS = 4000;
 
 const DRAW_DECLINE_BARK = "mallow declines. play on.";
-
-function resultText(result: string): string {
-  if (result === "1-0") return "you win. mallow melts.";
-  if (result === "0-1") return "mallow wins this one.";
-  return "draw.";
-}
 
 // Server-authoritative desync recovery: when the server hands back a fen
 // (on ok:false, or when a post-success reconcile() finds a mismatch),
@@ -63,6 +59,7 @@ export function GamePage() {
   const [fallback, setFallback] = useState(false);
   const [status, setStatus] = useState("finding an opponent...");
   const [gameOver, setGameOver] = useState<GameOverInfo | null>(null);
+  const [takedownMove, setTakedownMove] = useState<Takedown | null>(null);
   const [resyncTick, setResyncTick] = useState(0);
   const [captured, setCaptured] = useState<Captured>({ w: [], b: [] });
   // Which end-of-game button (if any) is currently morphed to "you sure?".
@@ -75,6 +72,19 @@ export function GamePage() {
   const busyRef = useRef(false);
   const confirmTimerRef = useRef<number | null>(null);
   const barkTimerRef = useRef<number | null>(null);
+  const replayingRef = useRef(false);
+
+  // Fires the right terminal-sequence celebration for a game-over result:
+  // confetti for a player win, an electric storm for a loss, a soft shimmer
+  // for a draw. Fire-and-forget, non-blocking — matches the existing
+  // board?.confetti() call style.
+  const celebrate = useCallback((result: string) => {
+    const board = boardRef.current;
+    if (!board) return;
+    if (result === "1-0") board.confetti();
+    else if (result === "0-1") board.storm();
+    else board.shimmer();
+  }, []);
 
   const check = useMemo(() => {
     const c = new Chess(fen);
@@ -83,6 +93,7 @@ export function GamePage() {
 
   const startGame = useCallback(async (sid: number) => {
     setGameOver(null);
+    setTakedownMove(null);
     setStatus("finding an opponent...");
     setCaptured({ w: [], b: [] });
     setConfirming(null);
@@ -210,9 +221,19 @@ export function GamePage() {
         }
 
         if (res.gameOver) {
+          // Part 1 (checkmate only): find the winning side's nearest
+          // attacker and play the king-takedown before the panel appears.
+          // Resign/draw endings never reach here (they set gameOver from
+          // their own handlers), so this is the only gameOver path that
+          // needs the checkmate check.
+          const tm = mirror.isCheckmate() ? findTakedownPiece(mirror) : null;
+          if (tm && board) {
+            await board.takedown(tm);
+          }
+          setTakedownMove(tm);
           setGameOver(res.gameOver);
           setStatus("");
-          board?.confetti();
+          celebrate(res.gameOver.result);
         } else {
           setStatus("your move");
         }
@@ -220,7 +241,7 @@ export function GamePage() {
         busyRef.current = false;
       }
     },
-    [gameId, gameOver]
+    [gameId, gameOver, celebrate]
   );
 
   useEffect(() => {
@@ -263,14 +284,17 @@ export function GamePage() {
       try {
         const r = await resign(gameId);
         if (r.ok && r.result) {
+          // Resign skips the takedown (there's no checkmate to stage).
+          setTakedownMove(null);
           setGameOver({ result: r.result });
           setStatus("");
+          celebrate(r.result);
         }
       } finally {
         busyRef.current = false;
       }
     })();
-  }, [gameId, gameOver, confirming, armConfirm, clearConfirmTimer]);
+  }, [gameId, gameOver, confirming, armConfirm, clearConfirmTimer, celebrate]);
 
   const handleDrawClick = useCallback(() => {
     if (!gameId || busyRef.current || gameOver) return;
@@ -287,8 +311,11 @@ export function GamePage() {
       try {
         const r = await offerDraw(gameId);
         if (r.ok && r.accepted && r.result) {
+          // Accepted draw skips the takedown too.
+          setTakedownMove(null);
           setGameOver({ result: r.result });
           setStatus("");
+          celebrate(r.result);
         } else {
           setStatus("your move");
           setBark(DRAW_DECLINE_BARK);
@@ -299,11 +326,24 @@ export function GamePage() {
         busyRef.current = false;
       }
     })();
-  }, [gameId, gameOver, confirming, armConfirm, clearConfirmTimer]);
+  }, [gameId, gameOver, confirming, armConfirm, clearConfirmTimer, celebrate]);
 
   const handleNewGame = useCallback(() => {
     if (sessionId != null) startGame(sessionId);
   }, [sessionId, startGame]);
+
+  // "replay the takedown" — re-runs Part 1's glide+shatter without touching
+  // any game state. Guarded against re-entrancy so a double-click can't
+  // stack two shatter bursts on top of each other.
+  const handleReplayTakedown = useCallback(async () => {
+    if (!takedownMove || replayingRef.current) return;
+    replayingRef.current = true;
+    try {
+      await boardRef.current?.takedown(takedownMove);
+    } finally {
+      replayingRef.current = false;
+    }
+  }, [takedownMove]);
 
   return (
     <div className="game-page">
@@ -347,12 +387,12 @@ export function GamePage() {
       )}
       <p className="status-line">{status}</p>
       {gameOver && (
-        <div className="game-over pop-in">
-          <div className="result">{resultText(gameOver.result)}</div>
-          <button className="primary" onClick={handleNewGame}>
-            New game
-          </button>
-        </div>
+        <GameEndPanel
+          gameOver={gameOver}
+          takedownMove={takedownMove}
+          onReplayTakedown={handleReplayTakedown}
+          onNewGame={handleNewGame}
+        />
       )}
     </div>
   );

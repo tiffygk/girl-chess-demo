@@ -28,7 +28,17 @@ interface PieceEntry {
 export interface BoardHandle {
   glide(move: MoveRender): Promise<void>;
   glitchCapture(move: MoveRender): Promise<void>;
+  /**
+   * Checkmate-only terminal sequence: the attacker at `from` glides onto
+   * the mated king's square at `to`, then the king glitch-shatters. Safe to
+   * call again on the same {from, to} after the first run completes (e.g.
+   * "replay the takedown") — the attacker is by then already sitting on
+   * `to`, so the replay just re-plays the shatter flourish in place.
+   */
+  takedown(move: { from: string; to: string }): Promise<void>;
   confetti(): void;
+  storm(): void;
+  shimmer(): void;
 }
 
 interface BoardProps {
@@ -89,6 +99,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
   const [entries, setEntries] = useState<PieceEntry[]>(() => entriesFromFen(fen));
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
+  const [glow, setGlow] = useState(false);
 
   const entriesRef = useRef(entries);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -109,7 +120,10 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     [updateEntries]
   );
 
-  const burst = useCallback((idx: number, count: number) => {
+  // `big` scales up a capture-style pixel burst for the king-takedown shatter
+  // (Part 1 of the terminal sequence) — larger fragments, longer flight,
+  // longer duration than the plain glitchCapture burst.
+  const burst = useCallback((idx: number, count: number, big = false) => {
     const innerEl = innerRef.current;
     if (!innerEl) return;
     const rect = innerEl.getBoundingClientRect();
@@ -120,26 +134,29 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     for (let i = 0; i < count; i++) {
       const px = document.createElement("div");
       px.className = "pixel";
-      const s = 4 + Math.random() * 7;
+      const s = big ? 9 + Math.random() * 14 : 4 + Math.random() * 7;
       px.style.width = px.style.height = s + "px";
       px.style.background = PALETTE[Math.floor(Math.random() * PALETTE.length)];
       px.style.left = cx + "px";
       px.style.top = cy + "px";
       innerEl.appendChild(px);
       const ang = Math.random() * Math.PI * 2;
-      const dist = 22 + Math.random() * 55;
+      const dist = big ? 40 + Math.random() * 90 : 22 + Math.random() * 55;
       px
         .animate(
           [
             { transform: "translate(0,0) rotate(0deg)", opacity: 1 },
             {
               transform: `translate(${Math.cos(ang) * dist}px, ${
-                Math.sin(ang) * dist - 14
+                Math.sin(ang) * dist - (big ? 22 : 14)
               }px) rotate(${(Math.random() - 0.5) * 300}deg)`,
               opacity: 0,
             },
           ],
-          { duration: 480 + Math.random() * 250, easing: "cubic-bezier(.2,.7,.4,1)" }
+          {
+            duration: (big ? 650 : 480) + Math.random() * (big ? 400 : 250),
+            easing: "cubic-bezier(.2,.7,.4,1)",
+          }
         )
         .addEventListener("finish", () => px.remove());
     }
@@ -238,14 +255,114 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     [patchEntry, updateEntries, burst, glideEntry, morphPromotion]
   );
 
-  const confetti = useCallback(() => {
-    for (let i = 0; i < 10; i++) {
-      const idx = Math.floor(Math.random() * 64);
-      setTimeout(() => burst(idx, 14), i * 55);
-    }
-  }, [burst]);
+  // Checkmate-only terminal sequence (Part 1): glide the attacker onto the
+  // king's square, then shatter the king with a scaled-up burst. Tolerant of
+  // being called a second time on the same {from, to} (the "replay the
+  // takedown" button in GameEndPanel) — by then the attacker is already
+  // sitting on `to` and there's no king left to remove, so the replay just
+  // re-plays the shatter in place.
+  const takedown = useCallback(
+    async (move: { from: string; to: string }) => {
+      const { from, to } = move;
+      animatingRef.current = true;
+      const mover = entriesRef.current.find((e) => e.square === from);
 
-  useImperativeHandle(ref, () => ({ glide, glitchCapture, confetti }), [glide, glitchCapture, confetti]);
+      if (mover) {
+        beep("move");
+        patchEntry(mover.id, { square: to, moving: true });
+        await sleep(500);
+        patchEntry(mover.id, { moving: false, land: true });
+        await sleep(150);
+        patchEntry(mover.id, { land: false });
+
+        const king = entriesRef.current.find((e) => e.square === to && e.id !== mover.id);
+        beep("glitch");
+        burst(squareToIdx(to), 26, true);
+        if (king) {
+          const kingId = king.id;
+          updateEntries((prev) => prev.filter((e) => e.id !== kingId));
+        }
+        setShake(true);
+        await sleep(650);
+        setShake(false);
+      } else {
+        // Replay: the attacker already settled on `to` from the first run.
+        const settled = entriesRef.current.find((e) => e.square === to);
+        beep("glitch");
+        if (settled) patchEntry(settled.id, { glitchIn: true });
+        burst(squareToIdx(to), 26, true);
+        setShake(true);
+        await sleep(650);
+        setShake(false);
+        if (settled) patchEntry(settled.id, { glitchIn: false });
+      }
+
+      animatingRef.current = false;
+    },
+    [patchEntry, updateEntries, burst]
+  );
+
+  // Full-screen win celebration — appended to document.body (not innerRef's
+  // board rect) so it covers the whole viewport, not just the board. Fully
+  // self-cleans: every particle removes itself on animation finish, and the
+  // overlay removes itself after ~2.2s.
+  const confetti = useCallback(() => {
+    const overlay = document.createElement("div");
+    overlay.className = "gc-confetti-overlay";
+    document.body.appendChild(overlay);
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const count = 90;
+    for (let i = 0; i < count; i++) {
+      const px = document.createElement("div");
+      px.className = "gc-confetti-piece";
+      const s = 6 + Math.random() * 10;
+      px.style.width = px.style.height = s + "px";
+      px.style.background = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+      px.style.left = Math.random() * w + "px";
+      px.style.top = "-20px";
+      overlay.appendChild(px);
+      const drift = (Math.random() - 0.5) * 160;
+      const duration = 1500 + Math.random() * 700;
+      px
+        .animate(
+          [
+            { transform: "translate(0,0) rotate(0deg)", opacity: 1 },
+            {
+              transform: `translate(${drift}px, ${h + 40}px) rotate(${(Math.random() - 0.5) * 720}deg)`,
+              opacity: 1,
+            },
+          ],
+          { duration, delay: Math.random() * 200, easing: "cubic-bezier(.2,.6,.35,1)" }
+        )
+        .addEventListener("finish", () => px.remove());
+    }
+    setTimeout(() => overlay.remove(), 2200);
+  }, []);
+
+  // Loss celebration: an "electric storm" — screen-edge lightning flicker in
+  // the glitch palette, driven entirely by the gcStormFlicker CSS keyframe
+  // (see sugar-glitch.css). Non-blocking, ~2s, self-removing.
+  const storm = useCallback(() => {
+    const overlay = document.createElement("div");
+    overlay.className = "gc-storm-overlay";
+    document.body.appendChild(overlay);
+    setTimeout(() => overlay.remove(), 2000);
+  }, []);
+
+  // Draw celebration (or lack thereof): a soft glow pulse on the board frame
+  // itself rather than a full-screen effect — a draw isn't a win or a loss,
+  // so it gets a quieter acknowledgment.
+  const shimmer = useCallback(() => {
+    setGlow(true);
+    setTimeout(() => setGlow(false), 1800);
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({ glide, glitchCapture, takedown, confetti, storm, shimmer }),
+    [glide, glitchCapture, takedown, confetti, storm, shimmer]
+  );
 
   const turn = fen.split(" ")[1] === "b" ? "b" : "w";
 
@@ -314,9 +431,23 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
 
   const corruptIdx = lastCapture ? new Set([...AMBIENT_CORRUPT, squareToIdx(lastCapture.square)]) : AMBIENT_CORRUPT;
 
+  // Guards specifically against the mate ring lingering on an empty square:
+  // once the king-takedown shatters the mated king, its entry is removed
+  // from `entries` entirely (not just moved), even though checkSquare and
+  // checkmate (props derived from GamePage's fen, which doesn't change
+  // during/after the takedown) still point at that square. Scoped to the
+  // checkmate case only — ordinary in-progress check-ring rendering must
+  // stay untouched, since a king merely *moving* out of check (its entry's
+  // square changing, not being removed) is a normal, frequent case during
+  // move animation and must keep following the old checkSquare-only rule.
+  const matedKingGone = useMemo(
+    () => checkmate && checkSquare != null && !entries.some((e) => e.square === checkSquare && e.kind === "k"),
+    [entries, checkSquare, checkmate]
+  );
+
   return (
     <div className="stage">
-      <div className={"board-frame" + (shake ? " shake" : "")}>
+      <div className={"board-frame" + (shake ? " shake" : "") + (glow ? " shimmer" : "")}>
         <div className="board-inner" ref={innerRef}>
           <div className="squares">
             {Array.from({ length: 64 }, (_, idx) => {
@@ -324,6 +455,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               const row = Math.floor(idx / 8);
               const col = idx % 8;
               const light = (row + col) % 2 === 0;
+              const isCheckRing = square === checkSquare && !matedKingGone;
               const classes = [
                 "sq",
                 light ? "light" : "dark",
@@ -331,8 +463,8 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 square === selectedSquare ? "target-hint" : "",
                 legalTargets.capture.has(square) ? "hint-capture" : "",
                 legalTargets.normal.has(square) ? "hint" : "",
-                square === checkSquare ? "check-ring" : "",
-                square === checkSquare && checkmate ? "mate" : "",
+                isCheckRing ? "check-ring" : "",
+                isCheckRing && checkmate ? "mate" : "",
               ]
                 .filter(Boolean)
                 .join(" ");
