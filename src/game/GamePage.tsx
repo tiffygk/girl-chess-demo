@@ -28,7 +28,14 @@ import { PlayerBar } from "./PlayerBar";
 
 type Captured = CapturedBySide;
 
-const OPPONENT_ELO = 1100;
+// The five bands with real maia weights in weights/ (server snaps anyway).
+const OPPONENT_ELOS = [1100, 1200, 1300, 1400, 1500];
+const OPPONENT_ELO_KEY = "gc-opponent-elo";
+
+function readEloPref(): number {
+  const raw = Number(localStorage.getItem(OPPONENT_ELO_KEY));
+  return OPPONENT_ELOS.includes(raw) ? raw : 1100;
+}
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -152,6 +159,11 @@ export function GamePage() {
   // within the session (brief: state per-session).
   const [coachOn, setCoachOn] = useState<boolean>(() => readBoolPref(COACH_MODE_KEY));
   const [confirmOn, setConfirmOn] = useState<boolean>(() => readBoolPref(CONFIRM_STEP_KEY));
+  // Increment 2.5: opponent strength, chosen pre-game and persisted; the
+  // server snaps whatever we send to the nearest real maia band (Task 7) and
+  // echoes it back, so this state always converges on a real band even if
+  // localStorage somehow held something stale.
+  const [opponentElo, setOpponentElo] = useState<number>(readEloPref);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // judge-post (coach-only) mode: the move already played, so there's no
   // pending overlay to hang a badge off of — this is that badge's own
@@ -214,7 +226,7 @@ export function GamePage() {
     return { square: kingInCheckSquare(c), mate: c.isCheckmate() };
   }, [fen]);
 
-  const startGame = useCallback(async (sid: number) => {
+  const startGame = useCallback(async (sid: number, elo: number) => {
     setGameOver(null);
     setTakedownMove(null);
     setStatus("finding an opponent...");
@@ -240,11 +252,12 @@ export function GamePage() {
       inputHintTimerRef.current = null;
     }
     setInputHint(null);
-    const g = await newGame(sid, OPPONENT_ELO);
+    const g = await newGame(sid, elo);
     mirrorRef.current = new Chess(g.fen);
     setFen(g.fen);
     setFallback(g.fallback);
     setGameId(g.gameId);
+    setOpponentElo(g.elo ?? elo);
     lastReplyAtRef.current = Date.now();
     // Turn state now lives in the player bars (see render) — clear the
     // "finding an opponent..." transient now that the game is ready, but
@@ -258,12 +271,11 @@ export function GamePage() {
       const s = await newSession();
       if (cancelled) return;
       setSessionId(s.sessionId);
-      await startGame(s.sessionId);
     })();
     return () => {
       cancelled = true;
     };
-  }, [startGame]);
+  }, []);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -823,8 +835,8 @@ export function GamePage() {
   }, [gameId, gameOver, endGameOutcome, clearEndGameTimer, celebrate]);
 
   const handleNewGame = useCallback(() => {
-    if (sessionId != null) startGame(sessionId);
-  }, [sessionId, startGame]);
+    if (sessionId != null) startGame(sessionId, opponentElo);
+  }, [sessionId, opponentElo, startGame]);
 
   // "replay the takedown" (Wave D) — owner feedback, verbatim: "play the
   // last three moves or four moves without delays in between but not too
@@ -1051,6 +1063,31 @@ export function GamePage() {
                 </button>
                 <button className="small" onClick={handleRetractPending}>
                   take it back
+                </button>
+              </div>
+            ) : sessionId && !gameId ? (
+              <div className="controls game-controls pregame-panel">
+                <label className="pregame-label" htmlFor="pregame-elo">
+                  mallow plays at
+                </label>
+                <select
+                  id="pregame-elo"
+                  className="pregame-select"
+                  value={opponentElo}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setOpponentElo(v);
+                    localStorage.setItem(OPPONENT_ELO_KEY, String(v));
+                  }}
+                >
+                  {OPPONENT_ELOS.map((elo) => (
+                    <option key={elo} value={elo}>
+                      {elo}
+                    </option>
+                  ))}
+                </select>
+                <button className="small" onClick={() => startGame(sessionId, opponentElo)}>
+                  start game
                 </button>
               </div>
             ) : (

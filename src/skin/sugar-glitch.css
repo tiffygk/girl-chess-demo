@@ -119,6 +119,27 @@
 
 .gc-app .game-controls { margin: 0; } /* action-slot (see below) owns the spacing now */
 
+/* Increment 2.5: pre-game opponent elo picker — sits where the game-controls
+   button row goes once a session exists but no game has started yet. Colors
+   copied straight from button.small (background/border/color tokens),
+   invented no new hex values. */
+.gc-app .pregame-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gc-app .pregame-label {
+  font-size: 13px;
+  opacity: 0.85;
+  color: #4A3B7E;
+}
+.gc-app .pregame-select {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
+  color: #4A3B7E; background: #FFFFFF;
+  border: none; border-radius: 6px; padding: 4px 8px; cursor: pointer;
+  box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.2);
+}
+
 /* Wave B: fixed-height reserve directly under the board-stack card so the
    judge indicator and the controls (play it/take it back, resign/offer
    draw) appearing or disappearing never nudges the board vertically — the
