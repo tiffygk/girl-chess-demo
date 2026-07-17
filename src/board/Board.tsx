@@ -33,6 +33,8 @@ interface BoardProps {
   fen: string;
   onMove: (from: string, to: string) => void;
   lastCapture?: { square: string };
+  checkSquare?: string | null;
+  checkmate?: boolean;
 }
 
 // ambient decorative jitter squares, same indices as the demo
@@ -79,7 +81,7 @@ function entriesFromFen(fen: string): PieceEntry[] {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
-  { fen, onMove, lastCapture },
+  { fen, onMove, lastCapture, checkSquare, checkmate },
   ref
 ) {
   const [entries, setEntries] = useState<PieceEntry[]>(() => entriesFromFen(fen));
@@ -288,6 +290,8 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 light ? "light" : "dark",
                 corruptIdx.has(idx) ? "corrupt" : "",
                 square === selectedSquare ? "target-hint" : "",
+                square === checkSquare ? "check-ring" : "",
+                square === checkSquare && checkmate ? "mate" : "",
               ]
                 .filter(Boolean)
                 .join(" ");

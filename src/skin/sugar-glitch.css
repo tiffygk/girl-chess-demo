@@ -97,6 +97,21 @@
 .gc-app .sq:hover { transform: scale(1.04); }
 .gc-app .sq.target-hint { box-shadow: inset 0 0 0 3px #23E5FF, inset 0 -2px 0 rgba(120,95,200,.35); }
 .gc-app .sq.corrupt { animation: corrupt 7s infinite steps(1); }
+
+/* check ring — sits under the piece sprite (.pieces layer paints over .squares) */
+.gc-app .sq.check-ring {
+  box-shadow: inset 0 0 0 4px #FF3DA6, 0 0 16px 3px rgba(255,61,166,.6);
+  animation: checkPulse 1.1s ease-in-out infinite;
+}
+@keyframes checkPulse {
+  0%, 100% { box-shadow: inset 0 0 0 4px #FF3DA6, 0 0 8px 1px rgba(255,61,166,.4); }
+  50% { box-shadow: inset 0 0 0 5px #FF3DA6, 0 0 20px 6px rgba(255,61,166,.85); }
+}
+/* checkmate: ring locks solid, no pulse, persists into the end state */
+.gc-app .sq.check-ring.mate {
+  animation: none;
+  box-shadow: inset 0 0 0 5px #FF3DA6, 0 0 20px 6px rgba(255,61,166,.85);
+}
 @keyframes corrupt {
   0%, 90% { filter: none; transform: none; }
   91% { filter: hue-rotate(140deg) saturate(3); transform: translate(2px, 0) skewX(6deg); }
