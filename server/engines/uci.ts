@@ -42,7 +42,14 @@ export class UciEngine {
     this.proc.stdin.write(cmd + "\n");
   }
 
-  onLine(fn: (line: string) => void) { this.listeners.push(fn); }
+  onLine(fn: (line: string) => void): () => void {
+    this.listeners.push(fn);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== fn);
+    };
+  }
+
+  listenerCount(): number { return this.listeners.length; }
 
   waitFor(pred: (line: string) => boolean, timeoutMs = 10000): Promise<string> {
     return new Promise((resolve, reject) => {

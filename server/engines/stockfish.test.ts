@@ -19,4 +19,12 @@ describe("StockfishEvaluator", () => {
     expect(ev.bestMove).toBe("f3f7");
     expect(ev.mate).toBe(1);
   }, 15000);
+
+  it("does not leak line listeners across evaluate() calls", async () => {
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    await sf.evaluate(fen, 200);
+    await sf.evaluate(fen, 200);
+    await sf.evaluate(fen, 200);
+    expect((sf as any).engine.listenerCount()).toBe(0);
+  }, 20000);
 });
