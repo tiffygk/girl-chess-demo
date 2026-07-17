@@ -37,6 +37,11 @@ function readEloPref(): number {
   return OPPONENT_ELOS.includes(raw) ? raw : 1100;
 }
 
+// Owner-calibratable: her displayed rating. A later increment computes this
+// from game history in data/girlchess.db; until then it is a fixed label
+// (owner, 2026-07-17: "for now let's just put that my elo is 1350").
+const PLAYER_ELO = 1350;
+
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 // Minimum time the check ring must stay on screen before the reply
@@ -959,6 +964,7 @@ export function GamePage() {
           materialLead={material.leader === "mallow" ? material.points : null}
           active={mallowActive}
           chip={mallowChip}
+          elo={opponentElo}
         />
         <Board
           key={`${gameId ?? "loading"}-${resyncTick}`}
@@ -983,6 +989,7 @@ export function GamePage() {
           active={youActive}
           chip={youChip}
           moveNumber={moveNumber}
+          elo={PLAYER_ELO}
         />
       </div>
       {/* Fixed-height reserve so the judge indicator and controls appearing

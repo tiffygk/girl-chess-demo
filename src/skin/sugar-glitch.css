@@ -355,6 +355,11 @@
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 14px;
   text-transform: lowercase;
 }
+.gc-app .bar-elo {
+  font-size: 11px;
+  opacity: 0.65;
+  margin-left: 6px;
+}
 .gc-app .bar-move-count {
   font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
   color: #9A8BC9;
