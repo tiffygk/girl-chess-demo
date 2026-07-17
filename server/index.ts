@@ -67,6 +67,39 @@ app.post("/api/game/:id/draw-offer", async (req, res) => {
   }
 });
 
+// Wave C, task C-A: the single "end the game?" flow. Both the arm-step
+// preview and the second-click execution hit this same route — execute
+// just tells the server whether to actually finish the game with the
+// decision it just derived, never something the client gets to remember
+// and hand back.
+app.post("/api/game/:id/adjudicate", async (req, res) => {
+  const { execute } = req.body;
+  try {
+    const result = await gm.adjudicate(Number(req.params.id), Boolean(execute));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
+// Wave C, task C-B: fire-and-forget observability for the Lab's
+// hint-escalation metric — one game_events row per hint reveal.
+app.post("/api/game/:id/hint", (req, res) => {
+  const { level, tier, deltaCp, bestUci, fen } = req.body;
+  try {
+    const result = gm.logHint(Number(req.params.id), {
+      level: Number(level),
+      tier: String(tier),
+      deltaCp: deltaCp ?? null,
+      bestUci: String(bestUci),
+      fen: String(fen),
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 app.post("/api/session/:id/mode", (req, res) => {
   const { mode, seconds } = req.body;
   addModeMinutes(Number(req.params.id), String(mode), Number(seconds) || 0);

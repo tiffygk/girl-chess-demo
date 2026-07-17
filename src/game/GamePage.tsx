@@ -6,9 +6,9 @@ import {
   newGame,
   sendMove,
   modeTimer,
-  resign,
-  offerDraw,
+  adjudicate,
   judgeMove,
+  logHint,
   type MoveResponse,
   type GameOverInfo,
   type Verdict,
@@ -20,6 +20,7 @@ import { reconcile } from "./reconcile";
 import { findTakedownPiece, type Takedown } from "./terminal";
 import { GameEndPanel } from "./GameEndPanel";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
+import { nextHintLevel, hintCopy, hintRevealSquares, type HintLevel } from "./hintFlow";
 import { PlayerBar } from "./PlayerBar";
 
 type Captured = CapturedBySide;
@@ -41,18 +42,15 @@ const CHECK_VISIBILITY_MS = 450;
 // Labeled starting value, same as CHECK_VISIBILITY_MS above.
 const JUDGE_MIN_MS = 900;
 
-// How long a resign/draw button stays morphed into "you sure?" before it
-// reverts on its own — an in-world confirm step instead of a modal.
+// How long the "end the game?" button stays morphed into its outcome copy
+// before it reverts on its own — an in-world confirm step instead of a
+// modal. Wave C: was resign/draw-specific; now the single adjudicated
+// end-game button's arm-then-confirm window.
 const CONFIRM_MS = 3000;
-
-// How long the opponent's decline bark stays on screen.
-const BARK_MS = 4000;
 
 // A5: how long the "can't castle right now" (etc.) input hint stays in the
 // status line before reverting to whatever `status` currently holds.
 const INPUT_HINT_MS = 3000;
-
-const DRAW_DECLINE_BARK = "mallow declines. play on.";
 
 // C3 (Silent Partner toggle + confirm decoupling): localStorage keys, exact
 // names per the brief — the Lab / a future settings sync can rely on these.
@@ -98,9 +96,12 @@ export function GamePage() {
   const [takedownMove, setTakedownMove] = useState<Takedown | null>(null);
   const [resyncTick, setResyncTick] = useState(0);
   const [captured, setCaptured] = useState<Captured>({ w: [], b: [] });
-  // Which end-of-game button (if any) is currently morphed to "you sure?".
-  const [confirming, setConfirming] = useState<"resign" | "draw" | null>(null);
-  const [bark, setBark] = useState<string | null>(null);
+  // Wave C, task C-A: the single "end the game?" button's armed state — set
+  // once the preview call resolves, to the outcome it previewed ("win" |
+  // "draw" | "resign"). Null = not armed (button reads "end the game?").
+  // Reverts to null on its own after CONFIRM_MS, same in-world
+  // arm-then-confirm pattern the old separate resign/draw buttons used.
+  const [endGameOutcome, setEndGameOutcome] = useState<"win" | "draw" | "resign" | null>(null);
   // Guardian Angel pending-move (C1, extended in A1): the move the player
   // clicked but hasn't confirmed yet. The mirror/fen are NOT touched while
   // this is set — Board renders it as a pure overlay (dimmed origin(s) +
@@ -125,6 +126,12 @@ export function GamePage() {
   // C1's "judged ✓" slot. null while judging, and for tier "silent" (no
   // badge, just the plain "judged ✓" C1 already had).
   const [verdict, setVerdict] = useState<Verdict | null>(null);
+  // Wave C, task C-B: deterministic hint escalation ladder for the CURRENT
+  // pending move's judged verdict. 0 = nothing revealed (only the "help?"
+  // affordance shows for nudge/warning). Resets to 0 on retarget/cancel/
+  // confirm/new pending — see handlePendingStart/handleConfirmPending/
+  // handleRetractPending below.
+  const [hintLevel, setHintLevel] = useState<HintLevel>(0);
   // C3: the two independent switches. coachOn = "coach judges my moves"
   // (the pill); confirmOn = "confirm before playing". Crossed via
   // resolveMoveFlow to pick one of the 4 move flows on every destination
@@ -165,8 +172,12 @@ export function GamePage() {
   // no-op — never flips judgePhase to "judged" for a move that's already
   // gone.
   const pendingTokenRef = useRef(0);
-  const confirmTimerRef = useRef<number | null>(null);
-  const barkTimerRef = useRef<number | null>(null);
+  // Wave C, task C-A: the "end the game?" arm-then-confirm revert timer,
+  // and a re-entrancy guard for the preview call itself (distinct from
+  // busyRef, which gates the main move flow — arming end-game shouldn't be
+  // blocked by, or block, an in-flight move).
+  const endGameTimerRef = useRef<number | null>(null);
+  const endGameBusyRef = useRef(false);
   const inputHintTimerRef = useRef<number | null>(null);
   const replayingRef = useRef(false);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -193,12 +204,16 @@ export function GamePage() {
     setTakedownMove(null);
     setStatus("finding an opponent...");
     setCaptured({ w: [], b: [] });
-    setConfirming(null);
-    setBark(null);
+    if (endGameTimerRef.current) {
+      window.clearTimeout(endGameTimerRef.current);
+      endGameTimerRef.current = null;
+    }
+    setEndGameOutcome(null);
     pendingTokenRef.current += 1;
     setPending(null);
     setJudgePhase(null);
     setVerdict(null);
+    setHintLevel(0);
     postVerdictTokenRef.current += 1;
     setPostVerdict(null);
     setLastMove(null);
@@ -451,6 +466,11 @@ export function GamePage() {
 
       const token = (pendingTokenRef.current += 1);
       setPending(render);
+      // Wave C, task C-B: every new pending (including a retarget, which
+      // re-enters here via handleRetargetPending) starts the hint ladder
+      // fresh — a stale hint from the last destination would point at the
+      // wrong "instead" square.
+      setHintLevel(0);
 
       if (!withJudge) {
         // confirm-only: pure two-step, zero /judge calls, no indicator.
@@ -501,6 +521,7 @@ export function GamePage() {
     setPending(null);
     setJudgePhase(null);
     setVerdict(null);
+    setHintLevel(0); // Wave C, task C-B: level resets on confirm
     handleMove(from, to, overrideVerdict);
   }, [pending, verdict, handleMove]);
 
@@ -512,6 +533,7 @@ export function GamePage() {
     setPending(null);
     setJudgePhase(null);
     setVerdict(null);
+    setHintLevel(0); // Wave C, task C-B: level resets on cancel
   }, []);
 
   // A2 (pending retarget): Board resolved a click to "a different legal
@@ -533,6 +555,22 @@ export function GamePage() {
     },
     [pending, coachOn, confirmOn, handlePendingStart]
   );
+
+  // Wave C, task C-B: deterministic hint escalation. Only ever callable
+  // when the current pending's verdict actually carries facts (the render
+  // below gates the affordance on the same condition), so there's nothing
+  // to guard against a facts-less verdict here beyond the defensive check.
+  // The fen logged is the position BEFORE the pending move (mirrorRef is
+  // untouched while a move is pending) — "what was best instead" is
+  // meaningless without it.
+  const handleHintClick = useCallback(() => {
+    if (!gameId || !verdict?.facts) return;
+    const next = nextHintLevel(hintLevel);
+    setHintLevel(next);
+    logHint(gameId, next, verdict.tier, verdict.deltaCp, verdict.facts.bestUci, mirrorRef.current.fen()).catch(
+      () => undefined
+    );
+  }, [gameId, verdict, hintLevel]);
 
   // A5: surfaces a short "you tried something, here's why it didn't work"
   // message in the status line for a few seconds (currently only "can't
@@ -609,92 +647,78 @@ export function GamePage() {
 
   useEffect(() => {
     return () => {
-      if (confirmTimerRef.current) window.clearTimeout(confirmTimerRef.current);
-      if (barkTimerRef.current) window.clearTimeout(barkTimerRef.current);
+      if (endGameTimerRef.current) window.clearTimeout(endGameTimerRef.current);
       if (inputHintTimerRef.current) window.clearTimeout(inputHintTimerRef.current);
     };
   }, []);
 
-  const clearConfirmTimer = useCallback(() => {
-    if (confirmTimerRef.current) {
-      window.clearTimeout(confirmTimerRef.current);
-      confirmTimerRef.current = null;
+  const clearEndGameTimer = useCallback(() => {
+    if (endGameTimerRef.current) {
+      window.clearTimeout(endGameTimerRef.current);
+      endGameTimerRef.current = null;
     }
   }, []);
 
-  // Arms the "you sure?" morph for `action`; a second click on the same
-  // button within CONFIRM_MS is treated as the real confirmation by the
-  // caller. Left alone, the morph reverts on its own.
-  const armConfirm = useCallback(
-    (action: "resign" | "draw") => {
-      setConfirming(action);
-      clearConfirmTimer();
-      confirmTimerRef.current = window.setTimeout(() => setConfirming(null), CONFIRM_MS);
-    },
-    [clearConfirmTimer]
-  );
+  // Wave C, task C-A: the single "end the game?" button. Owner feedback,
+  // verbatim intent: "I can't just offer a draw if I am falling way
+  // behind... use chess.js [and the engine] to figure out what governs in
+  // a tournament when someone says 'I don't want to continue.'" — the
+  // engine decides which of win/draw/resign actually applies, not the
+  // player.
+  //
+  // First click: calls adjudicate with execute:false (a preview — nothing
+  // ends yet) and, once it resolves, arms the button with the outcome copy
+  // for CONFIRM_MS, same in-world arm-then-confirm pattern the old
+  // separate resign/draw buttons used (never a silent relabel — the armed
+  // state always shows what a second click would actually do).
+  //
+  // Second click within the window: calls adjudicate again with
+  // execute:true. The server re-derives the outcome fresh rather than
+  // trusting anything this client remembers from the preview — if the
+  // position somehow shifted between the two clicks (it can't today, since
+  // input is locked while armed, but the contract holds regardless), the
+  // execution reflects reality, not the stale preview.
+  const handleEndGameClick = useCallback(() => {
+    if (!gameId || busyRef.current || gameOver || endGameBusyRef.current) return;
 
-  const handleResignClick = useCallback(() => {
-    if (!gameId || busyRef.current || gameOver) return;
-    if (confirming !== "resign") {
-      armConfirm("resign");
+    if (endGameOutcome) {
+      clearEndGameTimer();
+      setEndGameOutcome(null);
+      (async () => {
+        busyRef.current = true;
+        setUiBusy(true);
+        try {
+          const r = await adjudicate(gameId, true);
+          if (r.ok && r.result) {
+            // Adjudicated endings skip the takedown, same as resign/draw
+            // did — there's no checkmate sequence to stage.
+            setTakedownMove(null);
+            setGameOver({ result: r.result });
+            setStatus("");
+            celebrate(r.result);
+          }
+        } finally {
+          busyRef.current = false;
+          setUiBusy(false);
+        }
+      })();
       return;
     }
-    clearConfirmTimer();
-    setConfirming(null);
 
     (async () => {
-      busyRef.current = true;
-      setUiBusy(true);
+      endGameBusyRef.current = true;
       try {
-        const r = await resign(gameId);
-        if (r.ok && r.result) {
-          // Resign skips the takedown (there's no checkmate to stage).
-          setTakedownMove(null);
-          setGameOver({ result: r.result });
-          setStatus("");
-          celebrate(r.result);
+        const r = await adjudicate(gameId, false);
+        if (r.ok && r.outcome) {
+          setEndGameOutcome(r.outcome);
+          clearEndGameTimer();
+          endGameTimerRef.current = window.setTimeout(() => setEndGameOutcome(null), CONFIRM_MS);
         }
       } finally {
-        busyRef.current = false;
-        setUiBusy(false);
+        endGameBusyRef.current = false;
       }
     })();
-  }, [gameId, gameOver, confirming, armConfirm, clearConfirmTimer, celebrate]);
-
-  const handleDrawClick = useCallback(() => {
-    if (!gameId || busyRef.current || gameOver) return;
-    if (confirming !== "draw") {
-      armConfirm("draw");
-      return;
-    }
-    clearConfirmTimer();
-    setConfirming(null);
-
-    (async () => {
-      busyRef.current = true;
-      setUiBusy(true);
-      setStatus("mallow is thinking...");
-      try {
-        const r = await offerDraw(gameId);
-        if (r.ok && r.accepted && r.result) {
-          // Accepted draw skips the takedown too.
-          setTakedownMove(null);
-          setGameOver({ result: r.result });
-          setStatus("");
-          celebrate(r.result);
-        } else {
-          setStatus("your move");
-          setBark(DRAW_DECLINE_BARK);
-          if (barkTimerRef.current) window.clearTimeout(barkTimerRef.current);
-          barkTimerRef.current = window.setTimeout(() => setBark(null), BARK_MS);
-        }
-      } finally {
-        busyRef.current = false;
-        setUiBusy(false);
-      }
-    })();
-  }, [gameId, gameOver, confirming, armConfirm, clearConfirmTimer, celebrate]);
+  }, [gameId, gameOver, endGameOutcome, clearEndGameTimer, celebrate]);
 
   const handleNewGame = useCallback(() => {
     if (sessionId != null) startGame(sessionId);
@@ -726,6 +750,24 @@ export function GamePage() {
   const youActive = !!gameId && !gameOver && !uiBusy;
   const mallowChip = mallowActive ? (mallowThinking ? "thinking..." : "mallow's move") : null;
   const youChip = youActive ? (pending ? "deciding..." : "your move") : null;
+
+  // Wave C, task C-A: the button's copy, arm state included — never a
+  // silent relabel, the armed text always states the outcome a second
+  // click would execute.
+  const endGameLabel =
+    endGameOutcome === "win"
+      ? "call it: you're winning. take the win?"
+      : endGameOutcome === "draw"
+        ? "call it a draw?"
+        : endGameOutcome === "resign"
+          ? "call it: mallow has this. resign?"
+          : "end the game?";
+
+  // Wave C, task C-B: level-3 board highlight for the judge's suggested
+  // best move, derived straight from the verdict's facts — no separate
+  // state needed beyond hintLevel itself.
+  const hintReveal =
+    hintLevel >= 3 && verdict?.facts ? hintRevealSquares(verdict.facts.bestUci) : null;
 
   return (
     <div className="game-page">
@@ -786,7 +828,6 @@ export function GamePage() {
           materialLead={material.leader === "mallow" ? material.points : null}
           active={mallowActive}
           chip={mallowChip}
-          bark={bark}
         />
         <Board
           key={`${gameId ?? "loading"}-${resyncTick}`}
@@ -800,6 +841,7 @@ export function GamePage() {
           onCancelPending={handleRetractPending}
           onInputHint={handleInputHint}
           lastMove={lastMove}
+          hintReveal={hintReveal}
         />
         <PlayerBar
           seat="you"
@@ -829,6 +871,22 @@ export function GamePage() {
                   )}
                   {verdict?.tier === "warning" && (
                     <span className="judge-badge judge-badge-warning">careful. this one hurts.</span>
+                  )}
+                  {/* Wave C, task C-B: deterministic hint escalation — only
+                      when the judge actually has facts to offer (an eval
+                      failure just means this never renders; confirm/retract
+                      are never blocked on it). */}
+                  {verdict?.facts && (verdict.tier === "nudge" || verdict.tier === "warning") && (
+                    <span className="hint-block">
+                      {hintLevel > 0 && (
+                        <span className="hint-copy">{hintCopy(hintLevel, verdict.facts)}</span>
+                      )}
+                      {hintLevel < 3 && (
+                        <button type="button" className="hint-affordance" onClick={handleHintClick}>
+                          {hintLevel === 0 ? "help?" : "more?"}
+                        </button>
+                      )}
+                    </span>
                   )}
                 </span>
               ) : (
@@ -872,19 +930,17 @@ export function GamePage() {
               </div>
             ) : (
               <div className="controls game-controls">
+                {/* Wave C, task C-A: one button replaces separate resign /
+                    offer-draw. First click previews the engine's own call
+                    on the position; the armed second click always shows
+                    (never silently relabels) the outcome it's about to
+                    execute. */}
                 <button
-                  className={`small${confirming === "resign" ? " confirming" : ""}`}
+                  className={`small${endGameOutcome ? " confirming" : ""}`}
                   disabled={!gameId}
-                  onClick={handleResignClick}
+                  onClick={handleEndGameClick}
                 >
-                  {confirming === "resign" ? "you sure?" : "resign"}
-                </button>
-                <button
-                  className={`small${confirming === "draw" ? " confirming" : ""}`}
-                  disabled={!gameId}
-                  onClick={handleDrawClick}
-                >
-                  {confirming === "draw" ? "you sure?" : "offer draw"}
+                  {endGameLabel}
                 </button>
               </div>
             )}

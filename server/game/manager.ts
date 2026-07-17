@@ -3,6 +3,7 @@ import { MaiaOpponent } from "../engines/maia";
 import { StockfishEvaluator } from "../engines/stockfish";
 import { createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict } from "../store/db";
 import { classifyMove, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
+import { adjudicatePosition } from "../annotator/adjudicate";
 
 interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number; finished: boolean }
 
@@ -193,5 +194,52 @@ export class GameManager {
 
     logGameEvent(gameId, "draw_declined", ev.cp !== null ? `cp:${ev.cp}` : ev.mate !== null ? `mate:${ev.mate}` : undefined);
     return { ok: true, accepted: false };
+  }
+
+  // Wave C, task C-A: the single "end the game?" button. Both the arm-step
+  // preview (execute:false) and the real second-click execution
+  // (execute:true) run through this SAME decision — the client never gets
+  // to supply its own remembered outcome; the server re-derives it fresh
+  // every time, execute or not, so a stale preview can never diverge from
+  // what actually gets recorded. resign()/offerDraw() above stay exactly as
+  // they were (API compat) and are simply no longer wired into the UI.
+  async adjudicate(gameId: number, execute: boolean) {
+    const live = this.games.get(gameId);
+    if (!live) return { ok: false };
+    if (live.finished) return { ok: false };
+
+    const decision = await adjudicatePosition(live.chess.fen(), this.evaluator);
+
+    if (execute) {
+      finishGame(gameId, decision.result, decision.reason);
+      live.finished = true;
+      logGameEvent(
+        gameId,
+        "adjudicated",
+        JSON.stringify({ outcome: decision.outcome, reason: decision.reason, playerCp: decision.playerCp })
+      );
+    }
+
+    return {
+      ok: true,
+      outcome: decision.outcome,
+      result: decision.result,
+      reason: decision.reason,
+      playerCp: decision.playerCp,
+    };
+  }
+
+  // Wave C, task C-B: observability for the Lab's hint-escalation metric.
+  // Fire-and-forget from the client on every hint-level reveal — follows
+  // the same game_events insert pattern as C4's override logging (see
+  // playerMove's `override` branch above). Additive only: no game state
+  // changes, and a hint on a since-finished game is harmless to log, so
+  // this deliberately does NOT guard on live.finished the way the
+  // game-ending actions above do — only on the game existing at all.
+  logHint(gameId: number, detail: { level: number; tier: string; deltaCp: number | null; bestUci: string; fen: string }) {
+    const live = this.games.get(gameId);
+    if (!live) return { ok: false };
+    logGameEvent(gameId, "hint", JSON.stringify(detail));
+    return { ok: true };
   }
 }

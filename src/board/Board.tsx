@@ -87,6 +87,16 @@ interface BoardProps {
    * next move settles. For castling this is the king's from/to only.
    */
   lastMove?: { from: string; to: string } | null;
+  /**
+   * Wave C, task C-B: level-3 hint escalation reveal — the judge's
+   * suggested best move's from/to squares, for the position BEFORE the
+   * player's pending move. Render-only, same pattern as `lastMove`: never
+   * touches `entries`, just adds a class. Deliberately a DIFFERENT visual
+   * treatment (a pulsing ring, `.hint-reveal`) from `.hint`/`.hint-capture`
+   * (plain legal-move highlights) and `.last-move`, since any of those may
+   * be showing on the same square at the same time.
+   */
+  hintReveal?: { from: string; to: string } | null;
 }
 
 // ambient decorative jitter squares, same indices as the demo
@@ -144,6 +154,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     onCancelPending,
     onInputHint,
     lastMove,
+    hintReveal,
   },
   ref
 ) {
@@ -578,6 +589,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               const light = (row + col) % 2 === 0;
               const isCheckRing = square === checkSquare && !matedKingGone;
               const isLastMove = !!lastMove && (square === lastMove.from || square === lastMove.to);
+              const isHintReveal = !!hintReveal && (square === hintReveal.from || square === hintReveal.to);
               const classes = [
                 "sq",
                 light ? "light" : "dark",
@@ -586,6 +598,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 square === effectiveSelected ? "target-hint" : "",
                 legalTargets.capture.has(square) ? "hint-capture" : "",
                 legalTargets.normal.has(square) ? "hint" : "",
+                isHintReveal ? "hint-reveal" : "",
                 isCheckRing ? "check-ring" : "",
                 isCheckRing && checkmate ? "mate" : "",
               ]
