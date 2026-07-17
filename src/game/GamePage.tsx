@@ -20,7 +20,7 @@ import { kingInCheckSquare } from "./checkState";
 import { reconcile } from "./reconcile";
 import { findTakedownPiece, type Takedown } from "./terminal";
 import { GameEndPanel } from "./GameEndPanel";
-import { resolveMoveFlow } from "./moveFlow";
+import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
 
 interface Captured {
   w: PieceKind[]; // white pieces captured (by the opponent)
@@ -230,8 +230,13 @@ export function GamePage() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [settingsOpen]);
 
+  // `overrideVerdict` (C4): non-null only when this confirm is an override
+  // (a "warning"-tier confirm — see isOverrideConfirm in moveFlow.ts and
+  // handleConfirmPending below, the only caller that ever passes it).
+  // one-tap and judge-post both call handleMove with no third argument, so
+  // they never write an override event.
   const handleMove = useCallback(
-    async (from: string, to: string) => {
+    async (from: string, to: string, overrideVerdict?: Verdict | null) => {
       if (!gameId || busyRef.current || gameOver) return;
       const mirror = mirrorRef.current;
       // Snapshot before mutating: the victim's kind (and, for en passant,
@@ -265,7 +270,14 @@ export function GamePage() {
 
         let res: MoveResponse;
         try {
-          res = await sendMove(gameId, from, to, mv.promotion, timeSpentMs);
+          res = await sendMove(
+            gameId,
+            from,
+            to,
+            mv.promotion,
+            timeSpentMs,
+            overrideVerdict ? { deltaCp: overrideVerdict.deltaCp, mateAgainst: overrideVerdict.mateAgainst } : undefined
+          );
         } catch {
           // No server response at all — nothing authoritative to adopt.
           setFen(adoptServerFen(mirror, undefined));
@@ -414,12 +426,19 @@ export function GamePage() {
   const handleConfirmPending = useCallback(() => {
     if (!pending) return;
     const { from, to } = pending;
+    // C4: override logging — an override is confirming a move the judge
+    // marked "warning" (a "nudge" confirm is deliberately NOT an override;
+    // isOverrideConfirm is the pinned, unit-tested decision). This is the
+    // only place the flag is ever set: judge-post (coach-only) mode has no
+    // confirm step at all, so it can never produce an override — see
+    // handleMoveWithPostJudge, which calls handleMove with no third arg.
+    const overrideVerdict = isOverrideConfirm(verdict?.tier) ? verdict : null;
     pendingTokenRef.current += 1;
     setPending(null);
     setJudgePhase(null);
     setVerdict(null);
-    handleMove(from, to);
-  }, [pending, handleMove]);
+    handleMove(from, to, overrideVerdict);
+  }, [pending, verdict, handleMove]);
 
   // Retract: purely client-side — the server never stored any pending
   // state to undo. Selection was already cleared by Board before onMove

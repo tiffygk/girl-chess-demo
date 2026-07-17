@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveMoveFlow } from "./moveFlow";
+import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
 
 // C3: pins the 4-combination matrix from the brief. Each combo is a spec
 // anchor for GamePage's dispatch — this is the thing a reviewer checks
@@ -19,5 +19,27 @@ describe("resolveMoveFlow", () => {
 
   it("coach off + confirm off -> one-tap (pre-C1 flow, zero judge calls)", () => {
     expect(resolveMoveFlow(false, false)).toBe("one-tap");
+  });
+});
+
+// C4: pins the override decision — only a "warning" confirm counts, a
+// "nudge" confirm does not, and no verdict (silent, or judging never
+// resolved) does not either.
+describe("isOverrideConfirm", () => {
+  it("true for a warning-tier confirm", () => {
+    expect(isOverrideConfirm("warning")).toBe(true);
+  });
+
+  it("false for a nudge-tier confirm (nudge confirms are NOT overrides)", () => {
+    expect(isOverrideConfirm("nudge")).toBe(false);
+  });
+
+  it("false for a silent-tier confirm", () => {
+    expect(isOverrideConfirm("silent")).toBe(false);
+  });
+
+  it("false when there's no verdict at all (undefined/null)", () => {
+    expect(isOverrideConfirm(undefined)).toBe(false);
+    expect(isOverrideConfirm(null)).toBe(false);
   });
 });

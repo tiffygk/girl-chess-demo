@@ -4,7 +4,7 @@ import { StockfishEvaluator } from "../engines/stockfish";
 import { createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict } from "../store/db";
 import { classifyMove, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 
-interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number }
+interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number; finished: boolean }
 
 // Playtest-calibrated draw-acceptance band: the computer accepts an offer
 // when the position is within this many centipawns of dead equal. Starting
@@ -30,7 +30,7 @@ export class GameManager {
   async newGame(sessionId: number, elo: number) {
     const opponent = await this.opponentFor(elo);
     const gameId = createGame(sessionId, (opponent.fallback ? "fallback-" : "maia-") + elo);
-    this.games.set(gameId, { chess: new Chess(), opponent, ply: 0 });
+    this.games.set(gameId, { chess: new Chess(), opponent, ply: 0, finished: false });
     return { gameId, fen: new Chess().fen(), fallback: opponent.fallback };
   }
 
@@ -51,9 +51,27 @@ export class GameManager {
     return { result: "1/2-1/2" };
   }
 
-  async playerMove(gameId: number, from: string, to: string, promotion?: string, timeSpentMs = 0) {
+  // `override` (C4): set when the player confirmed a pending move the judge
+  // had marked "warning" (never for a "nudge" confirm — see
+  // src/game/moveFlow.ts's isOverrideConfirm, the client-side gate that
+  // decides whether this is ever populated). The client already holds the
+  // verdict at confirm time, so it carries deltaCp/mateAgainst straight
+  // through rather than the server re-deriving them from the verdicts
+  // table.
+  async playerMove(
+    gameId: number,
+    from: string,
+    to: string,
+    promotion?: string,
+    timeSpentMs = 0,
+    override?: { deltaCp: number | null; mateAgainst: boolean }
+  ) {
     const live = this.games.get(gameId);
     if (!live) return { ok: false, fen: "" };
+    // B6-flagged data-integrity gap, closed here: a finished game stayed in
+    // `games` forever with no guard, so a stray /move after resign/mate
+    // could still apply against a position that still had legal moves.
+    if (live.finished) return { ok: false, fen: live.chess.fen() };
     let mv;
     try {
       mv = live.chess.move({ from, to, promotion: (promotion as any) ?? "q" });
@@ -63,8 +81,23 @@ export class GameManager {
     const playerCapture = mv.flags.includes("c") || mv.flags.includes("e");
     this.record(gameId, live, mv.san, mv.from + mv.to + (mv.promotion ?? ""), timeSpentMs);
 
+    if (override) {
+      // ply here is the ply this player move just occupied (this.record()
+      // bumped live.ply immediately above) — matches the ply the judge's
+      // verdict for this same move was recorded against.
+      logGameEvent(
+        gameId,
+        "override",
+        JSON.stringify({ ply: live.ply, deltaCp: override.deltaCp, mateAgainst: override.mateAgainst })
+      );
+    }
+
     let over = this.gameOver(live.chess);
-    if (over) { finishGame(gameId, over.result); return { ok: true, fen: live.chess.fen(), playerSan: mv.san, playerCapture, gameOver: over }; }
+    if (over) {
+      finishGame(gameId, over.result);
+      live.finished = true;
+      return { ok: true, fen: live.chess.fen(), playerSan: mv.san, playerCapture, gameOver: over };
+    }
 
     const replyUci = await live.opponent.pickMove(live.chess.fen());
     const reply = live.chess.move({ from: replyUci.slice(0, 2), to: replyUci.slice(2, 4), promotion: (replyUci[4] as any) ?? undefined });
@@ -72,7 +105,7 @@ export class GameManager {
     this.record(gameId, live, reply.san, replyUci, 0);
 
     over = this.gameOver(live.chess);
-    if (over) finishGame(gameId, over.result);
+    if (over) { finishGame(gameId, over.result); live.finished = true; }
     return {
       ok: true, fen: live.chess.fen(), playerSan: mv.san, playerCapture,
       reply: { san: reply.san, uci: replyUci, capture: replyCapture },
@@ -94,6 +127,7 @@ export class GameManager {
   async judgeMove(gameId: number, from: string, to: string, promotion?: string, mode?: string) {
     const live = this.games.get(gameId);
     if (!live) return { ok: false };
+    if (live.finished) return { ok: false };
     const clone = new Chess(live.chess.fen());
     let mv;
     try {
@@ -125,8 +159,10 @@ export class GameManager {
   async resign(gameId: number) {
     const live = this.games.get(gameId);
     if (!live) return { ok: false };
+    if (live.finished) return { ok: false };
     // Player is always white in v1, so resigning is always a loss for white.
     finishGame(gameId, "0-1");
+    live.finished = true;
     logGameEvent(gameId, "resign");
     return { ok: true, result: "0-1" };
   }
@@ -134,6 +170,7 @@ export class GameManager {
   async offerDraw(gameId: number) {
     const live = this.games.get(gameId);
     if (!live) return { ok: false, accepted: false };
+    if (live.finished) return { ok: false, accepted: false };
 
     // Not the move path — this evaluate() IS awaited (unlike the
     // fire-and-forget attachEval above); the <2s move-latency rule doesn't
@@ -149,6 +186,7 @@ export class GameManager {
 
     if (accept) {
       finishGame(gameId, "1/2-1/2");
+      live.finished = true;
       logGameEvent(gameId, "draw_accepted", ev.cp !== null ? `cp:${ev.cp}` : undefined);
       return { ok: true, accepted: true, result: "1/2-1/2" };
     }

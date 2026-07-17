@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { app, ready } from "./index";
-import { getVerdicts } from "./store/db";
+import { getVerdicts, getGameEvents, getGame, getModeSeconds } from "./store/db";
 
 describe("api", () => {
   it("creates a session, a game, and plays a move", async () => {
@@ -113,4 +113,77 @@ describe("api", () => {
     expect(m.body.playerSan).toBe("e4");
     expect(m.body.reply?.san).toBeTruthy();
   }, 20000);
+
+  // C4 Part 1: override logging — an override is confirming a move the
+  // judge marked "warning" (a "nudge" confirm is NOT an override — see
+  // isOverrideConfirm in src/game/moveFlow.ts, the client-side gate that
+  // decides whether this flag is ever set). The client already holds the
+  // verdict at confirm time and carries deltaCp/mateAgainst straight
+  // through; the server's job is just to record it when told to.
+  it("writes a game_events override row when /move carries override:true", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    const m = await request(app).post(`/api/game/${g.body.gameId}/move`)
+      .send({ from: "e2", to: "e4", timeSpentMs: 500, override: true, deltaCp: 220, mateAgainst: false })
+      .expect(200);
+    expect(m.body.ok).toBe(true);
+
+    const events = getGameEvents(g.body.gameId);
+    const overrideEvents = events.filter((e) => e.type === "override");
+    expect(overrideEvents).toHaveLength(1);
+    expect(JSON.parse(overrideEvents[0].detail)).toEqual({ ply: 1, deltaCp: 220, mateAgainst: false });
+  }, 20000);
+
+  it("writes no game_events row for a normal /move (no override flag)", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    await request(app).post(`/api/game/${g.body.gameId}/move`)
+      .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
+
+    const events = getGameEvents(g.body.gameId);
+    expect(events.filter((e) => e.type === "override")).toHaveLength(0);
+  }, 20000);
+
+  // C4 Part 2, inherited gap #1 (increment-1 review, verbatim): posting two
+  // mode-timer updates for the same (session, mode) should accumulate via
+  // the upsert, not overwrite.
+  it("accumulates mode-timer seconds across two posts for the same (session, mode)", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const sessionId = s.body.sessionId;
+
+    await request(app).post(`/api/session/${sessionId}/mode`).send({ mode: "game", seconds: 30 }).expect(200);
+    await request(app).post(`/api/session/${sessionId}/mode`).send({ mode: "game", seconds: 45 }).expect(200);
+
+    expect(getModeSeconds(sessionId, "game")).toBe(75);
+  });
+
+  // C4 Part 2, inherited gap #2 (increment-1 review, verbatim): drive a game
+  // to a terminal state through the API and assert the games row's
+  // result/finished state, and that a further /move call fails cleanly
+  // rather than crashing. Resign is the cheapest API-level path to
+  // terminal. This also exercises the finished-game guard added to
+  // manager.ts as part of this task (B6 had flagged resign/offerDraw for
+  // lacking one).
+  it("drives a game to a terminal state via resign, records the result, and further /move calls fail cleanly", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    const r = await request(app).post(`/api/game/${g.body.gameId}/resign`).send({}).expect(200);
+    expect(r.body.ok).toBe(true);
+    expect(r.body.result).toBe("0-1");
+
+    const row = getGame(g.body.gameId);
+    expect(row.result).toBe("0-1");
+    expect(row.ended_at).toBeTruthy();
+
+    const m = await request(app).post(`/api/game/${g.body.gameId}/move`)
+      .send({ from: "e2", to: "e4" }).expect(200);
+    expect(m.body.ok).toBe(false);
+  });
 });

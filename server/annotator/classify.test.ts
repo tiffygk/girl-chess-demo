@@ -19,6 +19,20 @@ describe("classify.ts LLM-free gate", () => {
       expect(line).not.toMatch(/from\s+["']\.\.?\/coach/);
     }
   });
+
+  // C4, inherited gap #3 (increment-1 review, verbatim): the gate above only
+  // ever scanned classify.ts itself. server/game/manager.ts's judgeMove is
+  // the other half of the verdict path (it clones the live game and calls
+  // classifyMove) — extend the same source-scan there so a future edit
+  // can't quietly reintroduce a coach import on that side of the seam.
+  it("server/game/manager.ts's judge path never imports from server/coach", () => {
+    const src = fs.readFileSync(path.join(__dirname, "../game/manager.ts"), "utf-8");
+    const importLines = src.split("\n").filter((line) => /^\s*import\b/.test(line));
+    expect(importLines.length).toBeGreaterThan(0);
+    for (const line of importLines) {
+      expect(line).not.toMatch(/from\s+["']\.\.?\/coach/);
+    }
+  });
 });
 
 describe("ADVICE_LEVELS seam", () => {
