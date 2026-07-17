@@ -1,9 +1,14 @@
 import { Chess } from "chess.js";
 import { MaiaOpponent } from "../engines/maia";
 import { StockfishEvaluator } from "../engines/stockfish";
-import { createGame, finishGame, recordMove, attachEval } from "../store/db";
+import { createGame, finishGame, recordMove, attachEval, logGameEvent } from "../store/db";
 
 interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number }
+
+// Playtest-calibrated draw-acceptance band: the computer accepts an offer
+// when the position is within this many centipawns of dead equal. Starting
+// value only — expect this to move once real playtest data comes in.
+const DRAW_ACCEPT_CP_BAND = 60;
 
 export class GameManager {
   private games = new Map<number, LiveGame>();
@@ -72,5 +77,40 @@ export class GameManager {
       reply: { san: reply.san, uci: replyUci, capture: replyCapture },
       gameOver: over,
     };
+  }
+
+  async resign(gameId: number) {
+    const live = this.games.get(gameId);
+    if (!live) return { ok: false };
+    // Player is always white in v1, so resigning is always a loss for white.
+    finishGame(gameId, "0-1");
+    logGameEvent(gameId, "resign");
+    return { ok: true, result: "0-1" };
+  }
+
+  async offerDraw(gameId: number) {
+    const live = this.games.get(gameId);
+    if (!live) return { ok: false, accepted: false };
+
+    // Not the move path — this evaluate() IS awaited (unlike the
+    // fire-and-forget attachEval above); the <2s move-latency rule doesn't
+    // bind here.
+    const ev = await this.evaluator.evaluate(live.chess.fen(), 600);
+
+    // ev.cp is UCI's "score cp", reported from the perspective of the side
+    // to move on the evaluated fen (see StockfishEvaluator.search /
+    // stockfish.test.ts). We only compare its absolute value against a
+    // near-zero band below, so which side is to move doesn't matter — a
+    // small |cp| means the position is close to equal for either player.
+    const accept = ev.mate === null && ev.cp !== null && Math.abs(ev.cp) <= DRAW_ACCEPT_CP_BAND;
+
+    if (accept) {
+      finishGame(gameId, "1/2-1/2");
+      logGameEvent(gameId, "draw_accepted", ev.cp !== null ? `cp:${ev.cp}` : undefined);
+      return { ok: true, accepted: true, result: "1/2-1/2" };
+    }
+
+    logGameEvent(gameId, "draw_declined", ev.cp !== null ? `cp:${ev.cp}` : ev.mate !== null ? `mate:${ev.mate}` : undefined);
+    return { ok: true, accepted: false };
   }
 }

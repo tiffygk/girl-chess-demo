@@ -33,6 +33,17 @@ export interface ModeResponse {
   ok: boolean;
 }
 
+export interface ResignResponse {
+  ok: boolean;
+  result?: string;
+}
+
+export interface DrawOfferResponse {
+  ok: boolean;
+  accepted?: boolean;
+  result?: string;
+}
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method: "POST",
@@ -62,6 +73,14 @@ export function sendMove(
 
 export function reportMode(sessionId: number, mode: string, seconds: number): Promise<ModeResponse> {
   return postJson(`/session/${sessionId}/mode`, { mode, seconds });
+}
+
+export function resign(gameId: number): Promise<ResignResponse> {
+  return postJson(`/game/${gameId}/resign`, {});
+}
+
+export function offerDraw(gameId: number): Promise<DrawOfferResponse> {
+  return postJson(`/game/${gameId}/draw-offer`, {});
 }
 
 /**

@@ -28,6 +28,24 @@ app.post("/api/game/:id/move", async (req, res) => {
   }
 });
 
+app.post("/api/game/:id/resign", async (req, res) => {
+  try {
+    const result = await gm.resign(Number(req.params.id));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
+app.post("/api/game/:id/draw-offer", async (req, res) => {
+  try {
+    const result = await gm.offerDraw(Number(req.params.id));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 app.post("/api/session/:id/mode", (req, res) => {
   const { mode, seconds } = req.body;
   addModeMinutes(Number(req.params.id), String(mode), Number(seconds) || 0);

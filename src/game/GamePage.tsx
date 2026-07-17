@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { Board, type BoardHandle } from "../board/Board";
 import { Piece, type PieceKind } from "../board/pieces";
-import { newSession, newGame, sendMove, modeTimer, type MoveResponse, type GameOverInfo } from "./api";
+import { newSession, newGame, sendMove, modeTimer, resign, offerDraw, type MoveResponse, type GameOverInfo } from "./api";
 import { describeMove } from "./describeMove";
 import { victimKind } from "./captures";
 import { kingInCheckSquare } from "./checkState";
@@ -21,6 +21,15 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 // animation starts covering it, so a fast server response can't skip the
 // player past ever seeing the check they just delivered.
 const CHECK_VISIBILITY_MS = 450;
+
+// How long a resign/draw button stays morphed into "you sure?" before it
+// reverts on its own — an in-world confirm step instead of a modal.
+const CONFIRM_MS = 3000;
+
+// How long the opponent's decline bark stays on screen.
+const BARK_MS = 4000;
+
+const DRAW_DECLINE_BARK = "mallow declines. play on.";
 
 function resultText(result: string): string {
   if (result === "1-0") return "you win. mallow melts.";
@@ -56,11 +65,16 @@ export function GamePage() {
   const [gameOver, setGameOver] = useState<GameOverInfo | null>(null);
   const [resyncTick, setResyncTick] = useState(0);
   const [captured, setCaptured] = useState<Captured>({ w: [], b: [] });
+  // Which end-of-game button (if any) is currently morphed to "you sure?".
+  const [confirming, setConfirming] = useState<"resign" | "draw" | null>(null);
+  const [bark, setBark] = useState<string | null>(null);
 
   const boardRef = useRef<BoardHandle>(null);
   const mirrorRef = useRef(new Chess());
   const lastReplyAtRef = useRef(Date.now());
   const busyRef = useRef(false);
+  const confirmTimerRef = useRef<number | null>(null);
+  const barkTimerRef = useRef<number | null>(null);
 
   const check = useMemo(() => {
     const c = new Chess(fen);
@@ -71,6 +85,8 @@ export function GamePage() {
     setGameOver(null);
     setStatus("finding an opponent...");
     setCaptured({ w: [], b: [] });
+    setConfirming(null);
+    setBark(null);
     const g = await newGame(sid, OPPONENT_ELO);
     mirrorRef.current = new Chess(g.fen);
     setFen(g.fen);
@@ -207,6 +223,84 @@ export function GamePage() {
     [gameId, gameOver]
   );
 
+  useEffect(() => {
+    return () => {
+      if (confirmTimerRef.current) window.clearTimeout(confirmTimerRef.current);
+      if (barkTimerRef.current) window.clearTimeout(barkTimerRef.current);
+    };
+  }, []);
+
+  const clearConfirmTimer = useCallback(() => {
+    if (confirmTimerRef.current) {
+      window.clearTimeout(confirmTimerRef.current);
+      confirmTimerRef.current = null;
+    }
+  }, []);
+
+  // Arms the "you sure?" morph for `action`; a second click on the same
+  // button within CONFIRM_MS is treated as the real confirmation by the
+  // caller. Left alone, the morph reverts on its own.
+  const armConfirm = useCallback(
+    (action: "resign" | "draw") => {
+      setConfirming(action);
+      clearConfirmTimer();
+      confirmTimerRef.current = window.setTimeout(() => setConfirming(null), CONFIRM_MS);
+    },
+    [clearConfirmTimer]
+  );
+
+  const handleResignClick = useCallback(() => {
+    if (!gameId || busyRef.current || gameOver) return;
+    if (confirming !== "resign") {
+      armConfirm("resign");
+      return;
+    }
+    clearConfirmTimer();
+    setConfirming(null);
+
+    (async () => {
+      busyRef.current = true;
+      try {
+        const r = await resign(gameId);
+        if (r.ok && r.result) {
+          setGameOver({ result: r.result });
+          setStatus("");
+        }
+      } finally {
+        busyRef.current = false;
+      }
+    })();
+  }, [gameId, gameOver, confirming, armConfirm, clearConfirmTimer]);
+
+  const handleDrawClick = useCallback(() => {
+    if (!gameId || busyRef.current || gameOver) return;
+    if (confirming !== "draw") {
+      armConfirm("draw");
+      return;
+    }
+    clearConfirmTimer();
+    setConfirming(null);
+
+    (async () => {
+      busyRef.current = true;
+      setStatus("mallow is thinking...");
+      try {
+        const r = await offerDraw(gameId);
+        if (r.ok && r.accepted && r.result) {
+          setGameOver({ result: r.result });
+          setStatus("");
+        } else {
+          setStatus("your move");
+          setBark(DRAW_DECLINE_BARK);
+          if (barkTimerRef.current) window.clearTimeout(barkTimerRef.current);
+          barkTimerRef.current = window.setTimeout(() => setBark(null), BARK_MS);
+        }
+      } finally {
+        busyRef.current = false;
+      }
+    })();
+  }, [gameId, gameOver, confirming, armConfirm, clearConfirmTimer]);
+
   const handleNewGame = useCallback(() => {
     if (sessionId != null) startGame(sessionId);
   }, [sessionId, startGame]);
@@ -215,7 +309,14 @@ export function GamePage() {
     <div className="game-page">
       {fallback && <div className="fallback-banner">fallback opponents (lc0 unavailable)</div>}
       <div className="board-with-trays">
-        <CaptureTray pieces={captured.w} color="w" label="pieces mallow has captured" />
+        <div className="opponent-side">
+          <CaptureTray pieces={captured.w} color="w" label="pieces mallow has captured" />
+          {bark && (
+            <div className="bark-bubble pop-in" role="status">
+              {bark}
+            </div>
+          )}
+        </div>
         <Board
           key={`${gameId ?? "loading"}-${resyncTick}`}
           ref={boardRef}
@@ -226,6 +327,24 @@ export function GamePage() {
         />
         <CaptureTray pieces={captured.b} color="b" label="pieces you've captured" />
       </div>
+      {!gameOver && (
+        <div className="controls game-controls">
+          <button
+            className={`small${confirming === "resign" ? " confirming" : ""}`}
+            disabled={!gameId}
+            onClick={handleResignClick}
+          >
+            {confirming === "resign" ? "you sure?" : "resign"}
+          </button>
+          <button
+            className={`small${confirming === "draw" ? " confirming" : ""}`}
+            disabled={!gameId}
+            onClick={handleDrawClick}
+          >
+            {confirming === "draw" ? "you sure?" : "offer draw"}
+          </button>
+        </div>
+      )}
       <p className="status-line">{status}</p>
       {gameOver && (
         <div className="game-over pop-in">

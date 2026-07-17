@@ -1,6 +1,6 @@
 // server/game/manager.test.ts
 import { describe, it, expect, beforeAll } from "vitest";
-import { openDb, createSession, getGameMoves } from "../store/db";
+import { openDb, createSession, getGameMoves, getGameEvents } from "../store/db";
 import { GameManager } from "./manager";
 
 describe("GameManager", () => {
@@ -45,5 +45,42 @@ describe("GameManager", () => {
 
     expect(playerMoveRow).toBeTruthy();
     expect(playerMoveRow.eval_cp !== null || playerMoveRow.eval_mate !== null).toBe(true);
+  }, 20000);
+
+  it("resign finishes the game 0-1 and logs a game_events row", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const r = await gm.resign(g.gameId);
+    expect(r.ok).toBe(true);
+    expect(r.result).toBe("0-1");
+    const events = getGameEvents(g.gameId);
+    expect(events.some((e) => e.type === "resign")).toBe(true);
+  }, 20000);
+
+  it("offerDraw accepts a near-equal position (startpos) and finishes 1/2-1/2", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const r = await gm.offerDraw(g.gameId);
+    expect(r.ok).toBe(true);
+    expect(r.accepted).toBe(true);
+    expect(r.result).toBe("1/2-1/2");
+    const events = getGameEvents(g.gameId);
+    expect(events.some((e) => e.type === "draw_accepted")).toBe(true);
+  }, 20000);
+
+  it("offerDraw declines a clearly winning position and the game continues", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    // Queen-up for white (black's queen removed from the back rank) — a
+    // clearly decisive position, used to exercise the decline path.
+    (gm as any).games.get(g.gameId).chess.load(
+      "rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    );
+    const r = await gm.offerDraw(g.gameId);
+    expect(r.ok).toBe(true);
+    expect(r.accepted).toBe(false);
+    const events = getGameEvents(g.gameId);
+    expect(events.some((e) => e.type === "draw_declined")).toBe(true);
+
+    // game continues: still playable after the decline
+    const mv = await gm.playerMove(g.gameId, "e2", "e4");
+    expect(mv.ok).toBe(true);
   }, 20000);
 });
