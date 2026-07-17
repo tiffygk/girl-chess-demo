@@ -186,4 +186,75 @@ describe("api", () => {
       .send({ from: "e2", to: "e4" }).expect(200);
     expect(m.body.ok).toBe(false);
   });
+
+  // Wave C, task C-A: the single "end the game?" flow's endpoint.
+  it("adjudicates from startpos as a draw via POST /api/game/:id/adjudicate (preview), without finishing the game", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    const preview = await request(app).post(`/api/game/${g.body.gameId}/adjudicate`)
+      .send({ execute: false }).expect(200);
+    expect(preview.body.ok).toBe(true);
+    expect(preview.body.outcome).toBe("draw");
+    expect(preview.body.result).toBe("1/2-1/2");
+    expect(preview.body.reason).toBe("draw-adjudicated");
+
+    const stillPlayable = await request(app).post(`/api/game/${g.body.gameId}/move`)
+      .send({ from: "e2", to: "e4" }).expect(200);
+    expect(stillPlayable.body.ok).toBe(true);
+  }, 20000);
+
+  it("adjudicate execute:true finishes the game, records result + end_reason, and further /move calls fail cleanly", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    const exec = await request(app).post(`/api/game/${g.body.gameId}/adjudicate`)
+      .send({ execute: true }).expect(200);
+    expect(exec.body.ok).toBe(true);
+    expect(exec.body.result).toBe("1/2-1/2");
+
+    const row = getGame(g.body.gameId);
+    expect(row.result).toBe("1/2-1/2");
+    expect(row.end_reason).toBe("draw-adjudicated");
+
+    const m = await request(app).post(`/api/game/${g.body.gameId}/move`)
+      .send({ from: "e2", to: "e4" }).expect(200);
+    expect(m.body.ok).toBe(false);
+  }, 20000);
+
+  it("returns ok:false for adjudicate on a nonexistent game", async () => {
+    await ready;
+    const r = await request(app).post("/api/game/999999/adjudicate").send({ execute: false }).expect(200);
+    expect(r.body.ok).toBe(false);
+  });
+
+  // Wave C, task C-B: hint-escalation observability endpoint.
+  it("logs a hint game_event via POST /api/game/:id/hint", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    const r = await request(app).post(`/api/game/${g.body.gameId}/hint`)
+      .send({ level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: g.body.fen }).expect(200);
+    expect(r.body.ok).toBe(true);
+
+    const events = getGameEvents(g.body.gameId);
+    const hintEvents = events.filter((e: any) => e.type === "hint");
+    expect(hintEvents).toHaveLength(1);
+    expect(JSON.parse(hintEvents[0].detail)).toEqual({
+      level: 1,
+      tier: "nudge",
+      deltaCp: 80,
+      bestUci: "e2e4",
+      fen: g.body.fen,
+    });
+  }, 20000);
+
+  it("returns ok:false for hint logging on a nonexistent game", async () => {
+    const r = await request(app).post("/api/game/999999/hint")
+      .send({ level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: "x" }).expect(200);
+    expect(r.body.ok).toBe(false);
+  });
 });

@@ -27,6 +27,11 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     { name: "source", addSql: "source TEXT DEFAULT 'app'" },
     { name: "started_at", addSql: "started_at TEXT DEFAULT (datetime('now'))" },
     { name: "ended_at", addSql: "ended_at TEXT" },
+    // Wave C (C-A): how the game ended — "adjudicated" | "resigned" |
+    // "draw-adjudicated" for the new single-button flow, null for anything
+    // that predates it (including the still-live /resign and /draw-offer
+    // endpoints, which don't set this).
+    { name: "end_reason", addSql: "end_reason TEXT" },
   ],
   moves: [
     { name: "game_id", addSql: "game_id INTEGER REFERENCES games(id)" },
@@ -90,7 +95,7 @@ export function openDb(path = "data/girlchess.db") {
       id INTEGER PRIMARY KEY, started_at TEXT DEFAULT (datetime('now')), ended_at TEXT);
     CREATE TABLE IF NOT EXISTS games(
       id INTEGER PRIMARY KEY, session_id INTEGER REFERENCES sessions(id),
-      opponent TEXT, result TEXT, source TEXT DEFAULT 'app',
+      opponent TEXT, result TEXT, source TEXT DEFAULT 'app', end_reason TEXT,
       started_at TEXT DEFAULT (datetime('now')), ended_at TEXT);
     CREATE TABLE IF NOT EXISTS moves(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), ply INTEGER,
@@ -121,8 +126,12 @@ export const endSession = (id: number) =>
   db.prepare("UPDATE sessions SET ended_at = datetime('now') WHERE id = ?").run(id);
 export const createGame = (sessionId: number, opponent: string) =>
   Number(db.prepare("INSERT INTO games(session_id, opponent) VALUES(?, ?)").run(sessionId, opponent).lastInsertRowid);
-export const finishGame = (id: number, result: string) =>
-  db.prepare("UPDATE games SET result = ?, ended_at = datetime('now') WHERE id = ?").run(result, id);
+// `reason` (Wave C, C-A): the new /adjudicate endpoint passes "adjudicated"
+// | "resigned" | "draw-adjudicated"; every pre-existing call site (resign,
+// offerDraw) omits it, which stores NULL — those endpoints stay API-compat
+// unchanged, just without an end_reason value.
+export const finishGame = (id: number, result: string, reason?: string) =>
+  db.prepare("UPDATE games SET result = ?, end_reason = ?, ended_at = datetime('now') WHERE id = ?").run(result, reason ?? null, id);
 export const getGame = (id: number) =>
   db.prepare("SELECT * FROM games WHERE id = ?").get(id) as any;
 export const recordMove = (m: { gameId: number; ply: number; san: string; uci: string; fenAfter: string; timeSpentMs: number }) =>

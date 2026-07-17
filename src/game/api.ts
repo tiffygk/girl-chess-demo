@@ -44,6 +44,27 @@ export interface DrawOfferResponse {
   result?: string;
 }
 
+// Wave C, task C-A: the single "end the game?" flow's response — mirrors
+// server/annotator/adjudicate.ts's AdjudicationDecision plus the raw
+// playerCp (unused by the UI today, but handed through in case a future
+// increment wants to show it).
+export interface AdjudicateResponse {
+  ok: boolean;
+  outcome?: "win" | "draw" | "resign";
+  result?: string;
+  reason?: string;
+  playerCp?: number;
+}
+
+// Wave C, task C-B: mirrors server/annotator/classify.ts's MoveFacts — "what
+// was best instead" at the position before the judged move.
+export interface MoveFacts {
+  bestUci: string;
+  bestSan: string;
+  bestPieceKind: string;
+  bestToSquare: string;
+}
+
 // Mirrors server/annotator/classify.ts's Verdict. C1's judge is a stub —
 // always "silent" — but the shape carries everything C2 needs.
 export interface Verdict {
@@ -51,6 +72,7 @@ export interface Verdict {
   deltaCp: number | null;
   mateAgainst: boolean;
   latencyMs: number;
+  facts?: MoveFacts;
 }
 
 export interface JudgeResponse {
@@ -123,6 +145,30 @@ export function resign(gameId: number): Promise<ResignResponse> {
 
 export function offerDraw(gameId: number): Promise<DrawOfferResponse> {
   return postJson(`/game/${gameId}/draw-offer`, {});
+}
+
+// Wave C, task C-A: the single "end the game?" flow. `execute: false` is
+// the arm-step preview (what would this be, without ending anything);
+// `execute: true` is the real second-click execution. Both hit the same
+// server-side decision — the server re-derives the outcome fresh every
+// call, so the client's remembered preview is never trusted for the
+// actual ending.
+export function adjudicate(gameId: number, execute: boolean): Promise<AdjudicateResponse> {
+  return postJson(`/game/${gameId}/adjudicate`, { execute });
+}
+
+// Wave C, task C-B: fire-and-forget hint-escalation observability. Never
+// awaited by its caller for anything but a `.catch` — a failed log write
+// must never block confirm/retract or the hint reveal itself.
+export function logHint(
+  gameId: number,
+  level: number,
+  tier: string,
+  deltaCp: number | null,
+  bestUci: string,
+  fen: string
+): Promise<{ ok: boolean }> {
+  return postJson(`/game/${gameId}/hint`, { level, tier, deltaCp, bestUci, fen });
 }
 
 /**

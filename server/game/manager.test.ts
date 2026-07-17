@@ -1,6 +1,6 @@
 // server/game/manager.test.ts
 import { describe, it, expect, beforeAll } from "vitest";
-import { openDb, createSession, getGameMoves, getGameEvents, getVerdicts } from "../store/db";
+import { openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame } from "../store/db";
 import { GameManager } from "./manager";
 
 describe("GameManager", () => {
@@ -210,4 +210,111 @@ describe("GameManager", () => {
     expect(moves.length).toBe(2);
     expect(moves[0].san).toBe("e4");
   }, 20000);
+
+  // Wave C, task C-A: adjudicate — the single "end the game?" flow. Both
+  // the preview (execute:false) and execution (execute:true) run through
+  // the same decision function; these exercise the two decisive bands via
+  // forced positions, plus startpos landing in the draw middle band.
+  it("adjudicate: a queen-up-for-white position previews as a win, without finishing the game", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    // White up a full queen (Black's queen removed from the back rank).
+    (gm as any).games.get(g.gameId).chess.load(
+      "rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    );
+    const r = await gm.adjudicate(g.gameId, false);
+    expect(r.ok).toBe(true);
+    expect(r.outcome).toBe("win");
+    expect(r.result).toBe("1-0");
+    expect(r.reason).toBe("adjudicated");
+
+    // Preview must not have finished the game.
+    const move = await gm.playerMove(g.gameId, "e2", "e4");
+    expect(move.ok).toBe(true);
+  }, 20000);
+
+  it("adjudicate: a queen-down-for-white position previews as resign", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    // White down a full queen.
+    (gm as any).games.get(g.gameId).chess.load(
+      "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB1KBNR w KQkq - 0 1"
+    );
+    const r = await gm.adjudicate(g.gameId, false);
+    expect(r.ok).toBe(true);
+    expect(r.outcome).toBe("resign");
+    expect(r.result).toBe("0-1");
+    expect(r.reason).toBe("resigned");
+  }, 20000);
+
+  it("adjudicate: startpos (roughly balanced) previews as a draw", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const r = await gm.adjudicate(g.gameId, false);
+    expect(r.ok).toBe(true);
+    expect(r.outcome).toBe("draw");
+    expect(r.result).toBe("1/2-1/2");
+    expect(r.reason).toBe("draw-adjudicated");
+  }, 20000);
+
+  it("adjudicate execute:true finishes the game with the derived result and end_reason, and further moves fail cleanly", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    (gm as any).games.get(g.gameId).chess.load(
+      "rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    );
+    const r = await gm.adjudicate(g.gameId, true);
+    expect(r.ok).toBe(true);
+    expect(r.result).toBe("1-0");
+
+    const row = getGame(g.gameId);
+    expect(row.result).toBe("1-0");
+    expect(row.end_reason).toBe("adjudicated");
+    expect(row.ended_at).toBeTruthy();
+
+    const events = getGameEvents(g.gameId);
+    expect(events.some((e) => e.type === "adjudicated")).toBe(true);
+
+    const move = await gm.playerMove(g.gameId, "e2", "e4");
+    expect(move.ok).toBe(false);
+  }, 20000);
+
+  it("adjudicate refuses cleanly on an unknown game", async () => {
+    const r = await gm.adjudicate(999999, false);
+    expect(r.ok).toBe(false);
+  });
+
+  it("adjudicate refuses cleanly on an already-finished game", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const resigned = await gm.resign(g.gameId);
+    expect(resigned.ok).toBe(true);
+    const r = await gm.adjudicate(g.gameId, false);
+    expect(r.ok).toBe(false);
+  }, 20000);
+
+  // Wave C, task C-B: hint-escalation observability — additive game_events
+  // logging, guarded only on the game existing (not on it being unfinished
+  // — a hint on an already-decided game is harmless to log).
+  it("logHint writes a game_events row with the expected detail shape", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const r = gm.logHint(g.gameId, {
+      level: 2,
+      tier: "warning",
+      deltaCp: 220,
+      bestUci: "g1f3",
+      fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    });
+    expect(r.ok).toBe(true);
+    const events = getGameEvents(g.gameId);
+    const hintEvents = events.filter((e) => e.type === "hint");
+    expect(hintEvents).toHaveLength(1);
+    expect(JSON.parse(hintEvents[0].detail)).toEqual({
+      level: 2,
+      tier: "warning",
+      deltaCp: 220,
+      bestUci: "g1f3",
+      fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    });
+  }, 20000);
+
+  it("logHint refuses cleanly on an unknown game", () => {
+    const r = gm.logHint(999999, { level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: "x" });
+    expect(r.ok).toBe(false);
+  });
 });

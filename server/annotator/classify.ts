@@ -1,11 +1,28 @@
-import type { Chess, Move } from "chess.js";
+import { Chess, type Move, type Square } from "chess.js";
 import type { Evaluator } from "../engines/types";
+
+// Wave C (hint escalation): "what was best instead" at the position BEFORE
+// the judged move — derived from the SAME before-position eval classifyMove
+// already runs (no third eval call; see EVAL_MOVETIME_MS's latency-budget
+// comment below). bestPieceKind is chess.js's own piece-letter alphabet
+// ("p"/"n"/"b"/"r"/"q"/"k"); the client spells it out for copy.
+export interface MoveFacts {
+  bestUci: string;
+  bestSan: string;
+  bestPieceKind: string;
+  bestToSquare: string;
+}
 
 export interface Verdict {
   tier: "silent" | "nudge" | "warning";
   deltaCp: number | null;
   mateAgainst: boolean;
   latencyMs: number;
+  // Undefined whenever the before-position eval's bestMove can't be turned
+  // into a legal move on that position (eval failure, or the checkmate
+  // short-circuit below never running an eval at all) — the client's rule
+  // is "no facts, no help? affordance", never a blocked confirm/retract.
+  facts?: MoveFacts;
 }
 
 // The user-facing "advice dial" (how chatty the judge is) arrives in a
@@ -31,11 +48,40 @@ const EVAL_MOVETIME_MS = 350;
 // material swing, while still ordering a faster mate ahead of a slower one.
 const MATE_SCORE_CP = 100_000;
 
-function toMoverCp(ev: { cp: number | null; mate: number | null }): number {
+// Exported for adjudicate.ts (Wave C, C-A): the "what governs when someone
+// wants to stop" decision reuses this exact mover-perspective/mate-folding
+// convention rather than reinventing it.
+export function toMoverCp(ev: { cp: number | null; mate: number | null }): number {
   if (ev.mate !== null) {
     return ev.mate > 0 ? MATE_SCORE_CP - ev.mate : -(MATE_SCORE_CP - Math.abs(ev.mate));
   }
   return ev.cp ?? 0;
+}
+
+// Wave C hint escalation: turns the before-position eval's bestMove (a bare
+// UCI string from Stockfish, e.g. "e2e4" or "e7e8q") into the SAN/piece/
+// square facts the client needs, by replaying it on a fresh clone of the
+// BEFORE position (never the passed-in `chess`, which already has the
+// player's actual move applied). Returns undefined rather than throwing on
+// anything unparseable — a missing bestMove, an engine hiccup, or (in
+// principle) a stale/malformed UCI string — so a facts failure can never
+// surface as a judge-call failure; see classifyMove's caller-facing
+// "facts is just absent" contract.
+function deriveFacts(beforeFen: string, bestUci: string | undefined): MoveFacts | undefined {
+  if (!bestUci || bestUci.length < 4) return undefined;
+  try {
+    const probe = new Chess(beforeFen);
+    const from = bestUci.slice(0, 2) as Square;
+    const to = bestUci.slice(2, 4) as Square;
+    const promotion = bestUci.length > 4 ? bestUci[4] : undefined;
+    const piece = probe.get(from);
+    if (!piece) return undefined;
+    const mv = probe.move({ from, to, promotion: (promotion as any) ?? "q" });
+    if (!mv) return undefined;
+    return { bestUci, bestSan: mv.san, bestPieceKind: piece.type, bestToSquare: to };
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -94,5 +140,11 @@ export async function classifyMove(chess: Chess, move: Move, evaluator: Evaluato
     tier = "silent";
   }
 
-  return { tier, deltaCp, mateAgainst, latencyMs: Date.now() - start };
+  // Computed for every non-checkmate verdict regardless of tier — cheap
+  // (pure chess.js replay, no extra eval call) and the client already
+  // gates rendering to nudge/warning, so there's no reason to withhold it
+  // for silent.
+  const facts = deriveFacts(move.before, beforeEval.bestMove);
+
+  return { tier, deltaCp, mateAgainst, latencyMs: Date.now() - start, facts };
 }

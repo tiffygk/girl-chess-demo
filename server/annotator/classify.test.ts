@@ -115,4 +115,29 @@ describe("classifyMove — real engine math", () => {
     await classifyMove(chess, move, sf);
     expect(chess.fen()).toBe(fenBefore);
   }, 15000);
+
+  // Wave C, task C-B: the hint-escalation facts, derived from the SAME
+  // before-position eval this function already runs — no third eval call.
+  it("attaches facts (bestUci/bestSan/bestPieceKind/bestToSquare) derived from the before-position eval", async () => {
+    const chess = new Chess("4k3/8/8/8/1n6/8/8/Q3K3 w - - 0 1");
+    const move = chess.move({ from: "a1", to: "a2" });
+    const verdict = await classifyMove(chess, move, sf);
+    expect(verdict.tier).toBe("warning");
+    expect(verdict.facts).toBeTruthy();
+    expect(verdict.facts!.bestUci).toMatch(/^[a-h][1-8][a-h][1-8][nbrq]?$/);
+    expect(verdict.facts!.bestSan.length).toBeGreaterThan(0);
+    expect(["p", "n", "b", "r", "q", "k"]).toContain(verdict.facts!.bestPieceKind);
+    expect(verdict.facts!.bestToSquare).toBe(verdict.facts!.bestUci.slice(2, 4));
+  }, 15000);
+
+  it("omits facts on a checkmating move (short-circuited before any eval ever runs)", async () => {
+    const setup = new Chess();
+    setup.move("f3");
+    setup.move("e5");
+    setup.move("g4");
+    const move = setup.move("Qh4"); // Qh4#
+    const verdict = await classifyMove(setup, move, sf);
+    expect(verdict.tier).toBe("silent");
+    expect(verdict.facts).toBeUndefined();
+  }, 15000);
 });
