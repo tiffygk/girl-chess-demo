@@ -1,6 +1,6 @@
 ## Repository and primitives (file structure locks the decomposition)
 
-Repo: `/Users/tiffany/girl-chess` (new). Plans and product docs stay in the Obsidian vault; `CLAUDE.md` in the repo carries the architecture map for future sessions.
+Repo: `/Users/tiffany/girl-chess` (new). Plans and product docs stay in the Obsidian vault; `CLAUDE.md` in the repo carries the architecture map for future sessions. This includes front-end design references — component libraries, visual style guides, anything like `front-end-components.md`: they belong in the vault's `3 visual/` folder alongside `Sugar Glitch Demo.html`, never in a repo-local `design/` folder. (Corrected 2026-07-17 after one got created in the wrong place.)
 
 ```
 girl-chess/
@@ -40,6 +40,8 @@ One documented deviation from the PRD's stack line: the board is a custom compon
 Runbook: `./setup.sh` once, then `npm run dev`.
 
 Model policy: use Sonnet subagents for implementation and research wherever possible; use Opus where the task warrants it (whole-branch review, tricky debugging, synthesis across many sources). Reserve Fable for architecting the work, big thinking, plans and first drafts, and visual checks that things actually look good. The orchestration loop itself (dispatching agents, relaying reports, committing) does not need Fable either: run build sessions on Opus or Sonnet as the controller and bring Fable in only at plan time and at the final quality gate. Do not burn Fable context on mechanical edits a Sonnet subagent can do from a brief. This is standing policy; the owner should not have to restate it.
+
+Build rounds: every feature/fix/feedback round runs through the `/build-round` skill (`.claude/skills/build-round/SKILL.md`) — invoke it before reading source or dispatching agents. It encodes the phases (Fable architects → Opus/Sonnet controller builds → Opus reviews → Fable visual gate) and the ledger under `.superpowers/sdd/rounds/`.
 
 Context economy (lessons from the 2026-07-17 feedback round; follow these):
 - Start sessions inside this repo so this file auto-loads.
