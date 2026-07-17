@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { Board, type BoardHandle } from "../board/Board";
 import { newSession, newGame, sendMove, modeTimer, type MoveResponse, type GameOverInfo } from "./api";
 import { describeMove } from "./describeMove";
+import { kingInCheckSquare } from "./checkState";
+import { reconcile } from "./reconcile";
 
 const OPPONENT_ELO = 1100;
 
@@ -10,6 +12,25 @@ function resultText(result: string): string {
   if (result === "1-0") return "you win. mallow melts.";
   if (result === "0-1") return "mallow wins this one.";
   return "draw.";
+}
+
+// Server-authoritative desync recovery: when the server hands back a fen
+// (on ok:false, or when a post-success reconcile() finds a mismatch),
+// adopt it directly instead of guessing at a local undo. Only when the
+// server gave us nothing usable (network failure, or the rare ok:false
+// with no fen — e.g. move on an already-gone game) do we fall back to
+// unwinding the client's own last move.
+function adoptServerFen(mirror: Chess, serverFen: string | undefined | null): string {
+  if (serverFen) {
+    try {
+      mirror.load(serverFen);
+      return mirror.fen();
+    } catch {
+      // server sent something unparseable; fall through to the undo fallback
+    }
+  }
+  mirror.undo();
+  return mirror.fen();
 }
 
 export function GamePage() {
@@ -25,6 +46,11 @@ export function GamePage() {
   const mirrorRef = useRef(new Chess());
   const lastReplyAtRef = useRef(Date.now());
   const busyRef = useRef(false);
+
+  const check = useMemo(() => {
+    const c = new Chess(fen);
+    return { square: kingInCheckSquare(c), mate: c.isCheckmate() };
+  }, [fen]);
 
   const startGame = useCallback(async (sid: number) => {
     setGameOver(null);
@@ -85,7 +111,8 @@ export function GamePage() {
         try {
           res = await sendMove(gameId, from, to, mv.promotion, timeSpentMs);
         } catch {
-          mirror.undo();
+          // No server response at all — nothing authoritative to adopt.
+          setFen(adoptServerFen(mirror, undefined));
           setResyncTick((t) => t + 1);
           setStatus("connection hiccup — try that move again");
           return;
@@ -93,7 +120,10 @@ export function GamePage() {
         lastReplyAtRef.current = Date.now();
 
         if (!res.ok) {
-          mirror.undo();
+          // Server-authoritative desync guard: adopt res.fen when the
+          // server gave us one (it's the true post-rejection state), only
+          // falling back to a local undo when it didn't send a usable fen.
+          setFen(adoptServerFen(mirror, res.fen));
           setResyncTick((t) => t + 1);
           setStatus("that didn't land — try another move");
           return;
@@ -111,6 +141,12 @@ export function GamePage() {
             if (replyRender.capture) await board.glitchCapture(replyRender);
             else await board.glide(replyRender);
           }
+        }
+
+        if (reconcile(mirror.fen(), res.fen).action === "adopt") {
+          console.warn("[girl-chess] desync healed", { client: mirror.fen(), server: res.fen });
+          setFen(adoptServerFen(mirror, res.fen));
+          setResyncTick((t) => t + 1);
         }
 
         if (res.gameOver) {
@@ -134,7 +170,14 @@ export function GamePage() {
   return (
     <div className="game-page">
       {fallback && <div className="fallback-banner">fallback opponents (lc0 unavailable)</div>}
-      <Board key={`${gameId ?? "loading"}-${resyncTick}`} ref={boardRef} fen={fen} onMove={handleMove} />
+      <Board
+        key={`${gameId ?? "loading"}-${resyncTick}`}
+        ref={boardRef}
+        fen={fen}
+        onMove={handleMove}
+        checkSquare={check.square}
+        checkmate={check.mate}
+      />
       <p className="status-line">{status}</p>
       {gameOver && (
         <div className="game-over pop-in">
