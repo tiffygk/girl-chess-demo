@@ -31,7 +31,8 @@ export function openDb(path = "data/girlchess.db") {
     CREATE TABLE IF NOT EXISTS verdicts(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), ply INTEGER,
       fen TEXT, move TEXT, tier TEXT, delta_cp INTEGER, mate_against INTEGER,
-      latency_ms INTEGER, advice_level TEXT, at TEXT DEFAULT (datetime('now')));
+      latency_ms INTEGER, advice_level TEXT, mode TEXT DEFAULT 'guardian',
+      at TEXT DEFAULT (datetime('now')));
   `);
   return db;
 }
@@ -77,9 +78,14 @@ export const insertVerdict = (v: {
   mateAgainst: boolean;
   latencyMs: number;
   adviceLevel: string;
+  // C3: trace-tagging — "guardian" (pre-move, pending) vs "post" (played
+  // immediately, judged in parallel — coach-only mode). Defaulted in JS
+  // (not just the column's DDL default) so every existing call site keeps
+  // working unchanged.
+  mode?: string;
 }) =>
   db.prepare(
-    "INSERT INTO verdicts(game_id, ply, fen, move, tier, delta_cp, mate_against, latency_ms, advice_level) VALUES(?,?,?,?,?,?,?,?,?)"
-  ).run(v.gameId, v.ply, v.fen, v.move, v.tier, v.deltaCp, v.mateAgainst ? 1 : 0, v.latencyMs, v.adviceLevel);
+    "INSERT INTO verdicts(game_id, ply, fen, move, tier, delta_cp, mate_against, latency_ms, advice_level, mode) VALUES(?,?,?,?,?,?,?,?,?,?)"
+  ).run(v.gameId, v.ply, v.fen, v.move, v.tier, v.deltaCp, v.mateAgainst ? 1 : 0, v.latencyMs, v.adviceLevel, v.mode ?? "guardian");
 export const getVerdicts = (gameId: number) =>
   db.prepare("SELECT * FROM verdicts WHERE game_id = ? ORDER BY id").all(gameId) as any[];

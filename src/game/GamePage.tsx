@@ -20,6 +20,7 @@ import { kingInCheckSquare } from "./checkState";
 import { reconcile } from "./reconcile";
 import { findTakedownPiece, type Takedown } from "./terminal";
 import { GameEndPanel } from "./GameEndPanel";
+import { resolveMoveFlow } from "./moveFlow";
 
 interface Captured {
   w: PieceKind[]; // white pieces captured (by the opponent)
@@ -51,6 +52,21 @@ const CONFIRM_MS = 3000;
 const BARK_MS = 4000;
 
 const DRAW_DECLINE_BARK = "mallow declines. play on.";
+
+// C3 (Silent Partner toggle + confirm decoupling): localStorage keys, exact
+// names per the brief — the Lab / a future settings sync can rely on these.
+const COACH_MODE_KEY = "gc-coach-mode";
+const CONFIRM_STEP_KEY = "gc-confirm-step";
+
+// Both default ON: with nothing in localStorage yet, resolveMoveFlow(true,
+// true) is "judge-confirm" — the C1/C2 flow, unchanged default behavior.
+// "confirm's default follows coach mode" (brief) is satisfied by sharing
+// this same default; once a value is ever persisted the two keys are
+// fully independent from then on.
+function readBoolPref(key: string): boolean {
+  const raw = window.localStorage.getItem(key);
+  return raw === null ? true : raw === "true";
+}
 
 // Server-authoritative desync recovery: when the server hands back a fen
 // (on ok:false, or when a post-success reconcile() finds a mismatch),
@@ -93,11 +109,32 @@ export function GamePage() {
   // C1's "judged ✓" slot. null while judging, and for tier "silent" (no
   // badge, just the plain "judged ✓" C1 already had).
   const [verdict, setVerdict] = useState<Verdict | null>(null);
+  // C3: the two independent switches. coachOn = "coach judges my moves"
+  // (the pill); confirmOn = "confirm before playing". Crossed via
+  // resolveMoveFlow to pick one of the 4 move flows on every destination
+  // click. Both persist to localStorage so they survive across games
+  // within the session (brief: state per-session).
+  const [coachOn, setCoachOn] = useState<boolean>(() => readBoolPref(COACH_MODE_KEY));
+  const [confirmOn, setConfirmOn] = useState<boolean>(() => readBoolPref(CONFIRM_STEP_KEY));
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // judge-post (coach-only) mode: the move already played, so there's no
+  // pending overlay to hang a badge off of — this is that badge's own
+  // state, rendered next to the status line instead of in the (absent)
+  // judge-indicator. Cleared whenever a new board interaction starts.
+  const [postVerdict, setPostVerdict] = useState<Verdict | null>(null);
+  // Mirrors busyRef (a ref, non-reactive) so the toggle/switches can show a
+  // real disabled state while a move is in flight — brief: "toggle
+  // disabled while pending/animating ... no queuing".
+  const [uiBusy, setUiBusy] = useState(false);
 
   const boardRef = useRef<BoardHandle>(null);
   const mirrorRef = useRef(new Chess());
   const lastReplyAtRef = useRef(Date.now());
   const busyRef = useRef(false);
+  // Bumped on every handleMoveWithPostJudge call (and reset on new game) so
+  // a /judge response for a superseded post-judge move never overwrites a
+  // newer move's badge.
+  const postVerdictTokenRef = useRef(0);
   // Bumped on every confirm/retract (and new game) so a judge response that
   // resolves after the pending move it belongs to was superseded is a
   // no-op — never flips judgePhase to "judged" for a move that's already
@@ -106,6 +143,7 @@ export function GamePage() {
   const confirmTimerRef = useRef<number | null>(null);
   const barkTimerRef = useRef<number | null>(null);
   const replayingRef = useRef(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   // Fires the right terminal-sequence celebration for a game-over result:
   // confetti for a player win, an electric storm for a loss, a soft shimmer
@@ -135,6 +173,8 @@ export function GamePage() {
     setPending(null);
     setJudgePhase(null);
     setVerdict(null);
+    postVerdictTokenRef.current += 1;
+    setPostVerdict(null);
     const g = await newGame(sid, OPPONENT_ELO);
     mirrorRef.current = new Chess(g.fen);
     setFen(g.fen);
@@ -162,6 +202,34 @@ export function GamePage() {
     return modeTimer(sessionId, "game");
   }, [sessionId]);
 
+  useEffect(() => {
+    window.localStorage.setItem(COACH_MODE_KEY, String(coachOn));
+  }, [coachOn]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CONFIRM_STEP_KEY, String(confirmOn));
+  }, [confirmOn]);
+
+  // The popover shouldn't linger open across a move it can no longer
+  // safely act on — close it the moment input locks up, same "no queuing"
+  // spirit as disabling the switches themselves.
+  useEffect(() => {
+    if (uiBusy || pending) setSettingsOpen(false);
+  }, [uiBusy, pending]);
+
+  // Small in-world popover, not a modal — dismiss on any click outside it
+  // rather than trapping focus or blocking the board.
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [settingsOpen]);
+
   const handleMove = useCallback(
     async (from: string, to: string) => {
       if (!gameId || busyRef.current || gameOver) return;
@@ -177,6 +245,7 @@ export function GamePage() {
       }
 
       busyRef.current = true;
+      setUiBusy(true);
       setStatus("");
       const board = boardRef.current;
       const render = describeMove(mv);
@@ -276,6 +345,7 @@ export function GamePage() {
         }
       } finally {
         busyRef.current = false;
+        setUiBusy(false);
       }
     },
     [gameId, gameOver, celebrate]
@@ -286,8 +356,14 @@ export function GamePage() {
   // Legality is checked against a throwaway clone — the mirror itself is
   // never touched until confirm — same "illegal locally, never sent to the
   // server" rule handleMove already follows for the real move.
+  //
+  // C3: `withJudge` splits this one entry point across two of the 4 move
+  // flows — judge-confirm (coach+confirm, the C1/C2 shape below unchanged)
+  // and confirm-only (confirm alone: same pending render, but skips the
+  // /judge call and never sets judgePhase, so no indicator ever renders —
+  // "play it" / "take it back" is all there is).
   const handlePendingStart = useCallback(
-    (from: string, to: string) => {
+    (from: string, to: string, withJudge: boolean) => {
       if (!gameId || busyRef.current || gameOver || pending) return;
       const probe = new Chess(mirrorRef.current.fen());
       let mv;
@@ -299,6 +375,14 @@ export function GamePage() {
 
       const token = (pendingTokenRef.current += 1);
       setPending({ from, to, promotion: mv.promotion });
+
+      if (!withJudge) {
+        // confirm-only: pure two-step, zero /judge calls, no indicator.
+        setJudgePhase(null);
+        setVerdict(null);
+        return;
+      }
+
       setJudgePhase("judging");
       setVerdict(null);
 
@@ -347,6 +431,70 @@ export function GamePage() {
     setVerdict(null);
   }, []);
 
+  // judge-post (coach only, confirm off): the third of the 4 move flows.
+  // No pending step at all — the move plays immediately through the
+  // ordinary handleMove path, exactly like one-tap, while /judge (mode:
+  // "post") runs in parallel and the badge appears whenever it resolves.
+  // Deliberately does NOT pad to JUDGE_MIN_MS: the no-timing-tells cadence
+  // only matters where a pending "judging…" indicator exists for a player
+  // to read timing into — there isn't one here, so the badge just shows up
+  // whenever the eval actually finishes.
+  const handleMoveWithPostJudge = useCallback(
+    (from: string, to: string) => {
+      if (!gameId || busyRef.current || gameOver) return;
+      const token = (postVerdictTokenRef.current += 1);
+      judgeMove(gameId, from, to, undefined, "post")
+        .then((res) => {
+          if (postVerdictTokenRef.current !== token) return; // superseded by a newer move
+          setPostVerdict(res.verdict ?? null);
+        })
+        .catch(() => {
+          // No badge — the move itself never depends on this call.
+        });
+      handleMove(from, to);
+    },
+    [gameId, gameOver, handleMove]
+  );
+
+  // Single dispatch point for every destination click Board reports.
+  // resolveMoveFlow (src/game/moveFlow.ts) is the pinned spec for which of
+  // the 4 flows a given (coachOn, confirmOn) pair maps to.
+  const handleBoardMove = useCallback(
+    (from: string, to: string) => {
+      if (postVerdict) setPostVerdict(null); // clear the previous move's post-judge badge
+      const flow = resolveMoveFlow(coachOn, confirmOn);
+      if (flow === "one-tap") {
+        handleMove(from, to);
+      } else if (flow === "judge-post") {
+        handleMoveWithPostJudge(from, to);
+      } else {
+        handlePendingStart(from, to, flow === "judge-confirm");
+      }
+    },
+    [coachOn, confirmOn, postVerdict, handleMove, handleMoveWithPostJudge, handlePendingStart]
+  );
+
+  const toggleCoach = useCallback(() => {
+    if (uiBusy || pending) return;
+    setCoachOn((v) => !v);
+  }, [uiBusy, pending]);
+
+  const setCoachPref = useCallback(
+    (v: boolean) => {
+      if (uiBusy || pending) return;
+      setCoachOn(v);
+    },
+    [uiBusy, pending]
+  );
+
+  const setConfirmPref = useCallback(
+    (v: boolean) => {
+      if (uiBusy || pending) return;
+      setConfirmOn(v);
+    },
+    [uiBusy, pending]
+  );
+
   useEffect(() => {
     return () => {
       if (confirmTimerRef.current) window.clearTimeout(confirmTimerRef.current);
@@ -384,6 +532,7 @@ export function GamePage() {
 
     (async () => {
       busyRef.current = true;
+      setUiBusy(true);
       try {
         const r = await resign(gameId);
         if (r.ok && r.result) {
@@ -395,6 +544,7 @@ export function GamePage() {
         }
       } finally {
         busyRef.current = false;
+        setUiBusy(false);
       }
     })();
   }, [gameId, gameOver, confirming, armConfirm, clearConfirmTimer, celebrate]);
@@ -410,6 +560,7 @@ export function GamePage() {
 
     (async () => {
       busyRef.current = true;
+      setUiBusy(true);
       setStatus("mallow is thinking...");
       try {
         const r = await offerDraw(gameId);
@@ -427,6 +578,7 @@ export function GamePage() {
         }
       } finally {
         busyRef.current = false;
+        setUiBusy(false);
       }
     })();
   }, [gameId, gameOver, confirming, armConfirm, clearConfirmTimer, celebrate]);
@@ -448,9 +600,53 @@ export function GamePage() {
     }
   }, [takedownMove]);
 
+  const togglesDisabled = uiBusy || pending !== null;
+
   return (
     <div className="game-page">
       {fallback && <div className="fallback-banner">fallback opponents (lc0 unavailable)</div>}
+      <div className="coach-toggle-row" ref={settingsRef}>
+        <button
+          type="button"
+          className={`coach-pill${coachOn ? " coach-pill-on" : " coach-pill-off"}`}
+          onClick={toggleCoach}
+          disabled={togglesDisabled}
+          aria-pressed={coachOn}
+        >
+          {coachOn ? "coach: on" : "coach: off"}
+        </button>
+        <button
+          type="button"
+          className="settings-gear"
+          onClick={() => setSettingsOpen((v) => !v)}
+          aria-expanded={settingsOpen}
+          aria-label="move settings"
+        >
+          ⚙
+        </button>
+        {settingsOpen && (
+          <div className="settings-popover pop-in">
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                checked={coachOn}
+                disabled={togglesDisabled}
+                onChange={(e) => setCoachPref(e.target.checked)}
+              />
+              coach judges my moves
+            </label>
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                checked={confirmOn}
+                disabled={togglesDisabled}
+                onChange={(e) => setConfirmPref(e.target.checked)}
+              />
+              confirm before playing
+            </label>
+          </div>
+        )}
+      </div>
       <div className="board-with-trays">
         <div className="opponent-side">
           <CaptureTray pieces={captured.w} color="w" label="pieces mallow has captured" />
@@ -464,7 +660,7 @@ export function GamePage() {
           key={`${gameId ?? "loading"}-${resyncTick}`}
           ref={boardRef}
           fen={fen}
-          onMove={handlePendingStart}
+          onMove={handleBoardMove}
           checkSquare={check.square}
           checkmate={check.mate}
           pending={pending}
@@ -472,7 +668,7 @@ export function GamePage() {
         />
         <CaptureTray pieces={captured.b} color="b" label="pieces you've captured" />
       </div>
-      {pending && (
+      {pending && judgePhase && (
         <div className="judge-indicator" role="status" aria-live="polite">
           {judgePhase === "judged" ? (
             <span>
@@ -496,6 +692,21 @@ export function GamePage() {
                 <span className="dot">.</span>
               </span>
             </span>
+          )}
+        </div>
+      )}
+      {/* judge-post (coach only, confirm off): no pending step exists to
+          hang a "judging…"/"judged" indicator off of, so the badge for the
+          move that just played renders here instead, as soon as /judge
+          resolves — see handleMoveWithPostJudge. */}
+      {!pending && postVerdict && (
+        <div className="judge-indicator post-judge" role="status" aria-live="polite">
+          {postVerdict.tier === "silent" && <span className="judge-check">✓</span>}
+          {postVerdict.tier === "nudge" && (
+            <span className="judge-badge judge-badge-nudge">hm — you sure?</span>
+          )}
+          {postVerdict.tier === "warning" && (
+            <span className="judge-badge judge-badge-warning">careful. this one hurts.</span>
           )}
         </div>
       )}

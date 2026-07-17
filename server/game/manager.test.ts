@@ -130,6 +130,19 @@ describe("GameManager", () => {
     expect(rows).toHaveLength(1);
   }, 20000);
 
+  // C3: mode defaults to "guardian" for the ordinary pending-render judge
+  // call, and stores whatever mode the caller passes (coach-only mode
+  // passes "post") — trace-tagging so the Lab can tell them apart.
+  it("judgeMove stores mode 'guardian' by default and 'post' when passed explicitly", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    await gm.judgeMove(g.gameId, "e2", "e4");
+    await gm.judgeMove(g.gameId, "d2", "d4", undefined, "post");
+    const rows = getVerdicts(g.gameId);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].mode).toBe("guardian");
+    expect(rows[1].mode).toBe("post");
+  }, 20000);
+
   it("judgeMove rejects an illegal move without touching the game", async () => {
     const g = await gm.newGame(sessionId, 1100);
     const before = (gm as any).games.get(g.gameId).chess.fen();

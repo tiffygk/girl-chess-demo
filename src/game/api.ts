@@ -91,13 +91,17 @@ export function reportMode(sessionId: number, mode: string, seconds: number): Pr
 
 // Stateless: the server validates against a clone and never advances the
 // game (retract is purely client-side — nothing to undo on the server).
+// `mode` (C3): trace-tagging only — omit for the ordinary pre-move
+// (pending) judge call (server defaults it to "guardian"); pass "post"
+// when judging in parallel with an already-played move (coach-only mode).
 export function judgeMove(
   gameId: number,
   from: string,
   to: string,
-  promotion?: string
+  promotion?: string,
+  mode?: string
 ): Promise<JudgeResponse> {
-  return postJson(`/game/${gameId}/judge`, { from, to, promotion });
+  return postJson(`/game/${gameId}/judge`, { from, to, promotion, mode });
 }
 
 export function resign(gameId: number): Promise<ResignResponse> {
