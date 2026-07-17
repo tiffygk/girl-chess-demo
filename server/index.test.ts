@@ -257,4 +257,14 @@ describe("api", () => {
       .send({ level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: "x" }).expect(200);
     expect(r.body.ok).toBe(false);
   });
+
+  it("POST /api/game/:id/hint-facts returns deep hint facts", async () => {
+    const s = await request(app).post("/api/session").send({});
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 });
+    const res = await request(app).post(`/api/game/${g.body.gameId}/hint-facts`).send({});
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.facts.bestUci).toMatch(/^[a-h][1-8][a-h][1-8][nbrq]?$/);
+    expect(res.body.facts.bestFromSquare).toBe(res.body.facts.bestUci.slice(0, 2));
+  }, 40000);
 });

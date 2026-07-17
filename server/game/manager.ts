@@ -4,6 +4,7 @@ import { StockfishEvaluator } from "../engines/stockfish";
 import { createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict } from "../store/db";
 import { classifyMove, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
+import { computeHint as computeHintFacts, type HintFacts } from "../annotator/hint";
 
 interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number; finished: boolean }
 
@@ -227,6 +228,25 @@ export class GameManager {
       reason: decision.reason,
       playerCp: decision.playerCp,
     };
+  }
+
+  // Increment 2.5: player-initiated deep hint. The pending move is client-only
+  // state, so live.chess.fen() IS the before-position the hint applies to.
+  // Runs on the shared serialized evaluator queue: a hint can briefly delay a
+  // concurrent judge/eval call (~1.5-4s worst case), acceptable because hints
+  // are rare and explicitly requested.
+  async computeHint(gameId: number): Promise<{ ok: false } | { ok: true; facts: HintFacts }> {
+    const live = this.games.get(gameId);
+    if (!live || live.finished) return { ok: false };
+    const fen = live.chess.fen();
+    const facts = await computeHintFacts(fen, this.evaluator);
+    if (!facts) return { ok: false };
+    logGameEvent(
+      gameId,
+      "hint_compute",
+      JSON.stringify({ bestUci: facts.bestUci, escalated: facts.escalated, fen })
+    );
+    return { ok: true, facts };
   }
 
   // Wave C, task C-B: observability for the Lab's hint-escalation metric.

@@ -317,4 +317,19 @@ describe("GameManager", () => {
     const r = gm.logHint(999999, { level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: "x" });
     expect(r.ok).toBe(false);
   });
+
+  it("computeHint returns verified deep facts for the live position", async () => {
+    const { gameId } = await gm.newGame(sessionId, 1100);
+    const result = await gm.computeHint(gameId);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.facts.bestUci).toMatch(/^[a-h][1-8][a-h][1-8][nbrq]?$/);
+      expect(result.facts.bestFromSquare).toBe(result.facts.bestUci.slice(0, 2));
+      expect(typeof result.facts.escalated).toBe("boolean");
+    }
+  }, 40000);
+
+  it("computeHint refuses unknown and finished games", async () => {
+    expect((await gm.computeHint(999999)).ok).toBe(false);
+  }, 10000);
 });
