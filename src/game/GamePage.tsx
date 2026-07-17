@@ -923,7 +923,9 @@ export function GamePage() {
                   {verdict?.facts && (verdict.tier === "nudge" || verdict.tier === "warning") && (
                     <span className="hint-block">
                       {hintLevel > 0 && (
-                        <span className="hint-copy">{hintCopy(hintLevel, verdict.facts)}</span>
+                        <span className="hint-copy">
+                          {hintCopy(hintLevel, { ...verdict.facts, bestFromSquare: verdict.facts.bestUci.slice(0, 2) })}
+                        </span>
                       )}
                       {hintLevel < 3 && (
                         <button type="button" className="hint-affordance" onClick={handleHintClick}>

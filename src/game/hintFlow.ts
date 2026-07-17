@@ -9,6 +9,8 @@
 // Level 3 = "best here: {san}" + the board highlights the best move's
 //           from/to squares (GamePage derives those from facts.bestUci —
 //           see hintRevealSquares in GamePage.tsx).
+import { Chess } from "chess.js";
+
 export type HintLevel = 0 | 1 | 2 | 3;
 
 const MAX_HINT_LEVEL: HintLevel = 3;
@@ -34,6 +36,7 @@ export function pieceName(kind: string): string {
 
 export interface HintFacts {
   bestPieceKind: string;
+  bestFromSquare: string;
   bestToSquare: string;
   bestSan: string;
 }
@@ -46,13 +49,40 @@ export interface HintFacts {
 export function hintCopy(level: HintLevel, facts: HintFacts): string | null {
   if (level <= 0) return null;
   if (level === 1) return `look at your ${pieceName(facts.bestPieceKind)}`;
-  if (level === 2) return `think about ${facts.bestToSquare}`;
+  // Level 2 names the origin square, not the destination: the destination of
+  // a capture/quiet move she isn't seeing reads as an unreachable square
+  // (owner playtest 2026-07-17); her own piece's square is always findable.
+  if (level === 2) return `your ${pieceName(facts.bestPieceKind)} on ${facts.bestFromSquare}`;
   return `best here: ${facts.bestSan}`;
 }
 
 /** Splits a UCI move ("g1f3") into its from/to squares for the board's
  * level-3 highlight. Deliberately doesn't validate — bestUci already came
- * from a legal chess.js replay in classify.ts's deriveFacts. */
+ * from a legal chess.js replay in classify.ts's deriveFacts. Belt-and-
+ * suspenders re-validation against the live client position lives in
+ * hintIsLegal below. */
 export function hintRevealSquares(bestUci: string): { from: string; to: string } {
   return { from: bestUci.slice(0, 2), to: bestUci.slice(2, 4) };
+}
+
+/**
+ * Belt-and-suspenders legality re-check against the live client position.
+ * The server derives facts from a legal chess.js replay, but hintRevealSquares
+ * trusts its input unconditionally — if a stale or cross-game hint ever slips
+ * through the token guards, this stops it from rendering as an impossible
+ * square (the exact playtest complaint) and lets the caller log it instead.
+ */
+export function hintIsLegal(fen: string, bestUci: string): boolean {
+  if (!bestUci || bestUci.length < 4) return false;
+  try {
+    const probe = new Chess(fen);
+    const mv = probe.move({
+      from: bestUci.slice(0, 2),
+      to: bestUci.slice(2, 4),
+      promotion: (bestUci[4] as "q" | undefined) ?? "q",
+    });
+    return Boolean(mv);
+  } catch {
+    return false;
+  }
 }
