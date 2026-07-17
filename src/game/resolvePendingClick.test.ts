@@ -9,10 +9,10 @@ describe("resolvePendingClick", () => {
     expect(result).toEqual({ action: "cancel" });
   });
 
-  it("cancels when clicking the held ghost at the pending destination", () => {
+  it("confirms when the pending destination is clicked again (owner: double click = confirm)", () => {
     const chess = new Chess();
     const result = resolvePendingClick(chess, { from: "e2", to: "e4" }, "e4");
-    expect(result).toEqual({ action: "cancel" });
+    expect(result).toEqual({ action: "confirm" });
   });
 
   it("retargets to a different legal destination for the same origin", () => {
@@ -31,10 +31,10 @@ describe("resolvePendingClick", () => {
     expect(result).toEqual({ action: "retarget", to: "g1" });
   });
 
-  it("no-ops when re-clicking the castling rook while that exact castle is already pending", () => {
+  it("confirms when the castling rook is re-clicked while that castle is pending", () => {
     const chess = new Chess("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4");
     const result = resolvePendingClick(chess, { from: "e1", to: "g1" }, "h1");
-    expect(result).toEqual({ action: "noop" });
+    expect(result).toEqual({ action: "confirm" });
   });
 
   it("selects a different own piece (standard reselect), castleBlocked false for a non-king origin", () => {

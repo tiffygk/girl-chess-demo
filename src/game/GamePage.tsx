@@ -936,6 +936,7 @@ export function GamePage() {
           pending={pending}
           onRetarget={handleRetargetPending}
           onCancelPending={handleRetractPending}
+          onConfirmPending={handleConfirmPending}
           onInputHint={handleInputHint}
           lastMove={lastMove}
           hintReveal={hintReveal}
