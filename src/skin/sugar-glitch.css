@@ -128,6 +128,22 @@
 }
 .gc-app .judge-check { color: #4CAF8C; font-weight: 700; }
 
+/* C2: badges rendered into the same "judged" slot above, one per tier.
+   silent has no badge (just the check above). Nudge stays in the app's
+   lavender family (same as .tagline/.status-line); warning uses the
+   #FF3DA6 magenta family used everywhere else for "pay attention". */
+.gc-app .judge-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.gc-app .judge-badge-nudge { background: #E7DFFF; color: #6952C4; }
+.gc-app .judge-badge-warning { background: #FF3DA6; color: #fff; }
+
 /* captured-piece trays flank the board in fixed-width columns so a tray
    filling up never nudges the board sideways — content wraps within the
    column instead of growing it. Each row holds ~8 sprites before wrapping.

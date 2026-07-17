@@ -1,8 +1,8 @@
 import { Chess } from "chess.js";
 import { MaiaOpponent } from "../engines/maia";
 import { StockfishEvaluator } from "../engines/stockfish";
-import { createGame, finishGame, recordMove, attachEval, logGameEvent } from "../store/db";
-import { classifyMove } from "../annotator/classify";
+import { createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict } from "../store/db";
+import { classifyMove, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 
 interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number }
 
@@ -96,6 +96,22 @@ export class GameManager {
       return { ok: false };
     }
     const verdict = await classifyMove(clone, mv, this.evaluator);
+    // Capture-first trace: every judged move gets a verdict row, silent
+    // included (100% trace completeness) — even a move the player
+    // retracts afterward. Retraction behavior is itself wanted data for
+    // the Lab. `ply` is the ply this move WOULD occupy if confirmed; a
+    // confirmed move joins back to it via (game_id, ply).
+    insertVerdict({
+      gameId,
+      ply: live.ply + 1,
+      fen: mv.before,
+      move: mv.san,
+      tier: verdict.tier,
+      deltaCp: verdict.deltaCp,
+      mateAgainst: verdict.mateAgainst,
+      latencyMs: verdict.latencyMs,
+      adviceLevel: DEFAULT_ADVICE_LEVEL,
+    });
     return { ok: true, verdict };
   }
 

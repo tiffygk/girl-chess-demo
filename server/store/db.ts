@@ -28,6 +28,10 @@ export function openDb(path = "data/girlchess.db") {
     CREATE TABLE IF NOT EXISTS game_events(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id),
       type TEXT, detail TEXT, at TEXT DEFAULT (datetime('now')));
+    CREATE TABLE IF NOT EXISTS verdicts(
+      id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), ply INTEGER,
+      fen TEXT, move TEXT, tier TEXT, delta_cp INTEGER, mate_against INTEGER,
+      latency_ms INTEGER, advice_level TEXT, at TEXT DEFAULT (datetime('now')));
   `);
   return db;
 }
@@ -59,3 +63,23 @@ export const logGameEvent = (gameId: number, type: string, detail?: string) =>
   db.prepare("INSERT INTO game_events(game_id, type, detail) VALUES(?,?,?)").run(gameId, type, detail ?? null);
 export const getGameEvents = (gameId: number) =>
   db.prepare("SELECT * FROM game_events WHERE game_id = ? ORDER BY id").all(gameId) as any[];
+// Capture-first trace: one row per judged move, silent verdicts included —
+// judgeMove writes this for every /judge call, confirmed or not (retracted
+// moves keep their row; that's wanted data for the Lab). Confirmed moves
+// join to the moves table via (game_id, ply).
+export const insertVerdict = (v: {
+  gameId: number;
+  ply: number;
+  fen: string;
+  move: string;
+  tier: string;
+  deltaCp: number | null;
+  mateAgainst: boolean;
+  latencyMs: number;
+  adviceLevel: string;
+}) =>
+  db.prepare(
+    "INSERT INTO verdicts(game_id, ply, fen, move, tier, delta_cp, mate_against, latency_ms, advice_level) VALUES(?,?,?,?,?,?,?,?,?)"
+  ).run(v.gameId, v.ply, v.fen, v.move, v.tier, v.deltaCp, v.mateAgainst ? 1 : 0, v.latencyMs, v.adviceLevel);
+export const getVerdicts = (gameId: number) =>
+  db.prepare("SELECT * FROM verdicts WHERE game_id = ? ORDER BY id").all(gameId) as any[];

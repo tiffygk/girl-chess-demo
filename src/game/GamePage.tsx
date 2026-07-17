@@ -12,6 +12,7 @@ import {
   judgeMove,
   type MoveResponse,
   type GameOverInfo,
+  type Verdict,
 } from "./api";
 import { describeMove } from "./describeMove";
 import { victimKind } from "./captures";
@@ -88,6 +89,10 @@ export function GamePage() {
   // — Board renders it as a pure overlay (dimmed origin + ghost on `to`).
   const [pending, setPending] = useState<{ from: string; to: string; promotion?: string } | null>(null);
   const [judgePhase, setJudgePhase] = useState<"judging" | "judged" | null>(null);
+  // C2: the verdict itself, once judged — drives the badge rendered into
+  // C1's "judged ✓" slot. null while judging, and for tier "silent" (no
+  // badge, just the plain "judged ✓" C1 already had).
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
 
   const boardRef = useRef<BoardHandle>(null);
   const mirrorRef = useRef(new Chess());
@@ -129,6 +134,7 @@ export function GamePage() {
     pendingTokenRef.current += 1;
     setPending(null);
     setJudgePhase(null);
+    setVerdict(null);
     const g = await newGame(sid, OPPONENT_ELO);
     mirrorRef.current = new Chess(g.fen);
     setFen(g.fen);
@@ -294,18 +300,23 @@ export function GamePage() {
       const token = (pendingTokenRef.current += 1);
       setPending({ from, to, promotion: mv.promotion });
       setJudgePhase("judging");
+      setVerdict(null);
 
       (async () => {
         const startedAt = Date.now();
+        let result: Verdict | null = null;
         try {
-          await judgeMove(gameId, from, to, mv.promotion);
+          const res = await judgeMove(gameId, from, to, mv.promotion);
+          result = res.verdict ?? null;
         } catch {
-          // No verdict to show — C1's stub is silent-only anyway, and
-          // confirm/retract never depend on this call succeeding.
+          // No verdict to show — confirm/retract never depend on this call
+          // succeeding, so this just falls back to the plain "judged ✓"
+          // (no badge) state.
         }
         const elapsed = Date.now() - startedAt;
         if (elapsed < JUDGE_MIN_MS) await sleep(JUDGE_MIN_MS - elapsed);
         if (pendingTokenRef.current !== token) return; // superseded — stale, ignore
+        setVerdict(result);
         setJudgePhase("judged");
       })();
     },
@@ -322,6 +333,7 @@ export function GamePage() {
     pendingTokenRef.current += 1;
     setPending(null);
     setJudgePhase(null);
+    setVerdict(null);
     handleMove(from, to);
   }, [pending, handleMove]);
 
@@ -332,6 +344,7 @@ export function GamePage() {
     pendingTokenRef.current += 1;
     setPending(null);
     setJudgePhase(null);
+    setVerdict(null);
   }, []);
 
   useEffect(() => {
@@ -462,7 +475,18 @@ export function GamePage() {
       {pending && (
         <div className="judge-indicator" role="status" aria-live="polite">
           {judgePhase === "judged" ? (
-            <span>judged <span className="judge-check">✓</span></span>
+            <span>
+              judged <span className="judge-check">✓</span>
+              {/* C2: the badge for the "judged" slot C1 built. silent stays
+                  the plain check above (no badge) — cadence (JUDGE_MIN_MS)
+                  is identical for every tier, only what appears differs. */}
+              {verdict?.tier === "nudge" && (
+                <span className="judge-badge judge-badge-nudge">hm — you sure?</span>
+              )}
+              {verdict?.tier === "warning" && (
+                <span className="judge-badge judge-badge-warning">careful. this one hurts.</span>
+              )}
+            </span>
           ) : (
             <span>
               judging
