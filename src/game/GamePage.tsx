@@ -9,9 +9,11 @@ import {
   adjudicate,
   judgeMove,
   logHint,
+  fetchHintFacts,
   type MoveResponse,
   type GameOverInfo,
   type Verdict,
+  type HintFactsResponse,
 } from "./api";
 import { describeMove, type MoveRender } from "./describeMove";
 import { victimKind, materialDiff, rollbackCapture, type CapturedBySide } from "./captures";
@@ -21,7 +23,7 @@ import { findTakedownPiece, type Takedown } from "./terminal";
 import { replayPlan } from "./replay";
 import { GameEndPanel } from "./GameEndPanel";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
-import { nextHintLevel, hintCopy, hintRevealSquares, type HintLevel } from "./hintFlow";
+import { nextHintLevel, hintCopy, hintRevealSquares, hintIsLegal, type HintLevel } from "./hintFlow";
 import { PlayerBar } from "./PlayerBar";
 
 type Captured = CapturedBySide;
@@ -133,6 +135,16 @@ export function GamePage() {
   // confirm/new pending — see handlePendingStart/handleConfirmPending/
   // handleRetractPending below.
   const [hintLevel, setHintLevel] = useState<HintLevel>(0);
+  // Wave B (increment 2.5): the deep verified facts fetched on the FIRST
+  // "help?" click for the current pending move — the api response type, not
+  // hintFlow's HintFacts: the state must carry bestUci (for reveal squares
+  // and logging), which the copy-only client interface deliberately omits.
+  // Structural typing lets this feed hintCopy directly. Reset alongside
+  // hintLevel at every pending-lifecycle boundary (new game, pending start/
+  // retarget, confirm, retract) — a stale fetch from the last destination
+  // would point at the wrong "instead" square.
+  const [hintFacts, setHintFacts] = useState<NonNullable<HintFactsResponse["facts"]> | null>(null);
+  const [hintFetching, setHintFetching] = useState(false);
   // C3: the two independent switches. coachOn = "coach judges my moves"
   // (the pill); confirmOn = "confirm before playing". Crossed via
   // resolveMoveFlow to pick one of the 4 move flows on every destination
@@ -217,6 +229,8 @@ export function GamePage() {
     setJudgePhase(null);
     setVerdict(null);
     setHintLevel(0);
+    setHintFacts(null);
+    setHintFetching(false);
     postVerdictTokenRef.current += 1;
     setPostVerdict(null);
     setLastMove(null);
@@ -484,6 +498,8 @@ export function GamePage() {
       // fresh — a stale hint from the last destination would point at the
       // wrong "instead" square.
       setHintLevel(0);
+      setHintFacts(null);
+      setHintFetching(false);
 
       if (!withJudge) {
         // confirm-only: pure two-step, zero /judge calls, no indicator.
@@ -535,6 +551,8 @@ export function GamePage() {
     setJudgePhase(null);
     setVerdict(null);
     setHintLevel(0); // Wave C, task C-B: level resets on confirm
+    setHintFacts(null);
+    setHintFetching(false);
     handleMove(from, to, overrideVerdict);
   }, [pending, verdict, handleMove]);
 
@@ -547,6 +565,8 @@ export function GamePage() {
     setJudgePhase(null);
     setVerdict(null);
     setHintLevel(0); // Wave C, task C-B: level resets on cancel
+    setHintFacts(null);
+    setHintFetching(false);
   }, []);
 
   // A2 (pending retarget): Board resolved a click to "a different legal
@@ -569,7 +589,8 @@ export function GamePage() {
     [pending, coachOn, confirmOn, handlePendingStart]
   );
 
-  // Wave C, task C-B: deterministic hint escalation. Only ever callable
+  // Wave B (increment 2.5): hints now fetch a deep verified line on demand
+  // instead of reusing the judge's shallow 350ms eval. Only ever callable
   // when the current pending's verdict actually carries facts (the render
   // below gates the affordance on the same condition), so there's nothing
   // to guard against a facts-less verdict here beyond the defensive check.
@@ -578,12 +599,44 @@ export function GamePage() {
   // meaningless without it.
   const handleHintClick = useCallback(() => {
     if (!gameId || !verdict?.facts) return;
-    const next = nextHintLevel(hintLevel);
-    setHintLevel(next);
-    logHint(gameId, next, verdict.tier, verdict.deltaCp, verdict.facts.bestUci, mirrorRef.current.fen()).catch(
-      () => undefined
-    );
-  }, [gameId, verdict, hintLevel]);
+    // Facts already fetched for this pending move: just climb the ladder.
+    if (hintFacts) {
+      const next = nextHintLevel(hintLevel);
+      setHintLevel(next);
+      logHint(gameId, next, verdict.tier, verdict.deltaCp, hintFacts.bestUci, mirrorRef.current.fen()).catch(
+        () => undefined
+      );
+      return;
+    }
+    if (hintFetching) return;
+    // First reveal: fetch the deep verified hint. Pending never mutates the
+    // mirror, so mirrorRef's fen is exactly the before-position the server
+    // computes against. Token-guarded like the judge call: a retarget/cancel/
+    // confirm while the search runs makes the result stale and it is dropped.
+    const token = pendingTokenRef.current;
+    setHintFetching(true);
+    (async () => {
+      try {
+        const res = await fetchHintFacts(gameId);
+        if (pendingTokenRef.current !== token) return;
+        if (!res.ok || !res.facts || !hintIsLegal(mirrorRef.current.fen(), res.facts.bestUci)) {
+          // Never render a hint that fails the live legality check — log it
+          // for the Lab instead (this is the "impossible square" playtest bug).
+          logHint(gameId, 0, "invalid", null, res.facts?.bestUci ?? "none", mirrorRef.current.fen()).catch(
+            () => undefined
+          );
+          return;
+        }
+        setHintFacts(res.facts);
+        setHintLevel(1);
+        logHint(gameId, 1, verdict.tier, verdict.deltaCp, res.facts.bestUci, mirrorRef.current.fen()).catch(
+          () => undefined
+        );
+      } finally {
+        if (pendingTokenRef.current === token) setHintFetching(false);
+      }
+    })();
+  }, [gameId, verdict, hintLevel, hintFacts, hintFetching]);
 
   // A5: surfaces a short "you tried something, here's why it didn't work"
   // message in the status line for a few seconds (currently only "can't
@@ -807,11 +860,11 @@ export function GamePage() {
           ? "call it: mallow has this. resign?"
           : "end the game?";
 
-  // Wave C, task C-B: level-3 board highlight for the judge's suggested
-  // best move, derived straight from the verdict's facts — no separate
-  // state needed beyond hintLevel itself.
+  // Wave B (increment 2.5): level-3 board highlight for the deep verified
+  // hint's best move, derived from the fetched hintFacts (not the judge's
+  // shallow verdict.facts).
   const hintReveal =
-    hintLevel >= 3 && verdict?.facts ? hintRevealSquares(verdict.facts.bestUci) : null;
+    hintLevel >= 3 && hintFacts ? hintRevealSquares(hintFacts.bestUci) : null;
 
   return (
     <div className="game-page">
@@ -922,14 +975,17 @@ export function GamePage() {
                       are never blocked on it). */}
                   {verdict?.facts && (verdict.tier === "nudge" || verdict.tier === "warning") && (
                     <span className="hint-block">
-                      {hintLevel > 0 && (
-                        <span className="hint-copy">
-                          {hintCopy(hintLevel, { ...verdict.facts, bestFromSquare: verdict.facts.bestUci.slice(0, 2) })}
-                        </span>
+                      {hintLevel > 0 && hintFacts && (
+                        <span className="hint-copy">{hintCopy(hintLevel, hintFacts)}</span>
                       )}
                       {hintLevel < 3 && (
-                        <button type="button" className="hint-affordance" onClick={handleHintClick}>
-                          {hintLevel === 0 ? "help?" : "more?"}
+                        <button
+                          type="button"
+                          className="hint-affordance"
+                          onClick={handleHintClick}
+                          disabled={hintFetching}
+                        >
+                          {hintFetching ? "thinking..." : hintLevel === 0 ? "help?" : "more?"}
                         </button>
                       )}
                     </span>

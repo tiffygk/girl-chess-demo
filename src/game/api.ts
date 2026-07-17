@@ -157,6 +157,25 @@ export function adjudicate(gameId: number, execute: boolean): Promise<Adjudicate
   return postJson(`/game/${gameId}/adjudicate`, { execute });
 }
 
+// Wave B (increment 2.5): the on-demand deep verified hint search — fetched
+// only when the player clicks "help?", decoupled from the judge's shallow
+// 350ms eval. Mirrors server/annotator/hint.ts's HintFacts.
+export interface HintFactsResponse {
+  ok: boolean;
+  facts?: {
+    bestUci: string;
+    bestSan: string;
+    bestPieceKind: string;
+    bestFromSquare: string;
+    bestToSquare: string;
+    escalated: boolean;
+  };
+}
+
+export function fetchHintFacts(gameId: number): Promise<HintFactsResponse> {
+  return postJson(`/game/${gameId}/hint-facts`, {});
+}
+
 // Wave C, task C-B: fire-and-forget hint-escalation observability. Never
 // awaited by its caller for anything but a `.catch` — a failed log write
 // must never block confirm/retract or the hint reveal itself.
