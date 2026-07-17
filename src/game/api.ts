@@ -8,6 +8,7 @@ export interface NewGameResponse {
   gameId: number;
   fen: string;
   fallback: boolean;
+  elo: number;
 }
 
 export interface MoveReply {
