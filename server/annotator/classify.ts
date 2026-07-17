@@ -67,7 +67,7 @@ export function toMoverCp(ev: { cp: number | null; mate: number | null }): numbe
 // principle) a stale/malformed UCI string — so a facts failure can never
 // surface as a judge-call failure; see classifyMove's caller-facing
 // "facts is just absent" contract.
-function deriveFacts(beforeFen: string, bestUci: string | undefined): MoveFacts | undefined {
+export function deriveFacts(beforeFen: string, bestUci: string | undefined): MoveFacts | undefined {
   if (!bestUci || bestUci.length < 4) return undefined;
   try {
     const probe = new Chess(beforeFen);
