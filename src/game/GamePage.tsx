@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { Board, type BoardHandle } from "../board/Board";
-import { Piece, type PieceKind } from "../board/pieces";
 import {
   newSession,
   newGame,
@@ -15,17 +14,15 @@ import {
   type Verdict,
 } from "./api";
 import { describeMove, type MoveRender } from "./describeMove";
-import { victimKind } from "./captures";
+import { victimKind, materialDiff, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
 import { reconcile } from "./reconcile";
 import { findTakedownPiece, type Takedown } from "./terminal";
 import { GameEndPanel } from "./GameEndPanel";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
+import { PlayerBar } from "./PlayerBar";
 
-interface Captured {
-  w: PieceKind[]; // white pieces captured (by the opponent)
-  b: PieceKind[]; // black pieces captured (by the player)
-}
+type Captured = CapturedBySide;
 
 const OPPONENT_ELO = 1100;
 
@@ -145,6 +142,15 @@ export function GamePage() {
   // real disabled state while a move is in flight — brief: "toggle
   // disabled while pending/animating ... no queuing".
   const [uiBusy, setUiBusy] = useState(false);
+  // Wave B: true specifically from the moment the player's move is sent to
+  // the server (the actual network round-trip) until a reply arrives or the
+  // request fails — narrower than uiBusy, which also covers the player's
+  // own move animation. Drives the top (mallow) player bar's "thinking..."
+  // chip; when uiBusy is true but this is still false, the bar shows the
+  // quieter "mallow's move" text instead (her turn is coming up but the
+  // request hasn't gone out yet). Turn/state text no longer routes through
+  // `status` at all — see the bars in the render below.
+  const [mallowThinking, setMallowThinking] = useState(false);
 
   const boardRef = useRef<BoardHandle>(null);
   const mirrorRef = useRef(new Chess());
@@ -196,6 +202,7 @@ export function GamePage() {
     postVerdictTokenRef.current += 1;
     setPostVerdict(null);
     setLastMove(null);
+    setMallowThinking(false);
     if (inputHintTimerRef.current) {
       window.clearTimeout(inputHintTimerRef.current);
       inputHintTimerRef.current = null;
@@ -207,7 +214,10 @@ export function GamePage() {
     setFallback(g.fallback);
     setGameId(g.gameId);
     lastReplyAtRef.current = Date.now();
-    setStatus("your move");
+    // Turn state now lives in the player bars (see render) — clear the
+    // "finding an opponent..." transient now that the game is ready, but
+    // don't replace it with "your move" text; status is transient-only.
+    setStatus("");
   }, []);
 
   useEffect(() => {
@@ -297,7 +307,9 @@ export function GamePage() {
         setLastMove({ from: render.from, to: render.to });
 
         const timeSpentMs = Date.now() - lastReplyAtRef.current;
-        setStatus("mallow is thinking...");
+        // Turn state lives in the player bars now (top bar's "thinking..."
+        // chip) — this ref/state pair is what drives it, not `status`.
+        setMallowThinking(true);
 
         let res: MoveResponse;
         try {
@@ -388,12 +400,13 @@ export function GamePage() {
           setGameOver(res.gameOver);
           setStatus("");
           celebrate(res.gameOver.result);
-        } else {
-          setStatus("your move");
         }
+        // else: back to the player's turn — the bottom bar's "your move"
+        // chip picks this up from uiBusy going false below; no status text.
       } finally {
         busyRef.current = false;
         setUiBusy(false);
+        setMallowThinking(false);
       }
     },
     [gameId, gameOver, celebrate]
@@ -702,60 +715,79 @@ export function GamePage() {
 
   const togglesDisabled = uiBusy || pending !== null;
 
+  // Wave B: turn/state info lives entirely in the two player bars now.
+  // uiBusy is true for the whole span from "player's move confirmed" to
+  // "reply (or failure) resolved" — that's mallow's side of the board being
+  // "in play"; anything else is the player's side. mallowThinking narrows
+  // the mallow-active window to just the network round-trip (see handleMove).
+  const material = materialDiff(captured);
+  const moveNumber = Number(fen.split(" ")[5]) || 1;
+  const mallowActive = !!gameId && !gameOver && uiBusy;
+  const youActive = !!gameId && !gameOver && !uiBusy;
+  const mallowChip = mallowActive ? (mallowThinking ? "thinking..." : "mallow's move") : null;
+  const youChip = youActive ? (pending ? "deciding..." : "your move") : null;
+
   return (
     <div className="game-page">
       {fallback && <div className="fallback-banner">fallback opponents (lc0 unavailable)</div>}
-      <div className="coach-toggle-row" ref={settingsRef}>
-        <button
-          type="button"
-          className={`coach-pill${coachOn ? " coach-pill-on" : " coach-pill-off"}`}
-          onClick={toggleCoach}
-          disabled={togglesDisabled}
-          aria-pressed={coachOn}
-        >
-          {coachOn ? "coach: on" : "coach: off"}
-        </button>
-        <button
-          type="button"
-          className="settings-gear"
-          onClick={() => setSettingsOpen((v) => !v)}
-          aria-expanded={settingsOpen}
-          aria-label="move settings"
-        >
-          ⚙
-        </button>
-        {settingsOpen && (
-          <div className="settings-popover pop-in">
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={coachOn}
-                disabled={togglesDisabled}
-                onChange={(e) => setCoachPref(e.target.checked)}
-              />
-              coach judges my moves
-            </label>
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={confirmOn}
-                disabled={togglesDisabled}
-                onChange={(e) => setConfirmPref(e.target.checked)}
-              />
-              confirm before playing
-            </label>
-          </div>
-        )}
-      </div>
-      <div className="board-with-trays">
-        <div className="opponent-side">
-          <CaptureTray pieces={captured.w} color="w" label="pieces mallow has captured" caption="mallow took" />
-          {bark && (
-            <div className="bark-bubble pop-in" role="status">
-              {bark}
+      <header className="header-band">
+        <div className="header-lockup">
+          <span className="px">GIRL CHESS</span>
+          <p className="tagline">tutor with benefits</p>
+        </div>
+        <div className="header-actions" ref={settingsRef}>
+          <button
+            type="button"
+            className={`coach-pill${coachOn ? " coach-pill-on" : " coach-pill-off"}`}
+            onClick={toggleCoach}
+            disabled={togglesDisabled}
+            aria-pressed={coachOn}
+          >
+            {coachOn ? "coach: on" : "coach: off"}
+          </button>
+          <button
+            type="button"
+            className="settings-gear"
+            onClick={() => setSettingsOpen((v) => !v)}
+            aria-expanded={settingsOpen}
+            aria-label="move settings"
+          >
+            ⚙
+          </button>
+          {settingsOpen && (
+            <div className="settings-popover pop-in">
+              <label className="settings-switch">
+                <input
+                  type="checkbox"
+                  checked={coachOn}
+                  disabled={togglesDisabled}
+                  onChange={(e) => setCoachPref(e.target.checked)}
+                />
+                coach judges my moves
+              </label>
+              <label className="settings-switch">
+                <input
+                  type="checkbox"
+                  checked={confirmOn}
+                  disabled={togglesDisabled}
+                  onChange={(e) => setConfirmPref(e.target.checked)}
+                />
+                confirm before playing
+              </label>
             </div>
           )}
         </div>
+      </header>
+      <div className="board-stack">
+        <PlayerBar
+          seat="mallow"
+          captured={captured.w}
+          capturedColor="w"
+          materialLead={material.leader === "mallow" ? material.points : null}
+          active={mallowActive}
+          chip={mallowChip}
+          bark={bark}
+        />
         <Board
           key={`${gameId ?? "loading"}-${resyncTick}`}
           ref={boardRef}
@@ -769,78 +801,96 @@ export function GamePage() {
           onInputHint={handleInputHint}
           lastMove={lastMove}
         />
-        <CaptureTray pieces={captured.b} color="b" label="pieces you've captured" caption="you took" />
+        <PlayerBar
+          seat="you"
+          captured={captured.b}
+          capturedColor="b"
+          materialLead={material.leader === "you" ? material.points : null}
+          active={youActive}
+          chip={youChip}
+          moveNumber={moveNumber}
+        />
       </div>
-      {pending && judgePhase && (
-        <div className="judge-indicator" role="status" aria-live="polite">
-          {judgePhase === "judged" ? (
-            <span>
-              judged <span className="judge-check">✓</span>
-              {/* C2: the badge for the "judged" slot C1 built. silent stays
-                  the plain check above (no badge) — cadence (JUDGE_MIN_MS)
-                  is identical for every tier, only what appears differs. */}
-              {verdict?.tier === "nudge" && (
+      {/* Fixed-height reserve so the judge indicator and controls appearing
+          or disappearing never nudges the board — both slots always occupy
+          their space; only their contents come and go. */}
+      <div className="action-slot">
+        <div className="action-slot-judge">
+          {pending && judgePhase && (
+            <div className="judge-indicator" role="status" aria-live="polite">
+              {judgePhase === "judged" ? (
+                <span>
+                  judged <span className="judge-check">✓</span>
+                  {/* C2: the badge for the "judged" slot C1 built. silent stays
+                      the plain check above (no badge) — cadence (JUDGE_MIN_MS)
+                      is identical for every tier, only what appears differs. */}
+                  {verdict?.tier === "nudge" && (
+                    <span className="judge-badge judge-badge-nudge">hm — you sure?</span>
+                  )}
+                  {verdict?.tier === "warning" && (
+                    <span className="judge-badge judge-badge-warning">careful. this one hurts.</span>
+                  )}
+                </span>
+              ) : (
+                <span>
+                  judging
+                  <span className="judge-dots" aria-hidden="true">
+                    <span className="dot">.</span>
+                    <span className="dot">.</span>
+                    <span className="dot">.</span>
+                  </span>
+                </span>
+              )}
+            </div>
+          )}
+          {/* judge-post (coach only, confirm off): no pending step exists to
+              hang a "judging…"/"judged" indicator off of, so the badge for the
+              move that just played renders here instead, as soon as /judge
+              resolves — see handleMoveWithPostJudge. */}
+          {!pending && postVerdict && (
+            <div className="judge-indicator post-judge" role="status" aria-live="polite">
+              {postVerdict.tier === "silent" && <span className="judge-check">✓</span>}
+              {postVerdict.tier === "nudge" && (
                 <span className="judge-badge judge-badge-nudge">hm — you sure?</span>
               )}
-              {verdict?.tier === "warning" && (
+              {postVerdict.tier === "warning" && (
                 <span className="judge-badge judge-badge-warning">careful. this one hurts.</span>
               )}
-            </span>
-          ) : (
-            <span>
-              judging
-              <span className="judge-dots" aria-hidden="true">
-                <span className="dot">.</span>
-                <span className="dot">.</span>
-                <span className="dot">.</span>
-              </span>
-            </span>
+            </div>
           )}
         </div>
-      )}
-      {/* judge-post (coach only, confirm off): no pending step exists to
-          hang a "judging…"/"judged" indicator off of, so the badge for the
-          move that just played renders here instead, as soon as /judge
-          resolves — see handleMoveWithPostJudge. */}
-      {!pending && postVerdict && (
-        <div className="judge-indicator post-judge" role="status" aria-live="polite">
-          {postVerdict.tier === "silent" && <span className="judge-check">✓</span>}
-          {postVerdict.tier === "nudge" && (
-            <span className="judge-badge judge-badge-nudge">hm — you sure?</span>
-          )}
-          {postVerdict.tier === "warning" && (
-            <span className="judge-badge judge-badge-warning">careful. this one hurts.</span>
-          )}
-        </div>
-      )}
-      {!gameOver &&
-        (pending ? (
-          <div className="controls game-controls pending-controls">
-            <button className="small confirm-pending" onClick={handleConfirmPending}>
-              play it
-            </button>
-            <button className="small" onClick={handleRetractPending}>
-              take it back
-            </button>
+        {!gameOver && (
+          <div className="action-slot-controls">
+            {pending ? (
+              <div className="controls game-controls pending-controls">
+                <button className="small confirm-pending" onClick={handleConfirmPending}>
+                  play it
+                </button>
+                <button className="small" onClick={handleRetractPending}>
+                  take it back
+                </button>
+              </div>
+            ) : (
+              <div className="controls game-controls">
+                <button
+                  className={`small${confirming === "resign" ? " confirming" : ""}`}
+                  disabled={!gameId}
+                  onClick={handleResignClick}
+                >
+                  {confirming === "resign" ? "you sure?" : "resign"}
+                </button>
+                <button
+                  className={`small${confirming === "draw" ? " confirming" : ""}`}
+                  disabled={!gameId}
+                  onClick={handleDrawClick}
+                >
+                  {confirming === "draw" ? "you sure?" : "offer draw"}
+                </button>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="controls game-controls">
-            <button
-              className={`small${confirming === "resign" ? " confirming" : ""}`}
-              disabled={!gameId}
-              onClick={handleResignClick}
-            >
-              {confirming === "resign" ? "you sure?" : "resign"}
-            </button>
-            <button
-              className={`small${confirming === "draw" ? " confirming" : ""}`}
-              disabled={!gameId}
-              onClick={handleDrawClick}
-            >
-              {confirming === "draw" ? "you sure?" : "offer draw"}
-            </button>
-          </div>
-        ))}
+        )}
+      </div>
       <p className="status-line">{inputHint ?? status}</p>
       {gameOver && (
         <GameEndPanel
@@ -850,25 +900,6 @@ export function GamePage() {
           onNewGame={handleNewGame}
         />
       )}
-    </div>
-  );
-}
-
-// A side tray of captured-piece sprites. `pieces` is append-only (capture
-// order preserved, newest last), so index-based keys are stable — a
-// re-render only ever mounts one new node, which is what lets the `pop-in`
-// pop keyframe play once per capture instead of replaying on every render.
-function CaptureTray({ pieces, color, label, caption }: { pieces: PieceKind[]; color: "w" | "b"; label: string; caption: string }) {
-  return (
-    <div className="tray-block">
-      <span className="tray-caption">{caption}</span>
-      <div className="tray" aria-label={label}>
-        {pieces.map((kind, i) => (
-          <div key={`${color}-${i}`} className="tray-piece pop-in">
-            <Piece kind={kind} color={color} />
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { Chess } from "chess.js";
 import { describeMove } from "./describeMove";
-import { victimKind } from "./captures";
+import { victimKind, sortByValue, materialDiff, pieceValue } from "./captures";
+import type { PieceKind } from "../board/pieces";
 
 describe("victimKind", () => {
   it("plain capture reads the victim's kind from the target square, pre-move", () => {
@@ -53,5 +54,53 @@ describe("victimKind", () => {
     const render = { from: "e4", to: "e5", capture: true } as const;
 
     expect(victimKind(preMove, render)).toBeNull();
+  });
+});
+
+describe("pieceValue", () => {
+  it("follows the standard 1/3/3/5/9 scale", () => {
+    expect(pieceValue("p")).toBe(1);
+    expect(pieceValue("n")).toBe(3);
+    expect(pieceValue("b")).toBe(3);
+    expect(pieceValue("r")).toBe(5);
+    expect(pieceValue("q")).toBe(9);
+  });
+});
+
+describe("sortByValue", () => {
+  it("sorts ascending by standard point value", () => {
+    expect(sortByValue(["q", "p", "r"])).toEqual(["p", "r", "q"]);
+  });
+
+  it("keeps original relative order for equal-value pieces (stable sort)", () => {
+    expect(sortByValue(["b", "n", "p"])).toEqual(["p", "b", "n"]);
+  });
+
+  it("does not mutate its input", () => {
+    const input: PieceKind[] = ["q", "p"];
+    sortByValue(input);
+    expect(input).toEqual(["q", "p"]);
+  });
+
+  it("returns an empty array for no captures", () => {
+    expect(sortByValue([])).toEqual([]);
+  });
+});
+
+describe("materialDiff", () => {
+  it("reports no leader and zero points with no captures at all", () => {
+    expect(materialDiff({ w: [], b: [] })).toEqual({ leader: null, points: 0 });
+  });
+
+  it("reports no leader when captured material is even", () => {
+    expect(materialDiff({ w: ["p"], b: ["p"] })).toEqual({ leader: null, points: 0 });
+  });
+
+  it("you lead when you've captured more material than mallow has", () => {
+    expect(materialDiff({ w: ["p"], b: ["q"] })).toEqual({ leader: "you", points: 8 });
+  });
+
+  it("mallow leads when she's captured more material than you have", () => {
+    expect(materialDiff({ w: ["q", "r"], b: ["p"] })).toEqual({ leader: "mallow", points: 13 });
   });
 });

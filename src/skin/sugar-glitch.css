@@ -1,12 +1,33 @@
 /* Sugar Glitch skin — ported from Sugar Glitch Demo.html, scoped under .gc-app */
 
 .gc-app {
+  /* Wave B spacing scale — every ad-hoc margin/gap below should trace back
+     to one of these instead of a bespoke px value, so the page's rhythm
+     stays coherent as it's tuned. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 40px;
+  /* Wave B board sizing — vmin-based so the board dominates a big desktop
+     and actually grows with the window, capped so it never overflows a
+     shorter viewport (the calc term) or runs away on an ultrawide (the
+     1100px term). The 410px is everything ABOVE and BELOW the board card
+     that isn't the board itself — measured on the real rendered page:
+     page top padding (24) + header band (76) + the two player bars
+     (58 + 64) + the fixed action-slot (92) + the gap above the status
+     line (16) + the status line's own min-height (22) + page bottom
+     padding (40) = 392px, plus ~18px of slack. Because calc(100vh-410) is
+     always one of the three min() candidates, total page height can never
+     exceed 100vh - 18 regardless of which term wins — the vmin/cap terms
+     only ever pull the board SMALLER than that ceiling, never larger. */
+  --board-size: min(76vmin, calc(100vh - 410px), 1100px);
   background: linear-gradient(168deg, #F2F7FF 0%, #EFE6FF 55%, #FFE9F6 100%);
   min-height: 100vh;
   color: #4A3B7E;
   font-family: 'Quicksand', sans-serif;
   font-weight: 600; /* body text bolder by default, per feedback */
-  padding: 40px 24px 70px;
+  padding: var(--space-4) var(--space-3) var(--space-5);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -19,20 +40,26 @@
   letter-spacing: .18em;
 }
 
-.gc-app h1 {
-  font-family: 'Fredoka', sans-serif;
-  font-weight: 600;
-  font-size: clamp(26px, 4vw, 38px);
-  margin: 12px 0 6px;
+/* Wave B: the single compact header band — pixel wordmark + tagline as a
+   left-aligned lockup, coach pill + settings gear grouped right-aligned.
+   The old stacked pixel-wordmark / huge duplicate "Girl Chess" h1 /
+   tagline / pill-on-its-own-row is gone; this is the one row. Width tracks
+   the board's own width (plus a little breathing room) so the whole page
+   reads as one aligned column, not a full-bleed bar. */
+.gc-app .header-band {
+  width: min(94vw, calc(var(--board-size) + 80px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) 0 var(--space-3);
 }
 
-/* wordmark lockup: title + subtitle hanging below it, right-hung — the
-   subtitle's right edge lines up with the title's and pokes a little past
-   it, like a tag stitched onto the wordmark rather than a centered byline. */
-.gc-app .wordmark {
-  display: inline-flex;
+.gc-app .header-lockup {
+  display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
+  gap: var(--space-1);
 }
 
 .gc-app .tagline {
@@ -40,9 +67,7 @@
   font-weight: 600;
   font-size: 12.5px;
   color: #7A6BB5; /* muted lavender, same family as .status-line */
-  margin: 0 0 6px;
-  position: relative;
-  right: -10px; /* slightly indented past the wordmark's right edge */
+  margin: 0;
   letter-spacing: .03em;
 }
 
@@ -92,7 +117,25 @@
 .gc-app button.small.confirming { background: #FF3DA6; color: #fff; box-shadow: 0 3px 0 #C22B7E, 0 6px 10px rgba(255,61,166,.3); }
 .gc-app button.small.confirming:hover { box-shadow: 0 5px 0 #C22B7E, 0 8px 14px rgba(255,61,166,.35); }
 
-.gc-app .game-controls { margin: 30px 0 0; } /* clears the board card's drop shadow */
+.gc-app .game-controls { margin: 0; } /* action-slot (see below) owns the spacing now */
+
+/* Wave B: fixed-height reserve directly under the board-stack card so the
+   judge indicator and the controls (play it/take it back, resign/offer
+   draw) appearing or disappearing never nudges the board vertically — the
+   slot's own box always occupies this space; only its contents come and
+   go. Sized to the tallest realistic combination (a two-line judge badge
+   plus a button row) with a little slack. */
+.gc-app .action-slot {
+  width: min(92vw, var(--board-size));
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+}
+.gc-app .action-slot-judge { min-height: 20px; }
 
 /* Guardian Angel pending-move (C1): "play it" leans primary-ish (lavender,
    not the pink primary — confirm is the expected default path, not an
@@ -109,7 +152,6 @@
    cadence never depends on what the verdict says (JUDGE_MIN_MS in
    GamePage.tsx). */
 .gc-app .judge-indicator {
-  margin-top: 14px;
   min-height: 20px;
   font-size: 13px; font-weight: 700; color: #7A6BB5;
   text-align: center;
@@ -146,19 +188,18 @@
 
 /* judge-post (C3, coach-only mode): the badge shows up next to the status
    line since there's no pending indicator to hang it off of. Reuses
-   .judge-indicator's layout, just a hair tighter above it. */
-.gc-app .judge-indicator.post-judge { margin-top: 8px; }
+   .judge-indicator's layout — action-slot's own gap provides the spacing
+   now, so this no longer needs its own top margin. */
 
-/* C3: the Silent Partner toggle pill + settings gear, "near the board" —
-   sits above board-with-trays, same squishy button language as the rest
-   of the app but scaled down (tap target generous, footprint small). */
-.gc-app .coach-toggle-row {
+/* C3/Wave B: the Silent Partner toggle pill + settings gear, now grouped
+   right-aligned inside the header band (see header-band above) rather
+   than sitting in their own centered row above the board. Same squishy
+   button language as the rest of the app, scaled down. */
+.gc-app .header-actions {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center; /* anchored to the game column, not the page corner */
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: var(--space-2);
 }
 .gc-app .coach-pill {
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
@@ -219,99 +260,142 @@
 .gc-app .settings-switch input:disabled { cursor: default; }
 .gc-app .settings-switch:has(input:disabled) { opacity: .5; }
 
-/* captured-piece trays flank the board in fixed-width columns so a tray
-   filling up never nudges the board sideways — content wraps within the
-   column instead of growing it. Each row holds ~8 sprites before wrapping.
-   Below ~1000px there's no room for side columns, so the row becomes a
-   column and the trays fall into normal flow above/below the board (DOM
-   order already puts the opponent's tray first and the player's last, so
-   that reads top-to-bottom as "theirs, board, mine" too). */
-.gc-app .board-with-trays {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  width: 100%;
-}
-/* .tray-block = caption + tray as one column unit. Row sizing (the 190px
-   basis) lives ONLY on the direct children of the row-flex .board-with-trays
-   (.opponent-side on the left, a bare .tray-block on the right); everything
-   nested inside is content-driven. This is the same flex-axis trap the B6
-   review caught: a basis on a nested column child pins height, not width. */
-.gc-app .tray-block {
+/* Wave B: player bars replace the side trays. If the board+bars were a
+   physical object, mallow's tray would be bolted to the top edge of the
+   board (her pink side, per the owner's feedback) and yours to the bottom
+   edge, right under your own board — not floating off to the sides. This
+   is that object: one white card (.board-stack) carrying the outer
+   rounded-corner shadow, with the mallow bar flush on top, Board.tsx's own
+   .board-frame flattened out in the middle (no shadow/radius/background of
+   its own — see below — so there's no visible seam), and the you bar flush
+   on the bottom. Width is the vmin-based --board-size (see .gc-app above)
+   so the whole card grows with the window on a big desktop instead of
+   sitting tiny in a sea of unused space. */
+.gc-app .board-stack {
+  width: var(--board-size);
   display: flex;
   flex-direction: column;
+  background: #FFFFFF;
+  border-radius: 28px;
+  box-shadow: 0 12px 0 #C9BFEF, 0 22px 40px rgba(90,70,180,.3);
+}
+
+.gc-app .player-bar {
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  transition: background .2s ease, box-shadow .2s ease;
 }
-.gc-app .board-with-trays > .tray-block {
-  flex: 0 0 190px;
-  width: 190px;
+.gc-app .player-bar.mallow { border-radius: 28px 28px 0 0; }
+.gc-app .player-bar.you { border-radius: 0 0 28px 28px; }
+
+/* Active-turn treatment: a tinted wash + inset ring in the side's own
+   accent (mallow pink, you cyan/blue — same family as the .px wordmark
+   color), so whoever's actually "in play" is unambiguous at a glance. */
+.gc-app .player-bar.mallow.active {
+  background: linear-gradient(0deg, rgba(255,61,166,.07), rgba(255,61,166,.07));
+  box-shadow: inset 0 0 0 2px rgba(255,61,166,.55);
 }
-.gc-app .opponent-side .tray-block { width: 100%; }
-.gc-app .tray-caption {
-  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+.gc-app .player-bar.you.active {
+  background: linear-gradient(0deg, rgba(35,168,199,.08), rgba(35,168,199,.08));
+  box-shadow: inset 0 0 0 2px rgba(35,168,199,.55);
+}
+
+.gc-app .bar-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+.gc-app .bar-name {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 14px;
+  text-transform: lowercase;
+}
+.gc-app .bar-move-count {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
   color: #9A8BC9;
 }
-.gc-app .tray {
-  flex: 0 0 auto;
-  width: 100%;
-  min-height: 40px;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  justify-content: center;
-  gap: 2px;
-  padding: 8px;
-  background: rgba(255,255,255,.5);
-  border-radius: 18px;
-  box-shadow: 0 4px 0 rgba(201,191,239,.45), 0 8px 14px rgba(90,70,180,.12);
-}
-.gc-app .tray-piece {
-  width: 30px; /* ~55% of a board square at typical viewport widths */
-  height: 30px;
-  margin-left: -8px; /* slight overlap */
-}
-.gc-app .tray-piece:first-child { margin-left: 0; }
 
-/* wraps the opponent's capture tray so the decline bark can sit right
-   beside it — "near the opponent side" of the board. */
-.gc-app .opponent-side {
-  flex: 0 0 190px;
-  width: 190px;
+.gc-app .bar-captures {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 26px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 0 var(--space-2);
 }
-.gc-app .bark-bubble {
-  font-size: 12px; font-weight: 700; color: #7A6BB5;
-  background: #fff; padding: 7px 14px; border-radius: 14px;
-  box-shadow: 0 3px 0 rgba(201,191,239,.45), 0 6px 10px rgba(90,70,180,.15);
-  max-width: 190px; text-align: center; line-height: 1.4;
+.gc-app .bar-piece {
+  width: 24px;
+  height: 24px;
+  margin-left: -7px; /* slight overlap, same language as the old trays */
 }
-.gc-app .tray-piece svg {
+.gc-app .bar-piece:first-child { margin-left: 0; }
+.gc-app .bar-piece svg {
   width: 100%;
   height: 100%;
   display: block;
   filter: drop-shadow(0 2px 2px rgba(110,80,190,.3));
 }
-@media (max-width: 1000px) {
-  .gc-app .board-with-trays { flex-direction: column; }
-  /* In column layout the row bases would pin heights (see the flex-axis
-     note above), so both wrappers go content-driven and the blocks widen
-     to match the board. */
-  .gc-app .board-with-trays > .tray-block { width: min(88vw, 520px); flex: 0 0 auto; }
-  .gc-app .opponent-side { width: auto; flex: 0 0 auto; }
-  .gc-app .opponent-side .tray-block { width: min(88vw, 520px); }
+.gc-app .bar-material-badge {
+  margin-left: var(--space-2);
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #E7FFF4;
+  color: #2E9C74;
+  white-space: nowrap;
 }
 
-.gc-app .stage { position: relative; }
+/* Fixed-footprint slot so the chip's appearance/disappearance never
+   reflows the bar itself — width comes from content but the row height
+   stays put whether or not a chip is currently shown. */
+.gc-app .bar-chip-slot {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.gc-app .bar-chip {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: #7A6BB5;
+  white-space: nowrap;
+}
+.gc-app .player-bar.mallow.active .bar-chip { color: #C22B7E; }
+.gc-app .player-bar.you.active .bar-chip { color: #1A7A93; }
+
+/* Mallow's decline bark anchors to her bar (the top of the board), poking
+   up into the open header space above the board-stack rather than over
+   the board itself. */
+.gc-app .bark-bubble {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: var(--space-2);
+  z-index: 6;
+  font-size: 12px; font-weight: 700; color: #7A6BB5;
+  background: #fff; padding: 7px 14px; border-radius: 14px;
+  box-shadow: 0 3px 0 rgba(201,191,239,.45), 0 6px 10px rgba(90,70,180,.15);
+  max-width: min(80vw, 320px); text-align: center; line-height: 1.4;
+  white-space: nowrap;
+}
+
+.gc-app .stage { position: relative; width: 100%; }
+/* Board.tsx's own frame, flattened into the shared board-stack card: no
+   background/shadow/radius of its own (the card carries all of that) so
+   the bars and board read as one continuous surface, not three stacked
+   cards. */
 .gc-app .board-frame {
-  padding: 14px; background: #FFFFFF; border-radius: 28px;
-  box-shadow: 0 12px 0 #C9BFEF, 0 22px 40px rgba(90,70,180,.3);
+  padding: 14px; background: transparent; border-radius: 0;
+  box-shadow: none;
   position: relative;
-  width: min(88vw, 520px);
+  width: 100%;
 }
 .gc-app .board-frame::before {
   content: ""; position: absolute; left: 28px; right: 28px; top: -4px; height: 8px; border-radius: 4px;
@@ -447,16 +531,16 @@
   font-size: 12.5px; font-weight: 700; color: #B5486E;
   background: #fff; padding: 8px 16px; border-radius: 999px;
   box-shadow: 0 3px 0 #F0C2D6, 0 6px 12px rgba(90,70,180,.15);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2);
 }
 
 .gc-app .status-line {
-  margin-top: 18px; font-size: 13.5px; font-weight: 700; color: #7A6BB5;
+  margin-top: var(--space-3); font-size: 13.5px; font-weight: 700; color: #7A6BB5;
   text-align: center; line-height: 1.6; max-width: 540px; min-height: 22px;
 }
 
 .gc-app .game-over {
-  margin-top: 18px; display: flex; flex-direction: column; align-items: center; gap: 12px;
+  margin-top: var(--space-3); display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
 }
 .gc-app .game-over .result {
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 20px;
