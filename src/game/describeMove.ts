@@ -6,6 +6,7 @@ export interface MoveRender {
   capture: boolean;
   capturedSquare?: string; // differs from `to` only for en passant
   secondary?: { from: string; to: string }; // the rook, when castling
+  promotion?: string; // the promoted piece letter (e.g. "q"), only on promotion moves
 }
 
 /**
@@ -27,6 +28,10 @@ export function describeMove(m: Move): MoveRender {
   if (m.flags.includes("e")) {
     // En passant: the captured pawn sits on the file of `to`, rank of `from`.
     render.capturedSquare = m.to[0] + m.from[1];
+  }
+
+  if (m.promotion) {
+    render.promotion = m.promotion;
   }
 
   if (m.flags.includes("k")) {
