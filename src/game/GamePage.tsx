@@ -8,6 +8,13 @@ import { reconcile } from "./reconcile";
 
 const OPPONENT_ELO = 1100;
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// Minimum time the check ring must stay on screen before the reply
+// animation starts covering it, so a fast server response can't skip the
+// player past ever seeing the check they just delivered.
+const CHECK_VISIBILITY_MS = 450;
+
 function resultText(result: string): string {
   if (result === "1-0") return "you win. mallow melts.";
   if (result === "0-1") return "mallow wins this one.";
@@ -129,9 +136,22 @@ export function GamePage() {
           return;
         }
 
-        setFen(res.fen);
-
         if (res.reply) {
+          // Render the intermediate post-player-move position (mirror already
+          // holds it; the reply hasn't been applied yet) before jumping to
+          // res.fen. Maia's legal reply necessarily resolves any check on her
+          // own king, so if we set res.fen (the post-reply position) first,
+          // a non-mate check the player just delivered would never be
+          // rendered at all — this is the intermediate render that fixes that.
+          setFen(mirror.fen());
+
+          // If the player's move gave check, hold this position for a
+          // minimum window so the ring is perceivable even when the server
+          // replies fast, before the reply animation starts playing over it.
+          if (kingInCheckSquare(mirror) !== null) {
+            await sleep(CHECK_VISIBILITY_MS);
+          }
+
           const replyFrom = res.reply.uci.slice(0, 2);
           const replyTo = res.reply.uci.slice(2, 4);
           const replyPromotion = res.reply.uci.length > 4 ? res.reply.uci[4] : "q";
@@ -142,6 +162,8 @@ export function GamePage() {
             else await board.glide(replyRender);
           }
         }
+
+        setFen(res.fen);
 
         if (reconcile(mirror.fen(), res.fen).action === "adopt") {
           console.warn("[girl-chess] desync healed", { client: mirror.fen(), server: res.fen });
