@@ -13,6 +13,7 @@ import type { MoveRender } from "../game/describeMove";
 import { resolveClickMove, isCastleAttempt } from "../game/resolveClick";
 import { resolvePendingClick } from "../game/resolvePendingClick";
 import type { Takedown } from "../game/terminal";
+import { squareToIdx, idxToSquare } from "./squareMapping";
 
 interface PieceEntry {
   id: string;
@@ -125,16 +126,9 @@ interface BoardProps {
 const AMBIENT_CORRUPT = new Set([20, 43]);
 const PALETTE = ["#23E5FF", "#FF3DA6", "#FF8FBF", "#8ED9F9", "#CBBFFF", "#FFD84D"];
 
-function squareToIdx(square: string) {
-  const col = square.charCodeAt(0) - 97;
-  const row = 8 - Number(square[1]);
-  return row * 8 + col;
-}
-function idxToSquare(idx: number) {
-  const row = Math.floor(idx / 8);
-  const col = idx % 8;
-  return String.fromCharCode(97 + col) + (8 - row);
-}
+// Increment 2.5: squareToIdx/idxToSquare moved to ./squareMapping.ts (owner
+// playtest square-coordinate verification) — see that module for the full
+// mapping spec and the render-order proof.
 function idToUid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
