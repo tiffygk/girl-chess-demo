@@ -67,6 +67,22 @@ export class MaiaOpponent implements Opponent {
 
   pickMove(fen: string): Promise<string> {
     const run = this.queue.then(async () => {
+      if (!this.fallback) {
+        // task B9 fix wave: lc0's temperature-sampling RNG is not
+        // independently reseeded per `go nodes 1` call -- it draws from a
+        // single stream that advances with call count. Empirically, a
+        // warmed shared instance (the real deployment shape: manager.ts's
+        // opponentFor() caches one MaiaOpponent per ELO band for the
+        // server's lifetime) hits stretches where that stream degenerates
+        // and the SAME position returns the SAME move on every query for
+        // dozens of consecutive calls (measured: 40/40 identical at one
+        // call-count window). `ucinewgame` resets that internal state and
+        // was verified (task-b9-report.md, "Fix wave") to restore full
+        // variance immediately and to prevent collapse entirely when sent
+        // before every query, across 1600+ sustained calls. Overhead is
+        // ~13ms/call, negligible against the multi-second human move cadence.
+        this.engine.send("ucinewgame");
+      }
       this.engine.send(`position fen ${fen}`);
       // nodes 1 = human-typical move, per Maia usage rule; fallback uses movetime
       this.engine.send(this.fallback ? "go movetime 200" : "go nodes 1");
