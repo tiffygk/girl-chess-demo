@@ -122,6 +122,15 @@
   border-radius: 18px;
   box-shadow: 0 4px 0 rgba(201,191,239,.45), 0 8px 14px rgba(90,70,180,.12);
 }
+/* .opponent-side wraps the left tray in a column flex (see below) so a bark
+   bubble can sit under it. The wrapper — not the bare .tray — now sits as
+   the direct child of the row-flex .board-with-trays, so it needs the
+   190px basis that used to live on .tray; on .tray itself that basis would
+   pin the column axis (height) instead of width. The nested override keeps
+   the tray's own sizing content-driven. */
+.gc-app .opponent-side .tray {
+  flex: 0 0 auto;
+}
 .gc-app .tray-piece {
   width: 30px; /* ~55% of a board square at typical viewport widths */
   height: 30px;
@@ -131,7 +140,14 @@
 
 /* wraps the opponent's capture tray so the decline bark can sit right
    beside it — "near the opponent side" of the board. */
-.gc-app .opponent-side { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.gc-app .opponent-side {
+  flex: 0 0 190px;
+  width: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
 .gc-app .bark-bubble {
   font-size: 12px; font-weight: 700; color: #7A6BB5;
   background: #fff; padding: 7px 14px; border-radius: 14px;
@@ -147,6 +163,11 @@
 @media (max-width: 1000px) {
   .gc-app .board-with-trays { flex-direction: column; }
   .gc-app .tray { width: min(88vw, 520px); flex: 0 0 auto; }
+  /* .opponent-side's 190px basis/width is a row-layout sizing (see above);
+     once .board-with-trays goes column, that same basis would pin the
+     wrapper's cross-axis width or main-axis height the wrong way again.
+     Let it shrink to the (now wide) .tray + bark bubble instead. */
+  .gc-app .opponent-side { width: auto; flex: 0 0 auto; }
 }
 
 .gc-app .stage { position: relative; }
