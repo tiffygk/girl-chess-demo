@@ -290,3 +290,69 @@
 .gc-app .game-over .result {
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 20px;
 }
+
+/* GameEndPanel's labeled stub sections — the seams increments 3/4 extend.
+   Visibly "coming soon": dashed border, muted ink, no shadow (unlike real
+   buttons/cards) so they read as placeholders rather than live content. */
+.gc-app .game-end-stubs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(88vw, 380px);
+  margin-top: 2px;
+}
+.gc-app .game-end-stub {
+  font-size: 12px; font-weight: 700; color: #9C8FC7;
+  background: rgba(255,255,255,.4);
+  border: 1.5px dashed #C9BFEF;
+  border-radius: 14px;
+  padding: 10px 16px;
+  text-align: center;
+}
+
+/* draw acknowledgment — a soft glow pulse on the board frame, quieter than
+   a win or loss celebration since a draw is neither. */
+.gc-app .board-frame.shimmer { animation: boardShimmer 1.8s ease-in-out; }
+@keyframes boardShimmer {
+  0%, 100% { box-shadow: 0 12px 0 #C9BFEF, 0 22px 40px rgba(90,70,180,.3); }
+  50% { box-shadow: 0 12px 0 #C9BFEF, 0 22px 40px rgba(90,70,180,.3), 0 0 44px 12px rgba(201,184,255,.6); }
+}
+
+/* Full-screen win/loss celebration overlays — appended to document.body by
+   Board's confetti()/storm() imperative methods, so these rules live
+   outside the .gc-app scope. Both overlays fully clean themselves up (JS
+   removes the element after ~2s) so nothing persists in the DOM between
+   games. */
+.gc-confetti-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  overflow: hidden;
+}
+.gc-confetti-piece {
+  position: absolute;
+  border-radius: 2px;
+}
+
+.gc-storm-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  animation: gcStormFlicker 2s steps(1) forwards;
+}
+@keyframes gcStormFlicker {
+  0%, 100% { box-shadow: inset 0 0 0 0 transparent; }
+  4%  { box-shadow: inset 0 0 60px 18px rgba(255,61,166,.55), inset 0 0 120px 40px rgba(35,229,255,.25); }
+  8%  { box-shadow: inset 0 0 0 0 transparent; }
+  14% { box-shadow: inset 0 0 50px 14px rgba(35,229,255,.6); }
+  18% { box-shadow: inset 0 0 0 0 transparent; }
+  30% { box-shadow: inset 0 0 70px 22px rgba(255,61,166,.5), inset 0 0 130px 46px rgba(35,229,255,.2); }
+  35% { box-shadow: inset 0 0 0 0 transparent; }
+  50% { box-shadow: inset 0 0 55px 16px rgba(35,229,255,.55); }
+  55% { box-shadow: inset 0 0 0 0 transparent; }
+  70% { box-shadow: inset 0 0 60px 18px rgba(255,61,166,.4); }
+  75%, 96% { box-shadow: inset 0 0 0 0 transparent; }
+  98% { box-shadow: inset 0 0 30px 8px rgba(255,61,166,.25); }
+}
