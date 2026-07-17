@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { nextHintLevel, pieceName, hintCopy, hintRevealSquares, type HintLevel } from "./hintFlow";
+import {
+  nextHintLevel,
+  pieceName,
+  hintCopy,
+  hintRevealSquares,
+  hintIsLegal,
+  type HintLevel,
+} from "./hintFlow";
 
 describe("nextHintLevel", () => {
   it("advances 0 -> 1 -> 2 -> 3", () => {
@@ -33,7 +40,7 @@ describe("pieceName", () => {
 });
 
 describe("hintCopy", () => {
-  const facts = { bestPieceKind: "n", bestToSquare: "f3", bestSan: "Nf3" };
+  const facts = { bestPieceKind: "n", bestFromSquare: "g1", bestToSquare: "f3", bestSan: "Nf3" };
 
   it("level 0 -> null (nothing revealed yet)", () => {
     expect(hintCopy(0, facts)).toBeNull();
@@ -43,8 +50,16 @@ describe("hintCopy", () => {
     expect(hintCopy(1, facts)).toBe("look at your knight");
   });
 
-  it("level 2 -> 'think about {square}'", () => {
-    expect(hintCopy(2, facts)).toBe("think about f3");
+  it("level 2 names the piece and its origin square, never a bare destination", () => {
+    // Owner playtest 2026-07-17: destination-only "think about f3" read as
+    // nonsense ("nothing could go to that square"). Level 2 now points at a
+    // square her own piece is visibly standing on.
+    expect(hintCopy(2, facts)).toBe("your knight on g1");
+  });
+
+  it("levels 1 and 3 are unchanged", () => {
+    expect(hintCopy(1, facts)).toBe("look at your knight");
+    expect(hintCopy(3, facts)).toBe("best here: Nf3");
   });
 
   it("level 3 -> 'best here: {san}'", () => {
@@ -62,6 +77,21 @@ describe("hintCopy", () => {
     expect(hintCopy(1, facts)).toBe(hintCopy(1, facts)!.toLowerCase());
     expect(hintCopy(2, facts)).toBe(hintCopy(2, facts)!.toLowerCase());
     expect(hintCopy(3, facts)!.startsWith("best here: ")).toBe(true);
+  });
+});
+
+describe("hintIsLegal", () => {
+  const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  it("accepts a legal move for the position", () => {
+    expect(hintIsLegal(START, "g1f3")).toBe(true);
+  });
+  it("rejects a move from an empty square", () => {
+    expect(hintIsLegal(START, "e4e5")).toBe(false);
+  });
+  it("rejects an illegal move and garbage input", () => {
+    expect(hintIsLegal(START, "e2e5")).toBe(false);
+    expect(hintIsLegal(START, "zz")).toBe(false);
+    expect(hintIsLegal(START, "")).toBe(false);
   });
 });
 
