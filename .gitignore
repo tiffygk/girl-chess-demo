@@ -25,3 +25,5 @@ dist-ssr
 
 # Superpowers scratch
 .superpowers/
+weights/
+data/
