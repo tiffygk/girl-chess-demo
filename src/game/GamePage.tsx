@@ -14,7 +14,7 @@ import {
   type GameOverInfo,
   type Verdict,
 } from "./api";
-import { describeMove } from "./describeMove";
+import { describeMove, type MoveRender } from "./describeMove";
 import { victimKind } from "./captures";
 import { kingInCheckSquare } from "./checkState";
 import { reconcile } from "./reconcile";
@@ -50,6 +50,10 @@ const CONFIRM_MS = 3000;
 
 // How long the opponent's decline bark stays on screen.
 const BARK_MS = 4000;
+
+// A5: how long the "can't castle right now" (etc.) input hint stays in the
+// status line before reverting to whatever `status` currently holds.
+const INPUT_HINT_MS = 3000;
 
 const DRAW_DECLINE_BARK = "mallow declines. play on.";
 
@@ -100,10 +104,25 @@ export function GamePage() {
   // Which end-of-game button (if any) is currently morphed to "you sure?".
   const [confirming, setConfirming] = useState<"resign" | "draw" | null>(null);
   const [bark, setBark] = useState<string | null>(null);
-  // Guardian Angel pending-move (C1): the move the player clicked but
-  // hasn't confirmed yet. The mirror/fen are NOT touched while this is set
-  // — Board renders it as a pure overlay (dimmed origin + ghost on `to`).
-  const [pending, setPending] = useState<{ from: string; to: string; promotion?: string } | null>(null);
+  // Guardian Angel pending-move (C1, extended in A1): the move the player
+  // clicked but hasn't confirmed yet. The mirror/fen are NOT touched while
+  // this is set — Board renders it as a pure overlay (dimmed origin(s) +
+  // ghost(s), victim dimmed). Carries the full MoveRender shape (not just
+  // from/to/promotion) so Board can preview the complete final position —
+  // castling rook included — while the judge holds the move.
+  const [pending, setPending] = useState<Pick<
+    MoveRender,
+    "from" | "to" | "promotion" | "secondary" | "capturedSquare"
+  > | null>(null);
+  // A4: the most recently settled move (player's or Mallow's) — mint
+  // last-move highlight, lichess convention. Set once the move's animation
+  // finishes (not before — a rejected/reverted move must never light up),
+  // cleared on new game. For castling this is always the king's from/to,
+  // since describeMove's render.from/to are the king's squares already.
+  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+  // A5: transient status-line hint for a click that was meaningful but
+  // couldn't do what it looked like (currently: "can't castle right now").
+  const [inputHint, setInputHint] = useState<string | null>(null);
   const [judgePhase, setJudgePhase] = useState<"judging" | "judged" | null>(null);
   // C2: the verdict itself, once judged — drives the badge rendered into
   // C1's "judged ✓" slot. null while judging, and for tier "silent" (no
@@ -142,6 +161,7 @@ export function GamePage() {
   const pendingTokenRef = useRef(0);
   const confirmTimerRef = useRef<number | null>(null);
   const barkTimerRef = useRef<number | null>(null);
+  const inputHintTimerRef = useRef<number | null>(null);
   const replayingRef = useRef(false);
   const settingsRef = useRef<HTMLDivElement>(null);
 
@@ -175,6 +195,12 @@ export function GamePage() {
     setVerdict(null);
     postVerdictTokenRef.current += 1;
     setPostVerdict(null);
+    setLastMove(null);
+    if (inputHintTimerRef.current) {
+      window.clearTimeout(inputHintTimerRef.current);
+      inputHintTimerRef.current = null;
+    }
+    setInputHint(null);
     const g = await newGame(sid, OPPONENT_ELO);
     mirrorRef.current = new Chess(g.fen);
     setFen(g.fen);
@@ -264,6 +290,11 @@ export function GamePage() {
           if (render.capture) await board.glitchCapture(render);
           else await board.glide(render);
         }
+        // A4: the player's move just settled (animation complete) — light
+        // up its squares. render.from/to are the king's squares even for a
+        // castle (describeMove keeps the rook in `secondary`), so this is
+        // already "the king's from/to" for castling, no special-casing.
+        setLastMove({ from: render.from, to: render.to });
 
         const timeSpentMs = Date.now() - lastReplyAtRef.current;
         setStatus("mallow is thinking...");
@@ -283,6 +314,7 @@ export function GamePage() {
           setFen(adoptServerFen(mirror, undefined));
           setResyncTick((t) => t + 1);
           setStatus("connection hiccup — try that move again");
+          setLastMove(null); // the move never actually landed — nothing to highlight
           return;
         }
         lastReplyAtRef.current = Date.now();
@@ -294,6 +326,7 @@ export function GamePage() {
           setFen(adoptServerFen(mirror, res.fen));
           setResyncTick((t) => t + 1);
           setStatus("that didn't land — try another move");
+          setLastMove(null); // reverted — the highlighted move didn't actually happen
           return;
         }
 
@@ -328,6 +361,9 @@ export function GamePage() {
             if (replyRender.capture) await board.glitchCapture(replyRender);
             else await board.glide(replyRender);
           }
+          // A4: Mallow's reply just settled — the highlight moves to her
+          // move now, same "both sides" lichess convention.
+          setLastMove({ from: replyRender.from, to: replyRender.to });
         }
 
         setFen(res.fen);
@@ -374,9 +410,19 @@ export function GamePage() {
   // and confirm-only (confirm alone: same pending render, but skips the
   // /judge call and never sets judgePhase, so no indicator ever renders —
   // "play it" / "take it back" is all there is).
+  //
+  // A2: no longer guarded on `pending` being falsy — it's also the entry
+  // point handleRetargetPending calls to restart a pending move at a new
+  // destination while one is already pending. That's safe specifically
+  // because it's the ONLY caller allowed to invoke this while pending is
+  // truthy: Board never calls the plain onMove (which leads here via
+  // handleBoardMove) while pending — it calls onRetarget/onCancelPending
+  // instead (see Board's pending-aware click handlers). The token bump
+  // below still supersedes whatever pending (and its in-flight judge call,
+  // if any) came before it.
   const handlePendingStart = useCallback(
     (from: string, to: string, withJudge: boolean) => {
-      if (!gameId || busyRef.current || gameOver || pending) return;
+      if (!gameId || busyRef.current || gameOver) return;
       const probe = new Chess(mirrorRef.current.fen());
       let mv;
       try {
@@ -385,8 +431,13 @@ export function GamePage() {
         return; // illegal locally — never sent to the server
       }
 
+      // A1: full post-move render — not just from/to/promotion — so Board
+      // can preview the complete final position (castling rook included,
+      // any capture's victim dimmed) while the move sits pending.
+      const render = describeMove(mv);
+
       const token = (pendingTokenRef.current += 1);
-      setPending({ from, to, promotion: mv.promotion });
+      setPending(render);
 
       if (!withJudge) {
         // confirm-only: pure two-step, zero /judge calls, no indicator.
@@ -402,7 +453,7 @@ export function GamePage() {
         const startedAt = Date.now();
         let result: Verdict | null = null;
         try {
-          const res = await judgeMove(gameId, from, to, mv.promotion);
+          const res = await judgeMove(gameId, from, to, render.promotion);
           result = res.verdict ?? null;
         } catch {
           // No verdict to show — confirm/retract never depend on this call
@@ -416,7 +467,7 @@ export function GamePage() {
         setJudgePhase("judged");
       })();
     },
-    [gameId, gameOver, pending]
+    [gameId, gameOver]
   );
 
   // Confirm: never blocked by the verdict, whatever it says — runs the
@@ -448,6 +499,35 @@ export function GamePage() {
     setPending(null);
     setJudgePhase(null);
     setVerdict(null);
+  }, []);
+
+  // A2 (pending retarget): Board resolved a click to "a different legal
+  // destination for the same origin" (resolvePendingClick's "retarget"
+  // action) — retract the current pending and start a fresh one at the new
+  // destination, through the SAME flow the original pending used (judge-
+  // confirm re-judges; confirm-only doesn't). Reuses handlePendingStart
+  // wholesale: it bumps pendingTokenRef itself (superseding this pending's
+  // in-flight judge call, if any) and fully re-renders pending/judgePhase/
+  // verdict for the new destination — no separate retract step needed.
+  // coachOn/confirmOn can't have changed mid-pending (the toggles disable
+  // themselves while pending), so re-deriving the flow from them here is
+  // exactly the flow the original pending was started with.
+  const handleRetargetPending = useCallback(
+    (to: string) => {
+      if (!pending) return;
+      const withJudge = resolveMoveFlow(coachOn, confirmOn) === "judge-confirm";
+      handlePendingStart(pending.from, to, withJudge);
+    },
+    [pending, coachOn, confirmOn, handlePendingStart]
+  );
+
+  // A5: surfaces a short "you tried something, here's why it didn't work"
+  // message in the status line for a few seconds (currently only "can't
+  // castle right now" — see Board's isCastleAttempt-gated onInputHint call).
+  const handleInputHint = useCallback((message: string) => {
+    setInputHint(message);
+    if (inputHintTimerRef.current) window.clearTimeout(inputHintTimerRef.current);
+    inputHintTimerRef.current = window.setTimeout(() => setInputHint(null), INPUT_HINT_MS);
   }, []);
 
   // judge-post (coach only, confirm off): the third of the 4 move flows.
@@ -518,6 +598,7 @@ export function GamePage() {
     return () => {
       if (confirmTimerRef.current) window.clearTimeout(confirmTimerRef.current);
       if (barkTimerRef.current) window.clearTimeout(barkTimerRef.current);
+      if (inputHintTimerRef.current) window.clearTimeout(inputHintTimerRef.current);
     };
   }, []);
 
@@ -668,7 +749,7 @@ export function GamePage() {
       </div>
       <div className="board-with-trays">
         <div className="opponent-side">
-          <CaptureTray pieces={captured.w} color="w" label="pieces mallow has captured" />
+          <CaptureTray pieces={captured.w} color="w" label="pieces mallow has captured" caption="mallow took" />
           {bark && (
             <div className="bark-bubble pop-in" role="status">
               {bark}
@@ -683,9 +764,12 @@ export function GamePage() {
           checkSquare={check.square}
           checkmate={check.mate}
           pending={pending}
-          locked={pending !== null}
+          onRetarget={handleRetargetPending}
+          onCancelPending={handleRetractPending}
+          onInputHint={handleInputHint}
+          lastMove={lastMove}
         />
-        <CaptureTray pieces={captured.b} color="b" label="pieces you've captured" />
+        <CaptureTray pieces={captured.b} color="b" label="pieces you've captured" caption="you took" />
       </div>
       {pending && judgePhase && (
         <div className="judge-indicator" role="status" aria-live="polite">
@@ -757,7 +841,7 @@ export function GamePage() {
             </button>
           </div>
         ))}
-      <p className="status-line">{status}</p>
+      <p className="status-line">{inputHint ?? status}</p>
       {gameOver && (
         <GameEndPanel
           gameOver={gameOver}
@@ -774,14 +858,17 @@ export function GamePage() {
 // order preserved, newest last), so index-based keys are stable — a
 // re-render only ever mounts one new node, which is what lets the `pop-in`
 // pop keyframe play once per capture instead of replaying on every render.
-function CaptureTray({ pieces, color, label }: { pieces: PieceKind[]; color: "w" | "b"; label: string }) {
+function CaptureTray({ pieces, color, label, caption }: { pieces: PieceKind[]; color: "w" | "b"; label: string; caption: string }) {
   return (
-    <div className="tray" aria-label={label}>
-      {pieces.map((kind, i) => (
-        <div key={`${color}-${i}`} className="tray-piece pop-in">
-          <Piece kind={kind} color={color} />
-        </div>
-      ))}
+    <div className="tray-block">
+      <span className="tray-caption">{caption}</span>
+      <div className="tray" aria-label={label}>
+        {pieces.map((kind, i) => (
+          <div key={`${color}-${i}`} className="tray-piece pop-in">
+            <Piece kind={kind} color={color} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

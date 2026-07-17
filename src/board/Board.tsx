@@ -10,7 +10,8 @@ import { Chess, type Square } from "chess.js";
 import { Piece, type PieceColor, type PieceKind } from "./pieces";
 import { beep } from "./sounds";
 import type { MoveRender } from "../game/describeMove";
-import { resolveClickMove } from "../game/resolveClick";
+import { resolveClickMove, isCastleAttempt } from "../game/resolveClick";
+import { resolvePendingClick } from "../game/resolvePendingClick";
 
 interface PieceEntry {
   id: string;
@@ -48,17 +49,44 @@ interface BoardProps {
   checkSquare?: string | null;
   checkmate?: boolean;
   /**
-   * Guardian Angel pending-move (C1): when set, `from`'s piece renders
-   * dimmed and a ghost of it (using `promotion`'s kind, when the move
-   * promotes) renders on `to` in the PENDING style. Purely a render
-   * overlay — `entries` (and the fen/mirror upstream) are untouched, so
-   * confirming still runs the normal glide/glitchCapture entry from a
-   * settled position, and retracting is just clearing this prop.
+   * Guardian Angel pending-move (C1, extended in A1): when set, the mover
+   * renders (ghosted, "held not confirmed") at `to`, its origin dims, and
+   * — new in A1 — the FULL final position previews too: a castling rook
+   * ghosts at its own destination (origin dimmed) and a captured victim
+   * (at `capturedSquare`, or `to` for anything but en passant) dims/hides.
+   * Purely a render overlay — `entries` (and the fen/mirror upstream) are
+   * untouched, so confirming still runs the normal glide/glitchCapture
+   * entry from a settled position, and retracting is just clearing this.
    */
-  pending?: { from: string; to: string; promotion?: string } | null;
-  /** Guardian Angel pending-move (C1): suppresses all square/piece clicks
-   * while a move is pending — confirm/retract are the only way forward. */
-  locked?: boolean;
+  pending?: {
+    from: string;
+    to: string;
+    promotion?: string;
+    secondary?: { from: string; to: string };
+    capturedSquare?: string;
+  } | null;
+  /**
+   * A2 (pending retarget): fired when a click while pending resolves to a
+   * different legal destination for the SAME origin (pending.from) — the
+   * board itself never changes `pending`; GamePage owns retracting the old
+   * pending and starting the new one through the same move flow.
+   */
+  onRetarget?: (to: string) => void;
+  /** A2: fired when a click while pending cancels it outright (clicking the
+   * origin piece again, or the held ghost at `to`) — same effect as "take
+   * it back". */
+  onCancelPending?: () => void;
+  /** A5: fired with a short human-readable reason when a click is
+   * meaningful but couldn't do what it looked like it was trying to do
+   * (currently: king selected, own rook clicked, castling isn't legal
+   * right now). GamePage renders it in the status line for a few seconds. */
+  onInputHint?: (message: string) => void;
+  /**
+   * A4: the most recently SETTLED move (player's or Mallow's) — both
+   * squares get a mint "this happened here" wash, persisting until the
+   * next move settles. For castling this is the king's from/to only.
+   */
+  lastMove?: { from: string; to: string } | null;
 }
 
 // ambient decorative jitter squares, same indices as the demo
@@ -105,7 +133,18 @@ function entriesFromFen(fen: string): PieceEntry[] {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
-  { fen, onMove, lastCapture, checkSquare, checkmate, pending, locked },
+  {
+    fen,
+    onMove,
+    lastCapture,
+    checkSquare,
+    checkmate,
+    pending,
+    onRetarget,
+    onCancelPending,
+    onInputHint,
+    lastMove,
+  },
   ref
 ) {
   const [entries, setEntries] = useState<PieceEntry[]>(() => entriesFromFen(fen));
@@ -385,18 +424,29 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
   // highlights for the current selection.
   const chess = useMemo(() => new Chess(fen), [fen]);
 
+  // A2: while a move is pending, its origin is conceptually still
+  // "selected" (the owner: "I want that piece selected and then I just
+  // press another square..."), even though Board's own `selectedSquare`
+  // state was already cleared before the pending click reached GamePage.
+  // Everything that used to read `selectedSquare` for "what's selected
+  // right now" (legal-move highlights, the target-hint ring) reads this
+  // instead, so those highlights stay visible through pending, same as a
+  // normal selection.
+  const effectiveSelected = pending ? pending.from : selectedSquare;
+
   // Legal destination squares for the current selection, split into plain
   // moves and captures (en passant counts as a capture) so they can render
   // with different mint treatments. When the selection is the king and
   // castling is legal, the rook's square is added to `normal` too — that's
-  // the affordance for Part 1's castle-by-rook-click.
+  // the affordance for Part 1's castle-by-rook-click (and, during pending,
+  // the A2 retarget-by-rook-click affordance).
   const legalTargets = useMemo(() => {
     const normal = new Set<string>();
     const capture = new Set<string>();
-    if (!selectedSquare) return { normal, capture };
-    if (!chess.get(selectedSquare as Square)) return { normal, capture };
-    const moves = chess.moves({ square: selectedSquare as Square, verbose: true });
-    const rank = selectedSquare[1];
+    if (!effectiveSelected) return { normal, capture };
+    if (!chess.get(effectiveSelected as Square)) return { normal, capture };
+    const moves = chess.moves({ square: effectiveSelected as Square, verbose: true });
+    const rank = effectiveSelected[1];
     for (const m of moves) {
       if (m.flags.includes("c") || m.flags.includes("e")) {
         capture.add(m.to);
@@ -407,15 +457,49 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       else if (m.flags.includes("q")) normal.add(`a${rank}`);
     }
     return { normal, capture };
-  }, [chess, selectedSquare]);
+  }, [chess, effectiveSelected]);
 
   const handlePieceClick = useCallback(
     (square: string, color: PieceColor) => {
-      if (animatingRef.current || locked) return;
-      if (selectedSquare && selectedSquare !== square) {
+      if (animatingRef.current) return;
+
+      // A2: pending retarget/cancel/reselect state machine replaces the old
+      // blanket `locked` gate. resolvePendingClick is the pinned decision —
+      // see src/game/resolvePendingClick.ts for the branch-by-branch spec.
+      if (pending) {
+        const decision = resolvePendingClick(chess, pending, square);
+        if (decision.action === "cancel") {
+          onCancelPending?.();
+        } else if (decision.action === "retarget") {
+          onRetarget?.(decision.to);
+        } else if (decision.action === "select") {
+          // A5: this reselect specifically happened because the king was
+          // pending and this rook-click isn't a legal castle right now —
+          // surface the hint instead of failing silently.
+          if (decision.castleBlocked) onInputHint?.("can't castle right now");
+          onCancelPending?.();
+          setSelectedSquare(decision.square);
+          beep("select");
+        }
+        // "noop": illegal square / uncapturable enemy piece — do nothing.
+        return;
+      }
+
+      // A3: clicking the currently selected piece deselects it.
+      if (selectedSquare === square) {
+        setSelectedSquare(null);
+        return;
+      }
+
+      if (selectedSquare) {
         const result = resolveClickMove(chess, selectedSquare, square);
         if (result === "reselect") {
           if (color !== turn) return; // defensive: reselect only ever targets an own piece
+          // A5: same king+own-rook-click-but-illegal-castle case as above,
+          // outside of any pending state.
+          if (isCastleAttempt(chess, selectedSquare, square)) {
+            onInputHint?.("can't castle right now");
+          }
           setSelectedSquare(square);
           beep("select");
           return;
@@ -424,21 +508,33 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
         if (result) onMove(result.from, result.to);
         return;
       }
+
       if (color !== turn) return;
       setSelectedSquare(square);
       beep("select");
     },
-    [selectedSquare, onMove, turn, chess, locked]
+    [selectedSquare, onMove, turn, chess, pending, onRetarget, onCancelPending, onInputHint]
   );
 
   const handleSquareClick = useCallback(
     (square: string) => {
-      if (animatingRef.current || locked || !selectedSquare) return;
+      if (animatingRef.current) return;
+
+      if (pending) {
+        const decision = resolvePendingClick(chess, pending, square);
+        if (decision.action === "cancel") onCancelPending?.();
+        else if (decision.action === "retarget") onRetarget?.(decision.to);
+        // "select" can't arise from an empty-square click (no piece to
+        // reselect there); "noop" already does nothing.
+        return;
+      }
+
+      if (!selectedSquare) return;
       const from = selectedSquare;
       setSelectedSquare(null);
       onMove(from, square);
     },
-    [selectedSquare, onMove, locked]
+    [selectedSquare, onMove, pending, chess, onCancelPending, onRetarget]
   );
 
   const corruptIdx = lastCapture ? new Set([...AMBIENT_CORRUPT, squareToIdx(lastCapture.square)]) : AMBIENT_CORRUPT;
@@ -462,6 +558,13 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
   // `entries`, so the underlying fen/mirror stay untouched until confirm.
   const pendingOrigin = pending ? entries.find((e) => e.square === pending.from) : undefined;
   const pendingGhostKind = pending?.promotion ? (pending.promotion as PieceKind) : pendingOrigin?.kind;
+  // A1: full final-state preview — the castling rook (if any) ghosts at its
+  // own destination the same way the mover does, and the square a capture
+  // would empty (capturedSquare for en passant, else `to`) gets dimmed too.
+  // Still never touches `entries` — pure overlay, exactly like the ghost.
+  const pendingRookOrigin =
+    pending?.secondary ? entries.find((e) => e.square === pending.secondary!.from) : undefined;
+  const pendingVictimSquare = pending ? pending.capturedSquare ?? pending.to : undefined;
 
   return (
     <div className="stage">
@@ -474,11 +577,13 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               const col = idx % 8;
               const light = (row + col) % 2 === 0;
               const isCheckRing = square === checkSquare && !matedKingGone;
+              const isLastMove = !!lastMove && (square === lastMove.from || square === lastMove.to);
               const classes = [
                 "sq",
                 light ? "light" : "dark",
                 corruptIdx.has(idx) ? "corrupt" : "",
-                square === selectedSquare ? "target-hint" : "",
+                isLastMove ? "last-move" : "",
+                square === effectiveSelected ? "target-hint" : "",
                 legalTargets.capture.has(square) ? "hint-capture" : "",
                 legalTargets.normal.has(square) ? "hint" : "",
                 isCheckRing ? "check-ring" : "",
@@ -510,7 +615,12 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 e.glitchIn ? "glitch-in" : "",
                 e.noTrans ? "no-trans" : "",
                 e.square === selectedSquare ? "selected" : "",
+                // A1: dim the mover's origin, the castling rook's origin
+                // (if any), and the square a capture would clear out —
+                // the full final-state preview, not just the mover ghost.
                 pending && e.square === pending.from ? "pending-dim" : "",
+                pending && pending.secondary && e.square === pending.secondary.from ? "pending-dim" : "",
+                pending && pendingVictimSquare && e.square === pendingVictimSquare ? "pending-dim" : "",
               ]
                 .filter(Boolean)
                 .join(" ");
@@ -538,6 +648,21 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                   style={{ left: col * 12.5 + "%", top: row * 12.5 + "%" }}
                 >
                   <Piece kind={pendingGhostKind} color={pendingOrigin.color} />
+                </div>
+              );
+            })()}
+            {pending && pending.secondary && pendingRookOrigin && (() => {
+              const idx = squareToIdx(pending.secondary.to);
+              const row = Math.floor(idx / 8);
+              const col = idx % 8;
+              return (
+                <div
+                  key="pending-ghost-rook"
+                  className="pc pending-ghost"
+                  data-square={pending.secondary.to}
+                  style={{ left: col * 12.5 + "%", top: row * 12.5 + "%" }}
+                >
+                  <Piece kind={pendingRookOrigin.kind} color={pendingRookOrigin.color} />
                 </div>
               );
             })()}

@@ -92,7 +92,7 @@
 .gc-app button.small.confirming { background: #FF3DA6; color: #fff; box-shadow: 0 3px 0 #C22B7E, 0 6px 10px rgba(255,61,166,.3); }
 .gc-app button.small.confirming:hover { box-shadow: 0 5px 0 #C22B7E, 0 8px 14px rgba(255,61,166,.35); }
 
-.gc-app .game-controls { margin: 4px 0 0; }
+.gc-app .game-controls { margin: 30px 0 0; } /* clears the board card's drop shadow */
 
 /* Guardian Angel pending-move (C1): "play it" leans primary-ish (lavender,
    not the pink primary — confirm is the expected default path, not an
@@ -156,6 +156,7 @@
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: center; /* anchored to the game column, not the page corner */
   gap: 8px;
   margin-bottom: 14px;
 }
@@ -232,28 +233,39 @@
   gap: 16px;
   width: 100%;
 }
-.gc-app .tray {
+/* .tray-block = caption + tray as one column unit. Row sizing (the 190px
+   basis) lives ONLY on the direct children of the row-flex .board-with-trays
+   (.opponent-side on the left, a bare .tray-block on the right); everything
+   nested inside is content-driven. This is the same flex-axis trap the B6
+   review caught: a basis on a nested column child pins height, not width. */
+.gc-app .tray-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.gc-app .board-with-trays > .tray-block {
   flex: 0 0 190px;
   width: 190px;
+}
+.gc-app .opponent-side .tray-block { width: 100%; }
+.gc-app .tray-caption {
+  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  color: #9A8BC9;
+}
+.gc-app .tray {
+  flex: 0 0 auto;
+  width: 100%;
   min-height: 40px;
-  align-self: center;
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
+  justify-content: center;
   gap: 2px;
   padding: 8px;
   background: rgba(255,255,255,.5);
   border-radius: 18px;
   box-shadow: 0 4px 0 rgba(201,191,239,.45), 0 8px 14px rgba(90,70,180,.12);
-}
-/* .opponent-side wraps the left tray in a column flex (see below) so a bark
-   bubble can sit under it. The wrapper — not the bare .tray — now sits as
-   the direct child of the row-flex .board-with-trays, so it needs the
-   190px basis that used to live on .tray; on .tray itself that basis would
-   pin the column axis (height) instead of width. The nested override keeps
-   the tray's own sizing content-driven. */
-.gc-app .opponent-side .tray {
-  flex: 0 0 auto;
 }
 .gc-app .tray-piece {
   width: 30px; /* ~55% of a board square at typical viewport widths */
@@ -286,12 +298,12 @@
 }
 @media (max-width: 1000px) {
   .gc-app .board-with-trays { flex-direction: column; }
-  .gc-app .tray { width: min(88vw, 520px); flex: 0 0 auto; }
-  /* .opponent-side's 190px basis/width is a row-layout sizing (see above);
-     once .board-with-trays goes column, that same basis would pin the
-     wrapper's cross-axis width or main-axis height the wrong way again.
-     Let it shrink to the (now wide) .tray + bark bubble instead. */
+  /* In column layout the row bases would pin heights (see the flex-axis
+     note above), so both wrappers go content-driven and the blocks widen
+     to match the board. */
+  .gc-app .board-with-trays > .tray-block { width: min(88vw, 520px); flex: 0 0 auto; }
   .gc-app .opponent-side { width: auto; flex: 0 0 auto; }
+  .gc-app .opponent-side .tray-block { width: min(88vw, 520px); }
 }
 
 .gc-app .stage { position: relative; }
@@ -321,6 +333,18 @@
 .gc-app .sq.dark  { background: #CBBFFF; box-shadow: inset 0 -2px 0 rgba(120,95,200,.35); }
 .gc-app .sq:hover { transform: scale(1.04); }
 .gc-app .sq.target-hint { box-shadow: inset 0 0 0 3px #23E5FF, inset 0 -2px 0 rgba(120,95,200,.35); }
+
+/* A4: last-move highlight, lichess convention — mint fill (same family as
+   the legal-move hints below) on both squares of the most recently SETTLED
+   move (player's or Mallow's), persisting until the next move settles. A
+   full-square wash (huge-spread inset shadow simulates a fill, since these
+   are rounded squares) rather than a ring, so it reads as "this happened
+   here" instead of competing with the hint/check ring language. Placed
+   before .hint/.hint-capture/.check-ring below so any of those override it
+   outright when a square carries both — legality and check state matter
+   more moment-to-moment than a still-true memory of the last move. Alpha
+   chosen to read on both the light and dark square base colors above. */
+.gc-app .sq.last-move { box-shadow: inset 0 0 0 999px rgba(169,239,211,.4), inset 0 -2px 0 rgba(120,95,200,.35); }
 
 /* legal-move highlights — mint, deliberately static (no pulse) so they stay
    easy on the eyes across a 90-minute session. Plain destinations get a soft

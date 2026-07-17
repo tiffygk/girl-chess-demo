@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Chess } from "chess.js";
-import { resolveClickMove } from "./resolveClick";
+import { resolveClickMove, isCastleAttempt } from "./resolveClick";
 
 describe("resolveClickMove", () => {
   it("translates king + own kingside rook click into the O-O move when castling is legal", () => {
@@ -82,5 +82,35 @@ describe("resolveClickMove", () => {
     const result = resolveClickMove(chess, "e4", "e5");
 
     expect(result).toBeNull();
+  });
+});
+
+// A5: isCastleAttempt distinguishes the king+own-rook "reselect" cause from
+// every other reselect cause, so the caller knows when to surface a "can't
+// castle right now" hint instead of a silent reselect.
+describe("isCastleAttempt", () => {
+  it("true for a king selection + own-rook click, even when castling isn't legal", () => {
+    const chess = new Chess("r3kbnr/pppqpppp/2np4/8/8/2NPB3/PPPQPPPP/R3KBNR w kq - 6 5");
+    expect(isCastleAttempt(chess, "e1", "h1")).toBe(true);
+  });
+
+  it("true for a king selection + own-rook click when castling IS legal too", () => {
+    const chess = new Chess("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4");
+    expect(isCastleAttempt(chess, "e1", "h1")).toBe(true);
+  });
+
+  it("false when the selected piece isn't a king", () => {
+    const chess = new Chess();
+    expect(isCastleAttempt(chess, "a1", "a2")).toBe(false);
+  });
+
+  it("false when the clicked piece isn't a rook", () => {
+    const chess = new Chess("rnbqk1nr/pppp1ppp/8/4p3/4P1b1/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3");
+    expect(isCastleAttempt(chess, "e1", "f1")).toBe(false);
+  });
+
+  it("false when either square is empty", () => {
+    const chess = new Chess();
+    expect(isCastleAttempt(chess, "e3", "e4")).toBe(false);
   });
 });

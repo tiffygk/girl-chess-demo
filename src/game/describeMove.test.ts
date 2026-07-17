@@ -23,6 +23,25 @@ describe("describeMove", () => {
     expect(render.secondary).toEqual({ from: "h1", to: "f1" });
   });
 
+  it("destination-square castling input (king clicked, then g1 clicked directly) produces the castle move through the normal path", () => {
+    // A5: clicking the destination square directly (not via the
+    // castle-by-rook-click translation in resolveClickMove) is the OTHER
+    // way a player can input castling — Board's handleSquareClick passes
+    // {from: selectedSquare, to: clickedSquare} straight to onMove with no
+    // translation at all, so this only works if chess.js's object-move
+    // form recognizes e1->g1 as O-O on its own. It does — this pins that.
+    const chess = new Chess("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4");
+    const m = chess.move({ from: "e1", to: "g1" });
+
+    expect(m.flags).toContain("k");
+
+    const render = describeMove(m);
+
+    expect(render.from).toBe("e1");
+    expect(render.to).toBe("g1");
+    expect(render.secondary).toEqual({ from: "h1", to: "f1" });
+  });
+
   it("black queenside castle produces a secondary rook glide a8->d8", () => {
     // Clear b8/c8/d8 for black and let black castle queenside.
     const chess = new Chess();

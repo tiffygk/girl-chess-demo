@@ -49,3 +49,19 @@ export function resolveClickMove(
 
   return { from: selectedSquare, to: clickedSquare };
 }
+
+/**
+ * True exactly when `selectedSquare` holds a king and `clickedSquare` holds
+ * a same-color rook — a castle *attempt*, regardless of whether castling is
+ * currently legal. resolveClickMove above collapses "legal castle" and
+ * "illegal castle click" into different results ({from,to} vs "reselect"),
+ * but collapses "illegal castle click" together with every other ordinary
+ * reselect. This predicate lets a caller tell those two "reselect" causes
+ * apart, so it can surface a "can't castle right now" hint (A5) only for
+ * the king+rook case — every other reselect stays silent.
+ */
+export function isCastleAttempt(chess: Chess, selectedSquare: string, clickedSquare: string): boolean {
+  const selected = chess.get(selectedSquare as Square);
+  const clicked = chess.get(clickedSquare as Square);
+  return !!selected && !!clicked && selected.color === clicked.color && selected.type === "k" && clicked.type === "r";
+}
