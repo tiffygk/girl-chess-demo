@@ -18,6 +18,7 @@ import { victimKind, materialDiff, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
 import { reconcile } from "./reconcile";
 import { findTakedownPiece, type Takedown } from "./terminal";
+import { replayPlan } from "./replay";
 import { GameEndPanel } from "./GameEndPanel";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
 import { nextHintLevel, hintCopy, hintRevealSquares, type HintLevel } from "./hintFlow";
@@ -185,13 +186,15 @@ export function GamePage() {
   // Fires the right terminal-sequence celebration for a game-over result:
   // confetti for a player win, an electric storm for a loss, a soft shimmer
   // for a draw. Fire-and-forget, non-blocking — matches the existing
-  // board?.confetti() call style.
-  const celebrate = useCallback((result: string) => {
+  // board?.confetti() call style. Wave D: `big` fires the denser/longer
+  // replay-finish variant instead of the first-time one — same three
+  // celebrations, just parameterized (see Board's confetti/storm/shimmer).
+  const celebrate = useCallback((result: string, opts?: { big?: boolean }) => {
     const board = boardRef.current;
     if (!board) return;
-    if (result === "1-0") board.confetti();
-    else if (result === "0-1") board.storm();
-    else board.shimmer();
+    if (result === "1-0") board.confetti(opts);
+    else if (result === "0-1") board.storm(opts);
+    else board.shimmer(opts);
   }, []);
 
   const check = useMemo(() => {
@@ -724,18 +727,35 @@ export function GamePage() {
     if (sessionId != null) startGame(sessionId);
   }, [sessionId, startGame]);
 
-  // "replay the takedown" — re-runs Part 1's glide+shatter without touching
-  // any game state. Guarded against re-entrancy so a double-click can't
-  // stack two shatter bursts on top of each other.
+  // "replay the takedown" (Wave D) — owner feedback, verbatim: "play the
+  // last three moves or four moves without delays in between but not too
+  // fast... that way I just see the act of the Queen checkmating the King
+  // but I get to see what was my lead up." Reconstructs the position 4
+  // plies before the end (replayPlan caps at whatever the game actually
+  // has) from the client mirror's own full history — the mirror is never
+  // touched after game-over, so it's still an accurate source of truth —
+  // and plays that lead-up back-to-back into the existing takedown glide+
+  // shatter finale via Board's replayCinematic. On completion, fires the
+  // bigger replay celebration (Task D-2) instead of a second first-time one.
+  //
+  // Guarded against re-entrancy the same way as before, but the guard now
+  // spans the WHOLE cinematic (the await covers the entire multi-move
+  // sequence), not just a single shatter — a double-click mid-cinematic is
+  // a no-op, and Board's own animatingRef additionally keeps board clicks
+  // gated for that same whole span.
   const handleReplayTakedown = useCallback(async () => {
     if (!takedownMove || replayingRef.current) return;
     replayingRef.current = true;
     try {
-      await boardRef.current?.takedown(takedownMove);
+      const history = mirrorRef.current.history({ verbose: true });
+      const plan = replayPlan(history, 4);
+      const moves = plan.moves.map(describeMove);
+      await boardRef.current?.replayCinematic(plan.startFen, moves, takedownMove);
+      if (gameOver) celebrate(gameOver.result, { big: true });
     } finally {
       replayingRef.current = false;
     }
-  }, [takedownMove]);
+  }, [takedownMove, gameOver, celebrate]);
 
   const togglesDisabled = uiBusy || pending !== null;
 
