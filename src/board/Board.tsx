@@ -47,6 +47,18 @@ interface BoardProps {
   lastCapture?: { square: string };
   checkSquare?: string | null;
   checkmate?: boolean;
+  /**
+   * Guardian Angel pending-move (C1): when set, `from`'s piece renders
+   * dimmed and a ghost of it (using `promotion`'s kind, when the move
+   * promotes) renders on `to` in the PENDING style. Purely a render
+   * overlay — `entries` (and the fen/mirror upstream) are untouched, so
+   * confirming still runs the normal glide/glitchCapture entry from a
+   * settled position, and retracting is just clearing this prop.
+   */
+  pending?: { from: string; to: string; promotion?: string } | null;
+  /** Guardian Angel pending-move (C1): suppresses all square/piece clicks
+   * while a move is pending — confirm/retract are the only way forward. */
+  locked?: boolean;
 }
 
 // ambient decorative jitter squares, same indices as the demo
@@ -93,7 +105,7 @@ function entriesFromFen(fen: string): PieceEntry[] {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
-  { fen, onMove, lastCapture, checkSquare, checkmate },
+  { fen, onMove, lastCapture, checkSquare, checkmate, pending, locked },
   ref
 ) {
   const [entries, setEntries] = useState<PieceEntry[]>(() => entriesFromFen(fen));
@@ -399,7 +411,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
 
   const handlePieceClick = useCallback(
     (square: string, color: PieceColor) => {
-      if (animatingRef.current) return;
+      if (animatingRef.current || locked) return;
       if (selectedSquare && selectedSquare !== square) {
         const result = resolveClickMove(chess, selectedSquare, square);
         if (result === "reselect") {
@@ -416,17 +428,17 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       setSelectedSquare(square);
       beep("select");
     },
-    [selectedSquare, onMove, turn, chess]
+    [selectedSquare, onMove, turn, chess, locked]
   );
 
   const handleSquareClick = useCallback(
     (square: string) => {
-      if (animatingRef.current || !selectedSquare) return;
+      if (animatingRef.current || locked || !selectedSquare) return;
       const from = selectedSquare;
       setSelectedSquare(null);
       onMove(from, square);
     },
-    [selectedSquare, onMove]
+    [selectedSquare, onMove, locked]
   );
 
   const corruptIdx = lastCapture ? new Set([...AMBIENT_CORRUPT, squareToIdx(lastCapture.square)]) : AMBIENT_CORRUPT;
@@ -444,6 +456,12 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     () => checkmate && checkSquare != null && !entries.some((e) => e.square === checkSquare && e.kind === "k"),
     [entries, checkSquare, checkmate]
   );
+
+  // Guardian Angel pending-move (C1) ghost: rendered from the (still
+  // pre-move) entry at pending.from, on pending.to — never by mutating
+  // `entries`, so the underlying fen/mirror stay untouched until confirm.
+  const pendingOrigin = pending ? entries.find((e) => e.square === pending.from) : undefined;
+  const pendingGhostKind = pending?.promotion ? (pending.promotion as PieceKind) : pendingOrigin?.kind;
 
   return (
     <div className="stage">
@@ -492,6 +510,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 e.glitchIn ? "glitch-in" : "",
                 e.noTrans ? "no-trans" : "",
                 e.square === selectedSquare ? "selected" : "",
+                pending && e.square === pending.from ? "pending-dim" : "",
               ]
                 .filter(Boolean)
                 .join(" ");
@@ -507,6 +526,21 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 </div>
               );
             })}
+            {pending && pendingOrigin && pendingGhostKind && (() => {
+              const idx = squareToIdx(pending.to);
+              const row = Math.floor(idx / 8);
+              const col = idx % 8;
+              return (
+                <div
+                  key="pending-ghost"
+                  className="pc pending-ghost"
+                  data-square={pending.to}
+                  style={{ left: col * 12.5 + "%", top: row * 12.5 + "%" }}
+                >
+                  <Piece kind={pendingGhostKind} color={pendingOrigin.color} />
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>

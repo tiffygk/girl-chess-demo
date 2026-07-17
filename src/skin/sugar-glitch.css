@@ -94,6 +94,40 @@
 
 .gc-app .game-controls { margin: 4px 0 0; }
 
+/* Guardian Angel pending-move (C1): "play it" leans primary-ish (lavender,
+   not the pink primary — confirm is the expected default path, not an
+   alarm) while "take it back" stays the plain small button. */
+.gc-app button.small.confirm-pending {
+  background: #C9B8FF; color: #4A3B7E;
+  box-shadow: 0 3px 0 #A99AE0, 0 6px 10px rgba(120,95,200,.3);
+}
+.gc-app button.small.confirm-pending:hover { box-shadow: 0 5px 0 #A99AE0, 0 8px 14px rgba(120,95,200,.35); }
+.gc-app button.small.confirm-pending:active { box-shadow: 0 1px 0 #A99AE0, 0 4px 8px rgba(120,95,200,.25); }
+
+/* Judge indicator: fixed-cadence "judging… / judged" readout, no timing
+   tells — the same three-dot loader plays for every verdict tier since the
+   cadence never depends on what the verdict says (JUDGE_MIN_MS in
+   GamePage.tsx). */
+.gc-app .judge-indicator {
+  margin-top: 14px;
+  min-height: 20px;
+  font-size: 13px; font-weight: 700; color: #7A6BB5;
+  text-align: center;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.gc-app .judge-dots { display: inline-flex; gap: 2px; }
+.gc-app .judge-dots .dot {
+  opacity: .3;
+  animation: judgeDotPulse 1.1s ease-in-out infinite;
+}
+.gc-app .judge-dots .dot:nth-child(2) { animation-delay: .15s; }
+.gc-app .judge-dots .dot:nth-child(3) { animation-delay: .3s; }
+@keyframes judgeDotPulse {
+  0%, 80%, 100% { opacity: .25; }
+  40% { opacity: 1; }
+}
+.gc-app .judge-check { color: #4CAF8C; font-weight: 700; }
+
 /* captured-piece trays flank the board in fixed-width columns so a tray
    filling up never nudges the board sideways — content wraps within the
    column instead of growing it. Each row holds ~8 sprites before wrapping.
@@ -260,6 +294,29 @@
   54% { clip-path: inset(10% 0 40% 0); filter: drop-shadow(3px 0 0 #23E5FF); transform: translateX(2px) skewX(5deg); }
   72% { clip-path: inset(0 0 0 0); filter: drop-shadow(-2px 0 0 #23E5FF) drop-shadow(2px 0 0 #FF3DA6); transform: none; }
   100%{ clip-path: inset(0 0 0 0); filter: drop-shadow(0 3px 2px rgba(110,80,190,.35)); transform: none; opacity: 1; }
+}
+
+/* Guardian Angel pending-move (C1): the origin piece dims in place, and a
+   ghost of it renders on the destination square — semi-transparent with a
+   soft dashed lavender outline. Neither touches `entries`/fen; this is a
+   pure overlay that clears the instant the pending prop clears. */
+.gc-app .pc.pending-dim { opacity: .35; }
+.gc-app .pc.pending-ghost {
+  opacity: .6;
+  z-index: 4;
+  pointer-events: none;
+  animation: pendingPulse 1.6s ease-in-out infinite;
+}
+.gc-app .pc.pending-ghost::after {
+  content: "";
+  position: absolute;
+  inset: 4%;
+  border: 2px dashed #C9B8FF;
+  border-radius: 22%;
+}
+@keyframes pendingPulse {
+  0%, 100% { opacity: .5; }
+  50% { opacity: .75; }
 }
 
 .gc-app .pixel { position: absolute; z-index: 8; border-radius: 2px; pointer-events: none; }

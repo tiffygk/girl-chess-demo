@@ -44,6 +44,20 @@ export interface DrawOfferResponse {
   result?: string;
 }
 
+// Mirrors server/annotator/classify.ts's Verdict. C1's judge is a stub —
+// always "silent" — but the shape carries everything C2 needs.
+export interface Verdict {
+  tier: "silent" | "nudge" | "warning";
+  deltaCp: number | null;
+  mateAgainst: boolean;
+  latencyMs: number;
+}
+
+export interface JudgeResponse {
+  ok: boolean;
+  verdict?: Verdict;
+}
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method: "POST",
@@ -73,6 +87,17 @@ export function sendMove(
 
 export function reportMode(sessionId: number, mode: string, seconds: number): Promise<ModeResponse> {
   return postJson(`/session/${sessionId}/mode`, { mode, seconds });
+}
+
+// Stateless: the server validates against a clone and never advances the
+// game (retract is purely client-side — nothing to undo on the server).
+export function judgeMove(
+  gameId: number,
+  from: string,
+  to: string,
+  promotion?: string
+): Promise<JudgeResponse> {
+  return postJson(`/game/${gameId}/judge`, { from, to, promotion });
 }
 
 export function resign(gameId: number): Promise<ResignResponse> {
