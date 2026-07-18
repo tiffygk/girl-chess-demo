@@ -77,6 +77,26 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // keeps working unchanged.
     { name: "facts_json", addSql: "facts_json TEXT" },
   ],
+  // Increment 3a Wave 2 (coach foundation, F40): one row per narrate() call,
+  // model or template — 100% completeness is a Lab gate. Brand-new table
+  // (CREATE TABLE IF NOT EXISTS below already creates it with every column
+  // on any db, old or new), but every column is still listed here per the
+  // established EXPECTED_COLUMNS convention so a future additive column
+  // migrates the same way verdicts.facts_json did.
+  advice_traces: [
+    { name: "game_id", addSql: "game_id INTEGER REFERENCES games(id)" },
+    { name: "ply", addSql: "ply INTEGER" },
+    { name: "kind", addSql: "kind TEXT" },
+    { name: "facts_json", addSql: "facts_json TEXT" },
+    { name: "prompt", addSql: "prompt TEXT" },
+    { name: "output", addSql: "output TEXT" },
+    { name: "source", addSql: "source TEXT" },
+    { name: "backend", addSql: "backend TEXT" },
+    { name: "validated", addSql: "validated INTEGER" },
+    { name: "regen_count", addSql: "regen_count INTEGER" },
+    { name: "latency_ms", addSql: "latency_ms INTEGER" },
+    { name: "created_at", addSql: "created_at TEXT DEFAULT (datetime('now'))" },
+  ],
 };
 
 function migrateSchema(target: Database.Database) {
@@ -121,6 +141,11 @@ export function openDb(path = "data/girlchess.db") {
       fen TEXT, move TEXT, tier TEXT, delta_cp INTEGER, mate_against INTEGER,
       latency_ms INTEGER, advice_level TEXT, mode TEXT DEFAULT 'guardian',
       facts_json TEXT, at TEXT DEFAULT (datetime('now')));
+    CREATE TABLE IF NOT EXISTS advice_traces(
+      id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), ply INTEGER,
+      kind TEXT, facts_json TEXT, prompt TEXT, output TEXT, source TEXT,
+      backend TEXT, validated INTEGER, regen_count INTEGER, latency_ms INTEGER,
+      created_at TEXT DEFAULT (datetime('now')));
   `);
   migrateSchema(db);
   return db;
@@ -192,3 +217,28 @@ export const insertVerdict = (v: {
   ).run(v.gameId, v.ply, v.fen, v.move, v.tier, v.deltaCp, v.mateAgainst ? 1 : 0, v.latencyMs, v.adviceLevel, v.mode ?? "guardian", v.factsJson ?? null);
 export const getVerdicts = (gameId: number) =>
   db.prepare("SELECT * FROM verdicts WHERE game_id = ? ORDER BY id").all(gameId) as any[];
+// F40: written by server/coach/traces.ts's recordAdviceTrace on every
+// narrate() call (model or template) — 100% completeness is the Lab gate,
+// so this has no optional fields the way insertVerdict's factsJson does.
+export const insertAdviceTrace = (t: {
+  gameId: number;
+  ply: number;
+  kind: string;
+  factsJson: string;
+  prompt: string;
+  output: string;
+  source: string;
+  backend: string;
+  validated: boolean;
+  regenCount: number;
+  latencyMs: number;
+}) =>
+  db.prepare(
+    `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(
+    t.gameId, t.ply, t.kind, t.factsJson, t.prompt, t.output, t.source, t.backend,
+    t.validated ? 1 : 0, t.regenCount, t.latencyMs
+  );
+export const getAdviceTraces = (gameId: number) =>
+  db.prepare("SELECT * FROM advice_traces WHERE game_id = ? ORDER BY id").all(gameId) as any[];

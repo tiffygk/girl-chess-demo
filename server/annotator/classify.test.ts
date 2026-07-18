@@ -25,13 +25,26 @@ describe("classify.ts LLM-free gate", () => {
   // the other half of the verdict path (it clones the live game and calls
   // classifyMove) — extend the same source-scan there so a future edit
   // can't quietly reintroduce a coach import on that side of the seam.
-  it("server/game/manager.ts's judge path never imports from server/coach", () => {
+  //
+  // Increment 3a Wave 2 (coach foundation): manager.ts's TOP LEVEL now does
+  // import from server/coach — the file also owns the separate async
+  // narrate() surface (see manager.ts's own header comment on that method).
+  // The invariant that actually matters, per the brief's hard boundary, is
+  // narrower than "this file never imports coach": it's "judgeMove itself
+  // never touches coach". So this gate now scopes its scan to judgeMove's
+  // own method body (from its signature to the next method declaration)
+  // rather than the whole file, and checks for any "coach" reference at all
+  // (not just import lines) since a body could reach it via a re-export
+  // without a literal `from ".../coach"` import line.
+  it("server/game/manager.ts's judgeMove method never references server/coach", () => {
     const src = fs.readFileSync(path.join(__dirname, "../game/manager.ts"), "utf-8");
-    const importLines = src.split("\n").filter((line) => /^\s*import\b/.test(line));
-    expect(importLines.length).toBeGreaterThan(0);
-    for (const line of importLines) {
-      expect(line).not.toMatch(/from\s+["']\.\.?\/coach/);
-    }
+    const start = src.indexOf("async judgeMove(");
+    expect(start).toBeGreaterThan(-1);
+    const rest = src.slice(start + "async judgeMove(".length);
+    const nextMethodMatch = /\n {2}(?:async |private |public )?[A-Za-z_$][\w$]*\s*\(/.exec(rest);
+    const body = nextMethodMatch ? rest.slice(0, nextMethodMatch.index) : rest;
+    expect(body.length).toBeGreaterThan(0);
+    expect(body).not.toMatch(/coach/i);
   });
 
   // Fix wave (code review, verbatim intent): adjudicate.ts carries the same

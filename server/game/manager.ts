@@ -5,6 +5,16 @@ import { createGame, finishGame, recordMove, attachEval, logGameEvent, insertVer
 import { classifyMove, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
 import { computeHint as computeHintFacts, type HintFacts } from "../annotator/hint";
+import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
+// Increment 3a Wave 2: the coach's async narrate surface. Deliberately kept
+// out of judgeMove above — see that method's own comment and
+// classify.test.ts's scoped gate test, which pins this: judgeMove's own
+// body must never reference coach, even though this file's top level now
+// does for the sibling narrate() method below.
+import { assembleFactList, narrate as narrateFacts } from "../coach";
+import { claudeCliBackend } from "../coach/backends/claude-cli";
+import { ollamaBackend } from "../coach/backends/ollama";
+import { noBackend, type CoachBackend } from "../coach/backends/types";
 
 interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number; finished: boolean }
 
@@ -17,8 +27,29 @@ export class GameManager {
   private games = new Map<number, LiveGame>();
   private evaluator = new StockfishEvaluator();
   private opponents = new Map<number, MaiaOpponent>();
+  // Probed once, cached, per the brief's "claude-cli if available else
+  // ollama if available else template-only" selection — narrate() below
+  // never re-probes on every call.
+  private coachBackend: CoachBackend | null = null;
 
   async init() { await this.evaluator.init(); }
+
+  private async pickCoachBackend(): Promise<CoachBackend> {
+    if (this.coachBackend) return this.coachBackend;
+    if (await claudeCliBackend.available()) this.coachBackend = claudeCliBackend;
+    else if (await ollamaBackend.available()) this.coachBackend = ollamaBackend;
+    else this.coachBackend = noBackend;
+    return this.coachBackend;
+  }
+
+  // Test seam only: lets manager.test.ts inject a FAKE backend so tests
+  // never probe or invoke the real claude CLI / ollama (brief: "do NOT
+  // invoke the real claude CLI in tests"). Unused in production —
+  // pickCoachBackend's probe-and-cache runs unless a test has already
+  // primed this.
+  setCoachBackendForTesting(backend: CoachBackend) {
+    this.coachBackend = backend;
+  }
 
   private async opponentFor(elo: number): Promise<MaiaOpponent> {
     if (!this.opponents.has(elo)) {
@@ -248,6 +279,45 @@ export class GameManager {
       JSON.stringify({ bestUci: facts.bestUci, escalated: facts.escalated, fen })
     );
     return { ok: true, facts };
+  }
+
+  // Increment 3a Wave 2: the coach's narrate surface (F17 + F18 + F14 +
+  // F40). SEPARATE async surface from judgeMove above by design (see the
+  // hard boundary comment on that method, and this file's top-of-file
+  // comment): the client already holds all the structured facts (herPiece/
+  // from/to/tier/deltaCp/threat/best/recommendation) from its own judge and
+  // hint-facts calls, so this re-derives nothing and never touches
+  // `this.evaluator` — no engine call, no shared queue, no delay to the
+  // judge/ladder/badge/confirm path. Only guards that the game exists and
+  // isn't finished (mirrors judgeMove's guard) before assembling and
+  // narrating.
+  async narrate(
+    gameId: number,
+    body: {
+      herPiece: string;
+      from: string;
+      to: string;
+      tier: "nudge" | "warning";
+      deltaCp: number | null;
+      threat?: ThreatFacts;
+      best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
+      recommendation?: RecommendationFacts;
+    }
+  ): Promise<{ ok: false } | { ok: true; text: string; source: "model" | "template" }> {
+    const live = this.games.get(gameId);
+    if (!live || live.finished) return { ok: false };
+
+    const backend = await this.pickCoachBackend();
+    const facts = assembleFactList({
+      herMove: { pieceKind: body.herPiece, from: body.from, to: body.to },
+      tier: body.tier,
+      deltaCp: body.deltaCp,
+      threat: body.threat,
+      best: body.best,
+      recommendation: body.recommendation,
+    });
+    const result = await narrateFacts(facts, backend, { gameId, ply: live.ply, kind: body.tier });
+    return { ok: true, text: result.text, source: result.source };
   }
 
   // Wave C, task C-B: observability for the Lab's hint-escalation metric.
