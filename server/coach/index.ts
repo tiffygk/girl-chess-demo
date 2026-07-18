@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import type { ThreatFacts } from "../annotator/motifs";
 import type { RecommendationFacts } from "../annotator/motifs";
 import type { CoachBackend } from "./backends/types";
@@ -147,9 +148,16 @@ let cachedPersona: Persona | null = null;
 
 // Parsed once, cached: the owner can still edit the file (a process restart
 // picks it up), but every narrate() call doesn't re-read + re-parse disk.
+// Bugfix (increment 3a Wave 3 smoke): this package is ESM ("type": "module"
+// in package.json), where __dirname doesn't exist — only vite-node's CJS
+// compat shim (vitest's runner) papered over it, so every unit test passed
+// while every real narrate() call under `tsx` crashed with "__dirname is
+// not defined" before ever reaching the backend. import.meta.url is the
+// ESM-native equivalent.
 function getPersona(): Persona {
   if (!cachedPersona) {
-    const md = fs.readFileSync(path.join(__dirname, "personas/coach.md"), "utf-8");
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const md = fs.readFileSync(path.join(here, "personas/coach.md"), "utf-8");
     cachedPersona = parsePersona(md);
   }
   return cachedPersona;

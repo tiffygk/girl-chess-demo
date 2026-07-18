@@ -10,6 +10,7 @@ import {
   judgeMove,
   logHint,
   fetchHintFacts,
+  narrate,
   type MoveResponse,
   type GameOverInfo,
   type Verdict,
@@ -170,6 +171,14 @@ export function GamePage() {
   // would point at the wrong "instead" square.
   const [hintFacts, setHintFacts] = useState<NonNullable<HintFactsResponse["facts"]> | null>(null);
   const [hintFetching, setHintFetching] = useState(false);
+  // Increment 3a Wave 3: coach's corner narration for the current pending
+  // move. null text = nothing to show yet (idle placeholder, or nothing
+  // fired this pending). Reset alongside hintLevel/hintFacts at every
+  // pending-lifecycle boundary (new game, pending start/retarget, confirm,
+  // retract) — same four sites, same reason (a stale narration from the
+  // last destination would talk about the wrong move).
+  const [coachText, setCoachText] = useState<string | null>(null);
+  const [coachLoading, setCoachLoading] = useState(false);
   // C3: the two independent switches. coachOn = "coach judges my moves"
   // (the pill); confirmOn = "confirm before playing". Crossed via
   // resolveMoveFlow to pick one of the 4 move flows on every destination
@@ -217,6 +226,10 @@ export function GamePage() {
   // no-op — never flips judgePhase to "judged" for a move that's already
   // gone.
   const pendingTokenRef = useRef(0);
+  // Increment 3a Wave 3: guards the narrate call to firing exactly once per
+  // pending move — holds the pendingTokenRef value narrate has already
+  // fired (or is in flight) for, so re-renders while L3+ holds don't refire.
+  const narratedTokenRef = useRef<number | null>(null);
   // Wave C, task C-A: the "end the game?" arm-then-confirm revert timer,
   // and a re-entrancy guard for the preview call itself (distinct from
   // busyRef, which gates the main move flow — arming end-game shouldn't be
@@ -268,6 +281,9 @@ export function GamePage() {
     setHintLevel(0);
     setHintFacts(null);
     setHintFetching(false);
+    setCoachText(null);
+    setCoachLoading(false);
+    narratedTokenRef.current = null;
     postVerdictTokenRef.current += 1;
     setPostVerdict(null);
     setLastMove(null);
@@ -545,6 +561,9 @@ export function GamePage() {
       setHintLevel(0);
       setHintFacts(null);
       setHintFetching(false);
+      setCoachText(null);
+      setCoachLoading(false);
+      narratedTokenRef.current = null;
 
       if (!withJudge) {
         // confirm-only: pure two-step, zero /judge calls, no indicator.
@@ -598,6 +617,9 @@ export function GamePage() {
     setHintLevel(0); // Wave C, task C-B: level resets on confirm
     setHintFacts(null);
     setHintFetching(false);
+    setCoachText(null);
+    setCoachLoading(false);
+    narratedTokenRef.current = null;
     handleMove(from, to, overrideVerdict);
   }, [pending, verdict, handleMove]);
 
@@ -612,6 +634,9 @@ export function GamePage() {
     setHintLevel(0); // Wave C, task C-B: level resets on cancel
     setHintFacts(null);
     setHintFetching(false);
+    setCoachText(null);
+    setCoachLoading(false);
+    narratedTokenRef.current = null;
   }, []);
 
   // Wave C, tasks 5-6 (owner): "if I hit Enter on the keyboard... I'm not
@@ -717,6 +742,52 @@ export function GamePage() {
       }
     })();
   }, [gameId, verdict, hintLevel, hintFacts, hintFetching]);
+
+  // Increment 3a Wave 3: coach's corner narration. Fires once per pending
+  // move, the instant the ladder reaches level 3 (the WHY threat is on
+  // screen) for a nudge/warning verdict AND the deep hint-facts fetch has
+  // landed (best/recommendation facts exist to narrate). Reuses
+  // pendingTokenRef — the same guard the judge call and hint fetch use — so
+  // a response for a since-superseded pending move is dropped rather than
+  // rendered. Never gates anything: no spinner on the ladder itself, no
+  // disabled states, confirm/retract work mid-flight (the token guard drops
+  // the stale text when it lands).
+  useEffect(() => {
+    if (!pending || !gameId || !verdict || !hintFacts) return;
+    if (verdict.tier !== "nudge" && verdict.tier !== "warning") return;
+    if (hintLevel < 3) return;
+    const token = pendingTokenRef.current;
+    if (narratedTokenRef.current === token) return;
+    narratedTokenRef.current = token;
+
+    const herPieceKind = mirrorRef.current.get(pending.from as Square)?.type ?? "piece";
+    setCoachLoading(true);
+    narrate(gameId, {
+      herPiece: herPieceKind,
+      from: pending.from,
+      to: pending.to,
+      tier: verdict.tier,
+      deltaCp: verdict.deltaCp,
+      threat: verdict.threat,
+      best: {
+        san: hintFacts.bestSan,
+        uci: hintFacts.bestUci,
+        pieceKind: hintFacts.bestPieceKind,
+        from: hintFacts.bestFromSquare,
+        to: hintFacts.bestToSquare,
+      },
+      recommendation: hintFacts.recommendation,
+    })
+      .then((res) => {
+        if (pendingTokenRef.current !== token) return; // superseded — drop it
+        setCoachLoading(false);
+        if (res.ok && res.text) setCoachText(res.text);
+      })
+      .catch(() => {
+        if (pendingTokenRef.current !== token) return;
+        setCoachLoading(false);
+      });
+  }, [gameId, pending, verdict, hintLevel, hintFacts]);
 
   // A5: surfaces a short "you tried something, here's why it didn't work"
   // message in the status line for a few seconds (currently only "can't
@@ -1285,7 +1356,9 @@ export function GamePage() {
         {coachHints && (
           <div className="coach-hint-slot">
             <span className="coach-seat" aria-hidden="true"></span>
-            <span className="coach-slot-copy">coach's corner, coming with the coach</span>
+            <span className="coach-slot-copy">
+              {coachText ?? (coachLoading ? "coach is looking..." : "coach's corner, coming with the coach")}
+            </span>
           </div>
         )}
       </div>

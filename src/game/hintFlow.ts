@@ -21,7 +21,7 @@
 // motif populated. When threat is absent, or the motif is "positional",
 // copy degrades to the honest fallback — it never speculates.
 import { Chess } from "chess.js";
-import type { ThreatFacts } from "./api";
+import type { ThreatFacts, RecommendationFacts } from "./api";
 
 export type HintLevel = 0 | 1 | 2 | 3 | 4 | 5;
 
@@ -52,6 +52,37 @@ export interface HintFacts {
   bestToSquare: string;
   bestSan: string;
   bestUci: string;
+  // Increment 3a Wave 3: "why the recommended move is good" — arrives with
+  // the deep hint fetch (server/annotator/hint.ts), read by
+  // recommendationClause below at level 5 only.
+  recommendation?: RecommendationFacts;
+}
+
+/**
+ * Level 5 addendum: what the recommended move accomplishes, in the
+ * player's own template voice (lowercase, no em-dashes). Every branch reads
+ * only the fields `deriveRecommendationFacts` (server/annotator/motifs.ts)
+ * populates for that accomplishment — same HONESTY GATE as the L2/L3 threat
+ * copy above. Returns null when there's no recommendation to describe.
+ */
+export function recommendationClause(rec: RecommendationFacts | null | undefined): string | null {
+  if (!rec) return null;
+  switch (rec.accomplishment) {
+    case "captures":
+      return `it wins the ${pieceName(rec.capturedPieceKind ?? "")} on ${rec.capturesSquare}.`;
+    case "gives-mate":
+      return "it forces mate.";
+    case "gives-check":
+      return "it puts her in check.";
+    case "forks":
+      return `it forks her ${(rec.forkTargets ?? []).map((t) => pieceName(t.pieceKind)).join(" and ")}.`;
+    case "attacks":
+      return `it goes after her ${pieceName(rec.attackedPieceKind ?? "")} on ${rec.attackedSquare}.`;
+    case "develops":
+      return "it keeps building. good shape, no drama.";
+    default:
+      return null;
+  }
 }
 
 /**
@@ -160,9 +191,11 @@ export function hintCopy(level: HintLevel, ctx: HintCopyCtx): string | null {
   if (!ctx.bestFacts) return null;
   if (level === 4) return `better: your ${pieceName(ctx.bestFacts.bestPieceKind)} on ${ctx.bestFacts.bestFromSquare}`;
   const translation = ctx.fen ? describeBestMove(ctx.bestFacts, ctx.fen) : null;
-  return translation
+  const base = translation
     ? `best here: ${ctx.bestFacts.bestSan} (${translation})`
     : `best here: ${ctx.bestFacts.bestSan}`;
+  const clause = recommendationClause(ctx.bestFacts.recommendation);
+  return clause ? `${base} ${clause}` : base;
 }
 
 /** Splits a UCI move ("g1f3") into its from/to squares for the board's
