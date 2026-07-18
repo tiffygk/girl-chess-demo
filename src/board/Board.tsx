@@ -126,6 +126,15 @@ interface BoardProps {
    * be showing on the same square at the same time.
    */
   hintReveal?: { from: string; to: string } | null;
+  /**
+   * Increment 2.7 (why-hints): level-3 threat highlight — the opponent's
+   * refutation attacker and the square it lands on/captures on, derived
+   * from verdict.threat (GamePage's threatReveal, distinct from the deep
+   * hint search's hintReveal above). Shown only while hintLevel === 3, with
+   * its own alarm-language classes (`.threat-attacker`/`.threat-victim`) so
+   * it never reads as "move here" the way hintReveal's mint ring does.
+   */
+  threatReveal?: { attacker: string; victim: string } | null;
 }
 
 // ambient decorative jitter squares, same indices as the demo — staggered
@@ -225,6 +234,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     onInputHint,
     lastMove,
     hintReveal,
+    threatReveal,
   },
   ref
 ) {
@@ -789,6 +799,11 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 legalTargets.capture.has(square) ? "hint-capture" : "",
                 legalTargets.normal.has(square) ? "hint" : "",
                 hintReveal?.to === square ? "target-hint" : hintReveal?.from === square ? "hint-origin" : "",
+                threatReveal?.attacker === square
+                  ? "threat-attacker"
+                  : threatReveal?.victim === square
+                    ? "threat-victim"
+                    : "",
                 isCheckRing ? "check-ring" : "",
                 isCheckRing && checkmate ? "mate" : "",
               ]

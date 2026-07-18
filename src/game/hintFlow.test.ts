@@ -5,24 +5,25 @@ import {
   hintCopy,
   describeBestMove,
   hintRevealSquares,
+  threatRevealSquares,
   hintIsLegal,
   type HintFacts,
+  type HintCopyCtx,
   type HintLevel,
 } from "./hintFlow";
+import type { ThreatFacts } from "./api";
 
 describe("nextHintLevel", () => {
-  it("advances 0 -> 1 -> 2 -> 3", () => {
+  it("advances 0 -> 1 -> 2 -> 3 -> 4 -> 5", () => {
     let level: HintLevel = 0;
-    level = nextHintLevel(level);
-    expect(level).toBe(1);
-    level = nextHintLevel(level);
-    expect(level).toBe(2);
-    level = nextHintLevel(level);
-    expect(level).toBe(3);
+    for (const expected of [1, 2, 3, 4, 5]) {
+      level = nextHintLevel(level);
+      expect(level).toBe(expected);
+    }
   });
 
-  it("caps at level 3 — further clicks are a no-op", () => {
-    expect(nextHintLevel(3)).toBe(3);
+  it("caps at level 5 — further clicks are a no-op", () => {
+    expect(nextHintLevel(5)).toBe(5);
   });
 });
 
@@ -38,53 +39,6 @@ describe("pieceName", () => {
 
   it("falls back to 'piece' for anything unrecognized", () => {
     expect(pieceName("x")).toBe("piece");
-  });
-});
-
-describe("hintCopy", () => {
-  const facts = {
-    bestPieceKind: "n",
-    bestFromSquare: "g1",
-    bestToSquare: "f3",
-    bestSan: "Nf3",
-    bestUci: "g1f3",
-  };
-
-  it("level 0 -> null (nothing revealed yet)", () => {
-    expect(hintCopy(0, facts)).toBeNull();
-  });
-
-  it("level 1 -> 'look at your {piece name}'", () => {
-    expect(hintCopy(1, facts)).toBe("look at your knight");
-  });
-
-  it("level 2 names the piece and its origin square, never a bare destination", () => {
-    // Owner playtest 2026-07-17: destination-only "think about f3" read as
-    // nonsense ("nothing could go to that square"). Level 2 now points at a
-    // square her own piece is visibly standing on.
-    expect(hintCopy(2, facts)).toBe("your knight on g1");
-  });
-
-  it("levels 1 and 3 are unchanged", () => {
-    expect(hintCopy(1, facts)).toBe("look at your knight");
-    expect(hintCopy(3, facts)).toBe("best here: Nf3");
-  });
-
-  it("level 3 -> 'best here: {san}'", () => {
-    expect(hintCopy(3, facts)).toBe("best here: Nf3");
-  });
-
-  it("copy has no em-dashes or emojis", () => {
-    for (const level of [1, 2, 3] as HintLevel[]) {
-      const copy = hintCopy(level, facts)!;
-      expect(copy).not.toMatch(/[—–]/); // em dash / en dash
-    }
-  });
-
-  it("the level 1/2 template text is lowercase (SAN itself keeps its own piece-letter casing, e.g. 'Nf3')", () => {
-    expect(hintCopy(1, facts)).toBe(hintCopy(1, facts)!.toLowerCase());
-    expect(hintCopy(2, facts)).toBe(hintCopy(2, facts)!.toLowerCase());
-    expect(hintCopy(3, facts)!.startsWith("best here: ")).toBe(true);
   });
 });
 
@@ -221,140 +175,6 @@ describe("describeBestMove", () => {
   });
 });
 
-describe("hintCopy level 3 with fen (translated copy)", () => {
-  it("quiet move", () => {
-    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "n",
-      bestFromSquare: "g1",
-      bestToSquare: "f3",
-      bestSan: "Nf3",
-      bestUci: "g1f3",
-    };
-    expect(hintCopy(3, facts, fen)).toBe("best here: Nf3 (knight to f3)");
-  });
-
-  it("capture", () => {
-    const fen = "4k3/8/8/8/8/5n2/8/4K1N1 w - - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "n",
-      bestFromSquare: "g1",
-      bestToSquare: "f3",
-      bestSan: "Nxf3",
-      bestUci: "g1f3",
-    };
-    expect(hintCopy(3, facts, fen)).toBe("best here: Nxf3 (knight takes on f3)");
-  });
-
-  it("en passant", () => {
-    const fen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "p",
-      bestFromSquare: "e5",
-      bestToSquare: "d6",
-      bestSan: "exd6",
-      bestUci: "e5d6",
-    };
-    expect(hintCopy(3, facts, fen)).toBe("best here: exd6 (pawn takes on d6)");
-  });
-
-  it("check", () => {
-    const fen = "8/4k3/8/8/8/8/K6Q/8 w - - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "q",
-      bestFromSquare: "h2",
-      bestToSquare: "h4",
-      bestSan: "Qh4+",
-      bestUci: "h2h4",
-    };
-    expect(hintCopy(3, facts, fen)).toBe("best here: Qh4+ (queen to h4, check)");
-  });
-
-  it("checkmate", () => {
-    const fen = "rnbqkbnr/pppp1ppp/8/4p3/5PP1/8/PPPPP2P/RNBQKBNR b KQkq - 0 2";
-    const facts: HintFacts = {
-      bestPieceKind: "q",
-      bestFromSquare: "d8",
-      bestToSquare: "h4",
-      bestSan: "Qh4#",
-      bestUci: "d8h4",
-    };
-    expect(hintCopy(3, facts, fen)).toBe("best here: Qh4# (queen to h4, checkmate)");
-  });
-
-  it("promotion", () => {
-    const fen = "8/4P3/8/8/8/8/8/K6k w - - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "p",
-      bestFromSquare: "e7",
-      bestToSquare: "e8",
-      bestSan: "e8=Q",
-      bestUci: "e7e8q",
-    };
-    expect(hintCopy(3, facts, fen)).toBe("best here: e8=Q (pawn to e8, becoming a queen)");
-  });
-
-  it("capturing promotion with check", () => {
-    const fen = "7r/6P1/6k1/8/8/8/8/K7 w - - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "p",
-      bestFromSquare: "g7",
-      bestToSquare: "h8",
-      bestSan: "gxh8=N+",
-      bestUci: "g7h8n",
-    };
-    expect(hintCopy(3, facts, fen)).toBe(
-      "best here: gxh8=N+ (pawn takes on h8, becoming a knight, check)",
-    );
-  });
-
-  it("castle kingside", () => {
-    const fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "k",
-      bestFromSquare: "e1",
-      bestToSquare: "g1",
-      bestSan: "O-O",
-      bestUci: "e1g1",
-    };
-    expect(hintCopy(3, facts, fen)).toBe("best here: O-O (castle short)");
-  });
-
-  it("castle queenside", () => {
-    const fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "k",
-      bestFromSquare: "e1",
-      bestToSquare: "c1",
-      bestSan: "O-O-O",
-      bestUci: "e1c1",
-    };
-    expect(hintCopy(3, facts, fen)).toBe("best here: O-O-O (castle long)");
-  });
-
-  it("fallback: garbage fen falls back to plain SAN copy (no translation shown)", () => {
-    const facts: HintFacts = {
-      bestPieceKind: "n",
-      bestFromSquare: "g1",
-      bestToSquare: "f3",
-      bestSan: "Nf3",
-      bestUci: "g1f3",
-    };
-    expect(hintCopy(3, facts, "not-a-real-fen")).toBe("best here: Nf3");
-  });
-
-  it("fallback: no fen argument keeps the existing plain SAN copy unchanged", () => {
-    const facts: HintFacts = {
-      bestPieceKind: "n",
-      bestFromSquare: "g1",
-      bestToSquare: "f3",
-      bestSan: "Nf3",
-      bestUci: "g1f3",
-    };
-    expect(hintCopy(3, facts)).toBe("best here: Nf3");
-  });
-});
-
 describe("hintIsLegal", () => {
   const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   it("accepts a legal move for the position", () => {
@@ -377,5 +197,215 @@ describe("hintRevealSquares", () => {
 
   it("splits a promotion UCI move, ignoring the trailing promotion letter", () => {
     expect(hintRevealSquares("e7e8q")).toEqual({ from: "e7", to: "e8" });
+  });
+});
+
+// Increment 2.7 (why-hints): fixtures, one per motif, matching
+// server/annotator/motifs.ts's ThreatFacts shape exactly.
+const forkThreat: ThreatFacts = {
+  motif: "fork",
+  refutationUci: "d1f5",
+  refutationSan: "Qf5",
+  refutationPieceKind: "q",
+  refutationFromSquare: "d1",
+  refutationToSquare: "f5",
+  givesCheck: false,
+  capturesHerJustMovedPiece: false,
+  forkTargets: [
+    { square: "e6", pieceKind: "n" },
+    { square: "h8", pieceKind: "r" },
+  ],
+};
+
+const captureMovedThreat: ThreatFacts = {
+  motif: "capture-moved",
+  refutationUci: "d1h5",
+  refutationSan: "Qxh5",
+  refutationPieceKind: "q",
+  refutationFromSquare: "d1",
+  refutationToSquare: "h5",
+  givesCheck: false,
+  capturesSquare: "h5",
+  capturedPieceKind: "n",
+  capturesHerJustMovedPiece: true,
+};
+
+const captureOtherThreat: ThreatFacts = {
+  motif: "capture-other",
+  refutationUci: "d1f7",
+  refutationSan: "Qxf7",
+  refutationPieceKind: "q",
+  refutationFromSquare: "d1",
+  refutationToSquare: "f7",
+  givesCheck: false,
+  capturesSquare: "f7",
+  capturedPieceKind: "p",
+  capturesHerJustMovedPiece: false,
+};
+
+const mateThreat: ThreatFacts = {
+  motif: "mate-threat",
+  refutationUci: "d8h4",
+  refutationSan: "Qh4#",
+  refutationPieceKind: "q",
+  refutationFromSquare: "d8",
+  refutationToSquare: "h4",
+  givesCheck: true,
+  capturesHerJustMovedPiece: false,
+};
+
+const checkThreat: ThreatFacts = {
+  motif: "check-threat",
+  refutationUci: "d1h5",
+  refutationSan: "Qh5+",
+  refutationPieceKind: "q",
+  refutationFromSquare: "d1",
+  refutationToSquare: "h5",
+  givesCheck: true,
+  capturesHerJustMovedPiece: false,
+};
+
+const positionalThreat: ThreatFacts = {
+  motif: "positional",
+  refutationUci: "d1d2",
+  refutationSan: "Qd2",
+  refutationPieceKind: "q",
+  refutationFromSquare: "d1",
+  refutationToSquare: "d2",
+  givesCheck: false,
+  capturesHerJustMovedPiece: false,
+};
+
+const baseCtx: HintCopyCtx = { herPieceKind: "n", herToSquare: "e4" };
+
+describe("hintCopy level 1: vague nudge, her piece", () => {
+  it("exact string", () => {
+    expect(hintCopy(1, baseCtx)).toBe("hold on. look at your knight.");
+  });
+  it("names whatever piece kind the ctx carries", () => {
+    expect(hintCopy(1, { ...baseCtx, herPieceKind: "q" })).toBe("hold on. look at your queen.");
+  });
+});
+
+describe("hintCopy level 2: direction/concept per motif", () => {
+  it("fork", () => {
+    expect(hintCopy(2, { ...baseCtx, threat: forkThreat })).toBe("there's a fork brewing.");
+  });
+  it("capture-moved", () => {
+    expect(hintCopy(2, { ...baseCtx, threat: captureMovedThreat })).toBe(
+      "think about what her queen can reach."
+    );
+  });
+  it("capture-other", () => {
+    expect(hintCopy(2, { ...baseCtx, threat: captureOtherThreat })).toBe(
+      "think about what her queen can reach."
+    );
+  });
+  it("mate-threat", () => {
+    expect(hintCopy(2, { ...baseCtx, threat: mateThreat })).toBe(
+      "this one's dangerous. she's got something forcing."
+    );
+  });
+  it("check-threat", () => {
+    expect(hintCopy(2, { ...baseCtx, threat: checkThreat })).toBe("this opens you up to check.");
+  });
+  it("positional falls back honestly", () => {
+    expect(hintCopy(2, { ...baseCtx, threat: positionalThreat })).toBe("there's a stronger plan here.");
+  });
+  it("undefined threat falls back honestly, same as positional", () => {
+    expect(hintCopy(2, baseCtx)).toBe("there's a stronger plan here.");
+  });
+});
+
+describe("hintCopy level 3: concrete why per motif", () => {
+  it("fork", () => {
+    expect(hintCopy(3, { ...baseCtx, threat: forkThreat })).toBe(
+      "her queen to f5 forks your knight and rook."
+    );
+  });
+  it("capture-moved", () => {
+    expect(hintCopy(3, { herPieceKind: "n", herToSquare: "h5", threat: captureMovedThreat })).toBe(
+      "knight to h5 walks into her queen. she just takes it."
+    );
+  });
+  it("capture-other", () => {
+    expect(hintCopy(3, { herPieceKind: "b", herToSquare: "g5", threat: captureOtherThreat })).toBe(
+      "bishop to g5 opens the door. her queen takes your pawn on f7."
+    );
+  });
+  it("mate-threat", () => {
+    expect(hintCopy(3, { ...baseCtx, threat: mateThreat })).toBe("her Qh4# starts a forced mate.");
+  });
+  it("check-threat", () => {
+    expect(hintCopy(3, { ...baseCtx, threat: checkThreat })).toBe(
+      "her queen to h5 puts you in check."
+    );
+  });
+  it("positional falls back honestly", () => {
+    expect(hintCopy(3, { ...baseCtx, threat: positionalThreat })).toBe(
+      "this loses ground. nothing hangs, but the position gets worse."
+    );
+  });
+  it("undefined threat falls back honestly, same as positional", () => {
+    expect(hintCopy(3, baseCtx)).toBe("this loses ground. nothing hangs, but the position gets worse.");
+  });
+});
+
+describe("hintCopy levels 4-5: redirect to the recommended move", () => {
+  const bestFacts: HintFacts = {
+    bestPieceKind: "b",
+    bestFromSquare: "c1",
+    bestToSquare: "g5",
+    bestSan: "Bg5",
+    bestUci: "c1g5",
+  };
+  const fen = "4k3/8/8/8/8/8/8/2B1K3 w - - 0 1";
+
+  it("level 4 returns null without bestFacts (no copy flash mid-fetch)", () => {
+    expect(hintCopy(4, baseCtx)).toBeNull();
+  });
+  it("level 5 returns null without bestFacts", () => {
+    expect(hintCopy(5, baseCtx)).toBeNull();
+  });
+  it("level 4 with bestFacts: 'better: your {piece} on {square}'", () => {
+    expect(hintCopy(4, { ...baseCtx, bestFacts })).toBe("better: your bishop on c1");
+  });
+  it("level 5 with bestFacts + fen: san + translation", () => {
+    expect(hintCopy(5, { ...baseCtx, bestFacts, fen })).toBe("best here: Bg5 (bishop to g5)");
+  });
+  it("level 5 with bestFacts but no fen: san alone", () => {
+    expect(hintCopy(5, { ...baseCtx, bestFacts })).toBe("best here: Bg5");
+  });
+});
+
+describe("hintCopy: no em-dashes or emojis at any level", () => {
+  const bestFacts: HintFacts = {
+    bestPieceKind: "b",
+    bestFromSquare: "c1",
+    bestToSquare: "g5",
+    bestSan: "Bg5",
+    bestUci: "c1g5",
+  };
+  it("every populated level's copy is clean", () => {
+    const ctxs: [HintLevel, HintCopyCtx][] = [
+      [1, baseCtx],
+      [2, { ...baseCtx, threat: forkThreat }],
+      [3, { ...baseCtx, threat: forkThreat }],
+      [4, { ...baseCtx, bestFacts }],
+      [5, { ...baseCtx, bestFacts }],
+    ];
+    for (const [level, ctx] of ctxs) {
+      const copy = hintCopy(level, ctx)!;
+      expect(copy).not.toMatch(/[—–]/);
+    }
+  });
+});
+
+describe("threatRevealSquares", () => {
+  it("victim = capturesSquare when present", () => {
+    expect(threatRevealSquares(captureMovedThreat, "h5")).toEqual({ attacker: "d1", victim: "h5" });
+  });
+  it("victim = herToSquare when capturesSquare absent (non-capture motif)", () => {
+    expect(threatRevealSquares(positionalThreat, "e4")).toEqual({ attacker: "d1", victim: "e4" });
   });
 });

@@ -66,6 +66,34 @@ export interface MoveFacts {
   bestToSquare: string;
 }
 
+// Increment 2.7 (why-hints): mirrors server/annotator/motifs.ts's
+// ThreatFacts (hand-mirroring is the codebase convention — see MoveFacts
+// above). Every populated field is literally true from the server's
+// chess.js replay of the judge's discarded refutation; the client template
+// layer (src/game/hintFlow.ts) must never read a field outside the motif
+// branch that populated it — that would be fabricating, not reporting.
+export type ThreatMotif =
+  | "capture-moved"
+  | "capture-other"
+  | "fork"
+  | "mate-threat"
+  | "check-threat"
+  | "positional";
+
+export interface ThreatFacts {
+  motif: ThreatMotif;
+  refutationUci: string;
+  refutationSan: string;
+  refutationPieceKind: string;
+  refutationFromSquare: string;
+  refutationToSquare: string;
+  givesCheck: boolean;
+  capturesSquare?: string; // REAL captured square (en passant resolved), only on capture motifs
+  capturedPieceKind?: string; // only on capture motifs
+  capturesHerJustMovedPiece: boolean;
+  forkTargets?: { square: string; pieceKind: string }[]; // only when motif === "fork", length >= 2
+}
+
 // Mirrors server/annotator/classify.ts's Verdict. C1's judge is a stub —
 // always "silent" — but the shape carries everything C2 needs.
 export interface Verdict {
@@ -74,6 +102,7 @@ export interface Verdict {
   mateAgainst: boolean;
   latencyMs: number;
   facts?: MoveFacts;
+  threat?: ThreatFacts;
 }
 
 export interface JudgeResponse {
