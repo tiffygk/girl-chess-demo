@@ -948,74 +948,6 @@ export function GamePage() {
           ? "call it: mallow has this. resign?"
           : "end the game?";
 
-  // V5, task 2: flag glyph, keyed by the same state expression as the
-  // button's skin class — a small local lookup, the button JSX itself is
-  // untouched beyond rendering this value.
-  const endGameFlag =
-    endGameOutcome === "resign" ? (
-      <svg
-        className="egc-flag"
-        width="14"
-        height="14"
-        viewBox="0 0 14 14"
-        fill="none"
-        stroke="#fff"
-        strokeWidth="2.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M3.2 13V1.6" />
-        <path d="M3.2 2.2c2 .4 3.4 2.6 3 5.4-.1.9-1.3 1.2-1.9.5-.5-.6-.8-1.5-1.1-2.2" />
-      </svg>
-    ) : endGameOutcome === "draw" ? (
-      <svg
-        className="egc-flag"
-        width="14"
-        height="14"
-        viewBox="0 0 14 14"
-        fill="none"
-        stroke="#4A3B7E"
-        strokeWidth="2.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M3.4 13 10.6 2" />
-        <path d="M10.6 13 3.4 2" />
-        <path d="M3.4 2c1.6-.8 2.8.6 4 .4" />
-        <path d="M10.6 2c-1.6-.8-2.8.6-4 .4" />
-      </svg>
-    ) : endGameOutcome === "win" ? (
-      <svg
-        className="egc-flag"
-        width="14"
-        height="14"
-        viewBox="0 0 14 14"
-        fill="none"
-        stroke="#2E9C74"
-        strokeWidth="2.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M3.2 13V1.6" />
-        <path d="M3.2 1.8c2.6-.9 4.4 1.2 7.2.4v4.4c-2.8.8-4.6-1.3-7.2-.4" />
-      </svg>
-    ) : (
-      <svg
-        className="egc-flag"
-        width="14"
-        height="14"
-        viewBox="0 0 14 14"
-        fill="none"
-        stroke="#7A6BB5"
-        strokeWidth="2.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M3.2 13V1.6" />
-        <path d="M3.2 2.2c2.6-1 4.2 1.6 6.6.9 1 .1 1.4 1.5.6 2.4-1.6 1.8-4.6.2-7.2 1.1" />
-      </svg>
-    );
-
   // Wave B (increment 2.5): level-3 board highlight for the deep verified
   // hint's best move, derived from the fetched hintFacts (not the judge's
   // shallow verdict.facts).
@@ -1299,7 +1231,6 @@ export function GamePage() {
                   disabled={!gameId}
                   onClick={handleEndGameClick}
                 >
-                  {endGameFlag}
                   {endGameLabel}
                 </button>
               </div>

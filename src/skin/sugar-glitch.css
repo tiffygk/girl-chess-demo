@@ -64,7 +64,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-4) 0 var(--space-3);
+  padding: var(--space-4) 0 var(--space-4);
 }
 
 .gc-app .header-lockup {
@@ -216,9 +216,28 @@
   transform: scale(1.03);
   display: inline-flex; align-items: center; gap: 7px;
 }
-.egc-flag { flex: 0 0 auto; display: block; }
+/* Wave B, item 5: no more flag glyph — the button's own text carries the
+   state, so it's bumped up from the shared button.small 12.5px baseline. */
+.gc-app button.small[class*="egc-"] { font-size: 15px; }
+
+/* Wave B, item 5: glitch accent on ARMED states only (not idle) — a single
+   RGB-split text-shadow flicker frame every 7s, same steps() cadence family
+   as the app's other corruption tells. Declared BEFORE .egc-shake below: both
+   selectors carry equal specificity (button.small.egc-X), so cascade order
+   decides the winner when a button carries both classes — putting shake
+   last lets its `animation: shake .26s` shorthand fully replace this rule's
+   (rather than merge with it) for the one arming cycle winning-resign uses it. */
+.gc-app button.small.egc-resign, .gc-app button.small.egc-draw, .gc-app button.small.egc-win {
+  animation: egcSplitFlicker 7s infinite steps(1);
+}
+@keyframes egcSplitFlicker {
+  0%, 95% { text-shadow: none; }
+  96% { text-shadow: -2px 0 0 #23E5FF, 2px 0 0 #FF3DA6; }
+  97%, 100% { text-shadow: none; }
+}
 /* winning-resign edge case: one shake cycle on arming into this state; the
-   class is present only while that armed state holds, so it does not loop */
+   class is present only while that armed state holds, so it does not loop.
+   Declared after egcSplitFlicker above so shake wins the cascade tie. */
 .gc-app button.small.egc-shake { animation: shake .26s; }
 
 .gc-app .game-controls { margin: 0; } /* action-slot (see below) owns the spacing now */
@@ -562,7 +581,7 @@
   border-radius: 0;
   clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
 }
-.gc-app .np-you .np-body    { background: #E4F7FB; border-color: #23A8C7; color: #1A7A93; filter: drop-shadow(2px 2px 0 rgba(26,122,147,.45)); }
+.gc-app .np-you .np-body    { background: #C9EEF9; border-color: #23A8C7; color: #1A7A93; filter: drop-shadow(2px 2px 0 rgba(26,122,147,.45)); }
 .gc-app .np-mallow .np-body { background: #FFE9F4; border-color: #FF3DA6; color: #C22B7E; filter: drop-shadow(2px 2px 0 rgba(194,43,126,.45)); }
 .gc-app .np-glyph { flex: 0 0 auto; display: block; }
 .gc-app .np-div { width: 1px; height: 14px; flex: 0 0 auto; transform: skewX(-12deg); }
@@ -650,11 +669,23 @@
   border: 1.5px solid;
   white-space: nowrap;
 }
-.gc-app .player-bar.you .bar-chip { background: #E4F7FB; color: #1A7A93; border-color: rgba(35,168,199,.35); }
-.gc-app .player-bar.mallow .bar-chip { background: #FFE9F4; color: #C22B7E; border-color: rgba(255,61,166,.3); }
+.gc-app .player-bar.you .bar-chip    { background: #D6F2FA; color: #1A7A93; border-color: #23A8C7; }
+.gc-app .player-bar.mallow .bar-chip { background: #FFDCEE; color: #C22B7E; border-color: #FF3DA6; }
+/* Wave B, item 6: one-shot arrival glow on every chip state change —
+   PlayerBar.tsx keys the span on the chip text so a change remounts it and
+   replays this animation. currentColor picks up each side's own ink color
+   above, so the glow reads as an extension of the chip rather than a flat
+   generic highlight. */
+.gc-app .bar-chip { animation: chipArrive .6s ease-out; }
+@keyframes chipArrive {
+  0% { box-shadow: 0 0 14px currentColor; transform: scale(1.06); }
+  100% { box-shadow: 0 0 0 rgba(0,0,0,0); transform: scale(1); }
+}
 /* "thinking..." wrong detail: single-frame cyan/magenta split every ~7s,
-   same steps() cadence family as corrupt/preGlitch */
-.gc-app .bar-chip.tc-flicker { animation: chipSplitFlicker 7s infinite steps(1); }
+   same steps() cadence family as corrupt/preGlitch. Combined with
+   chipArrive (not replaced) so the arrival glow still plays on the frame
+   the chip flips to "thinking...". */
+.gc-app .bar-chip.tc-flicker { animation: chipArrive .6s ease-out, chipSplitFlicker 7s infinite steps(1); }
 @keyframes chipSplitFlicker {
   0%, 95% { text-shadow: none; transform: none; }
   96% { text-shadow: -2px 0 0 #23E5FF, 2px 0 0 #FF3DA6; transform: translateX(1px) skewX(-4deg); }
@@ -698,8 +729,8 @@
   margin: 0 28px;
   background: repeating-linear-gradient(90deg, #23E5FF 0 14px, #FF3DA6 14px 28px, #FFD84D 28px 42px);
 }
-.gc-app .mallow-stripe.ms-dormant { opacity: .35; filter: saturate(.35); }
-.gc-app .mallow-stripe.ms-thinking { opacity: .85; animation: stripeScroll 1.2s linear infinite; }
+.gc-app .mallow-stripe.ms-dormant { opacity: .85; animation: stripeScroll 3.6s linear infinite; }
+.gc-app .mallow-stripe.ms-thinking { opacity: 1; filter: brightness(1.08); animation: stripeScroll 1.2s linear infinite; }
 @keyframes stripeScroll { to { background-position: 42px 0; } }
 
 /* ---- §4.2 board mat + recessed tray + coordinates (item 13) ---- */
