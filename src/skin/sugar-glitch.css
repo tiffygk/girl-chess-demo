@@ -513,7 +513,7 @@
    the bars and board read as one continuous surface, not three stacked
    cards. */
 .gc-app .board-frame {
-  padding: 14px; background: transparent; border-radius: 0;
+  padding: 0; background: transparent; border-radius: 0;
   box-shadow: none;
   position: relative;
   width: 100%;
@@ -524,6 +524,38 @@
   opacity: .85;
 }
 .gc-app .board-frame.shake { animation: shake .26s linear; }
+
+/* ---- §4.2 board mat + recessed tray + coordinates (item 13) ---- */
+.gc-app .board-mat { background: #F6F1FF; padding: 14px 14px 30px 30px; position: relative; }
+.gc-app .board-tray {
+  border: 2px solid #fff;
+  border-radius: 14px;
+  box-shadow: inset 0 2px 4px rgba(120,95,200,.16);
+  background: rgba(120,95,200,.06);
+  padding: 4px;
+}
+.gc-app .coords-sharp span {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-style: italic;
+  font-size: 13px; letter-spacing: .06em;
+  color: #6952C4; text-shadow: 1px 1px 0 #fff;
+  pointer-events: none;
+}
+.gc-app .coords-files { position: absolute; left: 30px; right: 14px; bottom: 5px; display: flex; }
+.gc-app .coords-files span { flex: 1; text-align: center; }
+.gc-app .coords-ranks { position: absolute; top: 14px; bottom: 30px; left: 0; width: 30px; display: flex; flex-direction: column; }
+.gc-app .coords-ranks span { flex: 1; display: flex; align-items: center; justify-content: center; }
+/* the hint echo — destination labels pulse in sync with the target ring,
+   origin labels hold at 55%, no pulse */
+.gc-app .coords-sharp span.coord-lit {
+  color: #FF3DA6; text-shadow: -2px 0 0 #23E5FF;
+  transform: scale(1.35);
+  animation: coordPulse 1.1s ease-in-out infinite;
+}
+.gc-app .coords-sharp span.coord-lit-origin {
+  color: #FF3DA6; text-shadow: -2px 0 0 #23E5FF;
+  transform: scale(1.35); opacity: .55;
+}
+@keyframes coordPulse { 0%, 100% { opacity: .7; } 50% { opacity: 1; } }
 @keyframes shake {
   0%, 100% { transform: translate(0,0); }
   20% { transform: translate(-5px, 2px) rotate(-.4deg); }
@@ -532,12 +564,22 @@
   80% { transform: translate(3px, 2px); }
 }
 .gc-app .board-inner { position: relative; width: 100%; aspect-ratio: 1; }
-.gc-app .squares { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; width: 100%; height: 100%; }
+.gc-app .squares { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; width: 100%; height: 100%; }
 .gc-app .sq { border-radius: 22%; position: relative; transition: transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .15s ease; cursor: pointer; }
 .gc-app .sq.light { background: #FFF4FA; box-shadow: inset 0 -2px 0 rgba(200,170,220,.25); }
 .gc-app .sq.dark  { background: #CBBFFF; box-shadow: inset 0 -2px 0 rgba(120,95,200,.35); }
 .gc-app .sq:hover { transform: scale(1.04); }
-.gc-app .sq.target-hint { box-shadow: inset 0 0 0 3px #23E5FF, inset 0 -2px 0 rgba(120,95,200,.35); }
+/* ---- §4.1 target-hint: the check-ring's cyan twin (item 7) ---- */
+.gc-app .sq.target-hint {
+  box-shadow: inset 0 0 0 4px #23E5FF, 0 0 16px 3px rgba(35,229,255,.6);
+  animation: targetPulse 1.1s ease-in-out infinite;
+}
+@keyframes targetPulse {
+  0%, 100% { box-shadow: inset 0 0 0 4px #23E5FF, 0 0 8px 1px rgba(35,229,255,.4); }
+  50% { box-shadow: inset 0 0 0 5px #23E5FF, 0 0 20px 6px rgba(35,229,255,.85); }
+}
+/* origin is calm, destination beckons */
+.gc-app .sq.hint-origin { box-shadow: inset 0 0 0 3px rgba(35,229,255,.55), inset 0 -2px 0 rgba(120,95,200,.35); }
 
 /* A4: last-move highlight, lichess convention — mint fill (same family as
    the legal-move hints below) on both squares of the most recently SETTLED
@@ -557,7 +599,17 @@
    king selection) get a slightly firmer ring. */
 .gc-app .sq.hint { box-shadow: inset 0 0 12px 3px rgba(169,239,211,.65), inset 0 -2px 0 rgba(120,95,200,.35); }
 .gc-app .sq.hint-capture { box-shadow: inset 0 0 0 3px rgba(169,239,211,.9), inset 0 0 10px 2px rgba(169,239,211,.4), inset 0 -2px 0 rgba(120,95,200,.35); }
-.gc-app .sq.corrupt { animation: corrupt 7s infinite steps(1); }
+/* ---- §4.1 ambient glitch: 5s cycle, extra frame at 97% (item 14).
+   the scene staggers 4 corrupt squares 0 / 1.3 / 2.7 / 3.9s ---- */
+.gc-app .sq.corrupt { animation: corruptR2 5s infinite steps(1); }
+@keyframes corruptR2 {
+  0%, 90% { filter: none; transform: none; }
+  91% { filter: hue-rotate(140deg) saturate(3); transform: translate(2px, 0) skewX(6deg); }
+  93% { filter: invert(.85) hue-rotate(30deg); transform: translate(-2px, 1px); }
+  95%, 96% { filter: none; transform: none; }
+  97% { filter: saturate(2.5); transform: translate(-1px, 0) skewX(-5deg); }
+  98%, 100% { filter: none; transform: none; }
+}
 
 /* Wave C, task C-B: level-3 hint escalation reveal — the judge's suggested
    best move's from/to squares, for the position BEFORE the player's pending
@@ -608,9 +660,15 @@
 }
 .gc-app .pc.no-trans { transition: none; }
 .gc-app .pc.moving { z-index: 5; }
-.gc-app .pc svg { position: absolute; inset: 5%; width: 90%; height: 90%; filter: drop-shadow(0 3px 2px rgba(110,80,190,.35)); }
+.gc-app .pc svg { position: absolute; inset: -2%; width: 104%; height: 104%; filter: drop-shadow(0 3px 2px rgba(110,80,190,.35)); }
 .gc-app .pc.selected svg { animation: selectBob .8s ease-in-out infinite; filter: drop-shadow(0 0 8px #23E5FF) drop-shadow(0 3px 2px rgba(110,80,190,.35)); }
 @keyframes selectBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7%); } }
+/* the hinted piece breathes — bob = you touched it, breathe = the coach is pointing at it */
+.gc-app .pc.hint-origin svg {
+  animation: hintBreathe 1.6s ease-in-out infinite;
+  filter: drop-shadow(0 0 9px #23E5FF) drop-shadow(0 3px 2px rgba(110,80,190,.35));
+}
+@keyframes hintBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 .gc-app .pc.land svg { animation: land .3s cubic-bezier(.34,1.56,.64,1); transform-origin: 50% 100%; }
 @keyframes land { 0% { transform: scaleY(.72) scaleX(1.18); } 100% { transform: scaleY(1) scaleX(1); } }
 
@@ -637,6 +695,18 @@
    ghost of it renders on the destination square — semi-transparent with a
    soft dashed lavender outline. Neither touches `entries`/fen; this is a
    pure overlay that clears the instant the pending prop clears. */
+/* ---- §4.1 royal glitch — mallow's queen + king ONLY (item 14).
+   the machine shows through the candy shell exactly where her power lives. ---- */
+.gc-app .pc.royal-glitch svg { animation: royalGlitch 11s steps(1) infinite; }
+.gc-app .pc.royal-glitch.rg-queen svg { animation-delay: 5.5s; }
+@keyframes royalGlitch {
+  0%, 93% { filter: drop-shadow(0 3px 2px rgba(110,80,190,.35)); transform: none; clip-path: none; opacity: 1; }
+  94% { filter: drop-shadow(-3px 0 0 #23E5FF) drop-shadow(3px 0 0 #FF3DA6); transform: translateX(2px); clip-path: none; opacity: 1; }
+  95% { filter: none; clip-path: inset(30% 0 20% 0); transform: translateX(-2px) skewX(-6deg); opacity: 1; }
+  96% { filter: none; clip-path: inset(0 0 55% 0); transform: none; opacity: .55; }
+  97%, 100% { filter: drop-shadow(0 3px 2px rgba(110,80,190,.35)); transform: none; clip-path: none; opacity: 1; }
+}
+
 .gc-app .pc.pending-dim { opacity: .35; }
 .gc-app .pc.pending-ghost {
   opacity: .6;

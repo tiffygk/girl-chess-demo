@@ -127,9 +127,20 @@ interface BoardProps {
   hintReveal?: { from: string; to: string } | null;
 }
 
-// ambient decorative jitter squares, same indices as the demo
-const AMBIENT_CORRUPT = new Set([20, 43]);
+// ambient decorative jitter squares, same indices as the demo — staggered
+// animation-delay so something is always slightly wrong somewhere (item 14).
+const AMBIENT_CORRUPT = new Map<number, string>([
+  [20, "0s"],
+  [43, "1.3s"],
+  [5, "2.7s"],
+  [58, "3.9s"],
+]);
 const PALETTE = ["#23E5FF", "#FF3DA6", "#FF8FBF", "#8ED9F9", "#CBBFFF", "#FFD84D"];
+// board-frame coordinates: files left to right, ranks top to bottom — white
+// plays from the bottom (idxToSquare puts rank 8 at idx 0, rank 1 at idx 63,
+// file a at each row's left edge), so this ordering matches the grid as-drawn.
+const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
+const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"];
 
 // Increment 2.5: squareToIdx/idxToSquare moved to ./squareMapping.ts (owner
 // playtest square-coordinate verification) — see that module for the full
@@ -700,7 +711,9 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     [selectedSquare, onMove, pending, chess, onCancelPending, onConfirmPending, onRetarget]
   );
 
-  const corruptIdx = lastCapture ? new Set([...AMBIENT_CORRUPT, squareToIdx(lastCapture.square)]) : AMBIENT_CORRUPT;
+  const corruptMap = lastCapture
+    ? new Map([...AMBIENT_CORRUPT, [squareToIdx(lastCapture.square), "0s"] as [number, string]])
+    : AMBIENT_CORRUPT;
 
   // Guards specifically against the mate ring lingering on an empty square:
   // once the king-takedown shatters the mated king, its entry is removed
@@ -739,6 +752,8 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
           (glow === "big" ? " big" : "")
         }
       >
+        <div className="board-mat">
+        <div className="board-tray">
         <div className="board-inner" ref={innerRef}>
           <div className="squares">
             {Array.from({ length: 64 }, (_, idx) => {
@@ -753,17 +768,15 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               const isCheckRing = !cinematicActive && square === checkSquare && !matedKingGone;
               const isLastMove =
                 !cinematicActive && !!lastMove && (square === lastMove.from || square === lastMove.to);
-              const isHintReveal =
-                !cinematicActive && !!hintReveal && (square === hintReveal.from || square === hintReveal.to);
               const classes = [
                 "sq",
                 light ? "light" : "dark",
-                corruptIdx.has(idx) ? "corrupt" : "",
+                corruptMap.has(idx) ? "corrupt" : "",
                 isLastMove ? "last-move" : "",
                 square === effectiveSelected ? "target-hint" : "",
                 legalTargets.capture.has(square) ? "hint-capture" : "",
                 legalTargets.normal.has(square) ? "hint" : "",
-                isHintReveal ? "hint-reveal" : "",
+                hintReveal?.to === square ? "target-hint" : hintReveal?.from === square ? "hint-origin" : "",
                 isCheckRing ? "check-ring" : "",
                 isCheckRing && checkmate ? "mate" : "",
               ]
@@ -774,6 +787,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                   key={square}
                   className={classes}
                   data-square={square}
+                  style={corruptMap.has(idx) ? { animationDelay: corruptMap.get(idx) } : undefined}
                   onClick={() => handleSquareClick(square)}
                 />
               );
@@ -799,6 +813,14 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 pending && e.square === pending.from ? "pending-dim" : "",
                 pending && pending.secondary && e.square === pending.secondary.from ? "pending-dim" : "",
                 pending && pendingVictimSquare && e.square === pendingVictimSquare ? "pending-dim" : "",
+                hintReveal?.from === e.square ? " hint-origin" : "",
+                // Wave V2, item 14: royal glitch — mallow's queen and king
+                // only (she always plays black). Suppressed mid-move so the
+                // transient move/glitch animation classes, which also drive
+                // the svg's `animation` property, don't fight this one.
+                !(e.moving || e.preGlitch || e.glitchIn) && e.color === "b" && (e.kind === "q" || e.kind === "k")
+                  ? ` royal-glitch${e.kind === "q" ? " rg-queen" : ""}`
+                  : "",
               ]
                 .filter(Boolean)
                 .join(" ");
@@ -854,6 +876,42 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               );
             })()}
           </div>
+        </div>
+        </div>
+        <div className="coords-sharp" aria-hidden="true">
+          <div className="coords-files">
+            {FILES.map((f) => (
+              <span
+                key={f}
+                className={
+                  hintReveal?.to[0] === f
+                    ? "coord-lit"
+                    : hintReveal?.from[0] === f
+                      ? "coord-lit-origin"
+                      : ""
+                }
+              >
+                {f}
+              </span>
+            ))}
+          </div>
+          <div className="coords-ranks">
+            {RANKS.map((r) => (
+              <span
+                key={r}
+                className={
+                  hintReveal?.to[1] === r
+                    ? "coord-lit"
+                    : hintReveal?.from[1] === r
+                      ? "coord-lit-origin"
+                      : ""
+                }
+              >
+                {r}
+              </span>
+            ))}
+          </div>
+        </div>
         </div>
       </div>
     </div>
