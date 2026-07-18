@@ -302,10 +302,52 @@ describe("api", () => {
     expect(summary.body.ok).toBe(true);
     expect(Array.isArray(summary.body.turningPoints)).toBe(true);
     expect(Array.isArray(summary.body.classifications)).toBe(true);
+    // Increment 3c: `moves` (ply/san, for the debrief's client-side rewind
+    // seam) rides alongside the existing arrays.
+    expect(Array.isArray(summary.body.moves)).toBe(true);
+    expect(summary.body.moves.length).toBeGreaterThanOrEqual(1);
+    expect(summary.body.moves[0]).toEqual({ ply: 1, san: expect.any(String) });
   }, 20000);
 
   it("returns an empty-but-ok summary for a nonexistent game (compute-on-read fallback)", async () => {
     const r = await request(app).get("/api/game/999999/summary").expect(200);
-    expect(r.body).toEqual({ ok: true, turningPoints: [], classifications: [] });
+    expect(r.body).toEqual({ ok: true, turningPoints: [], classifications: [], moves: [] });
   });
+
+  // Increment 3c: GET /api/games — the "past games" saved-games menu.
+  // Finished-only filter + newest-first + the rank-1-turning-point lesson
+  // join. Resign is the cheapest reliable path to terminal (same reasoning
+  // as the summary test above); the second game is left unfinished on
+  // purpose to prove the filter actually excludes it.
+  it("lists finished games via GET /api/games, newest first, excluding unfinished games", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g1 = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(app).post(`/api/game/${g1.body.gameId}/move`)
+      .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
+    await request(app).post(`/api/game/${g1.body.gameId}/resign`).send({}).expect(200);
+
+    const g2 = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    const list = await request(app).get("/api/games").expect(200);
+    expect(list.body.ok).toBe(true);
+    const ids = list.body.games.map((g: any) => g.id);
+    expect(ids).toContain(g1.body.gameId);
+    expect(ids).not.toContain(g2.body.gameId);
+
+    const found = list.body.games.find((g: any) => g.id === g1.body.gameId);
+    expect(found.result).toBe("0-1");
+    expect(found.opponent).toBeTruthy();
+    expect(found.startedAt).toBeTruthy();
+    // A one-move-then-resign game is too short for any real turning point
+    // (moves.length <= 1 -> []), so the lesson join correctly yields null
+    // rather than fabricating one.
+    expect(found.lesson).toBeNull();
+
+    // Newest-first: g1 was created before g2, but g2 never finished, so g1
+    // should simply be present; assert ordering holds among finished games
+    // by checking g1 isn't pushed behind a later finished game (none here,
+    // but the ORDER BY id DESC is exercised implicitly by this shape).
+    expect(list.body.games[0].id).toBe(g1.body.gameId);
+  }, 30000);
 });

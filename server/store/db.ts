@@ -302,6 +302,23 @@ export const insertTurningPoints = (
 };
 export const getTurningPoints = (gameId: number) =>
   db.prepare("SELECT * FROM turning_points WHERE game_id = ? ORDER BY rank").all(gameId) as any[];
+// Increment 3c: GET /api/games — finished games only, newest first, capped
+// at 30 (the "past games" / saved-games menu list). `lesson` is the rank-1
+// turning point's label for that game (the organizing tag the UX research
+// calls for), null when the game has no turning_points rows — a pre-3b
+// game, or one whose summary was never read (getSummary's compute-on-read
+// fallback is read-only and never persists, so it can't backfill this
+// column; same tradeoff that split already makes).
+export const listFinishedGames = (limit = 30) =>
+  db.prepare(
+    `SELECT g.id as id, g.started_at as startedAt, g.opponent as opponent,
+            g.result as result, g.end_reason as endReason,
+            (SELECT label FROM turning_points tp WHERE tp.game_id = g.id AND tp.rank = 1) as lesson
+     FROM games g
+     WHERE g.result IS NOT NULL
+     ORDER BY g.id DESC
+     LIMIT ?`
+  ).all(limit) as any[];
 // A plain UPDATE (not an insert), safe to call repeatedly with the same
 // value — unlike turning_points above, this needs no existence guard.
 export const setMoveClassification = (gameId: number, ply: number, classification: string | null) =>

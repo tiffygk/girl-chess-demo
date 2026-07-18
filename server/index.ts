@@ -160,6 +160,17 @@ app.get("/api/game/:id/summary", (req, res) => {
   }
 });
 
+// Increment 3c: GET /api/games — the "past games" / saved-games menu list.
+// Finished games only, newest first, capped at 30 inside listGames/
+// listFinishedGames. Sync, same try/catch envelope as every other route.
+app.get("/api/games", (_req, res) => {
+  try {
+    res.json(gm.listGames());
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 app.post("/api/session/:id/mode", (req, res) => {
   const { mode, seconds } = req.body;
   addModeMinutes(Number(req.params.id), String(mode), Number(seconds) || 0);
