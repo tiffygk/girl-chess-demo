@@ -65,11 +65,71 @@
 .gc-app .tagline {
   font-family: 'Quicksand', sans-serif;
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: 13px;
   color: #7A6BB5; /* muted lavender, same family as .status-line */
   margin: 0;
   letter-spacing: .03em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
+.gc-app .px-heart { display: inline-block; flex: 0 0 auto; }
+
+/* ---- V1 (visual-components): wordmark promoted from .px 9px label to an
+   art piece — permanent RGB split at .8 opacity, 9s glitch flicker, final
+   "S" that never finishes rendering. Copied verbatim from
+   component-library.html §4.4 (lines 543-593). ---- */
+.gc-app .wm {
+  position: relative;
+  display: inline-block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 20px;
+  letter-spacing: .14em;
+  line-height: 1.4;
+}
+@media (max-width: 480px) { .gc-app .wm { font-size: 16px; } }
+.gc-app .wm-layer { position: absolute; inset: 0; pointer-events: none; }
+/* permanent RGB split, steady-state, opacity .8 */
+.gc-app .wm-cyan { color: #23E5FF; opacity: .8; transform: translate(-2px, 1px); z-index: 0; animation: wmGl1 9s infinite steps(1); }
+.gc-app .wm-mag  { color: #FF3DA6; opacity: .8; transform: translate(2px, -1px); z-index: 0; animation: wmGl2 9s infinite steps(1); }
+/* soft press-shadow under the gradient glyphs (spec: 0 2px 0 rgba(90,70,180,.25)) */
+.gc-app .wm-shadow { color: rgba(90,70,180,.25); transform: translateY(2px); z-index: 1; }
+.gc-app .wm-base {
+  position: relative; z-index: 2;
+  background: linear-gradient(180deg, #FF8FBF, #CBBFFF);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
+/* retimed gl1/gl2 — resurrected from :79-90, 4s → 9s, split stays visible
+   at rest instead of hiding between events */
+@keyframes wmGl1 {
+  0%, 91% { transform: translate(-2px, 1px); clip-path: none; }
+  92% { transform: translate(-4px, 2px); clip-path: inset(10% 0 55% 0); }
+  94% { transform: translate(3px, -1px); clip-path: inset(60% 0 15% 0); }
+  96%, 100% { transform: translate(-2px, 1px); clip-path: none; }
+}
+@keyframes wmGl2 {
+  0%, 91% { transform: translate(2px, -1px); clip-path: none; }
+  93% { transform: translate(4px, -2px); clip-path: inset(40% 0 35% 0); }
+  95% { transform: translate(-3px, 2px); clip-path: inset(0 0 70% 0); }
+  97%, 100% { transform: translate(2px, -1px); clip-path: none; }
+}
+/* the one wrong detail: final S permanently mid-corruption */
+.gc-app .wm-s { position: relative; display: inline-block; }
+.gc-app .wm-s-top, .gc-app .wm-s-bottom {
+  background: linear-gradient(180deg, #FF8FBF, #CBBFFF);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
+.gc-app .wm-s-top { position: relative; z-index: 2; clip-path: inset(0 -2px 40% -2px); }
+.gc-app .wm-s-bottom {
+  position: absolute; inset: 0; z-index: 2;
+  clip-path: inset(60% -2px 0 -2px);
+  transform: translateX(1.5px);   /* static shear, bottom ~40% */
+}
+.gc-app .wm-s-cyan, .gc-app .wm-s-mag { position: absolute; inset: 0; z-index: 1; opacity: 1; }
+.gc-app .wm-s-cyan { color: #23E5FF; transform: translate(-2px, 1px); }
+.gc-app .wm-s-mag  { color: #FF3DA6; transform: translate(2px, -1px); }
 
 /* glitch title */
 .gc-app .glitch { position: relative; display: inline-block; }
@@ -263,15 +323,19 @@
 }
 .gc-app .coach-pill-off:hover { box-shadow: 0 5px 0 #E3D9F5, 0 8px 14px rgba(90,70,180,.16); }
 
+/* V1: 36px emoji glyph -> 44px daisy-gear SVG (restyled in place, class
+   name unchanged). Copied from component-library.html §4.6 lines 757-768. */
 .gc-app .settings-gear {
-  width: 36px; height: 36px; padding: 0; border: none; border-radius: 50%;
+  width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 15px; line-height: 1; background: #fff; color: #7A6BB5; cursor: pointer;
-  box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.18);
+  background: #fff; cursor: pointer;
+  box-shadow: 0 4px 0 #C9BFEF, 0 8px 14px rgba(90,70,180,.2);
   transition: transform .12s ease, box-shadow .12s ease;
 }
-.gc-app .settings-gear:hover { transform: translateY(-1px); }
-.gc-app .settings-gear:active { transform: translateY(2px); }
+.gc-app .settings-gear:hover { transform: translateY(-1px); box-shadow: 0 6px 0 #C9BFEF, 0 10px 18px rgba(90,70,180,.24); }
+.gc-app .settings-gear:active { transform: translateY(2px); box-shadow: 0 2px 0 #C9BFEF, 0 5px 8px rgba(90,70,180,.16); }
+.gc-app .gear-svg { width: 22px; height: 22px; transition: transform .3s ease; transform-origin: 50% 50%; }
+.gc-app .settings-gear:hover .gear-svg { transform: rotate(20deg); }
 
 /* in-world popover, not a modal — small, anchored under the gear, never
    covers the board. Dismissed on outside click (see GamePage.tsx). */
@@ -300,6 +364,17 @@
 }
 .gc-app .settings-switch input:disabled { cursor: default; }
 .gc-app .settings-switch:has(input:disabled) { opacity: .5; }
+/* V1: "coach gives hints" row + section grouping (§4.6 popover restructure) */
+.gc-app .settings-divider { height: 1px; background: rgba(201,191,239,.6); margin: 2px 0; }
+.gc-app .settings-section-head {
+  font-family: 'Chakra Petch', sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: .12em;
+  color: #23A8C7;
+}
+.gc-app .settings-switch.sw-cyan input { accent-color: #23A8C7; }
+.gc-app .settings-switch .np-glyph { margin-right: -4px; }
 
 /* Wave B: player bars replace the side trays. If the board+bars were a
    physical object, mallow's tray would be bolted to the top edge of the
@@ -591,10 +666,13 @@
 }
 .gc-app .pop-in { animation: pop .3s cubic-bezier(.34,1.56,.64,1); }
 
+/* V1: flat-tint depth fix (§3.1 named fix) — informational, so no raised
+   shadow; just a flat tint + hairline border. */
 .gc-app .fallback-banner {
   font-size: 12.5px; font-weight: 700; color: #B5486E;
-  background: #fff; padding: 8px 16px; border-radius: 999px;
-  box-shadow: 0 3px 0 #F0C2D6, 0 6px 12px rgba(90,70,180,.15);
+  background: #FFF0F6; border: 1.5px solid rgba(240,97,158,.35);
+  padding: 8px 16px; border-radius: 999px;
+  box-shadow: none;
   margin-bottom: var(--space-2);
 }
 

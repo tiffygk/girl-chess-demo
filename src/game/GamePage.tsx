@@ -71,6 +71,11 @@ const INPUT_HINT_MS = 3000;
 // names per the brief — the Lab / a future settings sync can rely on these.
 const COACH_MODE_KEY = "gc-coach-mode";
 const CONFIRM_STEP_KEY = "gc-confirm-step";
+// V1 (visual-components round): new independent "coach gives hints" toggle.
+// Ships the toggle + its persisted state only this wave — no hint-fetch or
+// suppression wiring here (that belongs to the concurrent logic round).
+// Defaults to true, same as the siblings (see readBoolPref below).
+const COACH_HINTS_KEY = "gc-coach-hints";
 
 // Both default ON: with nothing in localStorage yet, resolveMoveFlow(true,
 // true) is "judge-confirm" — the C1/C2 flow, unchanged default behavior.
@@ -169,6 +174,8 @@ export function GamePage() {
   // echoes it back, so this state always converges on a real band even if
   // localStorage somehow held something stale.
   const [opponentElo, setOpponentElo] = useState<number>(readEloPref);
+  // V1: independent of coachOn (judging) — not read by any hint logic yet.
+  const [coachHints, setCoachHints] = useState<boolean>(() => readBoolPref(COACH_HINTS_KEY));
   const [settingsOpen, setSettingsOpen] = useState(false);
   // judge-post (coach-only) mode: the move already played, so there's no
   // pending overlay to hang a badge off of — this is that badge's own
@@ -294,6 +301,10 @@ export function GamePage() {
   useEffect(() => {
     window.localStorage.setItem(CONFIRM_STEP_KEY, String(confirmOn));
   }, [confirmOn]);
+
+  useEffect(() => {
+    window.localStorage.setItem(COACH_HINTS_KEY, String(coachHints));
+  }, [coachHints]);
 
   // The popover shouldn't linger open across a move it can no longer
   // safely act on — close it the moment input locks up, same "no queuing"
@@ -764,6 +775,14 @@ export function GamePage() {
     [uiBusy, pending]
   );
 
+  const setCoachHintsPref = useCallback(
+    (v: boolean) => {
+      if (uiBusy || pending) return;
+      setCoachHints(v);
+    },
+    [uiBusy, pending]
+  );
+
   useEffect(() => {
     return () => {
       if (endGameTimerRef.current) window.clearTimeout(endGameTimerRef.current);
@@ -910,8 +929,29 @@ export function GamePage() {
       {fallback && <div className="fallback-banner">fallback opponents (lc0 unavailable)</div>}
       <header className="header-band">
         <div className="header-lockup">
-          <span className="px">GIRL CHESS</span>
-          <p className="tagline">tutor with benefits</p>
+          <span className="wm" id="wordmark">
+            <span className="wm-layer wm-cyan" aria-hidden="true">GIRL CHESS</span>
+            <span className="wm-layer wm-mag" aria-hidden="true">GIRL CHESS</span>
+            <span className="wm-layer wm-shadow" aria-hidden="true">GIRL CHESS</span>
+            <span className="wm-base">
+              GIRL CHES
+              <span className="wm-s">
+                <span className="wm-s-cyan" aria-hidden="true">S</span>
+                <span className="wm-s-mag" aria-hidden="true">S</span>
+                <span className="wm-s-top">S</span>
+                <span className="wm-s-bottom" aria-hidden="true">S</span>
+              </span>
+            </span>
+          </span>
+          <p className="tagline">
+            <svg className="px-heart" width="7" height="6" viewBox="0 0 7 6" aria-hidden="true">
+              <path
+                fill="#FF3DA6"
+                d="M1 0h1v1h1v1h1V1h1V0h1v1h1v2H6v1H5v1H4v1H3V5H2V4H1V3H0V1h1z"
+              />
+            </svg>
+            tutor with benefits
+          </p>
         </div>
         <div className="header-actions" ref={settingsRef}>
           <button
@@ -930,10 +970,42 @@ export function GamePage() {
             aria-expanded={settingsOpen}
             aria-label="move settings"
           >
-            ⚙
+            <svg className="gear-svg" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+              <g stroke="#7A6BB5" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="11" y1="3.5" x2="11" y2="1.8" />
+                <line x1="18.5" y1="11" x2="20.2" y2="11" />
+                <line x1="16.3" y1="16.3" x2="17.5" y2="17.5" />
+                <line x1="11" y1="18.5" x2="11" y2="20.2" />
+                <line x1="5.7" y1="16.3" x2="4.5" y2="17.5" />
+                <line x1="3.5" y1="11" x2="1.8" y2="11" />
+                <line x1="5.7" y1="5.7" x2="4.5" y2="4.5" />
+                <circle cx="11" cy="11" r="6" />
+                <circle cx="11" cy="11" r="2" />
+              </g>
+              <line
+                x1="17.4"
+                y1="7.3"
+                x2="18.9"
+                y2="6.4"
+                stroke="#23E5FF"
+                strokeWidth="2.25"
+                strokeLinecap="round"
+              />
+            </svg>
           </button>
           {settingsOpen && (
             <div className="settings-popover pop-in">
+              <label className="settings-switch">
+                <input
+                  type="checkbox"
+                  checked={confirmOn}
+                  disabled={togglesDisabled}
+                  onChange={(e) => setConfirmPref(e.target.checked)}
+                />
+                confirm before playing
+              </label>
+              <div className="settings-divider" aria-hidden="true"></div>
+              <span className="settings-section-head">coach</span>
               <label className="settings-switch">
                 <input
                   type="checkbox"
@@ -943,14 +1015,23 @@ export function GamePage() {
                 />
                 coach judges my moves
               </label>
-              <label className="settings-switch">
+              <label className="settings-switch sw-cyan">
                 <input
                   type="checkbox"
-                  checked={confirmOn}
+                  checked={coachHints}
                   disabled={togglesDisabled}
-                  onChange={(e) => setConfirmPref(e.target.checked)}
+                  onChange={(e) => setCoachHintsPref(e.target.checked)}
                 />
-                confirm before playing
+                <svg className="np-glyph" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                  <path
+                    d="M5 0 6.2 3.8 10 5 6.2 6.2 5 10 3.8 6.2 0 5 3.8 3.8z"
+                    fill="#23E5FF"
+                    stroke="#1A7A93"
+                    strokeWidth="1"
+                    strokeLinejoin="miter"
+                  />
+                </svg>
+                coach gives hints
               </label>
             </div>
           )}
