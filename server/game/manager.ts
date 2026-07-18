@@ -1,11 +1,20 @@
 import { Chess } from "chess.js";
 import { MaiaOpponent } from "../engines/maia";
 import { StockfishEvaluator } from "../engines/stockfish";
-import { createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict } from "../store/db";
+import {
+  createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict,
+  getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
+} from "../store/db";
 import { classifyMove, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
 import { computeHint as computeHintFacts, type HintFacts } from "../annotator/hint";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
+// Increment 3b: panel-ruled turning points + move classifications. Reads
+// STORED evals only (see persistGameSummary below) — never touches
+// this.evaluator or the shared queue, same "engine math only" boundary as
+// judgeMove's classify.ts/adjudicate.ts calls.
+import { computeTurningPoints, type TurningPoint } from "../annotator/turningPoints";
+import { classifyMoves } from "../annotator/classifications";
 // Increment 3a Wave 2: the coach's async narrate surface. Deliberately kept
 // out of judgeMove above — see that method's own comment and
 // classify.test.ts's scoped gate test, which pins this: judgeMove's own
@@ -78,6 +87,71 @@ export class GameManager {
       .catch((err) => console.warn("[girl-chess] eval failed:", err.message));
   }
 
+  // Increment 3b: called from every finish site (playerMove's two gameOver
+  // branches, resign, offerDraw's accept branch, adjudicate's execute
+  // branch) right after finishGame/live.finished. Pure in-memory compute
+  // over already-stored moves (getGameMoves is a synchronous
+  // better-sqlite3 read) — no engine call, no shared queue — so there's no
+  // real async work to defer, but it's still wrapped so a computation bug
+  // can never surface as a failure on the end-game response the client is
+  // waiting on ("fire-and-forget: never delays the end-game UX"). Also
+  // fully idempotent (insertTurningPoints no-ops on a game_id that already
+  // has rows; setMoveClassification is a plain UPDATE) so it's safe even if
+  // a future finish path ever called it twice for the same game.
+  private persistGameSummary(gameId: number, result: string) {
+    try {
+      const rows = getGameMoves(gameId);
+      const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate }));
+      const turningPoints = computeTurningPoints(moves, result);
+      insertTurningPoints(
+        gameId,
+        turningPoints.map((t) => ({
+          rank: t.rank, ply: t.ply, san: t.san, label: t.label,
+          punishSan: t.punishSan ?? null, deltaP: t.deltaP, lowConfidence: t.lowConfidence, kind: t.kind,
+        }))
+      );
+      for (const c of classifyMoves(moves)) {
+        if (c) setMoveClassification(gameId, c.ply, c.classification);
+      }
+    } catch (err) {
+      console.warn("[girl-chess] game summary computation failed:", (err as Error).message);
+    }
+  }
+
+  // Increment 3b: GET /api/game/:id/summary. Reads persisted rows first
+  // (the normal path — every game finished after this increment shipped
+  // has them); falls back to computing fresh from stored moves for a game
+  // that finished before this increment existed (no turning_points rows at
+  // all) or one whose evals hadn't all attached yet at persist time. Sync
+  // (no engine call either way), so this is a plain method, not async.
+  getSummary(gameId: number): { ok: true; turningPoints: TurningPoint[]; classifications: { ply: number; classification: string }[] } {
+    const persisted = getTurningPoints(gameId);
+    const rows = getGameMoves(gameId);
+
+    if (persisted.length > 0) {
+      return {
+        ok: true,
+        turningPoints: persisted.map((r: any) => ({
+          rank: r.rank, ply: r.ply, san: r.san, label: r.label,
+          punishSan: r.punish_san ?? undefined, deltaP: r.delta_p,
+          lowConfidence: !!r.low_confidence, kind: r.kind,
+        })),
+        classifications: rows
+          .filter((m: any) => m.classification)
+          .map((m: any) => ({ ply: m.ply, classification: m.classification })),
+      };
+    }
+
+    // Compute-on-read fallback (old games with no persisted rows).
+    const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate }));
+    const game = getGame(gameId);
+    return {
+      ok: true,
+      turningPoints: computeTurningPoints(moves, game?.result ?? ""),
+      classifications: classifyMoves(moves).filter((c): c is { ply: number; classification: string } => c != null),
+    };
+  }
+
   private gameOver(chess: Chess): { result: string } | undefined {
     if (!chess.isGameOver()) return undefined;
     if (chess.isCheckmate()) return { result: chess.turn() === "w" ? "0-1" : "1-0" };
@@ -129,6 +203,7 @@ export class GameManager {
     if (over) {
       finishGame(gameId, over.result);
       live.finished = true;
+      this.persistGameSummary(gameId, over.result);
       return { ok: true, fen: live.chess.fen(), playerSan: mv.san, playerCapture, gameOver: over };
     }
 
@@ -138,7 +213,7 @@ export class GameManager {
     this.record(gameId, live, reply.san, replyUci, 0);
 
     over = this.gameOver(live.chess);
-    if (over) { finishGame(gameId, over.result); live.finished = true; }
+    if (over) { finishGame(gameId, over.result); live.finished = true; this.persistGameSummary(gameId, over.result); }
     return {
       ok: true, fen: live.chess.fen(), playerSan: mv.san, playerCapture,
       reply: { san: reply.san, uci: replyUci, capture: replyCapture },
@@ -197,6 +272,7 @@ export class GameManager {
     // Player is always white in v1, so resigning is always a loss for white.
     finishGame(gameId, "0-1");
     live.finished = true;
+    this.persistGameSummary(gameId, "0-1");
     logGameEvent(gameId, "resign");
     return { ok: true, result: "0-1" };
   }
@@ -221,6 +297,7 @@ export class GameManager {
     if (accept) {
       finishGame(gameId, "1/2-1/2");
       live.finished = true;
+      this.persistGameSummary(gameId, "1/2-1/2");
       logGameEvent(gameId, "draw_accepted", ev.cp !== null ? `cp:${ev.cp}` : undefined);
       return { ok: true, accepted: true, result: "1/2-1/2" };
     }
@@ -246,6 +323,7 @@ export class GameManager {
     if (execute) {
       finishGame(gameId, decision.result, decision.reason);
       live.finished = true;
+      this.persistGameSummary(gameId, decision.result);
       logGameEvent(
         gameId,
         "adjudicated",

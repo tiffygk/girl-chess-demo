@@ -105,6 +105,29 @@ describe("classify.ts LLM-free gate", () => {
       expect(line).not.toMatch(/from\s+["']\.\.?\/coach/);
     }
   });
+
+  // Increment 3b: turningPoints.ts + classifications.ts read STORED evals
+  // only (never touch the live evaluator or coach) — same hard constraint,
+  // same gate.
+  it("turningPoints.ts never imports from server/coach", () => {
+    // Self-contained (no imports at all — pure math over the moves array
+    // callers pass in), so there's nothing to require importLines.length
+    // > 0 for, unlike the other files in this gate.
+    const src = fs.readFileSync(path.join(__dirname, "turningPoints.ts"), "utf-8");
+    const importLines = src.split("\n").filter((line) => /^\s*import\b/.test(line));
+    for (const line of importLines) {
+      expect(line).not.toMatch(/from\s+["']\.\.?\/coach/);
+    }
+  });
+
+  it("classifications.ts never imports from server/coach", () => {
+    const src = fs.readFileSync(path.join(__dirname, "classifications.ts"), "utf-8");
+    const importLines = src.split("\n").filter((line) => /^\s*import\b/.test(line));
+    expect(importLines.length).toBeGreaterThan(0);
+    for (const line of importLines) {
+      expect(line).not.toMatch(/from\s+["']\.\.?\/coach/);
+    }
+  });
 });
 
 describe("ADVICE_LEVELS seam", () => {
