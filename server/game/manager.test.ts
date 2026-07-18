@@ -1,6 +1,6 @@
 // server/game/manager.test.ts
 import { describe, it, expect, beforeAll } from "vitest";
-import { openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame } from "../store/db";
+import { openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces } from "../store/db";
 import { GameManager } from "./manager";
 
 describe("GameManager", () => {
@@ -332,4 +332,58 @@ describe("GameManager", () => {
   it("computeHint refuses unknown and finished games", async () => {
     expect((await gm.computeHint(999999)).ok).toBe(false);
   }, 10000);
+
+  // Increment 3a Wave 2: narrate(). Uses setCoachBackendForTesting to inject
+  // a fake — never probes or invokes the real claude CLI / ollama (brief:
+  // "do NOT invoke the real claude CLI in tests"). This also exercises the
+  // manager.narrate -> assembleFactList -> coach narrate -> advice_traces
+  // wiring end to end, which server/coach/index.test.ts alone can't reach.
+  it("narrate assembles facts, narrates via the injected backend, and writes an advice_traces row", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    gm.setCoachBackendForTesting({
+      name: "fake",
+      async available() {
+        return true;
+      },
+      async generate() {
+        return "her knight lands badly. Nxe4 wins a pawn back instead.";
+      },
+    });
+    const result = await gm.narrate(g.gameId, {
+      herPiece: "n",
+      from: "f6",
+      to: "g4",
+      tier: "warning",
+      deltaCp: 300,
+      best: { san: "Nxe4", uci: "f6e4", pieceKind: "n", from: "f6", to: "e4" },
+      recommendation: {
+        accomplishment: "captures",
+        pieceKind: "n",
+        fromSquare: "f6",
+        toSquare: "e4",
+        san: "Nxe4",
+        capturesSquare: "e4",
+        capturedPieceKind: "p",
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text.length).toBeGreaterThan(0);
+      expect(["model", "template"]).toContain(result.source);
+    }
+    const traces = getAdviceTraces(g.gameId);
+    expect(traces).toHaveLength(1);
+    expect(traces[0].backend).toBe("fake");
+  }, 20000);
+
+  it("narrate refuses cleanly on an unknown game, without calling the backend", async () => {
+    const result = await gm.narrate(999999, {
+      herPiece: "n",
+      from: "f6",
+      to: "g4",
+      tier: "nudge",
+      deltaCp: 80,
+    });
+    expect(result.ok).toBe(false);
+  });
 });

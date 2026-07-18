@@ -124,6 +124,29 @@ app.post("/api/game/:id/hint", (req, res) => {
   }
 });
 
+// Increment 3a Wave 2: async coach narration. Same error envelope as the
+// other routes; never throws past gm.narrate (that method itself never
+// throws either — worst case is a template-sourced string), so the 500
+// branch here is purely defensive.
+app.post("/api/game/:id/narrate", async (req, res) => {
+  const { herPiece, from, to, tier, deltaCp, threat, best, recommendation } = req.body;
+  try {
+    const result = await gm.narrate(Number(req.params.id), {
+      herPiece,
+      from,
+      to,
+      tier,
+      deltaCp: deltaCp ?? null,
+      threat,
+      best,
+      recommendation,
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 app.post("/api/session/:id/mode", (req, res) => {
   const { mode, seconds } = req.body;
   addModeMinutes(Number(req.params.id), String(mode), Number(seconds) || 0);
