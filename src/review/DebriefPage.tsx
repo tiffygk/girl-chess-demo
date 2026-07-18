@@ -72,6 +72,13 @@ export interface DebriefReviewing {
 
 export interface DebriefPageProps {
   turningPoints: TurningPoint[];
+  // The finished game's result — live path passes gameOver.result, review
+  // path passes reviewGame.result. Both are plain strings on the wire
+  // (GameOverInfo/GameListEntry); debriefLesson narrows to its own
+  // "1-0" | "0-1" | "1/2-1/2" | null domain. Required (not derived from
+  // `reviewing`) because the live debrief has no `reviewing` prop but still
+  // needs the result to pick an honest lesson line (post 3c-review F1).
+  result: string | null;
   rewindPly: number | null;
   onRewind: (ply: number) => void;
   onBackToEnd: () => void;
@@ -84,6 +91,7 @@ export interface DebriefPageProps {
 
 export function DebriefPage({
   turningPoints,
+  result,
   rewindPly,
   onRewind,
   onBackToEnd,
@@ -91,7 +99,10 @@ export function DebriefPage({
   reviewing,
   onBackToPlay,
 }: DebriefPageProps) {
-  const lesson = debriefLesson(turningPoints);
+  const lesson = debriefLesson(
+    turningPoints,
+    result === "1-0" || result === "0-1" || result === "1/2-1/2" ? result : null
+  );
   return (
     <div className="debrief pop-in">
       {reviewing && (

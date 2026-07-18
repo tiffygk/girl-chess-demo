@@ -5,11 +5,19 @@
 // No LLM call here (the coach re-narrates in a later round per the brief);
 // every string below is exact and pinned by debriefLesson.test.ts.
 //
-// Priority order (brief, verbatim):
+// Priority order (post 3c-review F1 fix — the game result gates which
+// fallback can fire, so a lost game can never land on the clean-win line):
 //   1. her worst own-move point: "today's lesson: {label} on move {n}. {nudge}"
-//   2. else, the punished story (a fixed sentence, not a template — the
-//      brief quotes it as an exact string, not "once"/"twice" pluralized)
-//   3. else, the clean-win fallback (a fixed sentence)
+//   2. else, the backfilled "the losing move" point when one was selected
+//      (only happens when fewer than 3 real swings qualified — see
+//      turningPoints.ts's backfill comment): "today's lesson: the losing
+//      move came on move {n}. worth a rewind."
+//   3. else, the punished story when at least one turning point carries a
+//      punishSan — fixed sentence, count-sensitive (F2): "you did." for
+//      exactly one punished point, "you did, twice." for two or more.
+//   4. else, gated strictly on the actual game result: "1-0" -> the clean
+//      win fallback, "0-1" -> the honest loss line, anything else (draw,
+//      null/unknown) -> the draw-neutral line.
 
 import type { TurningPoint } from "../game/api";
 
@@ -27,15 +35,24 @@ const LABEL_NUDGES: Record<string, string> = {
   inaccuracy: "small slip, still your game to lose from here.",
 };
 
-const PUNISHED_LESSON = "today's lesson: when she blunders, take it. you did, twice.";
+const PUNISHED_LESSON_ONCE = "today's lesson: when she blunders, take it. you did.";
+const PUNISHED_LESSON_TWICE = "today's lesson: when she blunders, take it. you did, twice.";
 const CLEAN_WIN_LESSON = "clean game. today was execution, not drama.";
+const LOSS_LESSON = "tough one. nothing dramatic lost it, it slipped away in small pieces.";
+const DRAW_LESSON = "a draw. solid, careful, nothing hung.";
+
+// The three finished-game results chess.js/adjudicate.ts ever produce, plus
+// null for "unknown" (e.g. a defensive caller that hasn't loaded a result
+// yet). Player is always white, so "1-0" is always a win for her and "0-1"
+// is always a loss for her.
+export type GameResult = "1-0" | "0-1" | "1/2-1/2" | null;
 
 /** Standard chess move-number derivation: ply 1,2 -> 1; ply 3,4 -> 2; etc. */
 export function moveNumberForPly(ply: number): number {
   return Math.ceil(ply / 2);
 }
 
-export function debriefLesson(turningPoints: TurningPoint[]): string {
+export function debriefLesson(turningPoints: TurningPoint[], result: GameResult): string {
   const ownMistakes = turningPoints.filter((t) => HER_NEGATIVE_LABELS.has(t.label));
   if (ownMistakes.length > 0) {
     const worst = ownMistakes.reduce((a, b) => (b.deltaP < a.deltaP ? b : a));
@@ -44,9 +61,18 @@ export function debriefLesson(turningPoints: TurningPoint[]): string {
     return `today's lesson: ${worst.label} on move ${n}. ${nudge}`;
   }
 
-  if (turningPoints.some((t) => !!t.punishSan)) {
-    return PUNISHED_LESSON;
+  const losingMove = turningPoints.find((t) => t.label === "the losing move");
+  if (losingMove) {
+    const n = moveNumberForPly(losingMove.ply);
+    return `today's lesson: the losing move came on move ${n}. worth a rewind.`;
   }
 
-  return CLEAN_WIN_LESSON;
+  const punished = turningPoints.filter((t) => !!t.punishSan);
+  if (punished.length > 0) {
+    return punished.length >= 2 ? PUNISHED_LESSON_TWICE : PUNISHED_LESSON_ONCE;
+  }
+
+  if (result === "1-0") return CLEAN_WIN_LESSON;
+  if (result === "0-1") return LOSS_LESSON;
+  return DRAW_LESSON;
 }
