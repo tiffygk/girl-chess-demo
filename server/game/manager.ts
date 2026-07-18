@@ -4,6 +4,7 @@ import { StockfishEvaluator } from "../engines/stockfish";
 import {
   createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict,
   getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
+  listFinishedGames,
 } from "../store/db";
 import { classifyMove, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
@@ -124,9 +125,20 @@ export class GameManager {
   // that finished before this increment existed (no turning_points rows at
   // all) or one whose evals hadn't all attached yet at persist time. Sync
   // (no engine call either way), so this is a plain method, not async.
-  getSummary(gameId: number): { ok: true; turningPoints: TurningPoint[]; classifications: { ply: number; classification: string }[] } {
+  // Increment 3c: `moves` (ply/san only, no eval leakage — the debrief's
+  // rewind seam replays these SANs on a fresh client-side chess.js to
+  // reconstruct any position; see src/review/Rewind.tsx) is now always
+  // included alongside the existing turningPoints/classifications, in both
+  // the persisted and compute-on-read branches below.
+  getSummary(gameId: number): {
+    ok: true;
+    turningPoints: TurningPoint[];
+    classifications: { ply: number; classification: string }[];
+    moves: { ply: number; san: string }[];
+  } {
     const persisted = getTurningPoints(gameId);
     const rows = getGameMoves(gameId);
+    const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san }));
 
     if (persisted.length > 0) {
       return {
@@ -139,17 +151,30 @@ export class GameManager {
         classifications: rows
           .filter((m: any) => m.classification)
           .map((m: any) => ({ ply: m.ply, classification: m.classification })),
+        moves,
       };
     }
 
     // Compute-on-read fallback (old games with no persisted rows).
-    const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate }));
+    const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate }));
     const game = getGame(gameId);
     return {
       ok: true,
-      turningPoints: computeTurningPoints(moves, game?.result ?? ""),
-      classifications: classifyMoves(moves).filter((c): c is { ply: number; classification: string } => c != null),
+      turningPoints: computeTurningPoints(evalMoves, game?.result ?? ""),
+      classifications: classifyMoves(evalMoves).filter((c): c is { ply: number; classification: string } => c != null),
+      moves,
     };
+  }
+
+  // Increment 3c: GET /api/games — the "past games" saved-games menu. Thin
+  // passthrough to the db accessor, kept as a GameManager method for the
+  // same reason every other route goes through gm rather than db directly
+  // (index.ts stays a pure routing layer).
+  listGames(): {
+    ok: true;
+    games: { id: number; startedAt: string; opponent: string; result: string; endReason: string | null; lesson: string | null }[];
+  } {
+    return { ok: true, games: listFinishedGames() as any };
   }
 
   private gameOver(chess: Chess): { result: string } | undefined {

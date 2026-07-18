@@ -144,6 +144,11 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function getJson<T>(path: string): Promise<T> {
+  const res = await fetch(`/api${path}`);
+  return (await res.json()) as T;
+}
+
 export function newSession(): Promise<NewSessionResponse> {
   return postJson("/session", {});
 }
@@ -274,6 +279,61 @@ export function logHint(
   fen: string
 ): Promise<{ ok: boolean }> {
   return postJson(`/game/${gameId}/hint`, { level, tier, deltaCp, bestUci, fen });
+}
+
+// Increment 3c: mirrors server/annotator/turningPoints.ts's TurningPoint
+// (hand-mirroring, same convention as MoveFacts/ThreatFacts above).
+export interface TurningPoint {
+  rank: 1 | 2 | 3;
+  ply: number;
+  san: string;
+  label: string;
+  punishSan?: string;
+  deltaP: number;
+  lowConfidence: boolean;
+  kind: "swing" | "backfill";
+}
+
+export interface MoveClassification {
+  ply: number;
+  classification: string;
+}
+
+// ply/san only — no eval leakage to the client. Enough to replay the game
+// on a fresh chess.js for the debrief's rewind seam (src/review/Rewind.tsx).
+export interface SummaryMove {
+  ply: number;
+  san: string;
+}
+
+export interface SummaryResponse {
+  ok: boolean;
+  turningPoints: TurningPoint[];
+  classifications: MoveClassification[];
+  moves: SummaryMove[];
+}
+
+export function fetchSummary(gameId: number): Promise<SummaryResponse> {
+  return getJson(`/game/${gameId}/summary`);
+}
+
+// Increment 3c: the "past games" saved-games menu list.
+export interface GameListEntry {
+  id: number;
+  startedAt: string;
+  opponent: string;
+  result: string;
+  endReason: string | null;
+  lesson: string | null;
+}
+
+export interface GamesListResponse {
+  ok: boolean;
+  games: GameListEntry[];
+}
+
+export function fetchGames(): Promise<GamesListResponse> {
+  return getJson("/games");
 }
 
 /**

@@ -11,10 +11,14 @@ import {
   logHint,
   fetchHintFacts,
   narrate,
+  fetchSummary,
+  fetchGames,
   type MoveResponse,
   type GameOverInfo,
   type Verdict,
   type HintFactsResponse,
+  type SummaryResponse,
+  type GameListEntry,
 } from "./api";
 import { describeMove, type MoveRender } from "./describeMove";
 import { victimKind, materialDiff, rollbackCapture, type CapturedBySide } from "./captures";
@@ -23,6 +27,8 @@ import { reconcile } from "./reconcile";
 import { findTakedownPiece, type Takedown } from "./terminal";
 import { replayPlan } from "./replay";
 import { GameEndPanel } from "./GameEndPanel";
+import { DebriefPage, PastGamesButton, PastGamesDrawer } from "../review/DebriefPage";
+import { fenAtPly } from "../review/Rewind";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
 import {
   nextHintLevel,
@@ -212,11 +218,34 @@ export function GamePage() {
   // request hasn't gone out yet). Turn/state text no longer routes through
   // `status` at all — see the bars in the render below.
   const [mallowThinking, setMallowThinking] = useState(false);
+  // Increment 3c: the debrief under the game. liveSummary is fetched once
+  // per finished game (see the effect below). reviewGame holds a PAST
+  // game's own summary when the player is browsing the saved-games menu —
+  // REVIEW MODE — distinct from the just-finished live game's own debrief;
+  // the two are never rendered at the same time (see the render below).
+  // rewindPly is shared by both debriefs: null means "show the final
+  // position," a ply count means "show the position after that many plies,"
+  // driven by a turning-point card's "replay" button.
+  const [liveSummary, setLiveSummary] = useState<SummaryResponse | null>(null);
+  const [reviewGame, setReviewGame] = useState<{
+    id: number;
+    opponent: string;
+    result: string;
+    summary: SummaryResponse;
+  } | null>(null);
+  const [rewindPly, setRewindPly] = useState<number | null>(null);
+  const [pastGamesOpen, setPastGamesOpen] = useState(false);
+  const [pastGames, setPastGames] = useState<GameListEntry[] | null>(null);
 
   const boardRef = useRef<BoardHandle>(null);
   const mirrorRef = useRef(new Chess());
   const lastReplyAtRef = useRef(Date.now());
   const busyRef = useRef(false);
+  // Increment 3c: the live `fen` at the moment REVIEW MODE was entered, so
+  // "back to play" can restore it exactly rather than re-deriving it (the
+  // live game may be mid-play, pregame, or just-finished — this is the one
+  // source of truth for "what the board looked like before browsing").
+  const preReviewFenRef = useRef<string | null>(null);
   // Bumped on every handleMoveWithPostJudge call (and reset on new game) so
   // a /judge response for a superseded post-judge move never overwrites a
   // newer move's badge.
@@ -293,6 +322,12 @@ export function GamePage() {
       inputHintTimerRef.current = null;
     }
     setInputHint(null);
+    // Increment 3c: a fresh/new game must never carry over the last game's
+    // debrief, an active review of a past game, or a mid-rewind position.
+    setLiveSummary(null);
+    setReviewGame(null);
+    setRewindPly(null);
+    preReviewFenRef.current = null;
   }, []);
 
   const startGame = useCallback(async (sid: number, elo: number) => {
@@ -334,6 +369,24 @@ export function GamePage() {
   useEffect(() => {
     window.localStorage.setItem(CONFIRM_STEP_KEY, String(confirmOn));
   }, [confirmOn]);
+
+  // Increment 3c: fetch the debrief's turning points/classifications/moves
+  // once a game finishes. gameOver flips true from several independent
+  // sites (playerMove's gameOver branch, resign, offerDraw's accept,
+  // adjudicate's execute) — this effect is the single place that reacts to
+  // all of them, rather than duplicating the fetch at each call site.
+  useEffect(() => {
+    if (!gameOver || !gameId) return;
+    let cancelled = false;
+    fetchSummary(gameId)
+      .then((s) => {
+        if (!cancelled) setLiveSummary(s);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [gameOver, gameId]);
 
   useEffect(() => {
     window.localStorage.setItem(COACH_HINTS_KEY, String(coachHints));
@@ -972,6 +1025,71 @@ export function GamePage() {
     })();
   }, [gameId, gameOver, endGameOutcome, clearEndGameTimer, celebrate]);
 
+  // Increment 3c: the debrief's rewind seam. `activeReviewMoves` is
+  // whichever game's move list the currently-visible debrief belongs to —
+  // a reviewed past game takes priority; otherwise, once the live game has
+  // ended, its own just-fetched summary. Reuses the same fen/resyncTick
+  // hard-remount seam reconcile.ts's "adopt" branch already uses to snap
+  // Board to a fen without animating through it (see Rewind.tsx's header
+  // comment) — never builds a second board.
+  const activeReviewMoves = reviewGame ? reviewGame.summary.moves : gameOver ? (liveSummary?.moves ?? null) : null;
+
+  const handleRewind = useCallback(
+    (ply: number) => {
+      if (!activeReviewMoves) return;
+      setFen(fenAtPly(activeReviewMoves, ply));
+      setResyncTick((t) => t + 1);
+      setRewindPly(ply);
+    },
+    [activeReviewMoves]
+  );
+
+  const handleBackToEnd = useCallback(() => {
+    if (!activeReviewMoves) return;
+    setFen(fenAtPly(activeReviewMoves, activeReviewMoves.length));
+    setResyncTick((t) => t + 1);
+    setRewindPly(null);
+  }, [activeReviewMoves]);
+
+  // "file it away" saved-games menu. Reachable only from the pregame panel
+  // and the live debrief (see render below) — both contexts already
+  // guarantee no game is live-and-unfinished, so no extra guard is needed
+  // here to satisfy "entering review while a game is live prompts nothing."
+  const openPastGames = useCallback(() => {
+    setPastGamesOpen(true);
+    setPastGames(null);
+    fetchGames()
+      .then((r) => setPastGames(r.games))
+      .catch(() => setPastGames([]));
+  }, []);
+
+  const closePastGames = useCallback(() => setPastGamesOpen(false), []);
+
+  // Entering REVIEW MODE: snapshot the live fen so "back to play" can
+  // restore it exactly, then snap the board to the reviewed game's final
+  // position via the same fen/resyncTick seam handleRewind uses.
+  const selectPastGame = useCallback(
+    async (g: GameListEntry) => {
+      const summary = await fetchSummary(g.id);
+      preReviewFenRef.current = fen;
+      setReviewGame({ id: g.id, opponent: g.opponent, result: g.result, summary });
+      setFen(fenAtPly(summary.moves, summary.moves.length));
+      setResyncTick((t) => t + 1);
+      setRewindPly(null);
+      setPastGamesOpen(false);
+    },
+    [fen]
+  );
+
+  const backToPlay = useCallback(() => {
+    if (preReviewFenRef.current != null) {
+      setFen(preReviewFenRef.current);
+      setResyncTick((t) => t + 1);
+    }
+    setReviewGame(null);
+    setRewindPly(null);
+  }, []);
+
   // Owner feedback 2026-07-17: the pregame elo picker was only reappearing
   // on a hard refresh, not after finishing a game. Reversing the 2.5
   // decision (rematch reused the last elo silently) — "new game" now drops
@@ -1335,6 +1453,7 @@ export function GamePage() {
                 <button className="small" onClick={() => startGame(sessionId, opponentElo)}>
                   start game
                 </button>
+                <PastGamesButton onClick={openPastGames} />
               </div>
             ) : (
               <div className="controls game-controls">
@@ -1382,8 +1501,34 @@ export function GamePage() {
           takedownMove={takedownMove}
           onReplayTakedown={handleReplayTakedown}
           onNewGame={handleNewGame}
+          debrief={
+            // Increment 3c: never render the live game's own debrief while
+            // REVIEW MODE (a past game) is active — the review debrief below
+            // takes over the same visual cluster instead.
+            !reviewGame && liveSummary ? (
+              <DebriefPage
+                turningPoints={liveSummary.turningPoints}
+                rewindPly={rewindPly}
+                onRewind={handleRewind}
+                onBackToEnd={handleBackToEnd}
+                onOpenPastGames={openPastGames}
+              />
+            ) : null
+          }
         />
       )}
+      {reviewGame && (
+        <DebriefPage
+          turningPoints={reviewGame.summary.turningPoints}
+          rewindPly={rewindPly}
+          onRewind={handleRewind}
+          onBackToEnd={handleBackToEnd}
+          onOpenPastGames={openPastGames}
+          reviewing={{ opponent: reviewGame.opponent, result: reviewGame.result }}
+          onBackToPlay={backToPlay}
+        />
+      )}
+      <PastGamesDrawer open={pastGamesOpen} games={pastGames} onSelect={selectPastGame} onClose={closePastGames} />
     </div>
   );
 }

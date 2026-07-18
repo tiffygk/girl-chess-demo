@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { GameOverInfo } from "./api";
 import type { Takedown } from "./terminal";
 
@@ -6,11 +7,11 @@ interface StubSection {
   label: string;
 }
 
-// Labeled seams for increments 3/4 to extend — kept as an array (not
+// Labeled seam for increment 4 to extend — kept as an array (not
 // hand-rolled JSX per section) so a future increment adds a row here
-// instead of restructuring this component.
+// instead of restructuring this component. The "analysis" stub this used to
+// carry is now the real debrief (increment 3c) — see the `debrief` prop.
 const STUB_SECTIONS: StubSection[] = [
-  { key: "analysis", label: "analysis, coming with the coach" },
   { key: "streaks", label: "streaks and rating, coming with the dashboard" },
 ];
 
@@ -57,9 +58,13 @@ interface GameEndPanelProps {
   takedownMove: Takedown | null;
   onReplayTakedown: () => void;
   onNewGame: () => void;
+  // Increment 3c: the debrief (lesson line + turning-point cards), rendered
+  // in the same visual cluster as the board per the UX research — null
+  // while the summary fetch is still in flight.
+  debrief?: ReactNode;
 }
 
-export function GameEndPanel({ gameOver, takedownMove, onReplayTakedown, onNewGame }: GameEndPanelProps) {
+export function GameEndPanel({ gameOver, takedownMove, onReplayTakedown, onNewGame, debrief }: GameEndPanelProps) {
   return (
     <div className="game-over pop-in">
       <div className="result">{renderResult(gameOver.result)}</div>
@@ -68,6 +73,7 @@ export function GameEndPanel({ gameOver, takedownMove, onReplayTakedown, onNewGa
           replay the takedown
         </button>
       )}
+      {debrief}
       <div className="game-end-stubs">
         {STUB_SECTIONS.map((section) => (
           <div key={section.key} className="game-end-stub">

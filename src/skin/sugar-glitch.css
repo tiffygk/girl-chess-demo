@@ -1079,6 +1079,141 @@
   text-align: center;
 }
 
+/* Increment 3c: the debrief under the game — same visual cluster as the
+   board (GameEndPanel, between "replay the takedown" and the streaks stub;
+   also rendered standalone under REVIEW MODE). Cards are flat-tint
+   statements (no squishy shadow — they're the machine speaking, same
+   anatomy as .game-end-stub/.fallback-banner above); buttons stay candy
+   pills (they're pressables). Lavender family by default; magenta only
+   where a negative label sits; mint never (reserved for the last-move/
+   legal-move/win-button family). All copy lowercase, no em-dashes. */
+.gc-app .debrief {
+  width: min(88vw, 380px);
+  margin-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.gc-app .debrief-lesson {
+  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13px;
+  color: #4A3B7E; text-align: center; line-height: 1.5;
+  background: #F4F0FF; border: 1.5px solid #E3D9F5;
+  border-radius: 14px; padding: 10px 16px;
+  box-shadow: none;
+}
+.gc-app .debrief-cards { display: flex; flex-direction: column; gap: 8px; }
+.gc-app .debrief-card {
+  background: #F4F0FF; border: 1.5px solid #E3D9F5;
+  border-radius: 14px; padding: 10px 14px;
+  box-shadow: none;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.gc-app .debrief-card-negative {
+  background: #FFF0F6; border-color: #FFD6EC;
+}
+.gc-app .debrief-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.gc-app .debrief-card-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #23A8C7;
+}
+.gc-app .debrief-card-lowconf {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .06em; color: #9C8FC7;
+}
+.gc-app .debrief-card-prose {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13.5px;
+  color: #4A3B7E; margin: 0;
+}
+.gc-app .debrief-card-negative .debrief-card-prose { color: #C22B7E; }
+.gc-app .debrief-card-punish {
+  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 12px;
+  color: #6952C4; margin: 0;
+}
+.gc-app .debrief-replay-btn { align-self: flex-start; }
+.gc-app .debrief-footer {
+  display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+}
+
+/* Review-mode banner — sits at the top of a reviewed past game's debrief,
+   same lavender-badge family as .judge-badge-nudge above. */
+.gc-app .debrief-review-banner {
+  display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+  background: #E7DFFF; border-radius: 999px; padding: 6px 14px;
+}
+.gc-app .debrief-review-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; color: #6952C4;
+}
+.gc-app .debrief-review-meta {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
+  color: #4A3B7E;
+}
+
+/* "past games" trigger — a plain candy pill, reused verbatim at both call
+   sites (pregame panel, live debrief footer). */
+.gc-app button.small.past-games-btn {
+  background: #fff; color: #7A6BB5;
+  box-shadow: 0 3px 0 #E3D9F5, 0 6px 10px rgba(90,70,180,.12);
+}
+
+/* Saved-games drawer — a centered overlay, same pop-in as the game-over
+   panel. Organized by each game's lesson tag (rank-1 turning point label),
+   not by raw game id, per the UX research's "saving is organized by
+   lesson" rule. */
+.gc-app .past-games-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(74,59,126,.28);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--space-3);
+}
+.gc-app .past-games-drawer {
+  width: min(92vw, 440px);
+  max-height: 80vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 12px 0 #C9BFEF, 0 22px 40px rgba(90,70,180,.3);
+  padding: var(--space-3);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.gc-app .past-games-drawer-head {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.gc-app .past-games-title {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 11px;
+  letter-spacing: .14em; text-transform: lowercase; color: #23A8C7;
+}
+.gc-app .past-games-empty {
+  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13px;
+  color: #9C8FC7; text-align: center; padding: 12px 0;
+}
+.gc-app .past-games-list { display: flex; flex-direction: column; gap: 8px; }
+.gc-app button.past-games-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  width: 100%; text-align: left;
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
+  color: #4A3B7E; background: #F4F0FF;
+  border: 1.5px solid #E3D9F5; border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: none;
+  transform: none;
+}
+.gc-app button.past-games-row:hover { box-shadow: none; transform: none; background: #EDE6FF; }
+.gc-app button.past-games-row:active { box-shadow: none; transform: none; }
+.gc-app .past-games-date {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .08em; color: #9C8FC7;
+}
+.gc-app .past-games-opponent { color: #4A3B7E; }
+.gc-app .past-games-result { color: #6952C4; }
+.gc-app .past-games-lesson {
+  flex: 1 1 100%;
+  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 11.5px;
+  color: #7A6BB5;
+}
+
 /* draw acknowledgment — a soft glow pulse on the board frame, quieter than
    a win or loss celebration since a draw is neither. */
 .gc-app .board-frame.shimmer { animation: boardShimmer 1.8s ease-in-out; }
