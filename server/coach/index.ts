@@ -78,6 +78,15 @@ export function assembleFactList(input: {
   const sans = new Set<string>();
   for (const s of sanVariants(input.threat?.refutationSan)) sans.add(s);
   for (const s of sanVariants(input.best?.san)) sans.add(s);
+  // F4 (increment 3a review fast-follow): recommendationVars below renders
+  // {bestSan} from input.recommendation.san, not from input.best.san (the
+  // two facts are assembled separately but the template variable name is
+  // shared) — so a narration is only free to say that move's name when
+  // best is ALSO present, unless recommendation.san is folded in here too.
+  // A game state can carry recommendation without best (see the coach.md
+  // "attacks"/"develops"/"gives-check" templates, none of which need a
+  // capture-derived best move), so this is a real gap, not a redundant add.
+  for (const s of sanVariants(input.recommendation?.san)) sans.add(s);
   // SAN_RE in validate.ts also matches a bare square (every piece/capture
   // prefix in that pattern is optional), so a legitimate plain-square
   // mention like "on d8" gets extracted a SECOND time as a SAN-shaped
@@ -169,11 +178,34 @@ function fillTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => vars[key] ?? "");
 }
 
+// F2 (increment 3a review fast-follow): chess.js/motifs.ts piece kinds are
+// single letters (p/n/b/r/q/k) — fine as internal identifiers, but the
+// templates in personas/coach.md interpolate them straight into prose
+// ("the r on d8"), which is not a word a kid learning chess should have to
+// decode. This map is the only place that translation happens, so every
+// {capturedPieceKind}/{attackedPieceKind}/future piece-kind placeholder
+// renders a real word. Falls back to the raw kind for anything unmapped
+// (defensive only — the letters above are the full chess.js piece-kind
+// alphabet) rather than silently dropping it.
+const PIECE_KIND_WORDS: Record<string, string> = {
+  p: "pawn",
+  n: "knight",
+  b: "bishop",
+  r: "rook",
+  q: "queen",
+  k: "king",
+};
+
+function pieceKindWord(kind: string | undefined): string {
+  if (!kind) return "";
+  return PIECE_KIND_WORDS[kind.toLowerCase()] ?? kind;
+}
+
 function threatVars(t: ThreatFacts): Record<string, string> {
   return {
     refutationSan: t.refutationSan,
     capturesSquare: t.capturesSquare ?? "",
-    capturedPieceKind: t.capturedPieceKind ?? "",
+    capturedPieceKind: pieceKindWord(t.capturedPieceKind),
     forkSquares: (t.forkTargets ?? []).map((x) => x.square).join(" and "),
   };
 }
@@ -182,10 +214,10 @@ function recommendationVars(r: RecommendationFacts): Record<string, string> {
   return {
     bestSan: r.san,
     capturesSquare: r.capturesSquare ?? "",
-    capturedPieceKind: r.capturedPieceKind ?? "",
+    capturedPieceKind: pieceKindWord(r.capturedPieceKind),
     forkSquares: (r.forkTargets ?? []).map((x) => x.square).join(" and "),
     attackedSquare: r.attackedSquare ?? "",
-    attackedPieceKind: r.attackedPieceKind ?? "",
+    attackedPieceKind: pieceKindWord(r.attackedPieceKind),
   };
 }
 
