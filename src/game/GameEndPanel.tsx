@@ -20,6 +20,38 @@ function resultText(result: string): string {
   return "draw.";
 }
 
+// Win only gets the wordmark's layered glitch construction (celebration
+// scale) — loss and draw stay plain text at the existing 20px .result
+// style. Three of the four layers are aria-hidden so a screen reader
+// still gets a single clean readout from .wt-base.
+function renderResult(result: string) {
+  if (result === "1-0") {
+    return (
+      <span className="win-title">
+        <span className="wt-layer wt-cyan" aria-hidden="true">
+          you win. mallow melts.
+        </span>
+        <span className="wt-layer wt-mag" aria-hidden="true">
+          you win. mallow melts.
+        </span>
+        <span className="wt-layer wt-shadow" aria-hidden="true">
+          you win. mallow melts.
+        </span>
+        <span className="wt-base">
+          you win. mallow{" "}
+          <span className="wt-melt">
+            <span className="wt-melt-top">melts.</span>
+            <span className="wt-melt-bottom" aria-hidden="true">
+              melts.
+            </span>
+          </span>
+        </span>
+      </span>
+    );
+  }
+  return resultText(result);
+}
+
 interface GameEndPanelProps {
   gameOver: GameOverInfo;
   takedownMove: Takedown | null;
@@ -30,7 +62,7 @@ interface GameEndPanelProps {
 export function GameEndPanel({ gameOver, takedownMove, onReplayTakedown, onNewGame }: GameEndPanelProps) {
   return (
     <div className="game-over pop-in">
-      <div className="result">{resultText(gameOver.result)}</div>
+      <div className="result">{renderResult(gameOver.result)}</div>
       {takedownMove && (
         <button className="small" onClick={onReplayTakedown}>
           replay the takedown
@@ -44,7 +76,7 @@ export function GameEndPanel({ gameOver, takedownMove, onReplayTakedown, onNewGa
         ))}
       </div>
       <button className="primary" onClick={onNewGame}>
-        New game
+        new game
       </button>
     </div>
   );
