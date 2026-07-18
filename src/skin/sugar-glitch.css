@@ -40,6 +40,18 @@
   letter-spacing: .18em;
 }
 
+/* Phase-4 visual-gate fix: .game-page had no rule of its own, so its
+   content width was set by its widest child (.header-band, board-size+80px)
+   and every narrower child — .board-stack chief among them — defaulted to
+   block left-alignment inside that box instead of sharing the header's
+   center axis (measured ~40px off). Flex-column-center here, mirroring
+   .gc-app's own pattern above, centers every child consistently. */
+.gc-app .game-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 /* Wave B: the single compact header band — pixel wordmark + tagline as a
    left-aligned lockup, coach pill + settings gear grouped right-aligned.
    The old stacked pixel-wordmark / huge duplicate "Girl Chess" h1 /
