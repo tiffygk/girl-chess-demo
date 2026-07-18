@@ -798,7 +798,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 square === effectiveSelected ? "target-hint" : "",
                 legalTargets.capture.has(square) ? "hint-capture" : "",
                 legalTargets.normal.has(square) ? "hint" : "",
-                hintReveal?.to === square ? "target-hint" : hintReveal?.from === square ? "hint-origin" : "",
+                hintReveal?.to === square || hintReveal?.from === square ? "hint-reveal" : "",
                 threatReveal?.attacker === square
                   ? "threat-attacker"
                   : threatReveal?.victim === square

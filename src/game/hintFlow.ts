@@ -178,14 +178,22 @@ export function hintRevealSquares(bestUci: string): { from: string; to: string }
  * Level-3 board highlight: the opponent's refutation attacker, plus the
  * square it would land on (or actually capture on, for a capture motif —
  * en passant's real captured-pawn square, not the empty landing square).
- * Falls back to herToSquare for a non-capture motif (fork/check/mate/
- * positional) so the highlight still points somewhere true: the square her
- * piece landed on, which is what the refutation is reacting to.
+ * Falls back to herToSquare for a non-capture motif (fork/check/mate) so the
+ * highlight still points somewhere true: the square her piece landed on,
+ * which is what the refutation is reacting to.
+ *
+ * HONESTY GATE: returns null for motif "positional" — motifL3's honest
+ * fallback copy ("this loses ground. nothing hangs...") explicitly denies a
+ * concrete threat exists, so painting a threat-attacker/threat-victim ring
+ * would visually claim one anyway. Only the concrete-threat motifs
+ * (capture-moved, capture-other, fork, mate-threat, check-threat) get a
+ * highlight; "positional" gets none.
  */
 export function threatRevealSquares(
   threat: ThreatFacts,
   herToSquare: string
-): { attacker: string; victim: string } {
+): { attacker: string; victim: string } | null {
+  if (threat.motif === "positional") return null;
   return { attacker: threat.refutationFromSquare, victim: threat.capturesSquare ?? herToSquare };
 }
 
