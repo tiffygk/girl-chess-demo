@@ -39,21 +39,57 @@ export interface HintFacts {
   bestFromSquare: string;
   bestToSquare: string;
   bestSan: string;
+  bestUci: string;
+}
+
+/**
+ * Lowercase plain-language translation of the best move, derived by replaying
+ * bestUci on the live fen (never by parsing SAN - a parse miss could render a
+ * false claim). Returns null when the replay fails; callers then show SAN alone.
+ */
+export function describeBestMove(facts: HintFacts, fen: string): string | null {
+  let probe: Chess;
+  try {
+    probe = new Chess(fen);
+  } catch {
+    return null;
+  }
+  let mv;
+  try {
+    mv = probe.move({
+      from: facts.bestUci.slice(0, 2),
+      to: facts.bestUci.slice(2, 4),
+      promotion: (facts.bestUci[4] as "q" | "r" | "b" | "n" | undefined) ?? "q",
+    });
+  } catch {
+    return null;
+  }
+  if (!mv) return null;
+  const suffix = probe.isCheckmate() ? ", checkmate" : probe.isCheck() ? ", check" : "";
+  if (mv.flags.includes("k")) return `castle short${suffix}`;
+  if (mv.flags.includes("q")) return `castle long${suffix}`;
+  const isCapture = mv.flags.includes("c") || mv.flags.includes("e");
+  let phrase = `${pieceName(facts.bestPieceKind)} ${isCapture ? "takes on" : "to"} ${mv.to}`;
+  if (mv.flags.includes("p") && mv.promotion) phrase += `, becoming a ${pieceName(mv.promotion)}`;
+  return `${phrase}${suffix}`;
 }
 
 /**
  * Template-only copy for the current hint level — lowercase, no em-dashes,
  * no emojis, per the round's copy rules. Returns null at level 0 (nothing
- * to show yet beyond the "help?" affordance itself).
+ * to show yet beyond the "help?" affordance itself). `fen`, when given,
+ * lets level 3 append a plain-language translation of the best move
+ * (derived by replay, see describeBestMove) alongside the SAN.
  */
-export function hintCopy(level: HintLevel, facts: HintFacts): string | null {
+export function hintCopy(level: HintLevel, facts: HintFacts, fen?: string): string | null {
   if (level <= 0) return null;
   if (level === 1) return `look at your ${pieceName(facts.bestPieceKind)}`;
   // Level 2 names the origin square, not the destination: the destination of
   // a capture/quiet move she isn't seeing reads as an unreachable square
   // (owner playtest 2026-07-17); her own piece's square is always findable.
   if (level === 2) return `your ${pieceName(facts.bestPieceKind)} on ${facts.bestFromSquare}`;
-  return `best here: ${facts.bestSan}`;
+  const translation = fen ? describeBestMove(facts, fen) : null;
+  return translation ? `best here: ${facts.bestSan} (${translation})` : `best here: ${facts.bestSan}`;
 }
 
 /** Splits a UCI move ("g1f3") into its from/to squares for the board's
