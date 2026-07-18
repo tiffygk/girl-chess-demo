@@ -1,5 +1,6 @@
 import { Chess, type Move, type Square } from "chess.js";
 import type { Evaluator } from "../engines/types";
+import { deriveThreatFacts, type ThreatFacts } from "./motifs";
 
 // Wave C (hint escalation): "what was best instead" at the position BEFORE
 // the judged move — derived from the SAME before-position eval classifyMove
@@ -23,6 +24,18 @@ export interface Verdict {
   // short-circuit below never running an eval at all) — the client's rule
   // is "no facts, no help? affordance", never a blocked confirm/retract.
   facts?: MoveFacts;
+  // Increment 2.7 (why-hints): the opponent's best reply to HER move,
+  // decision-classified into a motif by motifs.ts — the "why" behind the
+  // verdict. Sibling of `facts`, not a replacement — the two replay in
+  // opposite directions (facts replays the BEFORE-position's best move for
+  // the mover; threat replays the AFTER-position's best move for the
+  // opponent) so they're kept as separate fields rather than merged.
+  // Computed from the already-paid-for afterEval below — zero new engine
+  // calls. Undefined on the checkmate short-circuit (her move itself
+  // delivers mate — there's no "after" position, no afterEval to derive it
+  // from) and whenever the replay fails (same "no facts, no claim" contract
+  // as `facts`).
+  threat?: ThreatFacts;
 }
 
 // The user-facing "advice dial" (how chatty the judge is) arrives in a
@@ -146,5 +159,11 @@ export async function classifyMove(chess: Chess, move: Move, evaluator: Evaluato
   // for silent.
   const facts = deriveFacts(move.before, beforeEval.bestMove);
 
-  return { tier, deltaCp, mateAgainst, latencyMs: Date.now() - start, facts };
+  // Same "computed for every non-checkmate verdict" reasoning as facts
+  // above: cheap (pure chess.js replay of already-computed engine output),
+  // and gating it to warning/nudge tiers would just make the client redo
+  // the same check for no benefit.
+  const threat = deriveThreatFacts(chess.fen(), move.to, move.color, afterEval);
+
+  return { tier, deltaCp, mateAgainst, latencyMs: Date.now() - start, facts, threat };
 }

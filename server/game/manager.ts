@@ -154,6 +154,7 @@ export class GameManager {
       latencyMs: verdict.latencyMs,
       adviceLevel: DEFAULT_ADVICE_LEVEL,
       mode,
+      factsJson: verdict.threat ? JSON.stringify(verdict.threat) : null,
     });
     return { ok: true, verdict };
   }

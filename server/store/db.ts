@@ -70,6 +70,12 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     { name: "advice_level", addSql: "advice_level TEXT" },
     { name: "mode", addSql: "mode TEXT DEFAULT 'guardian'" },
     { name: "at", addSql: "at TEXT DEFAULT (datetime('now'))" },
+    // Increment 2.7 (why-hints): the structured ThreatFacts (motifs.ts),
+    // JSON-serialized — the F40 trace seam the increment-3 coach reads to
+    // narrate the same facts with personality. Additive/nullable so every
+    // pre-2.7 row (and every insertVerdict call site that doesn't pass it)
+    // keeps working unchanged.
+    { name: "facts_json", addSql: "facts_json TEXT" },
   ],
 };
 
@@ -114,7 +120,7 @@ export function openDb(path = "data/girlchess.db") {
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), ply INTEGER,
       fen TEXT, move TEXT, tier TEXT, delta_cp INTEGER, mate_against INTEGER,
       latency_ms INTEGER, advice_level TEXT, mode TEXT DEFAULT 'guardian',
-      at TEXT DEFAULT (datetime('now')));
+      facts_json TEXT, at TEXT DEFAULT (datetime('now')));
   `);
   migrateSchema(db);
   return db;
@@ -176,9 +182,13 @@ export const insertVerdict = (v: {
   // (not just the column's DDL default) so every existing call site keeps
   // working unchanged.
   mode?: string;
+  // Increment 2.7: JSON.stringify(verdict.threat), or null when the judge
+  // had no threat to report (checkmate short-circuit, replay failure).
+  // Optional so every pre-2.7 call site keeps working unchanged.
+  factsJson?: string | null;
 }) =>
   db.prepare(
-    "INSERT INTO verdicts(game_id, ply, fen, move, tier, delta_cp, mate_against, latency_ms, advice_level, mode) VALUES(?,?,?,?,?,?,?,?,?,?)"
-  ).run(v.gameId, v.ply, v.fen, v.move, v.tier, v.deltaCp, v.mateAgainst ? 1 : 0, v.latencyMs, v.adviceLevel, v.mode ?? "guardian");
+    "INSERT INTO verdicts(game_id, ply, fen, move, tier, delta_cp, mate_against, latency_ms, advice_level, mode, facts_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
+  ).run(v.gameId, v.ply, v.fen, v.move, v.tier, v.deltaCp, v.mateAgainst ? 1 : 0, v.latencyMs, v.adviceLevel, v.mode ?? "guardian", v.factsJson ?? null);
 export const getVerdicts = (gameId: number) =>
   db.prepare("SELECT * FROM verdicts WHERE game_id = ? ORDER BY id").all(gameId) as any[];
