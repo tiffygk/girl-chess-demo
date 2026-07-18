@@ -147,6 +147,19 @@ app.post("/api/game/:id/narrate", async (req, res) => {
   }
 });
 
+// Increment 3b: panel-ruled turning points + move classifications, computed
+// and persisted at game end (see manager.ts's persistGameSummary), read
+// here. Sync — no engine call either path (persisted rows or compute-on-read
+// fallback for old games) — but wrapped in the same try/catch envelope as
+// every other route for consistency.
+app.get("/api/game/:id/summary", (req, res) => {
+  try {
+    res.json(gm.getSummary(Number(req.params.id)));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 app.post("/api/session/:id/mode", (req, res) => {
   const { mode, seconds } = req.body;
   addModeMinutes(Number(req.params.id), String(mode), Number(seconds) || 0);

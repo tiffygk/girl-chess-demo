@@ -45,6 +45,12 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     { name: "best_move", addSql: "best_move TEXT" },
     { name: "pv", addSql: "pv TEXT" },
     { name: "moved_at", addSql: "moved_at TEXT DEFAULT (datetime('now'))" },
+    // Increment 3b: classifyMoves' (server/annotator/classifications.ts)
+    // per-move quality label for HER moves only — "blunder" | "mistake" |
+    // "inaccuracy" | "strong move", NULL for quiet/opponent/unevaluated
+    // plies (never fabricated). Written once at game end by
+    // manager.ts's persistGameSummary.
+    { name: "classification", addSql: "classification TEXT" },
   ],
   mode_timers: [
     { name: "session_id", addSql: "session_id INTEGER REFERENCES sessions(id)" },
@@ -97,6 +103,24 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     { name: "latency_ms", addSql: "latency_ms INTEGER" },
     { name: "created_at", addSql: "created_at TEXT DEFAULT (datetime('now'))" },
   ],
+  // Increment 3b: panel-ruled turning points (server/annotator/turningPoints.ts),
+  // up to 3 rows per game, written once at game end. Brand-new table (CREATE
+  // TABLE IF NOT EXISTS below already creates it with every column on any
+  // db, old or new), but listed here per the established EXPECTED_COLUMNS
+  // convention (see advice_traces' comment above) so a future additive
+  // column migrates the same way.
+  turning_points: [
+    { name: "game_id", addSql: "game_id INTEGER REFERENCES games(id)" },
+    { name: "rank", addSql: "rank INTEGER" },
+    { name: "ply", addSql: "ply INTEGER" },
+    { name: "san", addSql: "san TEXT" },
+    { name: "label", addSql: "label TEXT" },
+    { name: "punish_san", addSql: "punish_san TEXT" },
+    { name: "delta_p", addSql: "delta_p REAL" },
+    { name: "low_confidence", addSql: "low_confidence INTEGER" },
+    { name: "kind", addSql: "kind TEXT" },
+    { name: "created_at", addSql: "created_at TEXT DEFAULT (datetime('now'))" },
+  ],
 };
 
 function migrateSchema(target: Database.Database) {
@@ -146,6 +170,10 @@ export function openDb(path = "data/girlchess.db") {
       kind TEXT, facts_json TEXT, prompt TEXT, output TEXT, source TEXT,
       backend TEXT, validated INTEGER, regen_count INTEGER, latency_ms INTEGER,
       created_at TEXT DEFAULT (datetime('now')));
+    CREATE TABLE IF NOT EXISTS turning_points(
+      id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), rank INTEGER,
+      ply INTEGER, san TEXT, label TEXT, punish_san TEXT, delta_p REAL,
+      low_confidence INTEGER, kind TEXT, created_at TEXT DEFAULT (datetime('now')));
   `);
   migrateSchema(db);
   return db;
@@ -242,3 +270,39 @@ export const insertAdviceTrace = (t: {
   );
 export const getAdviceTraces = (gameId: number) =>
   db.prepare("SELECT * FROM advice_traces WHERE game_id = ? ORDER BY id").all(gameId) as any[];
+
+// Increment 3b: written once by manager.ts's persistGameSummary at game
+// end. Idempotency choice (per the brief: delete-then-insert is NOT this
+// file's convention) — skip entirely if this game_id already has rows,
+// rather than INSERT OR REPLACE (which would need a synthetic uniqueness
+// key across (game_id, rank) with no real-world reason for a second write
+// to ever differ from the first: turning points are computed once from
+// final stored evals and never recomputed).
+export const insertTurningPoints = (
+  gameId: number,
+  points: {
+    rank: number;
+    ply: number;
+    san: string;
+    label: string;
+    punishSan?: string | null;
+    deltaP: number;
+    lowConfidence: boolean;
+    kind: string;
+  }[]
+) => {
+  const existing = db.prepare("SELECT COUNT(*) as n FROM turning_points WHERE game_id = ?").get(gameId) as { n: number };
+  if (existing.n > 0) return;
+  const stmt = db.prepare(
+    "INSERT INTO turning_points(game_id, rank, ply, san, label, punish_san, delta_p, low_confidence, kind) VALUES(?,?,?,?,?,?,?,?,?)"
+  );
+  for (const p of points) {
+    stmt.run(gameId, p.rank, p.ply, p.san, p.label, p.punishSan ?? null, p.deltaP, p.lowConfidence ? 1 : 0, p.kind);
+  }
+};
+export const getTurningPoints = (gameId: number) =>
+  db.prepare("SELECT * FROM turning_points WHERE game_id = ? ORDER BY rank").all(gameId) as any[];
+// A plain UPDATE (not an insert), safe to call repeatedly with the same
+// value — unlike turning_points above, this needs no existence guard.
+export const setMoveClassification = (gameId: number, ply: number, classification: string | null) =>
+  db.prepare("UPDATE moves SET classification = ? WHERE game_id = ? AND ply = ?").run(classification, gameId, ply);

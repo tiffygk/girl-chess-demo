@@ -281,4 +281,31 @@ describe("api", () => {
     const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1500 });
     expect(g.body.elo).toBe(1500);
   }, 60000);
+
+  // Increment 3b: GET /api/game/:id/summary — turning points + move
+  // classifications, persisted at game end via manager.ts's
+  // persistGameSummary (called from every finish path). Resign is the
+  // cheapest reliable path to terminal (same reasoning as the C4 Part 2
+  // resign test above), which also exercises the shape when the game is
+  // too short for any real turning point (moves.length <= 1 -> []) —
+  // "never fabricating a swing" holds even at the API boundary.
+  it("computes and persists a game summary at game end, readable via GET /api/game/:id/summary", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    await request(app).post(`/api/game/${g.body.gameId}/move`)
+      .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
+    await request(app).post(`/api/game/${g.body.gameId}/resign`).send({}).expect(200);
+
+    const summary = await request(app).get(`/api/game/${g.body.gameId}/summary`).expect(200);
+    expect(summary.body.ok).toBe(true);
+    expect(Array.isArray(summary.body.turningPoints)).toBe(true);
+    expect(Array.isArray(summary.body.classifications)).toBe(true);
+  }, 20000);
+
+  it("returns an empty-but-ok summary for a nonexistent game (compute-on-read fallback)", async () => {
+    const r = await request(app).get("/api/game/999999/summary").expect(200);
+    expect(r.body).toEqual({ ok: true, turningPoints: [], classifications: [] });
+  });
 });
