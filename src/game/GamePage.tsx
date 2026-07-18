@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Chess } from "chess.js";
+import { Chess, type Square } from "chess.js";
 import { Board, type BoardHandle } from "../board/Board";
 import {
   newSession,
@@ -23,7 +23,15 @@ import { findTakedownPiece, type Takedown } from "./terminal";
 import { replayPlan } from "./replay";
 import { GameEndPanel } from "./GameEndPanel";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
-import { nextHintLevel, hintCopy, hintRevealSquares, hintIsLegal, type HintLevel } from "./hintFlow";
+import {
+  nextHintLevel,
+  hintCopy,
+  hintRevealSquares,
+  threatRevealSquares,
+  hintIsLegal,
+  type HintLevel,
+  type HintCopyCtx,
+} from "./hintFlow";
 import { PlayerBar } from "./PlayerBar";
 
 type Captured = CapturedBySide;
@@ -648,17 +656,29 @@ export function GamePage() {
     [pending, coachOn, confirmOn, handlePendingStart]
   );
 
-  // Wave B (increment 2.5): hints now fetch a deep verified line on demand
-  // instead of reusing the judge's shallow 350ms eval. Only ever callable
-  // when the current pending's verdict actually carries facts (the render
-  // below gates the affordance on the same condition), so there's nothing
-  // to guard against a facts-less verdict here beyond the defensive check.
-  // The fen logged is the position BEFORE the pending move (mirrorRef is
-  // untouched while a move is pending) — "what was best instead" is
-  // meaningless without it.
+  // Increment 2.7 (why-hints): levels 1-3 climb instantly — verdict.threat
+  // arrived for free with the judge response, no network round-trip needed.
+  // Only the 3->4 click fires the deep verified search (unchanged from 2.6:
+  // token guard, hintIsLegal check, "thinking..." disabled state); 4->5
+  // climbs instantly again once bestFacts is in hand. The fen logged is the
+  // position BEFORE the pending move (mirrorRef is untouched while a move
+  // is pending) — "what was best instead" is meaningless without it.
   const handleHintClick = useCallback(() => {
-    if (!gameId || !verdict?.facts) return;
-    // Facts already fetched for this pending move: just climb the ladder.
+    if (!gameId || !verdict?.threat) return;
+    if (hintLevel < 3) {
+      const next = nextHintLevel(hintLevel);
+      setHintLevel(next);
+      logHint(
+        gameId,
+        next,
+        verdict.tier,
+        verdict.deltaCp,
+        verdict.threat.refutationUci,
+        mirrorRef.current.fen()
+      ).catch(() => undefined);
+      return;
+    }
+    // 4 -> 5: bestFacts already fetched at the 3->4 transition — just climb.
     if (hintFacts) {
       const next = nextHintLevel(hintLevel);
       setHintLevel(next);
@@ -668,10 +688,11 @@ export function GamePage() {
       return;
     }
     if (hintFetching) return;
-    // First reveal: fetch the deep verified hint. Pending never mutates the
-    // mirror, so mirrorRef's fen is exactly the before-position the server
-    // computes against. Token-guarded like the judge call: a retarget/cancel/
-    // confirm while the search runs makes the result stale and it is dropped.
+    // The 3->4 click: fetch the deep verified hint. Pending never mutates
+    // the mirror, so mirrorRef's fen is exactly the before-position the
+    // server computes against. Token-guarded like the judge call: a
+    // retarget/cancel/confirm while the search runs makes the result stale
+    // and it is dropped.
     const token = pendingTokenRef.current;
     setHintFetching(true);
     (async () => {
@@ -687,8 +708,8 @@ export function GamePage() {
           return;
         }
         setHintFacts(res.facts);
-        setHintLevel(1);
-        logHint(gameId, 1, verdict.tier, verdict.deltaCp, res.facts.bestUci, mirrorRef.current.fen()).catch(
+        setHintLevel(4);
+        logHint(gameId, 4, verdict.tier, verdict.deltaCp, res.facts.bestUci, mirrorRef.current.fen()).catch(
           () => undefined
         );
       } finally {
@@ -948,11 +969,32 @@ export function GamePage() {
           ? "call it: mallow has this. resign?"
           : "end the game?";
 
-  // Wave B (increment 2.5): level-3 board highlight for the deep verified
-  // hint's best move, derived from the fetched hintFacts (not the judge's
-  // shallow verdict.facts).
+  // Increment 2.7 (why-hints): level-5 board highlight for the deep verified
+  // hint's best move, derived from the fetched hintFacts. Gate moved from
+  // >=3 to >=5 — the ladder grew three levels (2->4) that reveal the WHY
+  // without ever pointing at a square to play.
   const hintReveal =
-    hintLevel >= 3 && hintFacts ? hintRevealSquares(hintFacts.bestUci) : null;
+    hintLevel >= 5 && hintFacts ? hintRevealSquares(hintFacts.bestUci) : null;
+
+  // Level-3 threat highlight: only while sitting exactly at level 3, and
+  // only when there's a real threat + a pending move to anchor herToSquare.
+  const threatReveal =
+    hintLevel === 3 && verdict?.threat && pending ? threatRevealSquares(verdict.threat, pending.to) : null;
+
+  // Everything hintCopy needs for the current pending move. herPieceKind
+  // comes off the live mirror (free, no network) — the piece she just
+  // moved is always mirrorRef's occupant at pending.from since pending
+  // never touches the mirror. Falls back to "piece" if the lookup somehow
+  // misses (defensive only; pending.from is always occupied in practice).
+  const hintCtx: HintCopyCtx | null = pending
+    ? {
+        herPieceKind: mirrorRef.current.get(pending.from as Square)?.type ?? "piece",
+        herToSquare: pending.to,
+        threat: verdict?.threat,
+        bestFacts: hintFacts ?? undefined,
+        fen,
+      }
+    : null;
 
   return (
     <div className="game-page">
@@ -1092,6 +1134,7 @@ export function GamePage() {
           onInputHint={handleInputHint}
           lastMove={lastMove}
           hintReveal={hintReveal}
+          threatReveal={threatReveal}
         />
         <PlayerBar
           seat="you"
@@ -1123,16 +1166,16 @@ export function GamePage() {
                   {verdict?.tier === "warning" && (
                     <span className="judge-badge judge-badge-warning">careful. this one hurts.</span>
                   )}
-                  {/* Wave C, task C-B: deterministic hint escalation — only
-                      when the judge actually has facts to offer (an eval
-                      failure just means this never renders; confirm/retract
-                      are never blocked on it). */}
-                  {verdict?.facts && (verdict.tier === "nudge" || verdict.tier === "warning") && (
+                  {/* Increment 2.7 (why-hints): deterministic hint
+                      escalation — only when the judge actually derived a
+                      threat to offer (an eval failure just means this never
+                      renders; confirm/retract are never blocked on it). */}
+                  {verdict?.threat && (verdict.tier === "nudge" || verdict.tier === "warning") && (
                     <span className="hint-block">
-                      {hintLevel > 0 && hintFacts && (
-                        <span className="hint-copy">{hintCopy(hintLevel, hintFacts, fen)}</span>
+                      {hintLevel > 0 && hintCtx && (
+                        <span className="hint-copy">{hintCopy(hintLevel, hintCtx)}</span>
                       )}
-                      {hintLevel < 3 && (
+                      {hintLevel < 5 && (
                         <button
                           type="button"
                           className="hint-affordance"

@@ -1,21 +1,33 @@
-// Wave C, task C-B: pure decision table for the deterministic hint
-// escalation ladder. Kept as its own pure module (rather than inlined in
-// GamePage) for the same reason moveFlow.ts is: a one-glance spec, unit
-// testable without touching React state or the network.
+// Increment 2.7 (why-hints): the 0-5 escalation ladder, anchored to the
+// piece SHE just moved (owner rule: "her piece first" — levels 1-3 never
+// talk about a different piece; the redirect to "use this piece instead"
+// only happens at levels 4-5). Kept as its own pure module (rather than
+// inlined in GamePage) for the same reason moveFlow.ts is: a one-glance
+// spec, unit testable without touching React state or the network.
 //
 // Level 0 = nothing revealed yet (only the "help?" affordance shows).
-// Level 1 = "look at your {piece name}"
-// Level 2 = "your {piece} on {from}"
-// Level 3 = "best here: {san}" + the board highlights the best move's
-//           from/to squares (GamePage derives those from facts.bestUci —
-//           see hintRevealSquares in GamePage.tsx).
+// Level 1 = vague nudge naming her piece, free (mirrorRef, no network).
+// Level 2 = direction/concept, keyed off verdict.threat's motif, free.
+// Level 3 = concrete why + a board highlight of the threat, free.
+// Level 4 = "better: your {piece} on {square}" — fires the deep hint fetch.
+// Level 5 = "best here: {san} ({translation})" + the existing board reveal
+//           (hintRevealSquares/hintReveal in GamePage), reusing 2.6's
+//           describeBestMove unchanged.
+//
+// HONESTY GATE (product rule, enforced by construction): every L2/L3 string
+// only reads fields off `ctx.threat`, which the server populated from a
+// literal chess.js replay of the judge's discarded refutation (see
+// server/annotator/motifs.ts). A motif branch never reads a field another
+// motif populated. When threat is absent, or the motif is "positional",
+// copy degrades to the honest fallback — it never speculates.
 import { Chess } from "chess.js";
+import type { ThreatFacts } from "./api";
 
-export type HintLevel = 0 | 1 | 2 | 3;
+export type HintLevel = 0 | 1 | 2 | 3 | 4 | 5;
 
-const MAX_HINT_LEVEL: HintLevel = 3;
+const MAX_HINT_LEVEL: HintLevel = 5;
 
-/** Advances the ladder by one step, capped at the top (level 3). */
+/** Advances the ladder by one step, capped at the top (level 5). */
 export function nextHintLevel(level: HintLevel): HintLevel {
   return level >= MAX_HINT_LEVEL ? MAX_HINT_LEVEL : ((level + 1) as HintLevel);
 }
@@ -75,30 +87,106 @@ export function describeBestMove(facts: HintFacts, fen: string): string | null {
 }
 
 /**
- * Template-only copy for the current hint level — lowercase, no em-dashes,
- * no emojis, per the round's copy rules. Returns null at level 0 (nothing
- * to show yet beyond the "help?" affordance itself). `fen`, when given,
- * lets level 3 append a plain-language translation of the best move
- * (derived by replay, see describeBestMove) alongside the SAN.
+ * Everything hintCopy needs to render any level of the ladder. herPieceKind/
+ * herToSquare describe the piece SHE just moved (levels 1-3, always
+ * available for free off the client mirror + the pending move). threat is
+ * verdict.threat, arriving with the judge response (levels 2-3). bestFacts
+ * is the deep-fetched facts, present only after the 3->4 fetch (levels 4-5).
+ * fen is the live mirror fen, used only at level 5 for describeBestMove.
  */
-export function hintCopy(level: HintLevel, facts: HintFacts, fen?: string): string | null {
+export interface HintCopyCtx {
+  herPieceKind: string;
+  herToSquare: string;
+  threat?: ThreatFacts;
+  bestFacts?: HintFacts;
+  fen?: string;
+}
+
+// Level 2: direction/concept, no line — keyed off the threat's motif alone.
+// Never names a square or a specific piece she can't yet place.
+function motifL2(ctx: HintCopyCtx): string {
+  const threat = ctx.threat;
+  if (!threat) return "there's a stronger plan here.";
+  switch (threat.motif) {
+    case "fork":
+      return "there's a fork brewing.";
+    case "capture-moved":
+    case "capture-other":
+      return `think about what her ${pieceName(threat.refutationPieceKind)} can reach.`;
+    case "mate-threat":
+      return "this one's dangerous. she's got something forcing.";
+    case "check-threat":
+      return "this opens you up to check.";
+    default:
+      return "there's a stronger plan here.";
+  }
+}
+
+// Level 3: the concrete why, keyed off the threat's motif — every field read
+// here came from the server's literal replay of the refutation, per motif.
+function motifL3(ctx: HintCopyCtx): string {
+  const threat = ctx.threat;
+  const honestFallback = "this loses ground. nothing hangs, but the position gets worse.";
+  if (!threat) return honestFallback;
+  switch (threat.motif) {
+    case "fork": {
+      const targets = (threat.forkTargets ?? []).map((t) => pieceName(t.pieceKind)).join(" and ");
+      return `her ${pieceName(threat.refutationPieceKind)} to ${threat.refutationToSquare} forks your ${targets}.`;
+    }
+    case "capture-moved":
+      return `${pieceName(ctx.herPieceKind)} to ${ctx.herToSquare} walks into her ${pieceName(threat.refutationPieceKind)}. she just takes it.`;
+    case "capture-other":
+      return `${pieceName(ctx.herPieceKind)} to ${ctx.herToSquare} opens the door. her ${pieceName(threat.refutationPieceKind)} takes your ${pieceName(threat.capturedPieceKind ?? "")} on ${threat.capturesSquare}.`;
+    case "mate-threat":
+      return `her ${threat.refutationSan} starts a forced mate.`;
+    case "check-threat":
+      return `her ${pieceName(threat.refutationPieceKind)} to ${threat.refutationToSquare} puts you in check.`;
+    default:
+      return honestFallback;
+  }
+}
+
+/**
+ * Template-only copy for the current hint level — lowercase, no em-dashes,
+ * no emojis, per the round's copy rules (SAN is notation, exempt). Returns
+ * null at level 0, and at levels 4-5 until bestFacts has arrived (no copy
+ * flash mid-fetch — the caller just shows the "thinking..." button state).
+ */
+export function hintCopy(level: HintLevel, ctx: HintCopyCtx): string | null {
   if (level <= 0) return null;
-  if (level === 1) return `look at your ${pieceName(facts.bestPieceKind)}`;
-  // Level 2 names the origin square, not the destination: the destination of
-  // a capture/quiet move she isn't seeing reads as an unreachable square
-  // (owner playtest 2026-07-17); her own piece's square is always findable.
-  if (level === 2) return `your ${pieceName(facts.bestPieceKind)} on ${facts.bestFromSquare}`;
-  const translation = fen ? describeBestMove(facts, fen) : null;
-  return translation ? `best here: ${facts.bestSan} (${translation})` : `best here: ${facts.bestSan}`;
+  if (level === 1) return `hold on. look at your ${pieceName(ctx.herPieceKind)}.`;
+  if (level === 2) return motifL2(ctx);
+  if (level === 3) return motifL3(ctx);
+  if (!ctx.bestFacts) return null;
+  if (level === 4) return `better: your ${pieceName(ctx.bestFacts.bestPieceKind)} on ${ctx.bestFacts.bestFromSquare}`;
+  const translation = ctx.fen ? describeBestMove(ctx.bestFacts, ctx.fen) : null;
+  return translation
+    ? `best here: ${ctx.bestFacts.bestSan} (${translation})`
+    : `best here: ${ctx.bestFacts.bestSan}`;
 }
 
 /** Splits a UCI move ("g1f3") into its from/to squares for the board's
- * level-3 highlight. Deliberately doesn't validate — bestUci already came
- * from a legal chess.js replay in classify.ts's deriveFacts. Belt-and-
+ * level-5 highlight. Deliberately doesn't validate — bestUci already came
+ * from a legal chess.js replay in server/annotator/hint.ts. Belt-and-
  * suspenders re-validation against the live client position lives in
  * hintIsLegal below. */
 export function hintRevealSquares(bestUci: string): { from: string; to: string } {
   return { from: bestUci.slice(0, 2), to: bestUci.slice(2, 4) };
+}
+
+/**
+ * Level-3 board highlight: the opponent's refutation attacker, plus the
+ * square it would land on (or actually capture on, for a capture motif —
+ * en passant's real captured-pawn square, not the empty landing square).
+ * Falls back to herToSquare for a non-capture motif (fork/check/mate/
+ * positional) so the highlight still points somewhere true: the square her
+ * piece landed on, which is what the refutation is reacting to.
+ */
+export function threatRevealSquares(
+  threat: ThreatFacts,
+  herToSquare: string
+): { attacker: string; victim: string } {
+  return { attacker: threat.refutationFromSquare, victim: threat.capturesSquare ?? herToSquare };
 }
 
 /**

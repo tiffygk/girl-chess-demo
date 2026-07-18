@@ -872,6 +872,14 @@
   50% { box-shadow: inset 0 0 0 4px rgba(76,175,140,1), 0 0 18px 5px rgba(76,175,140,.7); }
 }
 
+/* Increment 2.7 (why-hints): level-3 threat highlight — magenta, alarm
+   language, deliberately NOT the mint hint-reveal family above, so it never
+   implies "move here". attacker = her opponent's refutation piece's square;
+   victim = what it captures (or, for a non-capture motif, the square her
+   own piece just landed on, which is what the refutation is reacting to). */
+.gc-app .sq.threat-attacker { box-shadow: inset 0 0 0 3px #FF3DA6, 0 0 10px rgba(255, 61, 166, .45); }
+.gc-app .sq.threat-victim { box-shadow: inset 0 0 0 3px rgba(255, 61, 166, .5); }
+
 /* check ring — sits under the piece sprite (.pieces layer paints over .squares) */
 .gc-app .sq.check-ring {
   box-shadow: inset 0 0 0 4px #FF3DA6, 0 0 16px 3px rgba(255,61,166,.6);
