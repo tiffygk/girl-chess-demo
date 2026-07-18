@@ -5,7 +5,7 @@
 //
 // Level 0 = nothing revealed yet (only the "help?" affordance shows).
 // Level 1 = "look at your {piece name}"
-// Level 2 = "think about {square}"
+// Level 2 = "your {piece} on {from}"
 // Level 3 = "best here: {san}" + the board highlights the best move's
 //           from/to squares (GamePage derives those from facts.bestUci —
 //           see hintRevealSquares in GamePage.tsx).
