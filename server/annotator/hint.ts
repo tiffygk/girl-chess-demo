@@ -1,6 +1,7 @@
 import { Chess } from "chess.js";
 import type { Evaluation, Evaluator } from "../engines/types";
 import { deriveFacts, type MoveFacts } from "./classify";
+import { deriveRecommendationFacts, type RecommendationFacts } from "./motifs";
 
 // Deep hint search (increment 2.5). The judge's EVAL_MOVETIME_MS (350ms)
 // exists to keep the pending-move cadence snappy; hints reusing that shallow
@@ -21,6 +22,12 @@ export interface HintFacts extends MoveFacts {
   bestFromSquare: string;
   /** true when the first search failed verification and the deep retry ran */
   escalated: boolean;
+  // Increment 3a Wave 1: "why the recommended move is good" — the mirror of
+  // classify.ts's Verdict.threat, derived from the same already-chosen best
+  // move. Zero extra engine calls (pure chess.js replay); undefined only
+  // when the replay itself fails (same "no facts, no claim" contract as the
+  // rest of this file).
+  recommendation?: RecommendationFacts;
 }
 
 /** Score from the perspective of the side to move in the searched position. */
@@ -68,5 +75,6 @@ export async function computeHint(fen: string, evaluator: Evaluator): Promise<Hi
 
   const facts = deriveFacts(fen, chosen.bestMove);
   if (!facts) return null;
-  return { ...facts, bestFromSquare: facts.bestUci.slice(0, 2), escalated };
+  const recommendation = deriveRecommendationFacts(fen, chosen.bestMove);
+  return { ...facts, bestFromSquare: facts.bestUci.slice(0, 2), escalated, recommendation };
 }

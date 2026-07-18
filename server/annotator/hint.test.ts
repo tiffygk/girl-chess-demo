@@ -60,6 +60,20 @@ describe("computeHint — deep engine-math hints", () => {
     expect(beforeCp - afterCpForMover).toBeLessThanOrEqual(HINT_MAX_LOSS_CP * 3);
   }, 40000);
 
+  it("carries recommendation facts with a legal san for the position", async () => {
+    const fen = "k7/8/8/3q4/8/8/3R4/K7 w - - 0 1";
+    const facts = await computeHint(fen, sf);
+    expect(facts).toBeTruthy();
+    expect(facts!.recommendation).toBeTruthy();
+    expect(facts!.recommendation!.san).toBe(facts!.bestSan);
+    expect(facts!.recommendation!.fromSquare).toBe(facts!.bestUci.slice(0, 2));
+    expect(facts!.recommendation!.toSquare).toBe(facts!.bestUci.slice(2, 4));
+    // Rxd5 captures the hanging queen: the recommendation should say so.
+    expect(facts!.recommendation!.accomplishment).toBe("captures");
+    expect(facts!.recommendation!.capturesSquare).toBe("d5");
+    expect(facts!.recommendation!.capturedPieceKind).toBe("q");
+  }, 30000);
+
   it("returns null rather than facts for a checkmated position", async () => {
     // Fool's mate final position, white to move is actually mated — no hint.
     const fen = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
