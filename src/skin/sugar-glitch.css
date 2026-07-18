@@ -705,8 +705,12 @@
 /* "thinking..." wrong detail: single-frame cyan/magenta split every ~7s,
    same steps() cadence family as corrupt/preGlitch. Combined with
    chipArrive (not replaced) so the arrival glow still plays on the frame
-   the chip flips to "thinking...". */
-.gc-app .bar-chip.tc-flicker { animation: chipArrive .6s ease-out, chipSplitFlicker 7s infinite steps(1); }
+   the chip flips to "thinking...". chipArrive is listed LAST so its
+   transform (the .6s arrival scale-pop) wins while it runs; after it ends,
+   chipSplitFlicker's transform takes over for the flicker jumps (visual
+   gate, 2026-07-18: with the old order the pop was silently clobbered on
+   this one chip). */
+.gc-app .bar-chip.tc-flicker { animation: chipSplitFlicker 7s infinite steps(1), chipArrive .6s ease-out; }
 @keyframes chipSplitFlicker {
   0%, 95% { text-shadow: none; transform: none; }
   96% { text-shadow: -2px 0 0 #23E5FF, 2px 0 0 #FF3DA6; transform: translateX(1px) skewX(-4deg); }
