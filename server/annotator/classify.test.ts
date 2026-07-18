@@ -36,6 +36,20 @@ describe("classify.ts LLM-free gate", () => {
   // rather than the whole file, and checks for any "coach" reference at all
   // (not just import lines) since a body could reach it via a re-export
   // without a literal `from ".../coach"` import line.
+  // Increment 3a review fast-follow (F1): a plain /coach/i scan on the body
+  // is only as strong as the assumption that every reference spells the
+  // word "coach" somewhere — manager.ts's own top-level import proves that
+  // false: `import { assembleFactList, narrate as narrateFacts } from
+  // "../coach"` binds the local identifiers `assembleFactList` and
+  // `narrateFacts`, neither of which contains the substring "coach". A
+  // judgeMove body that called `narrateFacts(...)` or `assembleFactList(...)`
+  // directly would slip straight past the /coach/i check below without
+  // ever tripping it — verified by injection during this fix. So the gate
+  // now also parses that import line's local identifiers (post-`as` alias
+  // when present) and asserts none of them appear anywhere in judgeMove's
+  // body, on top of the original /coach/i scan. This stays correct even if
+  // server/coach grows new exports later, since the identifier list is
+  // read from the live import line rather than hardcoded.
   it("server/game/manager.ts's judgeMove method never references server/coach", () => {
     const src = fs.readFileSync(path.join(__dirname, "../game/manager.ts"), "utf-8");
     const start = src.indexOf("async judgeMove(");
@@ -45,6 +59,25 @@ describe("classify.ts LLM-free gate", () => {
     const body = nextMethodMatch ? rest.slice(0, nextMethodMatch.index) : rest;
     expect(body.length).toBeGreaterThan(0);
     expect(body).not.toMatch(/coach/i);
+
+    const importLine = src.split("\n").find((line) => /from\s+["']\.\.?\/coach["']/.test(line));
+    expect(importLine).toBeTruthy();
+    const specifierMatch = /import\s*\{([^}]+)\}/.exec(importLine!);
+    expect(specifierMatch).toBeTruthy();
+    const localIdentifiers = specifierMatch![1]
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => {
+        const asMatch = /^\S+\s+as\s+(\S+)$/.exec(s);
+        return asMatch ? asMatch[1] : s;
+      });
+    expect(localIdentifiers.length).toBeGreaterThan(0);
+    expect(localIdentifiers).toEqual(expect.arrayContaining(["assembleFactList", "narrateFacts"]));
+
+    for (const id of localIdentifiers) {
+      expect(body).not.toMatch(new RegExp(`\\b${id}\\b`));
+    }
   });
 
   // Fix wave (code review, verbatim intent): adjudicate.ts carries the same

@@ -248,4 +248,77 @@ describe("buildTemplateNarration", () => {
     };
     expect(buildTemplateNarration(facts).length).toBeGreaterThan(0);
   });
+
+  // F2 (increment 3a review fast-follow): personas/coach.md's templates and
+  // index.ts's vars assembly used to interpolate raw chess.js piece-kind
+  // letters ("the r on d8", "the p on e4") straight into prose. A kid
+  // learning chess shouldn't have to decode "r" as rook — every piece-kind
+  // placeholder must render the word.
+  it("renders piece-kind placeholders as words, never bare single letters", () => {
+    const threatText = buildTemplateNarration({
+      herMove: { pieceKind: "n", from: "f6", to: "g4" },
+      tier: "warning",
+      deltaCp: 300,
+      threat: baseThreat("capture-other", { capturesSquare: "d8", capturedPieceKind: "r" }),
+      allowedSquares: [],
+      allowedSans: [],
+    });
+    expect(threatText).toContain("rook");
+    expect(threatText).not.toMatch(/\bthe r\b/i);
+
+    const capturesText = buildTemplateNarration({
+      herMove: { pieceKind: "n", from: "f6", to: "g4" },
+      tier: "nudge",
+      deltaCp: 80,
+      recommendation: baseRecommendation("captures", { capturesSquare: "e4", capturedPieceKind: "p" }),
+      allowedSquares: [],
+      allowedSans: [],
+    });
+    expect(capturesText).toContain("pawn");
+    expect(capturesText).not.toMatch(/\bthe p\b/i);
+
+    const attacksText = buildTemplateNarration({
+      herMove: { pieceKind: "n", from: "f6", to: "g4" },
+      tier: "nudge",
+      deltaCp: 80,
+      recommendation: baseRecommendation("attacks", { attackedSquare: "b7", attackedPieceKind: "q" }),
+      allowedSquares: [],
+      allowedSans: [],
+    });
+    expect(attacksText).toContain("queen");
+    expect(attacksText).not.toMatch(/\bthe q\b/i);
+  });
+});
+
+// F4 (increment 3a review fast-follow): assembleFactList folded best.san
+// into allowedSans but not recommendation.san, even though
+// recommendationVars renders the template placeholder {bestSan} FROM
+// recommendation.san (not best.san — the two facts are assembled
+// separately but share that variable name). A game state can carry a
+// recommendation with no best move at all (e.g. "attacks"/"develops"
+// accomplishments never need a capture-derived best), so the omission was
+// a real gap: the template's own output would fail its own validation.
+describe("assembleFactList — recommendation.san allow-listing (F4)", () => {
+  it("folds recommendation.san into allowedSans even when best is absent", () => {
+    const facts = assembleFactList({
+      herMove: { pieceKind: "n", from: "f6", to: "g4" },
+      tier: "nudge",
+      deltaCp: 80,
+      recommendation: {
+        accomplishment: "attacks",
+        pieceKind: "b",
+        fromSquare: "c1",
+        toSquare: "g5",
+        san: "Bg5",
+        attackedSquare: "d8",
+        attackedPieceKind: "q",
+      },
+    });
+    expect(facts.best).toBeUndefined();
+    expect(facts.allowedSans).toContain("Bg5");
+
+    const text = buildTemplateNarration(facts);
+    expect(text).toContain("Bg5");
+    expect(validateNarration(text, facts)).toEqual({ ok: true });
+  });
 });

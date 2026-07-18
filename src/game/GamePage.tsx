@@ -753,6 +753,19 @@ export function GamePage() {
   // disabled states, confirm/retract work mid-flight (the token guard drops
   // the stale text when it lands).
   useEffect(() => {
+    // Review fast-follow (F3, increment 3a): this effect used to fire at L3+
+    // regardless of the coachHints toggle, while the corner's own render
+    // below is gated on it — a real claude-CLI call plus an advice_traces
+    // write for output that then never rendered. Gate on coachHints here
+    // too, and clear any stale text/loading state so a corner that was
+    // showing something before the player flipped hints off (toggling is
+    // blocked mid-pending by setCoachHintsPref, but a stale value from an
+    // earlier pending move could still be sitting in state) doesn't linger.
+    if (!coachHints) {
+      setCoachText(null);
+      setCoachLoading(false);
+      return;
+    }
     if (!pending || !gameId || !verdict || !hintFacts) return;
     if (verdict.tier !== "nudge" && verdict.tier !== "warning") return;
     if (hintLevel < 3) return;
@@ -787,7 +800,7 @@ export function GamePage() {
         if (pendingTokenRef.current !== token) return;
         setCoachLoading(false);
       });
-  }, [gameId, pending, verdict, hintLevel, hintFacts]);
+  }, [gameId, pending, verdict, hintLevel, hintFacts, coachHints]);
 
   // A5: surfaces a short "you tried something, here's why it didn't work"
   // message in the status line for a few seconds (currently only "can't
