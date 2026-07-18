@@ -136,6 +136,10 @@ const AMBIENT_CORRUPT = new Map<number, string>([
   [58, "3.9s"],
 ]);
 const PALETTE = ["#23E5FF", "#FF3DA6", "#FF8FBF", "#8ED9F9", "#CBBFFF", "#FFD84D"];
+// V6: cupcake-sprinkle capsule colors (spec §4.11) — kept separate from
+// PALETTE since `burst()`'s capture-pixel shatter still uses the original
+// six-color set above.
+const SPRINKLE_PALETTE = ["#FF3DA6", "#23E5FF", "#FFD84D", "#A9EFD3", "#FF8FBF", "#C9B8FF"];
 // board-frame coordinates: files left to right, ranks top to bottom — white
 // plays from the bottom (idxToSquare puts rank 8 at idx 0, rank 1 at idx 63,
 // file a at each row's left edge), so this ordering matches the grid as-drawn.
@@ -199,7 +203,7 @@ const CINEMATIC_CAPTURE_TIMINGS: CaptureTimings = { preGlitchMs: 165, gapMs: 70,
 // used only when the replay cinematic completes (see GamePage).
 const CONFETTI_COUNT = 90;
 const CONFETTI_BIG_COUNT = 180;
-const CONFETTI_LIFE_MS = 2200;
+const CONFETTI_LIFE_MS = 3000;
 const CONFETTI_BIG_LIFE_MS = 3400;
 const STORM_MS = 2000;
 const STORM_BIG_MS = 3200;
@@ -529,29 +533,36 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     overlay.className = "gc-confetti-overlay" + (big ? " big" : "");
     document.body.appendChild(overlay);
     const w = window.innerWidth;
-    const h = window.innerHeight;
     const count = big ? CONFETTI_BIG_COUNT : CONFETTI_COUNT;
     for (let i = 0; i < count; i++) {
+      // ~10% pixel hearts, the rest matte capsules (V6 spec §4.11).
+      const isHeart = Math.random() < 0.1;
       const px = document.createElement("div");
-      px.className = "gc-confetti-piece";
-      const s = 6 + Math.random() * 10;
-      px.style.width = px.style.height = s + "px";
-      px.style.background = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+      if (isHeart) {
+        px.className = "gc-confetti-piece sprinkle-heart";
+        px.innerHTML =
+          '<svg width="14" height="12" viewBox="0 0 7 6"><path fill="#FF3DA6" d="M1 0h1v1h1v1h1V1h1V0h1v1h1v2H6v1H5v1H4v1H3V5H2V4H1V3H0V1h1z"/></svg>';
+      } else {
+        px.className = "gc-confetti-piece";
+        px.style.background = SPRINKLE_PALETTE[Math.floor(Math.random() * SPRINKLE_PALETTE.length)];
+      }
       px.style.left = Math.random() * w + "px";
       px.style.top = "-20px";
       overlay.appendChild(px);
-      const drift = (Math.random() - 0.5) * 160;
-      const duration = (big ? 1900 : 1500) + Math.random() * (big ? 900 : 700);
+      const rot0 = Math.random() * 360;
+      const dx = (Math.random() - 0.5) * 80; // x-drift, ±40px
+      const rotDelta = (Math.random() - 0.5) * 1440; // ±720deg added to initial rotation
+      const duration = 1400 + Math.random() * 1400; // 1.4-2.8s
       px
         .animate(
           [
-            { transform: "translate(0,0) rotate(0deg)", opacity: 1 },
+            { transform: `translate(0, 0) rotate(${rot0}deg)`, opacity: 1 },
             {
-              transform: `translate(${drift}px, ${h + 40}px) rotate(${(Math.random() - 0.5) * 720}deg)`,
+              transform: `translate(${dx}px, 110vh) rotate(${rot0 + rotDelta}deg)`,
               opacity: 1,
             },
           ],
-          { duration, delay: Math.random() * 200, easing: "cubic-bezier(.2,.6,.35,1)" }
+          { duration, delay: Math.random() * 500, easing: "ease-in" }
         )
         .addEventListener("finish", () => px.remove());
     }

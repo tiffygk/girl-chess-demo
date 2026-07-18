@@ -923,6 +923,57 @@
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 20px;
 }
 
+/* win title: the wordmark's layered construction at celebration scale
+   (V6, spec §4.10). Win only — loss and draw stay the plain 20px .result
+   above. Copied verbatim from component-library.html 992-1038. */
+.gc-app .win-title {
+  position: relative; display: inline-block;
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 28px;
+  line-height: 1.25;
+}
+.gc-app .wt-layer { position: absolute; inset: 0; pointer-events: none; }
+.gc-app .wt-cyan { color: #23E5FF; opacity: .8; transform: translate(-2px, 1px); animation: winGl1 3.5s steps(1) infinite; }
+.gc-app .wt-mag  { color: #FF3DA6; opacity: .8; transform: translate(2px, -1px); animation: winGl2 3.5s steps(1) infinite; }
+.gc-app .wt-shadow { color: rgba(90,70,180,.25); transform: translateY(2px); }
+.gc-app .wt-base {
+  position: relative; z-index: 2;
+  background: linear-gradient(180deg, #FF8FBF, #CBBFFF);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
+/* celebratory cadence — denser than the wordmark's 9s idle: bursts at ~20/22, ~60/63, ~90% */
+@keyframes winGl1 {
+  0%, 19% { transform: translate(-2px, 1px); clip-path: none; }
+  20% { transform: translate(-5px, 2px); clip-path: inset(10% 0 55% 0); }
+  22% { transform: translate(3px, -2px); clip-path: inset(55% 0 15% 0); }
+  23%, 59% { transform: translate(-2px, 1px); clip-path: none; }
+  60% { transform: translate(-4px, 2px); clip-path: inset(30% 0 40% 0); }
+  63% { transform: translate(2px, -1px); clip-path: inset(0 0 65% 0); }
+  64%, 89% { transform: translate(-2px, 1px); clip-path: none; }
+  90% { transform: translate(-5px, 1px); clip-path: inset(45% 0 25% 0); }
+  91%, 100% { transform: translate(-2px, 1px); clip-path: none; }
+}
+@keyframes winGl2 {
+  0%, 19% { transform: translate(2px, -1px); clip-path: none; }
+  21% { transform: translate(5px, -2px); clip-path: inset(40% 0 35% 0); }
+  22% { transform: translate(-3px, 2px); clip-path: inset(0 0 70% 0); }
+  23%, 59% { transform: translate(2px, -1px); clip-path: none; }
+  61% { transform: translate(4px, -2px); clip-path: inset(60% 0 10% 0); }
+  63% { transform: translate(-2px, 1px); clip-path: inset(20% 0 50% 0); }
+  64%, 89% { transform: translate(2px, -1px); clip-path: none; }
+  90% { transform: translate(5px, -1px); clip-path: inset(15% 0 55% 0); }
+  91%, 100% { transform: translate(2px, -1px); clip-path: none; }
+}
+/* "melts." wears the wm-s broken-render — bottom 35% sheared 2px, static.
+   mallow rendered mid-melt. */
+.gc-app .wt-melt { position: relative; display: inline-block; }
+.gc-app .wt-melt-top, .gc-app .wt-melt-bottom {
+  background: linear-gradient(180deg, #FF8FBF, #CBBFFF);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.gc-app .wt-melt-top { position: relative; clip-path: inset(0 -3px 35% -3px); }
+.gc-app .wt-melt-bottom { position: absolute; inset: 0; clip-path: inset(65% -3px 0 -3px); transform: translateX(2px); }
+
 /* GameEndPanel's labeled stub sections — the seams increments 3/4 extend.
    Visibly "coming soon": dashed border, muted ink, no shadow (unlike real
    buttons/cards) so they read as placeholders rather than live content. */
@@ -966,9 +1017,21 @@
   z-index: 9999;
   overflow: hidden;
 }
+/* Cupcake sprinkles (V6): matte capsules, ~10% pixel hearts (spec §4.11).
+   Hearts are an inline SVG wrapped in this same class plus .sprinkle-heart,
+   which zeroes out the capsule sizing/radius/background so the SVG's own
+   markup provides the shape. */
 .gc-confetti-piece {
   position: absolute;
-  border-radius: 2px;
+  width: 11px;
+  height: 4px;
+  border-radius: 999px;
+}
+.gc-confetti-piece.sprinkle-heart {
+  width: 14px;
+  height: 12px;
+  border-radius: 0;
+  background: none;
 }
 
 .gc-storm-overlay {
