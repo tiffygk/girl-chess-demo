@@ -7,11 +7,12 @@ import {
   hintRevealSquares,
   threatRevealSquares,
   hintIsLegal,
+  recommendationClause,
   type HintFacts,
   type HintCopyCtx,
   type HintLevel,
 } from "./hintFlow";
-import type { ThreatFacts } from "./api";
+import type { ThreatFacts, RecommendationFacts } from "./api";
 
 describe("nextHintLevel", () => {
   it("advances 0 -> 1 -> 2 -> 3 -> 4 -> 5", () => {
@@ -278,6 +279,89 @@ const positionalThreat: ThreatFacts = {
 
 const baseCtx: HintCopyCtx = { herPieceKind: "n", herToSquare: "e4" };
 
+// Increment 3a Wave 3: fixtures, one per accomplishment, matching
+// server/annotator/motifs.ts's RecommendationFacts shape exactly.
+const capturesRec: RecommendationFacts = {
+  accomplishment: "captures",
+  pieceKind: "n",
+  fromSquare: "c3",
+  toSquare: "b5",
+  san: "Nxb5",
+  capturesSquare: "b5",
+  capturedPieceKind: "p",
+};
+
+const givesMateRec: RecommendationFacts = {
+  accomplishment: "gives-mate",
+  pieceKind: "q",
+  fromSquare: "d8",
+  toSquare: "h4",
+  san: "Qh4#",
+};
+
+const givesCheckRec: RecommendationFacts = {
+  accomplishment: "gives-check",
+  pieceKind: "q",
+  fromSquare: "h2",
+  toSquare: "h4",
+  san: "Qh4+",
+};
+
+const forksRec: RecommendationFacts = {
+  accomplishment: "forks",
+  pieceKind: "n",
+  fromSquare: "d4",
+  toSquare: "c6",
+  san: "Nc6",
+  forkTargets: [
+    { square: "d8", pieceKind: "q" },
+    { square: "a5", pieceKind: "b" },
+  ],
+};
+
+const attacksRec: RecommendationFacts = {
+  accomplishment: "attacks",
+  pieceKind: "b",
+  fromSquare: "e4",
+  toSquare: "c3",
+  san: "Bc3",
+  attackedSquare: "a2",
+  attackedPieceKind: "r",
+};
+
+const developsRec: RecommendationFacts = {
+  accomplishment: "develops",
+  pieceKind: "n",
+  fromSquare: "g1",
+  toSquare: "f3",
+  san: "Nf3",
+};
+
+describe("recommendationClause", () => {
+  it("captures", () => {
+    expect(recommendationClause(capturesRec)).toBe("it wins the pawn on b5.");
+  });
+  it("gives-mate", () => {
+    expect(recommendationClause(givesMateRec)).toBe("it forces mate.");
+  });
+  it("gives-check", () => {
+    expect(recommendationClause(givesCheckRec)).toBe("it puts her in check.");
+  });
+  it("forks", () => {
+    expect(recommendationClause(forksRec)).toBe("it forks her queen and bishop.");
+  });
+  it("attacks", () => {
+    expect(recommendationClause(attacksRec)).toBe("it goes after her rook on a2.");
+  });
+  it("develops", () => {
+    expect(recommendationClause(developsRec)).toBe("it keeps building. good shape, no drama.");
+  });
+  it("undefined/null rec returns null", () => {
+    expect(recommendationClause(undefined)).toBeNull();
+    expect(recommendationClause(null)).toBeNull();
+  });
+});
+
 describe("hintCopy level 1: vague nudge, her piece", () => {
   it("exact string", () => {
     expect(hintCopy(1, baseCtx)).toBe("hold on. look at your knight.");
@@ -375,6 +459,15 @@ describe("hintCopy levels 4-5: redirect to the recommended move", () => {
   });
   it("level 5 with bestFacts but no fen: san alone", () => {
     expect(hintCopy(5, { ...baseCtx, bestFacts })).toBe("best here: Bg5");
+  });
+  it("level 5 with a recommendation: clause appended after the translation", () => {
+    const bestFactsWithRec: HintFacts = { ...bestFacts, recommendation: capturesRec };
+    expect(hintCopy(5, { ...baseCtx, bestFacts: bestFactsWithRec, fen })).toBe(
+      "best here: Bg5 (bishop to g5) it wins the pawn on b5."
+    );
+  });
+  it("level 5 without a recommendation: no trailing clause", () => {
+    expect(hintCopy(5, { ...baseCtx, bestFacts, fen })).toBe("best here: Bg5 (bishop to g5)");
   });
 });
 

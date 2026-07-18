@@ -94,6 +94,31 @@ export interface ThreatFacts {
   forkTargets?: { square: string; pieceKind: string }[]; // only when motif === "fork", length >= 2
 }
 
+// Increment 3a Wave 3: mirrors server/annotator/motifs.ts's
+// RecommendationFacts (same hand-mirroring convention + HONESTY GATE as
+// ThreatFacts above) — "what the recommended move accomplishes," derived
+// from hint.ts's already-chosen best move.
+export type RecommendationAccomplishment =
+  | "captures"
+  | "gives-check"
+  | "gives-mate"
+  | "forks"
+  | "attacks"
+  | "develops";
+
+export interface RecommendationFacts {
+  accomplishment: RecommendationAccomplishment;
+  pieceKind: string;
+  fromSquare: string;
+  toSquare: string;
+  san: string;
+  capturesSquare?: string; // real square (en passant resolved), only on "captures"
+  capturedPieceKind?: string; // only on "captures"
+  forkTargets?: { square: string; pieceKind: string }[]; // only on "forks", length >= 2
+  attackedSquare?: string; // only on "attacks"
+  attackedPieceKind?: string; // only on "attacks"
+}
+
 // Mirrors server/annotator/classify.ts's Verdict. C1's judge is a stub —
 // always "silent" — but the shape carries everything C2 needs.
 export interface Verdict {
@@ -199,11 +224,42 @@ export interface HintFactsResponse {
     bestFromSquare: string;
     bestToSquare: string;
     escalated: boolean;
+    // Increment 3a Wave 3: "why the recommended move is good" — mirrors
+    // server/annotator/hint.ts's HintFacts.recommendation.
+    recommendation?: RecommendationFacts;
   };
 }
 
 export function fetchHintFacts(gameId: number): Promise<HintFactsResponse> {
   return postJson(`/game/${gameId}/hint-facts`, {});
+}
+
+// Increment 3a Wave 3: the coach's corner async narration call. Posts the
+// structured facts the client already holds (from its own judge + hint-facts
+// calls); the server never errors out (template fallback on any model
+// failure — see server/coach/index.ts), so `ok: false` only means the game
+// itself was unknown/finished. Callers token-guard the response the same
+// way the hint fetch does.
+export interface NarrateResponse {
+  ok: boolean;
+  text?: string;
+  source?: string;
+}
+
+export function narrate(
+  gameId: number,
+  body: {
+    herPiece: string;
+    from: string;
+    to: string;
+    tier: string;
+    deltaCp: number | null;
+    threat?: ThreatFacts;
+    best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
+    recommendation?: RecommendationFacts;
+  }
+): Promise<NarrateResponse> {
+  return postJson(`/game/${gameId}/narrate`, body);
 }
 
 // Wave C, task C-B: fire-and-forget hint-escalation observability. Never
