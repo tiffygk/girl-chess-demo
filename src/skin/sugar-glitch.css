@@ -249,18 +249,39 @@
 .gc-app .pregame-panel {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  padding: 20px 0;
 }
+/* Wave C, item 9: sugar-glitch elo picker (owner: "should be a stylized
+   sugar glitch UI element"). Kicker mirrors the coach-band .chp-kicker
+   treatment (§ coach-hint-panel above). */
 .gc-app .pregame-label {
-  font-size: 13px;
-  opacity: 0.85;
-  color: #4A3B7E;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #23A8C7;
 }
 .gc-app .pregame-select {
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
-  color: #4A3B7E; background: #FFFFFF;
-  border: none; border-radius: 6px; padding: 4px 8px; cursor: pointer;
-  box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.2);
+  color: #7A6BB5; background-color: #fff;
+  border: none; border-radius: 999px; padding: 8px 32px 8px 16px; cursor: pointer;
+  box-shadow: 0 3px 0 #E3D9F5, 0 6px 10px rgba(90,70,180,.12);
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237A6BB5' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+/* the "start game" CTA — the single primary action on the pregame screen,
+   scoped to this panel so it doesn't touch the shared button.small look
+   used elsewhere (resign/offer-draw etc). */
+.gc-app .pregame-panel button.small {
+  background: #FF3DA6; color: #fff;
+  box-shadow: 0 5px 0 #C22B7E, 0 10px 18px rgba(255,61,166,.25);
+  font-size: 15px; padding: 12px 24px;
+}
+.gc-app .pregame-panel button.small:hover {
+  box-shadow: 0 7px 0 #C22B7E, 0 12px 22px rgba(255,61,166,.3);
+}
+.gc-app .pregame-panel button.small:active {
+  box-shadow: 0 2px 0 #C22B7E, 0 6px 10px rgba(255,61,166,.22);
 }
 
 /* Wave B: fixed-height reserve directly under the board-stack card so the
@@ -742,12 +763,22 @@
   background: rgba(120,95,200,.06);
   padding: 4px;
 }
+/* Wave C, item 8: curly + rainbow + shimmer (Fable-designed, owner: "curly
+   round font ... sparkly ... rainbow"). Gradient text via background-clip.
+   `--ci` (0-7, set per label in Board.tsx) staggers the shimmer so labels
+   don't scroll in lockstep. */
 .gc-app .coords-sharp span {
-  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-style: italic;
-  font-size: 13px; letter-spacing: .06em;
-  color: #6952C4; text-shadow: 1px 1px 0 #fff;
+  font-family: 'Fredoka', sans-serif; font-weight: 700; font-style: normal;
+  font-size: 13px; letter-spacing: .02em;
+  background: linear-gradient(120deg, #23E5FF 0%, #FF3DA6 45%, #FFD84D 90%, #23E5FF 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: coordShimmer 6s linear infinite;
+  animation-delay: calc(var(--ci, 0) * -0.4s);
+  text-shadow: 0 0 6px rgba(255, 61, 166, .18);
   pointer-events: none;
 }
+@keyframes coordShimmer { to { background-position: 300% 0; } }
 .gc-app .coords-files { position: absolute; left: 30px; right: 14px; bottom: 5px; display: flex; }
 .gc-app .coords-files span { flex: 1; text-align: center; }
 .gc-app .coords-ranks { position: absolute; top: 14px; bottom: 30px; left: 0; width: 30px; display: flex; flex-direction: column; }

@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 import { Chess, type Square } from "chess.js";
 import { Piece, type PieceColor, type PieceKind } from "./pieces";
@@ -891,7 +892,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
         </div>
         <div className="coords-sharp" aria-hidden="true">
           <div className="coords-files">
-            {FILES.map((f) => (
+            {FILES.map((f, i) => (
               <span
                 key={f}
                 className={
@@ -901,13 +902,14 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                       ? "coord-lit-origin"
                       : ""
                 }
+                style={{ "--ci": i } as CSSProperties}
               >
                 {f}
               </span>
             ))}
           </div>
           <div className="coords-ranks">
-            {RANKS.map((r) => (
+            {RANKS.map((r, i) => (
               <span
                 key={r}
                 className={
@@ -917,6 +919,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                       ? "coord-lit-origin"
                       : ""
                 }
+                style={{ "--ci": i } as CSSProperties}
               >
                 {r}
               </span>
