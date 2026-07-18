@@ -906,17 +906,93 @@ export function GamePage() {
   const mallowChip = mallowActive ? (mallowThinking ? "thinking..." : "mallow's move") : null;
   const youChip = youActive ? (pending ? "deciding..." : "your move") : null;
 
+  // V5, task 4: winning-resign edge case — read-only use of the existing
+  // material lead. material.leader === "you" means the value is the
+  // player's own lead (see materialLead={...leader === "you" ? ...} on the
+  // player's own bar below), so >= 3 here means the player is ahead by 3+.
+  const winningResign =
+    endGameOutcome === "resign" && material.leader === "you" && material.points >= 3;
+
   // Wave C, task C-A: the button's copy, arm state included — never a
   // silent relabel, the armed text always states the outcome a second
-  // click would execute.
-  const endGameLabel =
-    endGameOutcome === "win"
+  // click would execute. V5, task 4 adds the winning-resign override.
+  const endGameLabel = winningResign
+    ? "you're ahead. really hand it to mallow?"
+    : endGameOutcome === "win"
       ? "call it: you're winning. take the win?"
       : endGameOutcome === "draw"
         ? "call it a draw?"
         : endGameOutcome === "resign"
           ? "call it: mallow has this. resign?"
           : "end the game?";
+
+  // V5, task 2: flag glyph, keyed by the same state expression as the
+  // button's skin class — a small local lookup, the button JSX itself is
+  // untouched beyond rendering this value.
+  const endGameFlag =
+    endGameOutcome === "resign" ? (
+      <svg
+        className="egc-flag"
+        width="14"
+        height="14"
+        viewBox="0 0 14 14"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="2.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M3.2 13V1.6" />
+        <path d="M3.2 2.2c2 .4 3.4 2.6 3 5.4-.1.9-1.3 1.2-1.9.5-.5-.6-.8-1.5-1.1-2.2" />
+      </svg>
+    ) : endGameOutcome === "draw" ? (
+      <svg
+        className="egc-flag"
+        width="14"
+        height="14"
+        viewBox="0 0 14 14"
+        fill="none"
+        stroke="#4A3B7E"
+        strokeWidth="2.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M3.4 13 10.6 2" />
+        <path d="M10.6 13 3.4 2" />
+        <path d="M3.4 2c1.6-.8 2.8.6 4 .4" />
+        <path d="M10.6 2c-1.6-.8-2.8.6-4 .4" />
+      </svg>
+    ) : endGameOutcome === "win" ? (
+      <svg
+        className="egc-flag"
+        width="14"
+        height="14"
+        viewBox="0 0 14 14"
+        fill="none"
+        stroke="#2E9C74"
+        strokeWidth="2.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M3.2 13V1.6" />
+        <path d="M3.2 1.8c2.6-.9 4.4 1.2 7.2.4v4.4c-2.8.8-4.6-1.3-7.2-.4" />
+      </svg>
+    ) : (
+      <svg
+        className="egc-flag"
+        width="14"
+        height="14"
+        viewBox="0 0 14 14"
+        fill="none"
+        stroke="#7A6BB5"
+        strokeWidth="2.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M3.2 13V1.6" />
+        <path d="M3.2 2.2c2.6-1 4.2 1.6 6.6.9 1 .1 1.4 1.5.6 2.4-1.6 1.8-4.6.2-7.2 1.1" />
+      </svg>
+    );
 
   // Wave B (increment 2.5): level-3 board highlight for the deep verified
   // hint's best move, derived from the fetched hintFacts (not the judge's
@@ -1187,10 +1263,21 @@ export function GamePage() {
                     (never silently relabels) the outcome it's about to
                     execute. */}
                 <button
-                  className={`small${endGameOutcome ? " confirming" : ""}`}
+                  className={
+                    "small " +
+                    (endGameOutcome === "resign"
+                      ? "egc-resign"
+                      : endGameOutcome === "draw"
+                        ? "egc-draw"
+                        : endGameOutcome === "win"
+                          ? "egc-win"
+                          : "egc-idle") +
+                    (winningResign ? " egc-shake" : "")
+                  }
                   disabled={!gameId}
                   onClick={handleEndGameClick}
                 >
+                  {endGameFlag}
                   {endGameLabel}
                 </button>
               </div>

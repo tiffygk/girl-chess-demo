@@ -177,6 +177,38 @@
 .gc-app button.small.confirming { background: #FF3DA6; color: #fff; box-shadow: 0 3px 0 #C22B7E, 0 6px 10px rgba(255,61,166,.3); }
 .gc-app button.small.confirming:hover { box-shadow: 0 5px 0 #C22B7E, 0 8px 14px rgba(255,61,166,.35); }
 
+/* V5, §4.5 end-game control: armed-state skins — three outcomes plus idle.
+   .confirming above is deprecated for THIS button (finding 14); it stays in
+   the file for the other "you sure?" button (confirm-pending is separate). */
+.gc-app button.small.egc-idle {
+  background: #fff; color: #7A6BB5;
+  box-shadow: 0 3px 0 #E3D9F5, 0 6px 10px rgba(90,70,180,.12);
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.gc-app button.small.egc-idle:hover { box-shadow: 0 5px 0 #E3D9F5, 0 8px 14px rgba(90,70,180,.16); }
+.gc-app button.small.egc-resign {
+  background: #FF3DA6; color: #fff;
+  box-shadow: 0 3px 0 #C22B7E, 0 6px 10px rgba(255,61,166,.3);
+  transform: scale(1.03);
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.gc-app button.small.egc-draw {
+  background: #C9B8FF; color: #4A3B7E;
+  box-shadow: 0 3px 0 #A99AE0, 0 6px 10px rgba(120,95,200,.3);
+  transform: scale(1.03);
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.gc-app button.small.egc-win {
+  background: #A9EFD3; color: #2E9C74;
+  box-shadow: 0 3px 0 #7BD4B0, 0 6px 10px rgba(76,175,140,.25);
+  transform: scale(1.03);
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.egc-flag { flex: 0 0 auto; display: block; }
+/* winning-resign edge case: one shake cycle on arming into this state; the
+   class is present only while that armed state holds, so it does not loop */
+.gc-app button.small.egc-shake { animation: shake .26s; }
+
 .gc-app .game-controls { margin: 0; } /* action-slot (see below) owns the spacing now */
 
 /* Increment 2.5: pre-game opponent elo picker — sits where the game-controls
