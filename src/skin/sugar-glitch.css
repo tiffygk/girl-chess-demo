@@ -21,7 +21,7 @@
      always one of the three min() candidates, total page height can never
      exceed 100vh - 18 regardless of which term wins — the vmin/cap terms
      only ever pull the board SMALLER than that ceiling, never larger. */
-  --board-size: min(76vmin, calc(100vh - 410px), 1100px);
+  --board-size: min(76vmin, calc(100vh - 426px), 1100px);
   background: linear-gradient(168deg, #F2F7FF 0%, #EFE6FF 55%, #FFE9F6 100%);
   min-height: 100vh;
   color: #4A3B7E;
@@ -218,6 +218,60 @@
 }
 .gc-app .action-slot-judge { min-height: 20px; }
 
+/* V4: reserved coach-hint band, sibling to action-slot in the column
+   (between action-slot and .status-line). Fixed-footprint reservation —
+   the band always occupies 60px so the board never reflows whether or not
+   coachHints is on; only its contents render conditionally. The stub
+   recipe mirrors .game-end-stub (dashed lavender border, muted ink, no
+   shadow — a placeholder, not a live control). The populated panel
+   (.coach-hint-panel and friends, below) is dormant CSS only until
+   increment 3 renders it. */
+.gc-app .coach-hint-band { width: min(92vw, var(--board-size)); min-height: 60px; display: flex; align-items: stretch; }
+.gc-app .coach-hint-slot {
+  flex: 1 1 auto; display: flex; align-items: center; gap: 10px;
+  border: 1.5px dashed #C9BFEF; border-radius: 14px;
+  background: rgba(255,255,255,.4); color: #9C8FC7;
+  font-size: 12px; padding: 8px 14px; box-shadow: none;
+}
+.gc-app .coach-seat {
+  width: 24px; height: 24px; flex: 0 0 auto;
+  border: 1.5px dashed #C9BFEF; border-radius: 50%;
+  background: rgba(255,255,255,.4);
+}
+
+/* coach-hint panel: rendered starting increment 3; the band above reserves
+   its space now */
+.gc-app .coach-hint-panel {
+  width: 100%; min-height: 52px;
+  background: #fff; border-radius: 14px;
+  box-shadow: 0 2px 0 rgba(201,191,239,.45), 0 6px 10px rgba(90,70,180,.15);
+  padding: 8px 14px;
+  display: flex; align-items: center; gap: 12px;
+}
+.gc-app .coach-seat-live {
+  width: 28px; height: 28px; flex: 0 0 auto;
+  border-radius: 50%; background: #FFE9F4; border: 2px solid #FF3DA6;
+  display: flex; align-items: center; justify-content: center;
+}
+.gc-app .chp-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.gc-app .chp-kicker { font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px; letter-spacing: .14em; color: #23A8C7; }
+.gc-app .chp-prose { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13px; color: #4A3B7E; text-wrap: balance; }
+.gc-app .chp-chips { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.gc-app .chp-chev { flex: 0 0 auto; display: block; }
+.gc-app .sq-chip {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 12px;
+  height: 22px; padding: 0 8px; display: inline-flex; align-items: center;
+  border: 1.5px solid;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+.gc-app .sq-chip-origin { background: #E4F7FB; border-color: #23A8C7; color: #1A7A93; filter: drop-shadow(1px 1px 0 rgba(26,122,147,.4)); }
+.gc-app .sq-chip-dest {
+  background: #D7FAFF; border-color: #23E5FF; color: #1A7A93;
+  filter: drop-shadow(1px 1px 0 rgba(26,122,147,.4));
+  animation: chipPulse 1.1s ease-in-out infinite;
+}
+@keyframes chipPulse { 0%, 100% { opacity: .75; } 50% { opacity: 1; } }
+
 /* Guardian Angel pending-move (C1): "play it" leans primary-ish (lavender,
    not the pink primary — confirm is the expected default path, not an
    alarm) while "take it back" stays the plain small button. */
@@ -254,7 +308,9 @@
 /* C2: badges rendered into the same "judged" slot above, one per tier.
    silent has no badge (just the check above). Nudge stays in the app's
    lavender family (same as .tagline/.status-line); warning uses the
-   #FF3DA6 magenta family used everywhere else for "pay attention". */
+   #FF3DA6 magenta family's pale tint (V4: color-only fix — same anatomy
+   as nudge, only the hue differs, so it reads as a sibling badge rather
+   than a flat alarm). */
 .gc-app .judge-badge {
   display: inline-block;
   margin-left: 8px;
@@ -265,7 +321,7 @@
   vertical-align: middle;
 }
 .gc-app .judge-badge-nudge { background: #E7DFFF; color: #6952C4; }
-.gc-app .judge-badge-warning { background: #FF3DA6; color: #fff; }
+.gc-app .judge-badge-warning { background: #FFD6EC; color: #C22B7E; }
 
 /* Wave C, task C-B: the "help?" hint-escalation affordance, rendered next
    to the judge badge whenever the verdict is nudge/warning AND facts came
@@ -286,6 +342,21 @@
 }
 .gc-app button.hint-affordance:hover { transform: translateY(-1px); box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.22); }
 .gc-app button.hint-affordance:active { transform: translateY(1px); box-shadow: 0 1px 0 #C9BFEF, 0 3px 6px rgba(90,70,180,.16); }
+
+/* V4: "thinking" skin for the hint-affordance button — the concurrent logic
+   round wires the fetch-pending state (disabled/.hint-thinking) onto this
+   button in its own checkout; this worktree predates that commit, so there
+   is no state here to trigger it yet. Ship the CSS hook now so the rebase
+   only has to add the class/attribute. .hint-thinking is a provisional hook
+   name pending that round's rebase. Reuses V3's chipSplitFlicker keyframes
+   (defined once, above, near .bar-chip.tc-flicker) rather than redefining
+   them here. */
+.gc-app button.hint-affordance:disabled,
+.gc-app button.hint-affordance.hint-thinking {
+  background: #FFE9F4; color: #C22B7E;
+  box-shadow: none; transform: none; cursor: default;
+  animation: chipSplitFlicker 7s infinite steps(1);
+}
 
 /* judge-post (C3, coach-only mode): the badge shows up next to the status
    line since there's no pending indicator to hang it off of. Reuses
