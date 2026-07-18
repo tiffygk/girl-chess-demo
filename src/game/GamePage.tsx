@@ -1198,6 +1198,14 @@ export function GamePage() {
           </div>
         )}
       </div>
+      <div className="coach-hint-band">
+        {coachHints && (
+          <div className="coach-hint-slot">
+            <span className="coach-seat" aria-hidden="true"></span>
+            <span className="coach-slot-copy">coach's corner, coming with the coach</span>
+          </div>
+        )}
+      </div>
       <p className="status-line">{inputHint ?? status}</p>
       {gameOver && (
         <GameEndPanel
