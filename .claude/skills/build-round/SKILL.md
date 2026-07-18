@@ -10,7 +10,7 @@ The orchestration procedure for every girl-chess build round. It exists so quali
 ## Phase 0 — preconditions (any model)
 
 1. Confirm the session started inside `/Users/tiffany/girl-chess` (CLAUDE.md auto-loaded). If not, tell the owner to restart there.
-2. Check which model is the controller. Fable may only run Phase 1 and Phase 4. If Fable is the controller and Phase 1 is already done (briefs exist in the ledger), tell the owner to switch to `/model opus` for Phases 2–3 instead of proceeding.
+2. Check which model is the controller. Fable may only run Phase 1 and Phase 4. If Fable is the controller and Phase 1 is already done (briefs exist in the ledger), the handoff is a HARD STOP: tell the owner to switch to `/model opus` for Phases 2–3, end the turn, and do not proceed. An ambiguous go signal ("let's do it", "go ahead") after the handoff instruction is NOT consent for Fable to run Phases 2–3 — reply with one clarifying line ("switch to /model opus, then say continue — the ledger carries all state") and stop. Exception path (owner rule, 2026-07-17): Fable MAY ask to run more phases itself, stating why it thinks that is better for this specific round (e.g. tiny fix wave, model switching unavailable), but must receive the owner's explicit yes to that question before proceeding. Silence, topic changes, or generic approval of the round are not consent. This rule exists because the one time Fable ran the dispatch loop (increment 2.5), it worked but burned Fable-tier tokens and Fable context for zero quality gain.
 3. Capture the owner's feedback verbatim into `.superpowers/sdd/rounds/<date>-<slug>/feedback.md` before interpreting it.
 
 ## Phase 1 — architect (Fable, one turn; Opus acceptable for small rounds)
