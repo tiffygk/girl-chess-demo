@@ -1047,6 +1047,7 @@ export function GamePage() {
           chip={mallowChip}
           elo={opponentElo}
         />
+        <div className={"mallow-stripe " + (mallowThinking ? "ms-thinking" : "ms-dormant")} aria-hidden="true"></div>
         <Board
           key={`${gameId ?? "loading"}-${resyncTick}`}
           ref={boardRef}

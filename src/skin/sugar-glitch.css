@@ -402,7 +402,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  padding: 10px 18px;
   transition: background .2s ease, box-shadow .2s ease;
 }
 .gc-app .player-bar.mallow { border-radius: 28px 28px 0 0; }
@@ -423,37 +423,80 @@
 .gc-app .bar-identity {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 1px;
   flex: 0 0 auto;
 }
-.gc-app .bar-name {
-  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 14px;
-  text-transform: lowercase;
-}
-.gc-app .bar-elo {
-  font-size: 11px;
-  opacity: 0.65;
-  margin-left: 6px;
-}
+/* .bar-name retired: replaced by the .name-plate gamertag registry entry
+   (task 2, front-end-components.md §4.3). */
 .gc-app .bar-move-count {
   font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
   color: #9A8BC9;
 }
 
+/* ---- §4.3 name plate: Y2K gamertag registry entry.
+   One component carries name AND elo — never a plate plus a rating pill. ---- */
+.gc-app .name-plate { position: relative; display: inline-flex; flex: none; width: fit-content; }
+.gc-app .np-body {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  width: fit-content; min-width: 92px; height: 26px; padding: 0 12px;
+  white-space: nowrap;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 13px;
+  text-transform: lowercase; letter-spacing: .04em;
+  border: 2px solid;
+  border-radius: 0;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+.gc-app .np-you .np-body    { background: #E4F7FB; border-color: #23A8C7; color: #1A7A93; filter: drop-shadow(2px 2px 0 rgba(26,122,147,.45)); }
+.gc-app .np-mallow .np-body { background: #FFE9F4; border-color: #FF3DA6; color: #C22B7E; filter: drop-shadow(2px 2px 0 rgba(194,43,126,.45)); }
+.gc-app .np-glyph { flex: 0 0 auto; display: block; }
+.gc-app .np-div { width: 1px; height: 14px; flex: 0 0 auto; transform: skewX(-12deg); }
+.gc-app .np-you .np-div { background: rgba(35,168,199,.35); }
+.gc-app .np-mallow .np-div { background: rgba(255,61,166,.35); }
+.gc-app .bar-elo {
+  font-weight: 600; font-style: italic; font-size: 11px;
+  letter-spacing: .02em; font-variant-numeric: tabular-nums;
+}
+.gc-app .np-you .bar-elo { color: #23A8C7; }
+.gc-app .np-mallow .bar-elo { color: #FF3DA6; }
+/* wrong details live on the unclipped wrapper so the clip can't eat them */
+.gc-app .np-you::after {   /* the escaped dead pixel */
+  content: ""; position: absolute; width: 5px; height: 5px;
+  top: -3px; right: 9px; background: #23E5FF; z-index: 2;
+}
+.gc-app .np-mallow::after {   /* the plate is visibly melting */
+  content: ""; position: absolute; width: 7px; height: 9px;
+  left: 20%; bottom: -7px; background: #FF3DA6;
+  border-radius: 2px 2px 7px 7px; z-index: 2;
+}
+/* m4llow: one frame every 9s. the melt corrupts her name, never her number. */
+.gc-app .np-name { position: relative; display: inline-block; }
+.gc-app .np-name-glitch {
+  position: absolute; inset: 0; opacity: 0;
+  text-shadow: -2px 0 0 #23E5FF, 2px 0 0 #FF3DA6;
+  animation: m4llowShow 9s steps(1) infinite;
+}
+.gc-app .np-mallow .np-name-real { animation: m4llowHide 9s steps(1) infinite; }
+@keyframes m4llowShow { 0%, 95.9% { opacity: 0; } 96% { opacity: 1; } 97%, 100% { opacity: 0; } }
+@keyframes m4llowHide { 0%, 95.9% { opacity: 1; } 96% { opacity: 0; } 97%, 100% { opacity: 1; } }
+
 .gc-app .bar-captures {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 26px;
+  min-height: 38px;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 2px;
-  padding: 0 var(--space-2);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(203,191,255,.14);
+  box-shadow: inset 0 2px 3px rgba(120,95,200,.18), inset 0 -1px 0 rgba(255,255,255,.85);
 }
 .gc-app .bar-piece {
-  width: 24px;
-  height: 24px;
-  margin-left: -7px; /* slight overlap, same language as the old trays */
+  width: 32px;
+  height: 32px;
+  margin-left: -10px; /* slight overlap, same language as the old trays */
 }
 .gc-app .bar-piece:first-child { margin-left: 0; }
 .gc-app .bar-piece svg {
@@ -481,14 +524,27 @@
   min-width: 0;
 }
 .gc-app .bar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
   font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  color: #7A6BB5;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1.5px solid;
   white-space: nowrap;
 }
-.gc-app .player-bar.mallow.active .bar-chip { color: #C22B7E; }
-.gc-app .player-bar.you.active .bar-chip { color: #1A7A93; }
+.gc-app .player-bar.you .bar-chip { background: #E4F7FB; color: #1A7A93; border-color: rgba(35,168,199,.35); }
+.gc-app .player-bar.mallow .bar-chip { background: #FFE9F4; color: #C22B7E; border-color: rgba(255,61,166,.3); }
+/* "thinking..." wrong detail: single-frame cyan/magenta split every ~7s,
+   same steps() cadence family as corrupt/preGlitch */
+.gc-app .bar-chip.tc-flicker { animation: chipSplitFlicker 7s infinite steps(1); }
+@keyframes chipSplitFlicker {
+  0%, 95% { text-shadow: none; transform: none; }
+  96% { text-shadow: -2px 0 0 #23E5FF, 2px 0 0 #FF3DA6; transform: translateX(1px) skewX(-4deg); }
+  97%, 100% { text-shadow: none; transform: none; }
+}
 
 /* Mallow's decline bark anchors to her bar (the top of the board), poking
    up into the open header space above the board-stack rather than over
@@ -518,12 +574,18 @@
   position: relative;
   width: 100%;
 }
-.gc-app .board-frame::before {
-  content: ""; position: absolute; left: 28px; right: 28px; top: -4px; height: 8px; border-radius: 4px;
-  background: repeating-linear-gradient(90deg, #23E5FF 0 14px, #FF3DA6 14px 28px, #FFD84D 28px 42px);
-  opacity: .85;
-}
 .gc-app .board-frame.shake { animation: shake .26s linear; }
+
+/* ---- §4.7 mallow stripe: relocated to the bar/board seam (task 5) ---- */
+.gc-app .mallow-stripe {
+  height: 6px;
+  border-radius: 3px;
+  margin: 0 28px;
+  background: repeating-linear-gradient(90deg, #23E5FF 0 14px, #FF3DA6 14px 28px, #FFD84D 28px 42px);
+}
+.gc-app .mallow-stripe.ms-dormant { opacity: .35; filter: saturate(.35); }
+.gc-app .mallow-stripe.ms-thinking { opacity: .85; animation: stripeScroll 1.2s linear infinite; }
+@keyframes stripeScroll { to { background-position: 42px 0; } }
 
 /* ---- §4.2 board mat + recessed tray + coordinates (item 13) ---- */
 .gc-app .board-mat { background: #F6F1FF; padding: 14px 14px 30px 30px; position: relative; }

@@ -17,7 +17,7 @@ interface PlayerBarProps {
   moveNumber?: number | null;
   /** Mallow-only decline bark, anchored to this bar. */
   bark?: string | null;
-  /** Rating chip next to the name; null/undefined renders nothing. */
+  /** Rating to surface inside the name plate; null/undefined renders no rating. */
   elo?: number | null;
 }
 
@@ -45,15 +45,47 @@ export function PlayerBar({
   bark,
   elo,
 }: PlayerBarProps) {
-  const name = seat === "mallow" ? "mallow" : "you";
   const label = seat === "mallow" ? "pieces mallow has captured" : "pieces you've captured";
   const sorted = sortedWithKeys(captured);
 
   return (
     <div className={`player-bar ${seat}${active ? " active" : ""}`}>
       <div className="bar-identity">
-        <span className="bar-name">{name}</span>
-        {elo != null && <span className="bar-elo">{elo}</span>}
+        {seat === "mallow" ? (
+          <span className="name-plate np-mallow">
+            <span className="np-body">
+              <svg className="np-glyph" width="10" height="9" viewBox="0 0 7 6" aria-hidden="true">
+                <path
+                  fill="#FF3DA6"
+                  d="M1 0h1v1h1v1h1V1h1V0h1v1h1v2H6v1H5v1H4v1H3V5H2V4H1V3H0V1h1z"
+                />
+              </svg>
+              <span className="np-name">
+                <span className="np-name-real">mallow</span>
+                <span className="np-name-glitch" aria-hidden="true">m4llow</span>
+              </span>
+              <span className="np-div" aria-hidden="true"></span>
+              {elo != null && <span className="bar-elo">{elo}</span>}
+            </span>
+          </span>
+        ) : (
+          <span className="name-plate np-you">
+            <span className="np-body">
+              <svg className="np-glyph" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                <path
+                  d="M5 0 6.2 3.8 10 5 6.2 6.2 5 10 3.8 6.2 0 5 3.8 3.8z"
+                  fill="#23E5FF"
+                  stroke="#1A7A93"
+                  strokeWidth="1"
+                  strokeLinejoin="miter"
+                />
+              </svg>
+              <span className="np-name">you</span>
+              <span className="np-div" aria-hidden="true"></span>
+              {elo != null && <span className="bar-elo">{elo}</span>}
+            </span>
+          </span>
+        )}
         {typeof moveNumber === "number" && <span className="bar-move-count">move {moveNumber}</span>}
       </div>
       <div className="bar-captures" aria-label={label}>
@@ -66,7 +98,11 @@ export function PlayerBar({
       </div>
       <div className="bar-chip-slot">
         {chip && (
-          <span className="bar-chip" role="status" aria-live="polite">
+          <span
+            className={"bar-chip" + (chip === "thinking..." ? " tc-flicker" : "")}
+            role="status"
+            aria-live="polite"
+          >
             {chip}
           </span>
         )}
