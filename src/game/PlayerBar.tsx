@@ -99,6 +99,7 @@ export function PlayerBar({
       <div className="bar-chip-slot">
         {chip && (
           <span
+            key={chip}
             className={"bar-chip" + (chip === "thinking..." ? " tc-flicker" : "")}
             role="status"
             aria-live="polite"
