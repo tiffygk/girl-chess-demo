@@ -47,6 +47,18 @@ describe("classify.ts LLM-free gate", () => {
       expect(line).not.toMatch(/from\s+["']\.\.?\/coach/);
     }
   });
+
+  // Increment 2.7: motifs.ts is the other half of the why-hints verdict
+  // path (classifyMove calls deriveThreatFacts from it) — same hard
+  // constraint, same gate.
+  it("motifs.ts never imports from server/coach", () => {
+    const src = fs.readFileSync(path.join(__dirname, "motifs.ts"), "utf-8");
+    const importLines = src.split("\n").filter((line) => /^\s*import\b/.test(line));
+    expect(importLines.length).toBeGreaterThan(0);
+    for (const line of importLines) {
+      expect(line).not.toMatch(/from\s+["']\.\.?\/coach/);
+    }
+  });
 });
 
 describe("ADVICE_LEVELS seam", () => {
@@ -75,6 +87,24 @@ describe("classifyMove — real engine math", () => {
     expect(verdict.mateAgainst).toBe(false);
     expect(verdict.deltaCp).not.toBeNull();
     expect(verdict.deltaCp!).toBeGreaterThan(150);
+  }, 15000);
+
+  // Wave 1 (increment 2.7, why-hints): a warning-tier judged move also gets
+  // threat facts, derived from the SAME afterEval this function already
+  // computes — no third eval call. The refutation must be legal on the
+  // after-position (the position `chess` is already in once the move is
+  // applied).
+  it("attaches threat facts on a warning-tier move, with a legal refutation on the after-position", async () => {
+    const chess = new Chess("4k3/8/8/8/1n6/8/8/Q3K3 w - - 0 1");
+    const move = chess.move({ from: "a1", to: "a2" });
+    const verdict = await classifyMove(chess, move, sf);
+    expect(verdict.tier).toBe("warning");
+    expect(verdict.threat).toBeTruthy();
+    expect(verdict.threat!.refutationUci).toMatch(/^[a-h][1-8][a-h][1-8][nbrq]?$/);
+    const probe = new Chess(chess.fen());
+    const from = verdict.threat!.refutationUci.slice(0, 2);
+    const to = verdict.threat!.refutationUci.slice(2, 4);
+    expect(() => probe.move({ from, to, promotion: "q" })).not.toThrow();
   }, 15000);
 
   it("a quiet developing move at startpos -> silent", async () => {
