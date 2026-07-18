@@ -405,7 +405,13 @@ describe("threatRevealSquares", () => {
   it("victim = capturesSquare when present", () => {
     expect(threatRevealSquares(captureMovedThreat, "h5")).toEqual({ attacker: "d1", victim: "h5" });
   });
-  it("victim = herToSquare when capturesSquare absent (non-capture motif)", () => {
-    expect(threatRevealSquares(positionalThreat, "e4")).toEqual({ attacker: "d1", victim: "e4" });
+  it("victim = herToSquare when capturesSquare absent (non-capture, concrete motif)", () => {
+    expect(threatRevealSquares(forkThreat, "e4")).toEqual({ attacker: "d1", victim: "e4" });
+  });
+  it("motif positional -> null (honesty gate: no concrete threat to point at)", () => {
+    expect(threatRevealSquares(positionalThreat, "e4")).toBeNull();
+  });
+  it("motif capture-moved -> squares (concrete threat)", () => {
+    expect(threatRevealSquares(captureMovedThreat, "h5")).toEqual({ attacker: "d1", victim: "h5" });
   });
 });
