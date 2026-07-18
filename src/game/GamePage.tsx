@@ -238,7 +238,12 @@ export function GamePage() {
     return { square: kingInCheckSquare(c), mate: c.isCheckmate() };
   }, [fen]);
 
-  const startGame = useCallback(async (sid: number, elo: number) => {
+  // Shared by startGame (before fetching a fresh game) and handleNewGame
+  // (before dropping back to the pregame elo picker) — every piece of
+  // in-flight move/judge/hint/end-game state that must not survive into
+  // the next game. Deliberately leaves sessionId/opponentElo/gameId alone;
+  // callers decide those.
+  const resetGameState = useCallback(() => {
     setGameOver(null);
     setTakedownMove(null);
     setStatus("finding an opponent...");
@@ -264,6 +269,10 @@ export function GamePage() {
       inputHintTimerRef.current = null;
     }
     setInputHint(null);
+  }, []);
+
+  const startGame = useCallback(async (sid: number, elo: number) => {
+    resetGameState();
     const g = await newGame(sid, elo);
     mirrorRef.current = new Chess(g.fen);
     setFen(g.fen);
@@ -275,7 +284,7 @@ export function GamePage() {
     // "finding an opponent..." transient now that the game is ready, but
     // don't replace it with "your move" text; status is transient-only.
     setStatus("");
-  }, []);
+  }, [resetGameState]);
 
   useEffect(() => {
     let cancelled = false;
@@ -858,9 +867,22 @@ export function GamePage() {
     })();
   }, [gameId, gameOver, endGameOutcome, clearEndGameTimer, celebrate]);
 
+  // Owner feedback 2026-07-17: the pregame elo picker was only reappearing
+  // on a hard refresh, not after finishing a game. Reversing the 2.5
+  // decision (rematch reused the last elo silently) — "new game" now drops
+  // gameId back to null so the `sessionId && !gameId` pregame gate re-shows
+  // the panel, preselected with the last elo (state + localStorage untouched
+  // here on purpose). Guarded by the same replayingRef the takedown
+  // cinematic uses, so a click mid-replay is a no-op rather than yanking
+  // the board out from under an in-flight animation.
   const handleNewGame = useCallback(() => {
-    if (sessionId != null) startGame(sessionId, opponentElo);
-  }, [sessionId, opponentElo, startGame]);
+    if (replayingRef.current) return;
+    resetGameState();
+    setGameId(null);
+    mirrorRef.current = new Chess();
+    setFen(mirrorRef.current.fen());
+    setStatus("");
+  }, [resetGameState]);
 
   // "replay the takedown" (Wave D) — owner feedback, verbatim: "play the
   // last three moves or four moves without delays in between but not too
@@ -1176,7 +1198,7 @@ export function GamePage() {
                   {verdict?.facts && (verdict.tier === "nudge" || verdict.tier === "warning") && (
                     <span className="hint-block">
                       {hintLevel > 0 && hintFacts && (
-                        <span className="hint-copy">{hintCopy(hintLevel, hintFacts)}</span>
+                        <span className="hint-copy">{hintCopy(hintLevel, hintFacts, fen)}</span>
                       )}
                       {hintLevel < 3 && (
                         <button

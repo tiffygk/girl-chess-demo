@@ -3,8 +3,10 @@ import {
   nextHintLevel,
   pieceName,
   hintCopy,
+  describeBestMove,
   hintRevealSquares,
   hintIsLegal,
+  type HintFacts,
   type HintLevel,
 } from "./hintFlow";
 
@@ -40,7 +42,13 @@ describe("pieceName", () => {
 });
 
 describe("hintCopy", () => {
-  const facts = { bestPieceKind: "n", bestFromSquare: "g1", bestToSquare: "f3", bestSan: "Nf3" };
+  const facts = {
+    bestPieceKind: "n",
+    bestFromSquare: "g1",
+    bestToSquare: "f3",
+    bestSan: "Nf3",
+    bestUci: "g1f3",
+  };
 
   it("level 0 -> null (nothing revealed yet)", () => {
     expect(hintCopy(0, facts)).toBeNull();
@@ -77,6 +85,273 @@ describe("hintCopy", () => {
     expect(hintCopy(1, facts)).toBe(hintCopy(1, facts)!.toLowerCase());
     expect(hintCopy(2, facts)).toBe(hintCopy(2, facts)!.toLowerCase());
     expect(hintCopy(3, facts)!.startsWith("best here: ")).toBe(true);
+  });
+});
+
+describe("describeBestMove", () => {
+  it("quiet move: 'knight to f3'", () => {
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "n",
+      bestFromSquare: "g1",
+      bestToSquare: "f3",
+      bestSan: "Nf3",
+      bestUci: "g1f3",
+    };
+    expect(describeBestMove(facts, fen)).toBe("knight to f3");
+  });
+
+  it("capture: 'knight takes on f3'", () => {
+    const fen = "4k3/8/8/8/8/5n2/8/4K1N1 w - - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "n",
+      bestFromSquare: "g1",
+      bestToSquare: "f3",
+      bestSan: "Nxf3",
+      bestUci: "g1f3",
+    };
+    expect(describeBestMove(facts, fen)).toBe("knight takes on f3");
+  });
+
+  it("en passant (flag 'e', not 'c'): still says 'takes on'", () => {
+    const fen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "p",
+      bestFromSquare: "e5",
+      bestToSquare: "d6",
+      bestSan: "exd6",
+      bestUci: "e5d6",
+    };
+    expect(describeBestMove(facts, fen)).toBe("pawn takes on d6");
+  });
+
+  it("check: 'queen to h4, check'", () => {
+    const fen = "8/4k3/8/8/8/8/K6Q/8 w - - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "q",
+      bestFromSquare: "h2",
+      bestToSquare: "h4",
+      bestSan: "Qh4+",
+      bestUci: "h2h4",
+    };
+    expect(describeBestMove(facts, fen)).toBe("queen to h4, check");
+  });
+
+  it("checkmate (fool's-mate-style): 'queen to h4, checkmate'", () => {
+    const fen = "rnbqkbnr/pppp1ppp/8/4p3/5PP1/8/PPPPP2P/RNBQKBNR b KQkq - 0 2";
+    const facts: HintFacts = {
+      bestPieceKind: "q",
+      bestFromSquare: "d8",
+      bestToSquare: "h4",
+      bestSan: "Qh4#",
+      bestUci: "d8h4",
+    };
+    expect(describeBestMove(facts, fen)).toBe("queen to h4, checkmate");
+  });
+
+  it("promotion: 'pawn to e8, becoming a queen'", () => {
+    const fen = "8/4P3/8/8/8/8/8/K6k w - - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "p",
+      bestFromSquare: "e7",
+      bestToSquare: "e8",
+      bestSan: "e8=Q",
+      bestUci: "e7e8q",
+    };
+    expect(describeBestMove(facts, fen)).toBe("pawn to e8, becoming a queen");
+  });
+
+  it("capturing promotion with check: 'pawn takes on h8, becoming a knight, check'", () => {
+    const fen = "7r/6P1/6k1/8/8/8/8/K7 w - - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "p",
+      bestFromSquare: "g7",
+      bestToSquare: "h8",
+      bestSan: "gxh8=N+",
+      bestUci: "g7h8n",
+    };
+    expect(describeBestMove(facts, fen)).toBe("pawn takes on h8, becoming a knight, check");
+  });
+
+  it("castle short: 'castle short'", () => {
+    const fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "k",
+      bestFromSquare: "e1",
+      bestToSquare: "g1",
+      bestSan: "O-O",
+      bestUci: "e1g1",
+    };
+    expect(describeBestMove(facts, fen)).toBe("castle short");
+  });
+
+  it("castle long: 'castle long'", () => {
+    const fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "k",
+      bestFromSquare: "e1",
+      bestToSquare: "c1",
+      bestSan: "O-O-O",
+      bestUci: "e1c1",
+    };
+    expect(describeBestMove(facts, fen)).toBe("castle long");
+  });
+
+  it("fallback: a garbage fen returns null (caller shows SAN alone)", () => {
+    const facts: HintFacts = {
+      bestPieceKind: "n",
+      bestFromSquare: "g1",
+      bestToSquare: "f3",
+      bestSan: "Nf3",
+      bestUci: "g1f3",
+    };
+    expect(describeBestMove(facts, "not-a-real-fen")).toBeNull();
+  });
+
+  it("fallback: an illegal uci for the given fen returns null", () => {
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "r",
+      bestFromSquare: "a1",
+      bestToSquare: "a8",
+      bestSan: "Ra8",
+      bestUci: "a1a8",
+    };
+    expect(describeBestMove(facts, fen)).toBeNull();
+  });
+});
+
+describe("hintCopy level 3 with fen (translated copy)", () => {
+  it("quiet move", () => {
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "n",
+      bestFromSquare: "g1",
+      bestToSquare: "f3",
+      bestSan: "Nf3",
+      bestUci: "g1f3",
+    };
+    expect(hintCopy(3, facts, fen)).toBe("best here: Nf3 (knight to f3)");
+  });
+
+  it("capture", () => {
+    const fen = "4k3/8/8/8/8/5n2/8/4K1N1 w - - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "n",
+      bestFromSquare: "g1",
+      bestToSquare: "f3",
+      bestSan: "Nxf3",
+      bestUci: "g1f3",
+    };
+    expect(hintCopy(3, facts, fen)).toBe("best here: Nxf3 (knight takes on f3)");
+  });
+
+  it("en passant", () => {
+    const fen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "p",
+      bestFromSquare: "e5",
+      bestToSquare: "d6",
+      bestSan: "exd6",
+      bestUci: "e5d6",
+    };
+    expect(hintCopy(3, facts, fen)).toBe("best here: exd6 (pawn takes on d6)");
+  });
+
+  it("check", () => {
+    const fen = "8/4k3/8/8/8/8/K6Q/8 w - - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "q",
+      bestFromSquare: "h2",
+      bestToSquare: "h4",
+      bestSan: "Qh4+",
+      bestUci: "h2h4",
+    };
+    expect(hintCopy(3, facts, fen)).toBe("best here: Qh4+ (queen to h4, check)");
+  });
+
+  it("checkmate", () => {
+    const fen = "rnbqkbnr/pppp1ppp/8/4p3/5PP1/8/PPPPP2P/RNBQKBNR b KQkq - 0 2";
+    const facts: HintFacts = {
+      bestPieceKind: "q",
+      bestFromSquare: "d8",
+      bestToSquare: "h4",
+      bestSan: "Qh4#",
+      bestUci: "d8h4",
+    };
+    expect(hintCopy(3, facts, fen)).toBe("best here: Qh4# (queen to h4, checkmate)");
+  });
+
+  it("promotion", () => {
+    const fen = "8/4P3/8/8/8/8/8/K6k w - - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "p",
+      bestFromSquare: "e7",
+      bestToSquare: "e8",
+      bestSan: "e8=Q",
+      bestUci: "e7e8q",
+    };
+    expect(hintCopy(3, facts, fen)).toBe("best here: e8=Q (pawn to e8, becoming a queen)");
+  });
+
+  it("capturing promotion with check", () => {
+    const fen = "7r/6P1/6k1/8/8/8/8/K7 w - - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "p",
+      bestFromSquare: "g7",
+      bestToSquare: "h8",
+      bestSan: "gxh8=N+",
+      bestUci: "g7h8n",
+    };
+    expect(hintCopy(3, facts, fen)).toBe(
+      "best here: gxh8=N+ (pawn takes on h8, becoming a knight, check)",
+    );
+  });
+
+  it("castle kingside", () => {
+    const fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "k",
+      bestFromSquare: "e1",
+      bestToSquare: "g1",
+      bestSan: "O-O",
+      bestUci: "e1g1",
+    };
+    expect(hintCopy(3, facts, fen)).toBe("best here: O-O (castle short)");
+  });
+
+  it("castle queenside", () => {
+    const fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "k",
+      bestFromSquare: "e1",
+      bestToSquare: "c1",
+      bestSan: "O-O-O",
+      bestUci: "e1c1",
+    };
+    expect(hintCopy(3, facts, fen)).toBe("best here: O-O-O (castle long)");
+  });
+
+  it("fallback: garbage fen falls back to plain SAN copy (no translation shown)", () => {
+    const facts: HintFacts = {
+      bestPieceKind: "n",
+      bestFromSquare: "g1",
+      bestToSquare: "f3",
+      bestSan: "Nf3",
+      bestUci: "g1f3",
+    };
+    expect(hintCopy(3, facts, "not-a-real-fen")).toBe("best here: Nf3");
+  });
+
+  it("fallback: no fen argument keeps the existing plain SAN copy unchanged", () => {
+    const facts: HintFacts = {
+      bestPieceKind: "n",
+      bestFromSquare: "g1",
+      bestToSquare: "f3",
+      bestSan: "Nf3",
+      bestUci: "g1f3",
+    };
+    expect(hintCopy(3, facts)).toBe("best here: Nf3");
   });
 });
 
