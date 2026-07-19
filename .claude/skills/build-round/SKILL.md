@@ -22,7 +22,8 @@ The orchestration procedure for every girl-chess build round. It exists so quali
    - exact values (constants, copy strings, file paths, thresholds) — prose ambiguity is what causes rework
    - the standing rules block: never touch `data/girlchess.db`; additive schema via `migrateSchema` only; no LLM calls in verdict/annotator/adjudicate paths; lowercase copy, no em-dashes, no emojis; run `npx vitest run` and `npx tsc -b` green before committing; commit with the wave message + `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`; never push
    - the return-format demand: "Your reply to the controller is max 10 lines: what changed, test counts, deviations, commit hash. Write your full report to `.superpowers/sdd/rounds/<date>-<slug>/report-<wave>.md`."
-4. End the Fable turn by telling the owner the briefs are ready and to run Phases 2–3 under `/model opus`.
+4. Owner visibility (rule added 2026-07-19 after plans hid in the dot-folder): whenever a round has a plan document, copy it (and any panel review) to the vault at `"/Users/tiffany/Documents/Obsidian Vaults/girl chess game/2 build/"` named `Girl Chess — Increment <n> Plan.md` per the existing convention. The ledger copy stays canonical for agents; the vault copy is for the owner to read. Re-copy when the plan is revised.
+5. End the Fable turn by telling the owner the briefs are ready and to run Phases 2–3 under `/model opus`.
 
 ## Phase 2 — build (Opus or Sonnet controller)
 
