@@ -64,7 +64,7 @@ const SEVERITY: Record<string, number> = { blunder: 3, mistake: 2, inaccuracy: 1
 // moveNumberForPly.
 const NUDGES: Record<string, string> = {
   blunder: "check what's hanging before you commit.",
-  mistake: "the idea was right, the follow-up wasn't — look one move deeper.",
+  mistake: "the idea was right, the follow-up wasn't. look one move deeper.",
   inaccuracy: "small slip, keep it tight next time.",
 };
 
@@ -328,7 +328,7 @@ function buildWatchNextTime(
     return [
       {
         section: "watch next time",
-        text: `moves ${n1}-${n2}: she kept pieces camped on your king while you played defense. keep the pawn shelter intact and look to trade off the attackers.`,
+        text: `moves ${n1}-${n2}: she kept pieces camped on your king. keep the pawn shelter intact when you recapture.`,
         phase: phaseForPly(episode.ply, totalPlies),
         category: "king safety",
         ply: episode.ply,
