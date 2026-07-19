@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
-import { app, ready } from "./index";
-import { getVerdicts, getGameEvents, getGame, getModeSeconds } from "./store/db";
+import { app, ready, gm } from "./index";
+import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages, getAdviceTraces } from "./store/db";
+import { CHAT_MAX_LEN } from "./coach/chat";
 
 describe("api", () => {
   it("creates a session, a game, and plays a move", async () => {
@@ -350,4 +351,67 @@ describe("api", () => {
     // but the ORDER BY id DESC is exercised implicitly by this shape).
     expect(list.body.games[0].id).toBe(g1.body.gameId);
   }, 30000);
+
+  // Increment 3.9, F16: this-game grounding chat. gm.setCoachBackendForTesting
+  // is called before every request below (the same seam manager.test.ts and
+  // coach/chat.test.ts already rely on) so the route never invokes the real
+  // claude CLI / ollama, even though this file hits the real exported `gm`
+  // singleton rather than a fresh test instance.
+  it("chats about a live game via POST /api/game/:id/chat, mirroring narrate's envelope", async () => {
+    await ready;
+    gm.setCoachBackendForTesting({
+      name: "fake",
+      async available() {
+        return true;
+      },
+      async generate() {
+        return "e4 opens things up nicely for you.";
+      },
+    });
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(app).post(`/api/game/${g.body.gameId}/move`)
+      .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
+
+    const r = await request(app).post(`/api/game/${g.body.gameId}/chat`)
+      .send({ message: "what did I just play?", context: { mode: "live" } }).expect(200);
+    expect(r.body.ok).toBe(true);
+    expect(r.body.text.length).toBeGreaterThan(0);
+    expect(["model", "template"]).toContain(r.body.source);
+
+    const messages = getAllChatMessages(g.body.gameId);
+    expect(messages).toHaveLength(2);
+    expect(messages[0].role).toBe("user");
+    expect(messages[1].role).toBe("coach");
+
+    const traces = getAdviceTraces(g.body.gameId).filter((t: any) => t.kind === "chat");
+    expect(traces).toHaveLength(1);
+  }, 20000);
+
+  it("rejects an over-length chat message via POST /api/game/:id/chat", async () => {
+    await ready;
+    gm.setCoachBackendForTesting({
+      name: "fake",
+      async available() {
+        return true;
+      },
+      async generate() {
+        return "should never be called for this test.";
+      },
+    });
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    const r = await request(app).post(`/api/game/${g.body.gameId}/chat`)
+      .send({ message: "x".repeat(CHAT_MAX_LEN + 1), context: { mode: "live" } }).expect(200);
+    expect(r.body.ok).toBe(false);
+    expect(r.body.error).toBe("too-long");
+  });
+
+  it("returns ok:false for chat on a nonexistent game without crashing", async () => {
+    await ready;
+    const r = await request(app).post("/api/game/999999/chat")
+      .send({ message: "hello", context: { mode: "live" } }).expect(200);
+    expect(r.body.ok).toBe(false);
+  });
 });

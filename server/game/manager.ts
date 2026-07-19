@@ -4,7 +4,7 @@ import { StockfishEvaluator } from "../engines/stockfish";
 import {
   createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict,
   getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
-  listFinishedGames,
+  listFinishedGames, insertChatMessage, getChatMessages,
 } from "../store/db";
 import { classifyMove, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
@@ -22,6 +22,10 @@ import { classifyMoves } from "../annotator/classifications";
 // body must never reference coach, even though this file's top level now
 // does for the sibling narrate() method below.
 import { assembleFactList, narrate as narrateFacts } from "../coach";
+import {
+  chat as chatWithCoach, assembleChatFactList, CHAT_HISTORY_WINDOW, CHAT_MAX_LEN,
+  type ChatContext,
+} from "../coach/chat";
 import { claudeCliBackend } from "../coach/backends/claude-cli";
 import { ollamaBackend } from "../coach/backends/ollama";
 import { noBackend, type CoachBackend } from "../coach/backends/types";
@@ -456,6 +460,65 @@ export class GameManager {
     });
     const result = await narrateFacts(facts, backend, { gameId, ply: live.ply, kind: body.tier });
     return { ok: true, text: result.text, source: result.source, traceId: result.traceId };
+  }
+
+  // Increment 3.9, F16 (this-game grounding chat). DB-backed by design
+  // (panel A1) -- unlike narrate() above, this method never reads
+  // `this.games`. That's what lets review-mode chat work on a finished game
+  // that has fallen out of the live map entirely (the whole point of a
+  // "past games" chat surface): getGame confirms the row exists,
+  // getGameMoves replays the san history, and getTurningPoints supplies the
+  // debrief facts once the game actually has a result (never guessed from
+  // body.context.mode -- the db's own result column is the source of
+  // truth). Live extras (herMove/tier/threat/best/recommendation) come only
+  // from body.context, which the client already holds from its own
+  // judge/hint-facts calls -- same "re-derive nothing" discipline as
+  // narrate().
+  //
+  // History authority is the server too (F16): the client's own chat array
+  // is optimistic UI only and is never sent or trusted -- the last
+  // CHAT_HISTORY_WINDOW chat_messages rows for this game are read fresh on
+  // every call, before this call's own user message is inserted (so the
+  // window never double-counts the message that's still in flight).
+  async chat(
+    gameId: number,
+    body: { message: string; context: ChatContext }
+  ): Promise<
+    | { ok: false; error?: string }
+    | { ok: true; text: string; source: "model" | "template"; cause?: "backend-down"; traceId: number }
+  > {
+    const message = body.message ?? "";
+    if (message.length > CHAT_MAX_LEN) return { ok: false, error: "too-long" };
+
+    const game = getGame(gameId);
+    if (!game) return { ok: false };
+
+    const moveRows = getGameMoves(gameId);
+    const gameMoves = moveRows.map((r: any) => ({ ply: r.ply, san: r.san }));
+    const finished = game.result != null;
+    const turningPoints = finished
+      ? getTurningPoints(gameId).map((r: any) => ({ ply: r.ply, san: r.san, label: r.label, punishSan: r.punish_san ?? undefined }))
+      : undefined;
+    const facts = assembleChatFactList(gameMoves, body.context, turningPoints);
+
+    const historyRows = getChatMessages(gameId, CHAT_HISTORY_WINDOW);
+    const history = historyRows.map((r: any) => ({ role: r.role as "user" | "coach", text: r.text }));
+
+    insertChatMessage({ gameId, role: "user", text: message });
+
+    const backend = await this.pickCoachBackend();
+    // Review-mode ply = the game's total ply count; in live mode this is
+    // the same number (the live in-memory ply counter and "total moves
+    // recorded so far" agree while the game is still in progress) -- so one
+    // db-derived value covers both, without ever touching `this.games`.
+    const ply = gameMoves.length;
+    const result = await chatWithCoach(message, history, facts, backend, { gameId, ply, kind: "chat" });
+
+    insertChatMessage({ gameId, role: "coach", text: result.text, traceId: result.traceId });
+
+    return result.cause
+      ? { ok: true, text: result.text, source: result.source, cause: result.cause, traceId: result.traceId }
+      : { ok: true, text: result.text, source: result.source, traceId: result.traceId };
   }
 
   // Wave C, task C-B: observability for the Lab's hint-escalation metric.

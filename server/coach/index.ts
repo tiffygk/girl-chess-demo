@@ -109,6 +109,14 @@ interface Persona {
   systemPrompt: string;
   threatTemplates: Record<string, string>;
   recommendationTemplates: Record<string, string>;
+  // F16 (chat, coach/chat.ts): a separate system prompt + template set,
+  // parsed from the persona file's own "## chat" section below. Kept apart
+  // from systemPrompt/threatTemplates/recommendationTemplates on purpose --
+  // chat grounds against the whole game, not a single judged move's facts,
+  // so it earns its own voice text and its own (single) fallback template
+  // rather than overloading the narrate() shapes above.
+  chatSystemPrompt: string;
+  chatTemplates: Record<string, string>;
 }
 
 // No yaml dep: `## heading` splits the file into top-level sections,
@@ -145,11 +153,19 @@ function parsePersona(md: string): Persona {
   const top = splitSections(md, "## ");
   const templateBlock = top["templates"] ?? "";
   const sub = splitSections(templateBlock, "### ");
+  // F16: "## chat" is a sibling top-level section with its own "### "
+  // sub-split -- "### system prompt" and "### templates" here are scoped to
+  // this block only, so they don't collide with the outer "## templates"
+  // section's own "### threat"/"### recommendation" keys parsed above.
+  const chatBlock = top["chat"] ?? "";
+  const chatSub = splitSections(chatBlock, "### ");
   return {
     voice: (top["voice"] ?? "").trim(),
     systemPrompt: (top["system prompt"] ?? "").trim(),
     threatTemplates: parseTemplateList(sub["threat"] ?? ""),
     recommendationTemplates: parseTemplateList(sub["recommendation"] ?? ""),
+    chatSystemPrompt: (chatSub["system prompt"] ?? "").trim(),
+    chatTemplates: parseTemplateList(chatSub["templates"] ?? ""),
   };
 }
 
@@ -163,7 +179,10 @@ let cachedPersona: Persona | null = null;
 // while every real narrate() call under `tsx` crashed with "__dirname is
 // not defined" before ever reaching the backend. import.meta.url is the
 // ESM-native equivalent.
-function getPersona(): Persona {
+// Exported: server/coach/chat.ts (F16) reuses this same cached-persona
+// accessor rather than re-reading/re-parsing personas/coach.md a second
+// time -- one parse per process, shared by both narration surfaces.
+export function getPersona(): Persona {
   if (!cachedPersona) {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const md = fs.readFileSync(path.join(here, "personas/coach.md"), "utf-8");

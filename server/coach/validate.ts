@@ -12,7 +12,10 @@ import type { CoachFactList } from "./index";
 // regeneration or template fallback, never lets an unsanctioned square/move
 // slip through silently.
 const SQUARE_RE = /\b[a-h][1-8]\b/g;
-const SAN_RE = /\b(?:O-O(?:-O)?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)\b/g;
+// Exported: server/coach/chat.ts's validateChat (F16) reuses this exact
+// pattern rather than redefining an equivalent one that could drift out of
+// sync with narrate()'s validation.
+export const SAN_RE = /\b(?:O-O(?:-O)?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)\b/g;
 
 function stripTrailingPunctuation(token: string): string {
   return token.replace(/[.,!?;:'"]+$/, "");
