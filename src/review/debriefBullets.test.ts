@@ -94,20 +94,28 @@ describe("GAME-127 acceptance (owner playtest fixture, feedback.md)", () => {
 
     // could-be-better: her ply-15 missed punish, "the miss" framing, move 8
     // (ceil(15/2)), category "missed tactic" per the brief's binding
-    // acceptance test.
+    // acceptance test. Phase must read "middlegame": with the recalibrated
+    // rule (opening = ply <= min(16, floor(24/3)=8) = 8), ply 15 is well
+    // past the opening on this 24-ply game — under the old flat "ply<=20"
+    // rule this mislabeled as "opening", which was the review finding.
     const missBullet = bullets.find((b) => b.category === "missed tactic");
     expect(missBullet).toBeTruthy();
     expect(missBullet!.section).toBe("could be better");
     expect(missBullet!.ply).toBe(15);
+    expect(missBullet!.phase).toBe("middlegame");
     expect(missBullet!.text).toContain("move 8");
     expect(missBullet!.text).toContain("knight");
     expect(missBullet!.text).toContain("castle");
 
     // watch-next-time: the king-pressure episode, anchored to its start.
+    // Same recalibration: ply 18 on a 24-ply game is middlegame, not
+    // opening (totalPlies 24 < ENDGAME_MIN_TOTAL_PLIES 40, so it can never
+    // be "endgame" either — a short game never claims endgame).
     const episodeBullet = bullets.find((b) => b.category === "king safety");
     expect(episodeBullet).toBeTruthy();
     expect(episodeBullet!.section).toBe("watch next time");
     expect(episodeBullet!.ply).toBe(18);
+    expect(episodeBullet!.phase).toBe("middlegame");
 
     // The old single-sentence platitude must appear nowhere.
     for (const b of bullets) expect(b.text).not.toBe(OLD_PLATITUDE);
@@ -127,7 +135,7 @@ describe("GAME-127 acceptance (owner playtest fixture, feedback.md)", () => {
   });
 });
 
-describe("phase derivation (opening <=20, endgame > 20 AND (last quarter OR totalPlies-ply<=12), else middlegame)", () => {
+describe("phase derivation (recalibrated 2026-07-19 review: opening = ply <= min(16, floor(totalPlies/3)); endgame only when totalPlies >= 40 AND (totalPlies-ply) <= max(8, floor(totalPlies/4)); else middlegame)", () => {
   function phaseOfSoleCouldBeBetter(ply: number, totalPlies: number) {
     const bullets = debriefBullets({
       turningPoints: [tp({ ply, label: "mistake", deltaP: -0.1 })],
@@ -138,24 +146,42 @@ describe("phase derivation (opening <=20, endgame > 20 AND (last quarter OR tota
     return bullets.find((b) => b.section === "could be better")!.phase;
   }
 
-  it("ply <= 20 is always opening, even deep into a long game's move 10", () => {
-    expect(phaseOfSoleCouldBeBetter(20, 80)).toBe("opening");
-    expect(phaseOfSoleCouldBeBetter(10, 80)).toBe("opening");
+  it("opening bound scales down on a short (24-ply) game instead of the old flat ply<=20", () => {
+    // min(16, floor(24/3)=8) = 8: ply 8 is opening, ply 9 is not (and
+    // can't be endgame either — see next test — so it's middlegame).
+    expect(phaseOfSoleCouldBeBetter(8, 24)).toBe("opening");
+    expect(phaseOfSoleCouldBeBetter(9, 24)).toBe("middlegame");
   });
 
-  it("ply > 20, not in the last quarter, gap > 12 -> middlegame", () => {
-    // totalPlies 40: last-quarter threshold is 40-10=30; ply 25 gap is 15.
-    expect(phaseOfSoleCouldBeBetter(25, 40)).toBe("middlegame");
+  it("a game shorter than ENDGAME_MIN_TOTAL_PLIES (40) never claims endgame, even on its last ply", () => {
+    // totalPlies 24: no material/king-activity signal exists in ply-only
+    // data to honestly call a short game's late moves "endgame".
+    expect(phaseOfSoleCouldBeBetter(24, 24)).toBe("middlegame");
+    // totalPlies 39, one ply short of the 40 floor, last move.
+    expect(phaseOfSoleCouldBeBetter(39, 39)).toBe("middlegame");
   });
 
-  it("ply > 20 within the last quarter -> endgame", () => {
-    expect(phaseOfSoleCouldBeBetter(32, 40)).toBe("endgame");
+  it("opening bound caps at 16 on a long game, not floor(totalPlies/3)", () => {
+    // totalPlies 80: floor(80/3)=26, but the cap is min(16, 26) = 16.
+    expect(phaseOfSoleCouldBeBetter(16, 80)).toBe("opening");
+    expect(phaseOfSoleCouldBeBetter(17, 80)).toBe("middlegame");
   });
 
-  it("ply > 20 with totalPlies - ply <= 12 -> endgame even outside the last quarter", () => {
-    // totalPlies 60: last-quarter threshold 45 (ply 50 is inside it anyway,
-    // so use a case where the gap rule alone must fire): totalPlies 200,
-    // ply 190 -> gap 10 <=12, but nowhere near the last quarter (threshold 150).
+  it("totalPlies >= 40, past the opening, outside the endgame tail -> middlegame", () => {
+    // totalPlies 60: openingBound min(16,20)=16; endgame tail
+    // max(8, floor(60/4)=15)=15, so ply 44 (gap 16) is just outside it.
+    expect(phaseOfSoleCouldBeBetter(44, 60)).toBe("middlegame");
+  });
+
+  it("totalPlies >= 40, within the endgame tail -> endgame (60-ply game, endgame-band ply)", () => {
+    // totalPlies 60: endgame tail max(8, floor(60/4)=15)=15; ply 45 has
+    // gap 15 (<=15) -> endgame; ply 50 (gap 10) is further inside the tail.
+    expect(phaseOfSoleCouldBeBetter(45, 60)).toBe("endgame");
+    expect(phaseOfSoleCouldBeBetter(50, 60)).toBe("endgame");
+  });
+
+  it("endgame tail scales up on a long game (totalPlies 200)", () => {
+    // tail = max(8, floor(200/4)=50) = 50; ply 190 has gap 10 (<=50).
     expect(phaseOfSoleCouldBeBetter(190, 200)).toBe("endgame");
   });
 });
@@ -253,6 +279,29 @@ describe("could-be-better: worst-first ordering, missedPunish priority, classifi
     expect(cbb).toHaveLength(2);
     expect(cbb[0].ply).toBe(30); // blunder (-0.35) worse than inaccuracy (-0.1)
     expect(cbb[1].ply).toBe(10);
+  });
+
+  it("orders worst-first across missedPunish and regular mistakes combined (a -0.30 blunder outranks a -0.20 missedPunish swing)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        tp({ ply: 15, san: "O-O", label: "blunder", deltaP: -0.2, missedPunish: true }),
+        tp({ ply: 30, san: "Qxf7", label: "blunder", deltaP: -0.3 }),
+      ],
+      classifications: [],
+      result: null,
+      totalPlies: 60,
+    });
+    const cbb = bullets.filter((b) => b.section === "could be better");
+    expect(cbb).toHaveLength(2);
+    // The regular blunder (-0.30) is worse than the missedPunish swing
+    // (-0.20), so it must rank first even though missedPunish previously
+    // always sorted ahead of regular mistakes regardless of severity.
+    expect(cbb[0].ply).toBe(30);
+    expect(cbb[0].category).toBe("tactics");
+    expect(cbb[1].ply).toBe(15);
+    expect(cbb[1].category).toBe("missed tactic");
+    // The missedPunish framing text itself is unchanged — only its order.
+    expect(cbb[1].text).toContain("castle");
   });
 
   it("falls back to classifications (severity order) when turningPoints deduped her mistakes away", () => {

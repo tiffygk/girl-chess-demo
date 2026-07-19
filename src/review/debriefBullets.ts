@@ -68,18 +68,32 @@ const NUDGES: Record<string, string> = {
   inaccuracy: "small slip, keep it tight next time.",
 };
 
-/**
- * Phase derivation per the brief: opening = ply <= 20 (move 10); endgame =
- * ply > 20 AND (within the last quarter of the game OR totalPlies - ply <=
- * 12); else middlegame. Simple and deterministic by design — a short game
- * (like the game-127 fixture, 24 plies) can land its whole middle-late
- * story inside the "opening" bucket under this rule; that's a known crude
- * edge, not a bug, per the brief's own "refine later" note.
- */
+// Phase derivation, recalibrated in the 2026-07-19 review round. The prior
+// literal-per-brief formula ("ply <= 20 is always opening") mislabeled the
+// owner's real game-127 fixture (24 plies): its ply-15 missed-punish and
+// ply-18+ king-pressure episode both read as "opening" when they're
+// plainly the game's middle/late story on a game this short. Phases now
+// scale with game length instead of a flat ply cutoff:
+//   - opening:    ply <= min(OPENING_PLY_CAP, floor(totalPlies / OPENING_FRACTION))
+//   - endgame:    only once totalPlies >= ENDGAME_MIN_TOTAL_PLIES, AND
+//                 (totalPlies - ply) <= max(ENDGAME_TAIL_FLOOR, floor(totalPlies / ENDGAME_TAIL_FRACTION))
+//   - middlegame: everything else — including the entire tail of any game
+//     shorter than ENDGAME_MIN_TOTAL_PLIES. A short game never carries
+//     enough material/king-activity signal in ply-only data to honestly
+//     call a moment "endgame", so short games simply never claim one.
+const OPENING_PLY_CAP = 16;
+const OPENING_FRACTION = 3;
+const ENDGAME_MIN_TOTAL_PLIES = 40;
+const ENDGAME_TAIL_FLOOR = 8;
+const ENDGAME_TAIL_FRACTION = 4;
+
 function phaseForPly(ply: number, totalPlies: number): GamePhase {
-  if (ply <= 20) return "opening";
-  const lastQuarter = totalPlies > 0 && ply >= totalPlies - totalPlies / 4;
-  if (lastQuarter || totalPlies - ply <= 12) return "endgame";
+  const openingBound = Math.min(OPENING_PLY_CAP, Math.floor(totalPlies / OPENING_FRACTION));
+  if (ply <= openingBound) return "opening";
+  if (totalPlies >= ENDGAME_MIN_TOTAL_PLIES) {
+    const endgameTail = Math.max(ENDGAME_TAIL_FLOOR, Math.floor(totalPlies / ENDGAME_TAIL_FRACTION));
+    if (totalPlies - ply <= endgameTail) return "endgame";
+  }
   return "middlegame";
 }
 
@@ -240,33 +254,38 @@ function buildCouldBeBetter(
   const used = new Set<number>();
   const out: DebriefBullet[] = [];
 
-  const missed = turningPoints.filter((t) => t.missedPunish).sort((a, b) => a.deltaP - b.deltaP);
-  for (const m of missed) {
-    if (out.length >= 2) break;
-    used.add(m.ply);
-    out.push({
-      section: "could be better",
-      text: missedPunishText(m, turningPoints),
-      phase: phaseForPly(m.ply, totalPlies),
-      category: "missed tactic",
-      ply: m.ply,
-    });
-  }
-
-  const herNegTP = turningPoints
-    .filter((t) => HER_NEG_LABELS.has(t.label) && !t.missedPunish && !used.has(t.ply))
+  // Missed-punish and her-own-mistake turning points, worst-first by
+  // deltaP together (both are negative swings; more negative = worse). A
+  // regular blunder must be able to outrank a smaller missedPunish swing —
+  // previously missedPunish always sorted ahead of regular mistakes
+  // regardless of severity, which could bury a -0.30 blunder behind a
+  // -0.20 missed punish. The missedPunish framing text is unchanged; only
+  // the ordering between the two families changed.
+  const candidates = turningPoints
+    .filter((t) => t.missedPunish || HER_NEG_LABELS.has(t.label))
     .sort((a, b) => a.deltaP - b.deltaP);
-  for (const h of herNegTP) {
+  for (const c of candidates) {
     if (out.length >= 2) break;
-    used.add(h.ply);
-    const episodeCtx = episode ? { ply: episode.ply, plyEnd: episode.plyEnd } : null;
-    out.push({
-      section: "could be better",
-      text: couldBeBetterText(h.ply, h.label, h.san),
-      phase: phaseForPly(h.ply, totalPlies),
-      category: categorize(h, phaseForPly(h.ply, totalPlies), episodeCtx),
-      ply: h.ply,
-    });
+    if (used.has(c.ply)) continue;
+    used.add(c.ply);
+    if (c.missedPunish) {
+      out.push({
+        section: "could be better",
+        text: missedPunishText(c, turningPoints),
+        phase: phaseForPly(c.ply, totalPlies),
+        category: "missed tactic",
+        ply: c.ply,
+      });
+    } else {
+      const episodeCtx = episode ? { ply: episode.ply, plyEnd: episode.plyEnd } : null;
+      out.push({
+        section: "could be better",
+        text: couldBeBetterText(c.ply, c.label, c.san),
+        phase: phaseForPly(c.ply, totalPlies),
+        category: categorize(c, phaseForPly(c.ply, totalPlies), episodeCtx),
+        ply: c.ply,
+      });
+    }
   }
 
   const clsNeg = classifications
