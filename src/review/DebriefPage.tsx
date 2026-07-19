@@ -6,9 +6,10 @@
 //
 // Three pieces live in this one file (brief left the split to the builder's
 // judgement when a separate component would be artificial):
-//   - DebriefPage: the lesson line + turning-point cards + rewind controls,
-//     rendered both under a just-finished live game (inside GameEndPanel)
-//     and under a reviewed past game (REVIEW MODE).
+//   - DebriefPage: the structured bullet set (debrief-v2, replacing the
+//     single lesson sentence — see debriefBullets.ts) + turning-point cards
+//     + rewind controls, rendered both under a just-finished live game
+//     (inside GameEndPanel) and under a reviewed past game (REVIEW MODE).
 //   - PastGamesButton: the small trigger, reused verbatim at its two
 //     required call sites (pregame panel, live debrief).
 //   - PastGamesDrawer: the "file it away" saved-games list, organized by
@@ -17,8 +18,9 @@
 // deltaP is deliberately never rendered anywhere in this file — "the story
 // is words, not numbers" (brief).
 
-import type { GameListEntry, TurningPoint } from "../game/api";
-import { debriefLesson, moveNumberForPly } from "./debriefLesson";
+import type { GameListEntry, MoveClassification, TurningPoint } from "../game/api";
+import { moveNumberForPly } from "./debriefLesson";
+import { debriefBullets, type DebriefBullet } from "./debriefBullets";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -47,20 +49,66 @@ interface TurningPointCardProps {
 }
 
 function TurningPointCard({ point, onRewind }: TurningPointCardProps) {
-  const negative = NEGATIVE_CARD_LABELS.has(point.label);
+  // debrief-v2: an episode card is a warning-class fact by construction (a
+  // sustained king-pressure run), so it always gets the magenta tint —
+  // same flat-tint card family as a negative-labeled swing/backfill card,
+  // just a different reason.
+  const isEpisode = point.kind === "episode";
+  const negative = NEGATIVE_CARD_LABELS.has(point.label) || isEpisode;
+  const startMove = moveNumberForPly(point.ply);
+  const endMove = point.plyEnd != null ? moveNumberForPly(point.plyEnd) : startMove;
   return (
     <div className={"debrief-card" + (negative ? " debrief-card-negative" : "")}>
       <div className="debrief-card-head">
-        <span className="debrief-card-kicker">move {moveNumberForPly(point.ply)}</span>
+        <span className="debrief-card-kicker">{isEpisode ? `moves ${startMove}-${endMove}` : `move ${startMove}`}</span>
         {point.lowConfidence && <span className="debrief-card-lowconf">(eval gap here)</span>}
       </div>
       <p className="debrief-card-prose">
-        {point.san} · {point.label}
+        {isEpisode
+          ? "king pressure · her pieces camped on your king"
+          : `${point.missedPunish ? "the miss · " : ""}${point.san} · ${point.label}`}
       </p>
       {point.punishSan && <p className="debrief-card-punish">you punished with {point.punishSan}</p>}
       <button className="small debrief-replay-btn" onClick={() => onRewind(point.ply)}>
         replay
       </button>
+    </div>
+  );
+}
+
+// debrief-v2: the three fixed-order bullet sections replacing the single
+// lesson sentence. Section groups are only rendered when they have at
+// least one bullet (debriefBullets guarantees every section is non-empty
+// in practice, but this stays defensive rather than assuming).
+const BULLET_SECTION_ORDER: DebriefBullet["section"][] = ["done well", "could be better", "watch next time"];
+
+function DebriefBulletList({ bullets, onRewind }: { bullets: DebriefBullet[]; onRewind: (ply: number) => void }) {
+  return (
+    <div className="debrief-bullets">
+      {BULLET_SECTION_ORDER.map((section) => {
+        const items = bullets.filter((b) => b.section === section);
+        if (items.length === 0) return null;
+        return (
+          <div className="debrief-bullet-section" key={section}>
+            <span className="debrief-bullet-kicker">{section}</span>
+            {items.map((b, i) => (
+              <div className="debrief-bullet" key={i}>
+                <p className="debrief-bullet-text">{b.text}</p>
+                <div className="debrief-bullet-foot">
+                  <span className="debrief-bullet-tag">
+                    {b.phase} · {b.category}
+                  </span>
+                  {b.ply != null && (
+                    <button className="small debrief-replay-btn" onClick={() => onRewind(b.ply!)}>
+                      replay
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -72,12 +120,19 @@ export interface DebriefReviewing {
 
 export interface DebriefPageProps {
   turningPoints: TurningPoint[];
+  // debrief-v2: the bullets' fuller-net could-be-better source (turning
+  // points alone can dedup away a real mistake — see turningPoints.ts's
+  // dedup comment) and the ply count phase derivation needs. Both come
+  // straight off SummaryResponse (classifications, moves.length).
+  classifications: MoveClassification[];
+  totalPlies: number;
   // The finished game's result — live path passes gameOver.result, review
   // path passes reviewGame.result. Both are plain strings on the wire
-  // (GameOverInfo/GameListEntry); debriefLesson narrows to its own
+  // (GameOverInfo/GameListEntry); debriefBullets narrows to its own
   // "1-0" | "0-1" | "1/2-1/2" | null domain. Required (not derived from
   // `reviewing`) because the live debrief has no `reviewing` prop but still
-  // needs the result to pick an honest lesson line (post 3c-review F1).
+  // needs the result to pick an honest bullet set (post 3c-review F1,
+  // carried forward into debrief-v2).
   result: string | null;
   rewindPly: number | null;
   onRewind: (ply: number) => void;
@@ -91,6 +146,8 @@ export interface DebriefPageProps {
 
 export function DebriefPage({
   turningPoints,
+  classifications,
+  totalPlies,
   result,
   rewindPly,
   onRewind,
@@ -99,10 +156,12 @@ export function DebriefPage({
   reviewing,
   onBackToPlay,
 }: DebriefPageProps) {
-  const lesson = debriefLesson(
+  const bullets = debriefBullets({
     turningPoints,
-    result === "1-0" || result === "0-1" || result === "1/2-1/2" ? result : null
-  );
+    classifications,
+    result: result === "1-0" || result === "0-1" || result === "1/2-1/2" ? result : null,
+    totalPlies,
+  });
   return (
     <div className="debrief pop-in">
       {reviewing && (
@@ -116,7 +175,7 @@ export function DebriefPage({
           </button>
         </div>
       )}
-      <p className="debrief-lesson">{lesson}</p>
+      <DebriefBulletList bullets={bullets} onRewind={onRewind} />
       {turningPoints.length > 0 && (
         <div className="debrief-cards">
           {turningPoints.map((point) => (

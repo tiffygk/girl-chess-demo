@@ -1094,12 +1094,34 @@
   flex-direction: column;
   gap: var(--space-2);
 }
-.gc-app .debrief-lesson {
-  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13px;
-  color: #4A3B7E; text-align: center; line-height: 1.5;
+/* debrief-v2: three fixed-order bullet sections (done well / could be
+   better / watch next time) replace the single lesson sentence as the
+   debrief's opening act. Same lavender bubble-prose family as the turning-
+   point cards below, one flat bubble per bullet, kicker/tag chips in the
+   signal-register type (Chakra Petch, uppercase-tracking, lowercase text). */
+.gc-app .debrief-bullets { display: flex; flex-direction: column; gap: var(--space-2); }
+.gc-app .debrief-bullet-section { display: flex; flex-direction: column; gap: 6px; }
+.gc-app .debrief-bullet-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #6952C4;
+  padding-left: 2px;
+}
+.gc-app .debrief-bullet {
   background: #F4F0FF; border: 1.5px solid #E3D9F5;
-  border-radius: 14px; padding: 10px 16px;
+  border-radius: 14px; padding: 10px 14px;
   box-shadow: none;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.gc-app .debrief-bullet-text {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13.5px;
+  color: #4A3B7E; margin: 0; line-height: 1.4;
+}
+.gc-app .debrief-bullet-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.gc-app .debrief-bullet-tag {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .1em; text-transform: lowercase; color: #23A8C7;
 }
 .gc-app .debrief-cards { display: flex; flex-direction: column; gap: 8px; }
 .gc-app .debrief-card {

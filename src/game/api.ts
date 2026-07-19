@@ -283,15 +283,20 @@ export function logHint(
 
 // Increment 3c: mirrors server/annotator/turningPoints.ts's TurningPoint
 // (hand-mirroring, same convention as MoveFacts/ThreatFacts above).
+// debrief-v2 (Task 1): added missedPunish, plyEnd, "episode" kind, and rank
+// 4 (the episode card sits after up to 3 swing/backfill cards) — mirrors
+// TP_ALGO_VERSION 2's additive shape exactly.
 export interface TurningPoint {
-  rank: 1 | 2 | 3;
+  rank: 1 | 2 | 3 | 4;
   ply: number;
   san: string;
   label: string;
   punishSan?: string;
   deltaP: number;
   lowConfidence: boolean;
-  kind: "swing" | "backfill";
+  kind: "swing" | "backfill" | "episode";
+  missedPunish?: boolean;
+  plyEnd?: number;
 }
 
 export interface MoveClassification {
