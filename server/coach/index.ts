@@ -287,6 +287,7 @@ export interface NarrateTraceContext {
 export interface NarrateResult {
   text: string;
   source: NarrateSource;
+  traceId: number;
   traceMeta: {
     backend: string;
     prompt: string;
@@ -344,7 +345,7 @@ export async function narrate(
   const text = modelText ?? buildTemplateNarration(facts, persona);
   const latencyMs = Date.now() - start;
 
-  recordAdviceTrace({
+  const traceId = recordAdviceTrace({
     gameId: trace.gameId,
     ply: trace.ply,
     kind: trace.kind,
@@ -361,6 +362,7 @@ export async function narrate(
   return {
     text,
     source,
+    traceId,
     traceMeta: {
       backend: backend.name,
       prompt: attemptPrompt,
