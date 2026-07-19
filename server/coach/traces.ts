@@ -17,8 +17,8 @@ export function recordAdviceTrace(input: {
   validated: boolean;
   regenCount: number;
   latencyMs: number;
-}) {
-  insertAdviceTrace({
+}): number {
+  return insertAdviceTrace({
     gameId: input.gameId,
     ply: input.ply,
     kind: input.kind,

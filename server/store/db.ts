@@ -270,13 +270,15 @@ export const insertAdviceTrace = (t: {
   validated: boolean;
   regenCount: number;
   latencyMs: number;
-}) =>
-  db.prepare(
-    `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?)`
-  ).run(
-    t.gameId, t.ply, t.kind, t.factsJson, t.prompt, t.output, t.source, t.backend,
-    t.validated ? 1 : 0, t.regenCount, t.latencyMs
+}): number =>
+  Number(
+    db.prepare(
+      `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?)`
+    ).run(
+      t.gameId, t.ply, t.kind, t.factsJson, t.prompt, t.output, t.source, t.backend,
+      t.validated ? 1 : 0, t.regenCount, t.latencyMs
+    ).lastInsertRowid
   );
 export const getAdviceTraces = (gameId: number) =>
   db.prepare("SELECT * FROM advice_traces WHERE game_id = ? ORDER BY id").all(gameId) as any[];

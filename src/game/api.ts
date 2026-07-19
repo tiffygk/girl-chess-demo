@@ -249,6 +249,7 @@ export interface NarrateResponse {
   ok: boolean;
   text?: string;
   source?: string;
+  traceId?: number;
 }
 
 export function narrate(

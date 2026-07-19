@@ -439,7 +439,9 @@ export class GameManager {
       best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
       recommendation?: RecommendationFacts;
     }
-  ): Promise<{ ok: false } | { ok: true; text: string; source: "model" | "template" }> {
+  ): Promise<
+    { ok: false } | { ok: true; text: string; source: "model" | "template"; traceId: number }
+  > {
     const live = this.games.get(gameId);
     if (!live || live.finished) return { ok: false };
 
@@ -453,7 +455,7 @@ export class GameManager {
       recommendation: body.recommendation,
     });
     const result = await narrateFacts(facts, backend, { gameId, ply: live.ply, kind: body.tier });
-    return { ok: true, text: result.text, source: result.source };
+    return { ok: true, text: result.text, source: result.source, traceId: result.traceId };
   }
 
   // Wave C, task C-B: observability for the Lab's hint-escalation metric.

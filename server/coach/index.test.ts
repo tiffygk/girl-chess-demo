@@ -134,6 +134,24 @@ describe("narrate", () => {
     expect(result.source).toBe("template");
   });
 
+  it("result.traceId selects the exact advice_traces row this call wrote", async () => {
+    const facts = mkFacts();
+    const backend = fakeBackend({
+      async generate() {
+        return "Rxd8 takes back, but Nxe4 wins the pawn instead.";
+      },
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    const result = await narrate(facts, backend, { gameId, ply: 5, kind: "warning" });
+
+    const rows = getAdviceTraces(gameId);
+    const row = rows.find((r) => r.id === result.traceId);
+    expect(row).toBeDefined();
+    expect(row!.prompt).toBe(result.traceMeta.prompt);
+    expect(row!.output).toBe(result.traceMeta.output);
+  });
+
   it("writes exactly one advice_traces row per narrate call, model or template", async () => {
     const sessionId = createSession();
     const gameId = createGame(sessionId, "maia-1100");
