@@ -53,7 +53,8 @@ export interface TurningPoint {
 // (NULL treated as 1) to decide whether to heal an old game's stored rows —
 // see server/store/db.ts's turning_points.algo_version column and
 // manager.ts's getSummary.
-export const TP_ALGO_VERSION = 2;
+// v3 = widened episode geometry (Chebyshev dist 2 + open-file shelter)
+export const TP_ALGO_VERSION = 3;
 
 // Owner-calibratable: cp -> winprob steepness. This is the same constant as
 // chess.com's published win% formula (0.00368208, here to 3 sig figs per
