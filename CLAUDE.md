@@ -35,8 +35,9 @@ girl-chess/
     main.tsx, App.tsx
     board/                  Board.tsx, pieces.tsx (Sugar Glitch SVGs), squareMapping.ts, sounds.ts, glitch.css
     game/                   GamePage.tsx (play flow), api.ts (typed client)
-    review/                 DebriefPage.tsx, Rewind.tsx (fenAtPly), debriefLesson.ts (honest result-gated
-                            lesson line) - debrief renders under the game; past-games drawer + review mode
+    review/                 DebriefPage.tsx, Rewind.tsx (fenAtPly), debriefLesson.ts (drawer tag),
+                            debriefBullets.ts (structured done-well/could-be-better/watch-next bullets,
+                            phase + chess-term tags) - debrief under the game; past-games drawer + review mode
     drills/     (inc. 4)    DrillsPage.tsx
     home/       (inc. 4)    Dashboard.tsx, Lab.tsx
     skin/                   sugar-glitch.ts (palette, type, effects tokens)
