@@ -6,7 +6,11 @@ export const app = express();
 app.use(express.json());
 
 openDb(process.env.NODE_ENV === "test" ? ":memory:" : "data/girlchess.db");
-const gm = new GameManager();
+// Exported: index.test.ts (F16 chat route test) uses
+// gm.setCoachBackendForTesting to inject a fake backend before hitting
+// POST /api/game/:id/chat, the same seam manager.test.ts already relies on
+// -- never invoke the real claude CLI / ollama from a test.
+export const gm = new GameManager();
 export const ready = gm.init();
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -140,6 +144,26 @@ app.post("/api/game/:id/narrate", async (req, res) => {
       threat,
       best,
       recommendation,
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
+// Increment 3.9, F16: this-game grounding chat. Mirrors narrate's envelope
+// (ok:true/false, never a thrown error past gm.chat -- that method's own
+// chat() call never throws either, worst case is a template-sourced
+// redirect string, so the 500 branch here is purely defensive). backendPref
+// is accepted for forward-compat with Task 5's backend picker but not yet
+// wired to anything -- gm.pickCoachBackend() still probes/caches on its own
+// until that lands.
+app.post("/api/game/:id/chat", async (req, res) => {
+  const { message, context } = req.body;
+  try {
+    const result = await gm.chat(Number(req.params.id), {
+      message: String(message ?? ""),
+      context: context ?? { mode: "live" },
     });
     res.json(result);
   } catch (error) {

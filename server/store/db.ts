@@ -130,6 +130,21 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     { name: "missed_punish", addSql: "missed_punish INTEGER" },
     { name: "algo_version", addSql: "algo_version INTEGER" },
   ],
+  // Increment 3.9 (F16, this-game grounding chat): one row per chat message,
+  // player and coach both. Brand-new table (CREATE TABLE IF NOT EXISTS below
+  // already creates it with every column on any db, old or new), listed here
+  // per the established EXPECTED_COLUMNS convention (see advice_traces'
+  // comment above) so a future additive column migrates the same way.
+  // trace_id is nullable: a player message has no advice_traces row of its
+  // own (it's the input, not a coach reply); a coach reply's trace_id points
+  // at the advice_traces row server/coach/chat.ts wrote for it.
+  chat_messages: [
+    { name: "game_id", addSql: "game_id INTEGER REFERENCES games(id)" },
+    { name: "role", addSql: "role TEXT" },
+    { name: "text", addSql: "text TEXT" },
+    { name: "trace_id", addSql: "trace_id INTEGER" },
+    { name: "created_at", addSql: "created_at TEXT DEFAULT (datetime('now'))" },
+  ],
 };
 
 function migrateSchema(target: Database.Database) {
@@ -184,6 +199,10 @@ export function openDb(path = "data/girlchess.db") {
       ply INTEGER, san TEXT, label TEXT, punish_san TEXT, delta_p REAL,
       low_confidence INTEGER, kind TEXT, created_at TEXT DEFAULT (datetime('now')),
       ply_end INTEGER, missed_punish INTEGER, algo_version INTEGER);
+    CREATE TABLE IF NOT EXISTS chat_messages(
+      id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id),
+      role TEXT, text TEXT, trace_id INTEGER,
+      created_at TEXT DEFAULT (datetime('now')));
   `);
   migrateSchema(db);
   return db;
@@ -377,3 +396,30 @@ export const listFinishedGames = (limit = 30) =>
 // value — unlike turning_points above, this needs no existence guard.
 export const setMoveClassification = (gameId: number, ply: number, classification: string | null) =>
   db.prepare("UPDATE moves SET classification = ? WHERE game_id = ? AND ply = ?").run(classification, gameId, ply);
+
+// Increment 3.9 (F16): written by server/game/manager.ts's chat() for both
+// the player's message and the coach's reply. traceId is omitted (stored
+// NULL) for a player message — only a coach reply has an advice_traces row
+// to point at.
+export const insertChatMessage = (m: { gameId: number; role: string; text: string; traceId?: number | null }): number =>
+  Number(
+    db.prepare(
+      "INSERT INTO chat_messages(game_id, role, text, trace_id) VALUES(?,?,?,?)"
+    ).run(m.gameId, m.role, m.text, m.traceId ?? null).lastInsertRowid
+  );
+// Server is the history authority (F16, panel A1): returns the last `limit`
+// rows for the game in chronological (id ASC) order — manager.ts's chat()
+// feeds this straight into coach/chat.ts's chat() as its `history` param.
+// The client's own optimistic array is never trusted as conversation
+// context sent to the model; this db read is the only source of truth.
+export const getChatMessages = (gameId: number, limit: number) =>
+  db.prepare(
+    `SELECT * FROM (
+       SELECT * FROM chat_messages WHERE game_id = ? ORDER BY id DESC LIMIT ?
+     ) ORDER BY id ASC`
+  ).all(gameId, limit) as any[];
+// Unfiltered, for tests/debug tooling — every chat_messages row for the
+// game, oldest first. Not used by the chat() read path (that's
+// getChatMessages above, windowed to CHAT_HISTORY_WINDOW).
+export const getAllChatMessages = (gameId: number) =>
+  db.prepare("SELECT * FROM chat_messages WHERE game_id = ? ORDER BY id").all(gameId) as any[];
