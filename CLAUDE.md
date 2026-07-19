@@ -1,3 +1,7 @@
+## Session start
+
+New session? Read `.superpowers/sdd/HANDOFF-2026-07-18.md` FIRST (or the newest HANDOFF-*.md): it carries the full between-sessions context this file deliberately does not — current state, the owner decisions registry, the open queue, hard rules with their history, and the process runbook. Then read the tail of `.superpowers/sdd/progress.md`. Before any live browser work, check for orphaned dev servers (`lsof -iTCP -sTCP:LISTEN | grep -E "3001|5173"`) and kill leftovers; a zombie vite with a dead API hangs game creation at "finding an opponent..." (2026-07-18). After any server restart, reload the page before driving it (stale pages hold dead sessionIds).
+
 ## Repository and primitives (file structure locks the decomposition)
 
 Repo: `/Users/tiffany/girl-chess` (new). Plans and product docs stay in the Obsidian vault; `CLAUDE.md` in the repo carries the architecture map for future sessions. This includes front-end design references — component libraries, visual style guides, anything like `front-end-components.md`: they belong in the vault's `3 visual/` folder alongside `Sugar Glitch Demo.html`, never in a repo-local `design/` folder. (Corrected 2026-07-17 after one got created in the wrong place.)
