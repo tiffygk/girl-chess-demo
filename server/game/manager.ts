@@ -14,7 +14,7 @@ import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
 // STORED evals only (see persistGameSummary below) — never touches
 // this.evaluator or the shared queue, same "engine math only" boundary as
 // judgeMove's classify.ts/adjudicate.ts calls.
-import { computeTurningPoints, type TurningPoint } from "../annotator/turningPoints";
+import { computeTurningPoints, TP_ALGO_VERSION, type TurningPoint } from "../annotator/turningPoints";
 import { classifyMoves } from "../annotator/classifications";
 // Increment 3a Wave 2: the coach's async narrate surface. Deliberately kept
 // out of judgeMove above — see that method's own comment and
@@ -109,7 +109,9 @@ export class GameManager {
         turningPoints.map((t) => ({
           rank: t.rank, ply: t.ply, san: t.san, label: t.label,
           punishSan: t.punishSan ?? null, deltaP: t.deltaP, lowConfidence: t.lowConfidence, kind: t.kind,
-        }))
+          plyEnd: t.plyEnd ?? null, missedPunish: t.missedPunish ?? false,
+        })),
+        TP_ALGO_VERSION
       );
       for (const c of classifyMoves(moves)) {
         if (c) setMoveClassification(gameId, c.ply, c.classification);
@@ -130,15 +132,43 @@ export class GameManager {
   // reconstruct any position; see src/review/Rewind.tsx) is now always
   // included alongside the existing turningPoints/classifications, in both
   // the persisted and compute-on-read branches below.
+  //
+  // debrief-v2: self-healing algo versioning. getTurningPoints already
+  // returns only the highest-version row set stored for the game (see its
+  // comment in store/db.ts); here we additionally check whether THAT set is
+  // still behind the current algorithm (NULL algo_version on old rows reads
+  // as 1) and, if so, recompute fresh from stored evals and persist a new
+  // TP_ALGO_VERSION row set — insertTurningPoints's per-version existence
+  // guard makes this idempotent, and old rows are never deleted (CLAUDE.md's
+  // data rule). This heals every pre-debrief-v2 game (including the one
+  // that motivated this round) the next time its summary is opened, with no
+  // migration script and no data loss.
   getSummary(gameId: number): {
     ok: true;
     turningPoints: TurningPoint[];
     classifications: { ply: number; classification: string }[];
     moves: { ply: number; san: string }[];
   } {
-    const persisted = getTurningPoints(gameId);
+    let persisted = getTurningPoints(gameId);
     const rows = getGameMoves(gameId);
     const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san }));
+
+    const persistedVersion = persisted.length > 0 ? (persisted[0].algo_version ?? 1) : TP_ALGO_VERSION;
+    if (persisted.length > 0 && persistedVersion < TP_ALGO_VERSION) {
+      const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate }));
+      const game = getGame(gameId);
+      const healed = computeTurningPoints(evalMoves, game?.result ?? "");
+      insertTurningPoints(
+        gameId,
+        healed.map((t) => ({
+          rank: t.rank, ply: t.ply, san: t.san, label: t.label,
+          punishSan: t.punishSan ?? null, deltaP: t.deltaP, lowConfidence: t.lowConfidence, kind: t.kind,
+          plyEnd: t.plyEnd ?? null, missedPunish: t.missedPunish ?? false,
+        })),
+        TP_ALGO_VERSION
+      );
+      persisted = getTurningPoints(gameId); // re-read: now returns the freshly-inserted v-TP_ALGO_VERSION set
+    }
 
     if (persisted.length > 0) {
       return {
@@ -147,6 +177,7 @@ export class GameManager {
           rank: r.rank, ply: r.ply, san: r.san, label: r.label,
           punishSan: r.punish_san ?? undefined, deltaP: r.delta_p,
           lowConfidence: !!r.low_confidence, kind: r.kind,
+          plyEnd: r.ply_end ?? undefined, missedPunish: !!r.missed_punish,
         })),
         classifications: rows
           .filter((m: any) => m.classification)
@@ -155,7 +186,9 @@ export class GameManager {
       };
     }
 
-    // Compute-on-read fallback (old games with no persisted rows).
+    // Compute-on-read fallback (old games with no persisted rows at all —
+    // evals hadn't attached at persist time; nothing to heal here since
+    // there's no prior row set to be stale).
     const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate }));
     const game = getGame(gameId);
     return {

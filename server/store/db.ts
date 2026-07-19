@@ -120,6 +120,15 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     { name: "low_confidence", addSql: "low_confidence INTEGER" },
     { name: "kind", addSql: "kind TEXT" },
     { name: "created_at", addSql: "created_at TEXT DEFAULT (datetime('now'))" },
+    // debrief-v2: the king-pressure episode's end ply (NULL for swing/backfill
+    // rows), whether a HER swing is the "missed punish" shape, and the algo
+    // version this row was computed under (NULL on any pre-debrief-v2 row —
+    // treated as 1 everywhere it's read, per TP_ALGO_VERSION's comment in
+    // turningPoints.ts). All additive/nullable so every pre-existing row and
+    // insertTurningPoints call site keeps working unchanged.
+    { name: "ply_end", addSql: "ply_end INTEGER" },
+    { name: "missed_punish", addSql: "missed_punish INTEGER" },
+    { name: "algo_version", addSql: "algo_version INTEGER" },
   ],
 };
 
@@ -173,7 +182,8 @@ export function openDb(path = "data/girlchess.db") {
     CREATE TABLE IF NOT EXISTS turning_points(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), rank INTEGER,
       ply INTEGER, san TEXT, label TEXT, punish_san TEXT, delta_p REAL,
-      low_confidence INTEGER, kind TEXT, created_at TEXT DEFAULT (datetime('now')));
+      low_confidence INTEGER, kind TEXT, created_at TEXT DEFAULT (datetime('now')),
+      ply_end INTEGER, missed_punish INTEGER, algo_version INTEGER);
   `);
   migrateSchema(db);
   return db;
@@ -273,11 +283,21 @@ export const getAdviceTraces = (gameId: number) =>
 
 // Increment 3b: written once by manager.ts's persistGameSummary at game
 // end. Idempotency choice (per the brief: delete-then-insert is NOT this
-// file's convention) — skip entirely if this game_id already has rows,
-// rather than INSERT OR REPLACE (which would need a synthetic uniqueness
-// key across (game_id, rank) with no real-world reason for a second write
-// to ever differ from the first: turning points are computed once from
-// final stored evals and never recomputed).
+// file's convention) — skip entirely if this game_id already has rows FOR
+// THIS algoVersion, rather than INSERT OR REPLACE (which would need a
+// synthetic uniqueness key across (game_id, rank) with no real-world reason
+// for a second write to ever differ from the first: turning points are
+// computed once from final stored evals and never recomputed for a given
+// algo version).
+//
+// debrief-v2: `algoVersion` is now required (the caller passes
+// TP_ALGO_VERSION from turningPoints.ts — this file stays a plain accessor,
+// no business constants) and rows are tagged with it. This is the healing
+// seam: manager.ts's getSummary can call this AGAIN for a game that already
+// has stale (lower-version) rows, and — because the existence guard is
+// scoped to algoVersion, not the game_id alone — it inserts a fresh row set
+// tagged with the current version WITHOUT deleting the old rows (never
+// touch the owner's history; see CLAUDE.md's data rule).
 export const insertTurningPoints = (
   gameId: number,
   points: {
@@ -289,19 +309,47 @@ export const insertTurningPoints = (
     deltaP: number;
     lowConfidence: boolean;
     kind: string;
-  }[]
+    plyEnd?: number | null;
+    missedPunish?: boolean;
+  }[],
+  algoVersion: number
 ) => {
-  const existing = db.prepare("SELECT COUNT(*) as n FROM turning_points WHERE game_id = ?").get(gameId) as { n: number };
+  const existing = db
+    .prepare("SELECT COUNT(*) as n FROM turning_points WHERE game_id = ? AND COALESCE(algo_version, 1) = ?")
+    .get(gameId, algoVersion) as { n: number };
   if (existing.n > 0) return;
   const stmt = db.prepare(
-    "INSERT INTO turning_points(game_id, rank, ply, san, label, punish_san, delta_p, low_confidence, kind) VALUES(?,?,?,?,?,?,?,?,?)"
+    `INSERT INTO turning_points(game_id, rank, ply, san, label, punish_san, delta_p, low_confidence, kind, ply_end, missed_punish, algo_version)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
   );
   for (const p of points) {
-    stmt.run(gameId, p.rank, p.ply, p.san, p.label, p.punishSan ?? null, p.deltaP, p.lowConfidence ? 1 : 0, p.kind);
+    stmt.run(
+      gameId, p.rank, p.ply, p.san, p.label, p.punishSan ?? null, p.deltaP,
+      p.lowConfidence ? 1 : 0, p.kind, p.plyEnd ?? null, p.missedPunish ? 1 : 0, algoVersion
+    );
   }
 };
+// debrief-v2: unfiltered — every row ever written for the game, across every
+// algo_version, oldest first. Not used by the read path (that's
+// getTurningPoints below); exists so tests (and any future admin/debug
+// tooling) can confirm the healing path is additive-only, never deleting a
+// stale version's rows.
+export const getTurningPointsAllVersions = (gameId: number) =>
+  db.prepare("SELECT * FROM turning_points WHERE game_id = ? ORDER BY algo_version, rank").all(gameId) as any[];
+// debrief-v2: returns only the HIGHEST-version row set stored for the game
+// (NULL algo_version treated as 1) — old-version rows stay in the table
+// (never deleted) but are never surfaced once a healed set exists. Pairs
+// with insertTurningPoints' per-version existence guard above.
 export const getTurningPoints = (gameId: number) =>
-  db.prepare("SELECT * FROM turning_points WHERE game_id = ? ORDER BY rank").all(gameId) as any[];
+  db
+    .prepare(
+      `SELECT * FROM turning_points WHERE game_id = ?
+         AND COALESCE(algo_version, 1) = (
+           SELECT MAX(COALESCE(algo_version, 1)) FROM turning_points WHERE game_id = ?
+         )
+       ORDER BY rank`
+    )
+    .all(gameId, gameId) as any[];
 // Increment 3c: GET /api/games — finished games only, newest first, capped
 // at 30 (the "past games" / saved-games menu list). `lesson` is the rank-1
 // turning point's label for that game (the organizing tag the UX research
@@ -313,7 +361,11 @@ export const listFinishedGames = (limit = 30) =>
   db.prepare(
     `SELECT g.id as id, g.started_at as startedAt, g.opponent as opponent,
             g.result as result, g.end_reason as endReason,
-            (SELECT label FROM turning_points tp WHERE tp.game_id = g.id AND tp.rank = 1) as lesson
+            (SELECT label FROM turning_points tp WHERE tp.game_id = g.id AND tp.rank = 1
+               AND COALESCE(tp.algo_version, 1) = (
+                 SELECT MAX(COALESCE(algo_version, 1)) FROM turning_points WHERE game_id = g.id
+               )
+            ) as lesson
      FROM games g
      WHERE g.result IS NOT NULL
      ORDER BY g.id DESC
