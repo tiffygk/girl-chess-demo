@@ -1508,6 +1508,8 @@ export function GamePage() {
             !reviewGame && liveSummary ? (
               <DebriefPage
                 turningPoints={liveSummary.turningPoints}
+                classifications={liveSummary.classifications}
+                totalPlies={liveSummary.moves.length}
                 result={gameOver.result}
                 rewindPly={rewindPly}
                 onRewind={handleRewind}
@@ -1521,6 +1523,8 @@ export function GamePage() {
       {reviewGame && (
         <DebriefPage
           turningPoints={reviewGame.summary.turningPoints}
+          classifications={reviewGame.summary.classifications}
+          totalPlies={reviewGame.summary.moves.length}
           result={reviewGame.result}
           rewindPly={rewindPly}
           onRewind={handleRewind}
