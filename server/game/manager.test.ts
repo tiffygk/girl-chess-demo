@@ -1,7 +1,11 @@
 // server/game/manager.test.ts
 import { describe, it, expect, beforeAll } from "vitest";
-import { openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces } from "../store/db";
+import {
+  openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces,
+  createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
+} from "../store/db";
 import { GameManager } from "./manager";
+import { TP_ALGO_VERSION } from "../annotator/turningPoints";
 
 describe("GameManager", () => {
   let gm: GameManager;
@@ -385,5 +389,46 @@ describe("GameManager", () => {
       deltaCp: 80,
     });
     expect(result.ok).toBe(false);
+  });
+
+  // debrief-v2: algo versioning self-heal. A game finished under the OLD
+  // algorithm (dedup-swallows-her-swings, no episode detector) has a stale
+  // algo_version=1 row set — getSummary must recompute under the current
+  // algorithm, persist a fresh TP_ALGO_VERSION set alongside it, and never
+  // delete the old rows (CLAUDE.md's data rule: never touch the owner's
+  // history). Built directly against the db accessors (not gm.newGame/
+  // playerMove) so this stays fast and self-contained — no live engine
+  // needed to exercise a pure read-path/persistence concern.
+  it("heals a stale turning_points row set on summary read, without deleting the old rows", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    attachEval(g, 2, { cp: 900, mate: null, bestMove: "e7e5", pv: ["e7e5"] }); // dramatic swing, always clears TP_FLOOR
+    finishGame(g, "1-0");
+
+    // Seed a stale v1 row the way a pre-debrief-v2 game would have it.
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 2, san: "e5", label: "opponent blunder", deltaP: 0.9, lowConfidence: false, kind: "swing" }],
+      1
+    );
+    expect(getTurningPointsAllVersions(g)).toHaveLength(1);
+
+    const summary = gm.getSummary(g);
+    expect(summary.ok).toBe(true);
+    expect(summary.turningPoints.length).toBeGreaterThan(0);
+
+    const allVersions = getTurningPointsAllVersions(g);
+    expect(allVersions.some((r: any) => (r.algo_version ?? 1) === 1)).toBe(true); // old row survives
+    expect(allVersions.some((r: any) => r.algo_version === TP_ALGO_VERSION)).toBe(true); // healed set added
+
+    const latest = getTurningPoints(g);
+    expect(latest.length).toBeGreaterThan(0);
+    expect(latest.every((r: any) => r.algo_version === TP_ALGO_VERSION)).toBe(true);
+
+    // Idempotent: reading again doesn't insert yet another row set.
+    gm.getSummary(g);
+    expect(getTurningPointsAllVersions(g).length).toBe(allVersions.length);
   });
 });

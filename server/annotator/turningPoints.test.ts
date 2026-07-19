@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
-import { computeTurningPoints, type MoveEval } from "./turningPoints";
+import { computeTurningPoints, detectKingPressureEpisode, EP_MIN_PLIES, type MoveEval } from "./turningPoints";
 
 // The three ACCEPTANCE FIXTURES from
 // .superpowers/sdd/rounds/2026-07-18-increment-3b/panel-ruling.md, with eval
@@ -99,7 +99,23 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     expect(tps[2]).toMatchObject({ rank: 3, ply: 43, san: "Qxg7#", label: "checkmate", kind: "backfill" });
   });
 
-  it("reproduces game 85: two opponent errors with punish suffixes + the clincher backfill", () => {
+  // debrief-v2 EXPECTED CHANGE (per task-1-brief.md's "still pass UNCHANGED
+  // except where the dedup fix legitimately adds a her-move card" carve-out
+  // — reported, not silently patched): ply 21 "Nbd2" is HER move, |Δp|
+  // 0.1166, in the SAME dedup cluster as the rank-1 ply-22 opponent mistake
+  // (ply distance 1 <= TP_DEDUP_PLIES) and clusters again with ply 24
+  // (distance 2). Under the OLD single-max-per-cluster dedup this entire
+  // cluster collapsed to ply 22 alone, so ply 21 never existed as a card and
+  // the 3rd slot fell through to the "the clincher" backfill. Under the new
+  // rule the cluster keeps BOTH the max-|Δp| member (ply 22, still rank 1)
+  // AND the max-|Δp| HER member (ply 21) — a genuine second real swing that
+  // now fills the 3rd slot before backfill is even considered, since
+  // backfill only fires when fewer than 3 real swings qualified. Not the
+  // "missed punish" shape (missedPunish is false): ply 21 happened BEFORE
+  // ply 22's opponent mistake, so there's nothing yet to have missed
+  // punishing — the label ordering guard (best.ply < herBest.ply) checks
+  // exactly this.
+  it("reproduces game 85: two opponent errors with punish suffixes + her ply-21 inaccuracy (debrief-v2 dedup fix)", () => {
     const tps = computeTurningPoints(GAME_85, "1-0");
     expect(tps).toHaveLength(3);
 
@@ -113,9 +129,9 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     });
     expect(tps[1].deltaP).toBeCloseTo(0.1612, 2);
 
-    expect(tps[2]).toMatchObject({ rank: 3, ply: 63, san: "Rxf8", label: "the clincher", kind: "backfill" });
-    // Not an actual delivered checkmate (game was adjudicated) — this is
-    // the first ply where a forced-mate score appears favoring white.
+    expect(tps[2]).toMatchObject({ rank: 3, ply: 21, san: "Nbd2", label: "inaccuracy", kind: "swing" });
+    expect(tps[2].deltaP).toBeCloseTo(-0.1166, 2);
+    expect(tps[2].missedPunish).toBeFalsy();
     expect(tps[2].punishSan).toBeUndefined();
   });
 
@@ -209,6 +225,159 @@ describe("computeTurningPoints — low-confidence null gap", () => {
     expect(tps.length).toBeGreaterThan(0);
     const point = tps.find((t) => t.ply === 5);
     expect(point?.lowConfidence).toBe(true);
+  });
+});
+
+// debrief-v2 (task 1 brief, .superpowers/sdd/rounds/2026-07-19-debrief-v2/):
+// dedup fix (never let an opponent card cannibalize her own teachable swing)
+// + king-pressure episode detector (a STATE the per-ply swing detector
+// structurally can't see). Games 105/85/86 above are untouched by either
+// change (verified — no her-move candidate exists in any dedup cluster
+// there, and none of the three sits a black queen/2+ pieces on her king
+// with a broken pawn shelter for EP_MIN_PLIES straight, so neither change
+// alters their fixtures).
+
+describe("computeTurningPoints — dedup keeps her swings (debrief-v2)", () => {
+  it("cluster with opponent +0.30 at ply N and her -0.28 at N+1 keeps BOTH (never cannibalized)", () => {
+    const moves: MoveEval[] = [
+      { ply: 1, san: "m1", evalCp: 0, evalMate: null },
+      { ply: 2, san: "m2", evalCp: 0, evalMate: null },
+      { ply: 3, san: "m3", evalCp: 0, evalMate: null },
+      { ply: 4, san: "m4", evalCp: 377, evalMate: null }, // opponent (even ply): p 0.50 -> 0.80, dp +0.30
+      { ply: 5, san: "m5", evalCp: -22, evalMate: null }, // her (odd ply): p 0.80 -> 0.52, dp -0.28
+      { ply: 6, san: "m6", evalCp: -22, evalMate: null }, // flat tail, no further candidates
+    ];
+    const tps = computeTurningPoints(moves, "1/2-1/2");
+
+    const opp = tps.find((t) => t.ply === 4);
+    const her = tps.find((t) => t.ply === 5);
+    expect(opp).toBeTruthy();
+    expect(opp?.label).toBe("opponent blunder");
+    expect(opp?.deltaP).toBeCloseTo(0.3, 2);
+
+    expect(her).toBeTruthy();
+    expect(her?.label).toBe("blunder"); // her negative, blunder band
+    expect(her?.deltaP).toBeCloseTo(-0.28, 2);
+    // "missed punish" shape: the preceding kept point is an opponent error
+    // and her kept swing is negative.
+    expect(her?.missedPunish).toBe(true);
+  });
+
+  it("two her-moves in one cluster dedup to the larger", () => {
+    const moves: MoveEval[] = [
+      { ply: 1, san: "m1", evalCp: 0, evalMate: null },
+      { ply: 2, san: "m2", evalCp: 0, evalMate: null },
+      { ply: 3, san: "m3", evalCp: 0, evalMate: null },
+      { ply: 4, san: "m4", evalCp: 0, evalMate: null },
+      { ply: 5, san: "m5", evalCp: 377, evalMate: null }, // her (odd ply): p 0.50 -> 0.20, dp -0.30 (blunder)
+      { ply: 6, san: "m6", evalCp: -377, evalMate: null }, // flat (keeps p at 0.20)
+      { ply: 7, san: "m7", evalCp: 864, evalMate: null }, // her (odd ply): p 0.20 -> 0.04, dp -0.16 (mistake, smaller)
+    ];
+    const tps = computeTurningPoints(moves, "1/2-1/2");
+
+    expect(tps.some((t) => t.ply === 5)).toBe(true);
+    expect(tps.find((t) => t.ply === 5)?.label).toBe("blunder");
+    expect(tps.some((t) => t.ply === 7)).toBe(false); // the smaller same-mover swing is deduped away
+  });
+});
+
+describe("king-pressure episode detector (debrief-v2)", () => {
+  // GAME 127 reconstruction: the owner's real game (feedback.md) is a
+  // 24-ply draw-adjudicated game whose eval curve — ply 14 mallow Nd4
+  // blunders (p .87), ply 15 she castles instead of punishing (dp -0.283,
+  // blunder band), plies 17-24 flat eval (~-80) while mallow's queen/pieces
+  // camp on her king and she shuffles defensively — is reproduced here only
+  // in shape (feedback.md gives the winprob curve's key points, not a full
+  // ply-by-ply PGN, so the exact opening/middlegame moves below are a
+  // hardcoded RECONSTRUCTION verified move-by-move for chess.js legality,
+  // not a transcription of the real game). Ply 14 "Nd4" and ply 15 "O-O"
+  // and their eval deltas match feedback.md's stated numbers; the ply
+  // 17-24 king-pressure geometry (2 black knights camped in her king's 3x3
+  // zone, pawn shelter broken from ply 17 on) is constructed to satisfy the
+  // detector's literal definition, reaching it by ply 18 (matching
+  // feedback.md's "plies 17-24" framing) and holding through ply 24 (the
+  // game's last ply, per "the backpedaling" continuing to the end).
+  const GAME_127: MoveEval[] = [
+    { ply: 1, san: "f4", evalCp: 0, evalMate: null },
+    { ply: 2, san: "d5", evalCp: 0, evalMate: null },
+    { ply: 3, san: "Nh3", evalCp: 0, evalMate: null },
+    { ply: 4, san: "d4", evalCp: 0, evalMate: null },
+    { ply: 5, san: "a3", evalCp: 0, evalMate: null },
+    { ply: 6, san: "d3", evalCp: 0, evalMate: null },
+    { ply: 7, san: "exd3", evalCp: 0, evalMate: null },
+    { ply: 8, san: "Nc6", evalCp: 0, evalMate: null },
+    { ply: 9, san: "Be2", evalCp: 0, evalMate: null },
+    { ply: 10, san: "Nf6", evalCp: 0, evalMate: null },
+    { ply: 11, san: "a4", evalCp: 0, evalMate: null },
+    { ply: 12, san: "Nh5", evalCp: 0, evalMate: null },
+    { ply: 13, san: "b3", evalCp: 0, evalMate: null },
+    { ply: 14, san: "Nd4", evalCp: 367, evalMate: null }, // mallow's blunder: hangs the knight (cxd4/Nxd4), p .79
+    { ply: 15, san: "O-O", evalCp: -12, evalMate: null }, // she castles instead of punishing: dp -0.283, blunder band
+    { ply: 16, san: "Nf3+", evalCp: 12, evalMate: null },
+    { ply: 17, san: "Kf2", evalCp: -12, evalMate: null },
+    { ply: 18, san: "Ng3", evalCp: 12, evalMate: null }, // 2nd black knight lands in her king's zone: episode starts
+    { ply: 19, san: "b4", evalCp: -12, evalMate: null },
+    { ply: 20, san: "a6", evalCp: 12, evalMate: null },
+    { ply: 21, san: "c4", evalCp: -12, evalMate: null },
+    { ply: 22, san: "Qd6", evalCp: 12, evalMate: null },
+    { ply: 23, san: "Qc2", evalCp: -12, evalMate: null },
+    { ply: 24, san: "Rb8", evalCp: 12, evalMate: null }, // game end, still under pressure
+  ];
+
+  it("GAME-127 acceptance: her missed punish, the opponent blunder, and the king-pressure episode all survive", () => {
+    const tps = computeTurningPoints(GAME_127, "1/2-1/2");
+
+    // (b) ply 14 Nd4, opponent blunder — the point the old algorithm kept.
+    const oppBlunder = tps.find((t) => t.ply === 14);
+    expect(oppBlunder).toMatchObject({ san: "Nd4", label: "opponent blunder", kind: "swing" });
+
+    // (a) ply 15 O-O, her negative, blunder band, missedPunish — the point
+    // the old single-max-per-cluster dedup discarded entirely.
+    const herMiss = tps.find((t) => t.ply === 15);
+    expect(herMiss).toMatchObject({ san: "O-O", label: "blunder", kind: "swing", missedPunish: true });
+    expect(herMiss!.deltaP).toBeLessThan(0);
+
+    // (c) the king-pressure episode — invisible to the old algorithm
+    // entirely (no per-ply swing ever clears TP_FLOOR during it).
+    const episode = tps.find((t) => t.kind === "episode");
+    expect(episode).toBeTruthy();
+    expect(episode!.label).toBe("king pressure");
+    expect(episode!.ply).toBeLessThanOrEqual(18);
+    expect(episode!.plyEnd).toBe(24);
+
+    // The old regression this task kills: a single "opponent blunder" card
+    // and nothing else.
+    expect(tps.length).toBeGreaterThan(1);
+  });
+
+  it("no episode when the qualifying run is shorter than EP_MIN_PLIES", () => {
+    // Same reconstruction, cut off 2 plies short of GAME_127's game end —
+    // the qualifying run (18-22, 5 plies) never reaches EP_MIN_PLIES (6).
+    const truncated = GAME_127.slice(0, 22);
+    expect(detectKingPressureEpisode(truncated)).toBeNull();
+  });
+
+  it("no episode when her pawn shelter is intact (2+ pawns), even with 2+ opponent pieces near her king", () => {
+    // King never castles (stays e1); two black knights capture the
+    // undeveloped queen and bishop on d1/f1 — both inside her king's 3x3
+    // zone — without ever touching the d2/e2/f2 shelter pawns, so shelter
+    // stays at 2 pawns throughout (not "fewer than 2"). Verified legal
+    // move-by-move via chess.js.
+    const moves: MoveEval[] = [
+      "a3", "Nc6", "a4", "Ne5", "b3", "Ng4", "b4", "Nxf2", "c3", "Nf6",
+      "c4", "N6e4", "h3", "Ng3", "h4", "Nxf1", "g4", "a6", "g5", "a5",
+    ].map((san, i) => ({ ply: i + 1, san, evalCp: 0, evalMate: null }));
+    expect(detectKingPressureEpisode(moves)).toBeNull();
+  });
+
+  it("episode plyEnd is the game's last ply when the qualifying run reaches the end", () => {
+    const episode = detectKingPressureEpisode(GAME_127);
+    expect(episode).toBeTruthy();
+    expect(episode!.plyEnd).toBe(GAME_127[GAME_127.length - 1].ply);
+  });
+
+  it("EP_MIN_PLIES is 6 (3 full moves) per the brief", () => {
+    expect(EP_MIN_PLIES).toBe(6);
   });
 });
 

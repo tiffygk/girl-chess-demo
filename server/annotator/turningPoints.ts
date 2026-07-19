@@ -25,16 +25,35 @@
 // prose. Ply, rank order, kind (swing vs backfill), and punishSan all
 // reproduce the ruling's fixtures exactly — see turningPoints.test.ts.
 
+import { Chess } from "chess.js";
+
 export interface TurningPoint {
-  rank: 1 | 2 | 3;
+  rank: 1 | 2 | 3 | 4;
   ply: number;
   san: string;
   label: string; // exact lowercase vocabulary from the ruling
   punishSan?: string; // the "you punished with {san}" suffix source, when the guard passes
   deltaP: number; // signed, white perspective
   lowConfidence: boolean; // null-gap > TP_DEDUP_PLIES plies behind this point
-  kind: "swing" | "backfill";
+  kind: "swing" | "backfill" | "episode";
+  // debrief-v2, dedup fix: set on HER kept swing when the preceding kept
+  // point in the same dedup cluster is an opponent-error label and her
+  // swing is negative — the "missed punish" shape (she had a winning
+  // capture/tactic and played something else instead). Purely positional
+  // (derived from cluster order + label), never a new claim.
+  missedPunish?: boolean;
+  // debrief-v2, king-pressure episode: only set when kind === "episode" —
+  // the last ply of the qualifying run (game end counts).
+  plyEnd?: number;
 }
+
+// debrief-v2: bumped when the turning-point algorithm changes shape in a way
+// that changes stored output (dedup fix + episode detector). manager.ts's
+// summary read path compares this against a persisted row's algo_version
+// (NULL treated as 1) to decide whether to heal an old game's stored rows —
+// see server/store/db.ts's turning_points.algo_version column and
+// manager.ts's getSummary.
+export const TP_ALGO_VERSION = 2;
 
 // Owner-calibratable: cp -> winprob steepness. This is the same constant as
 // chess.com's published win% formula (0.00368208, here to 3 sig figs per
@@ -186,6 +205,7 @@ interface Selected extends DeltaPoint {
   label: string;
   punishSan?: string;
   kind: "swing" | "backfill";
+  missedPunish?: boolean;
 }
 
 function attachPunishSuffix(point: Selected, moves: MoveEval[], series: (DeltaPoint | null)[]): void {
@@ -204,6 +224,135 @@ function attachPunishSuffix(point: Selected, moves: MoveEval[], series: (DeltaPo
   if (!nextSeries) return;
   const replyDelta = nextSeries.p - point.p;
   if (replyDelta >= -0.02) point.punishSan = next.san;
+}
+
+// debrief-v2: king-pressure episode detector. Sustained danger (opponent
+// pieces camped on her king, shelter broken, plies of defensive shuffling)
+// is a STATE, not an eval EVENT — per-ply |Δp| can stay under TP_FLOOR the
+// whole time because the engine judges the position technically defensible,
+// even though it's the most lived part of the game. Pure chess.js board-fact
+// replay from the start position — no eval, no engine, no LLM. "Her" is
+// always white (player is always white in v1 — see manager.ts's resign()).
+export const EP_MIN_PLIES = 6;
+
+// 3x3 block centered on `kingSquare` (its own square included), clamped to
+// the board — used both for the opponent-piece zone and (via a narrower
+// slice below) the pawn-shelter check.
+function kingZoneSquares(kingSquare: string): string[] {
+  const file = kingSquare.charCodeAt(0) - 97;
+  const rank = parseInt(kingSquare[1], 10) - 1;
+  const squares: string[] = [];
+  for (let df = -1; df <= 1; df++) {
+    for (let dr = -1; dr <= 1; dr++) {
+      const f = file + df;
+      const r = rank + dr;
+      if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+      squares.push(String.fromCharCode(97 + f) + (r + 1));
+    }
+  }
+  return squares;
+}
+
+// Both literal board facts, ANDed per the brief: (1) an opponent queen, or
+// 2+ opponent N/B/R/Q pieces, stand in the king's 3x3 zone; (2) her pawn
+// shelter is broken — fewer than 2 friendly pawns on the 3 files around her
+// king within 2 ranks in FRONT of the king (white's front = higher ranks).
+function kingPressureHolds(chess: Chess): boolean {
+  const board = chess.board(); // board[0] = rank 8 ... board[7] = rank 1
+  let kingSquare: string | null = null;
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const sq = board[r][f];
+      if (sq && sq.type === "k" && sq.color === "w") kingSquare = String.fromCharCode(97 + f) + (8 - r);
+    }
+  }
+  if (!kingSquare) return false;
+
+  const zone = new Set(kingZoneSquares(kingSquare));
+  let queenInZone = false;
+  let pieceCount = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const sq = board[r][f];
+      if (!sq || sq.color !== "b") continue;
+      const alg = String.fromCharCode(97 + f) + (8 - r);
+      if (!zone.has(alg)) continue;
+      if (sq.type === "q") queenInZone = true;
+      if (sq.type === "n" || sq.type === "b" || sq.type === "r" || sq.type === "q") pieceCount++;
+    }
+  }
+  if (!queenInZone && pieceCount < 2) return false;
+
+  const kingFile = kingSquare.charCodeAt(0) - 97;
+  const kingRank = parseInt(kingSquare[1], 10) - 1; // 0-indexed
+  const files = [kingFile - 1, kingFile, kingFile + 1].filter((f) => f >= 0 && f <= 7);
+  const ranksInFront = [kingRank + 1, kingRank + 2].filter((r) => r >= 0 && r <= 7);
+  let pawnCount = 0;
+  for (const f of files) {
+    for (const r of ranksInFront) {
+      const sq = board[7 - r][f];
+      if (sq && sq.type === "p" && sq.color === "w") pawnCount++;
+    }
+  }
+  return pawnCount < 2;
+}
+
+export interface KingPressureEpisode {
+  plyStart: number;
+  plyEnd: number;
+  deltaP: number;
+  san: string;
+}
+
+export function detectKingPressureEpisode(moves: MoveEval[]): KingPressureEpisode | null {
+  if (moves.length === 0) return null;
+
+  const chess = new Chess();
+  const flags: boolean[] = [];
+  for (const mv of moves) {
+    try {
+      chess.move(mv.san);
+    } catch {
+      // Not a replayable game from the standard start position (synthetic
+      // fixture, corrupted data) — no board facts to derive an episode
+      // from; never fabricate one.
+      return null;
+    }
+    flags.push(kingPressureHolds(chess));
+  }
+
+  // Longest run of consecutive qualifying plies; emit at most one episode
+  // per game (the ruling's "the longest run").
+  let bestStart = -1;
+  let bestLen = 0;
+  let curStart = -1;
+  let curLen = 0;
+  for (let i = 0; i < flags.length; i++) {
+    if (flags[i]) {
+      if (curLen === 0) curStart = i;
+      curLen++;
+      if (curLen > bestLen) {
+        bestLen = curLen;
+        bestStart = curStart;
+      }
+    } else {
+      curLen = 0;
+    }
+  }
+  if (bestLen < EP_MIN_PLIES) return null;
+
+  const startIdx = bestStart;
+  const endIdx = bestStart + bestLen - 1;
+  const series = buildDeltaSeries(moves);
+  const startP = series[startIdx]?.p ?? 0.5;
+  const endP = series[endIdx]?.p ?? 0.5;
+
+  return {
+    plyStart: moves[startIdx].ply,
+    plyEnd: moves[endIdx].ply,
+    deltaP: endP - startP,
+    san: moves[startIdx].san,
+  };
 }
 
 export function computeTurningPoints(moves: MoveEval[], finalResult: string): TurningPoint[] {
@@ -229,7 +378,16 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   }
 
   // Dedup: transitive clustering of candidates within TP_DEDUP_PLIES of
-  // each other, keeping the larger |Δp| in each cluster.
+  // each other. debrief-v2 fix: a cluster used to collapse to a single
+  // max-|Δp| member, which let an opponent blunder swallow her own missed
+  // punish (or shelter-wrecking follow-up) in the same cluster — the two
+  // most teachable moments of a game, gone. New rule: from each cluster
+  // keep (a) the max-|Δp| member (any mover), AND (b) the max-|Δp| HER
+  // (white) member when it's a DIFFERENT ply and already cleared the floor
+  // (guaranteed — every candidate here already cleared it). Her-move swings
+  // and opponent swings never cannibalize each other; two same-mover swings
+  // in a cluster still dedup to the larger (herBest === best in that case,
+  // so nothing is added twice).
   candidates.sort((a, b) => a.ply - b.ply);
   const clusters: Selected[][] = [];
   for (const c of candidates) {
@@ -237,9 +395,22 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
     if (last && c.ply - last[last.length - 1].ply <= TP_DEDUP_PLIES) last.push(c);
     else clusters.push([c]);
   }
-  const deduped = clusters.map((cluster) =>
-    cluster.reduce((best, cur) => (Math.abs(cur.deltaP) > Math.abs(best.deltaP) ? cur : best))
-  );
+  const deduped: Selected[] = [];
+  for (const cluster of clusters) {
+    const best = cluster.reduce((a, b) => (Math.abs(b.deltaP) > Math.abs(a.deltaP) ? b : a));
+    deduped.push(best);
+    const herCandidates = cluster.filter((c) => c.moverIsWhite);
+    if (herCandidates.length === 0) continue;
+    const herBest = herCandidates.reduce((a, b) => (Math.abs(b.deltaP) > Math.abs(a.deltaP) ? b : a));
+    if (herBest.ply === best.ply) continue; // best already IS her point; not added twice
+    // "missed punish" shape: the OTHER kept point in this cluster is an
+    // opponent-error label, precedes her point, and her kept swing is
+    // negative — she had the chance to punish and didn't. Purely
+    // positional (cluster order + label), no new claim.
+    const missedPunish =
+      herBest.deltaP < 0 && best.ply < herBest.ply && best.label.startsWith("opponent");
+    deduped.push(missedPunish ? { ...herBest, missedPunish: true } : { ...herBest });
+  }
 
   // Rank by significance. Ties (|Δp| equal): not-low-confidence beats
   // low-confidence (barred from tie wins) -> nearer p=.5 -> her ply ->
@@ -305,7 +476,7 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
 
   for (const point of selected) attachPunishSuffix(point, moves, series);
 
-  return selected.map((s, i) => ({
+  const points: TurningPoint[] = selected.map((s, i) => ({
     rank: (i + 1) as 1 | 2 | 3,
     ply: s.ply,
     san: s.san,
@@ -314,5 +485,26 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
     deltaP: s.deltaP,
     lowConfidence: s.lowConfidence,
     kind: s.kind,
+    missedPunish: s.missedPunish,
   }));
+
+  // debrief-v2: the king-pressure episode is a STATE the per-ply swing
+  // detector above structurally cannot see (eval stays flat while danger
+  // sits on the board) — additional to, never instead of, the swing/backfill
+  // points above. Max 4 cards total.
+  const episode = detectKingPressureEpisode(moves);
+  if (episode) {
+    points.push({
+      rank: (points.length + 1) as 1 | 2 | 3 | 4,
+      ply: episode.plyStart,
+      plyEnd: episode.plyEnd,
+      san: episode.san,
+      label: "king pressure",
+      deltaP: episode.deltaP,
+      lowConfidence: false,
+      kind: "episode",
+    });
+  }
+
+  return points;
 }
