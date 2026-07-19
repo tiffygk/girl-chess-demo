@@ -235,15 +235,29 @@ function attachPunishSuffix(point: Selected, moves: MoveEval[], series: (DeltaPo
 // always white (player is always white in v1 — see manager.ts's resign()).
 export const EP_MIN_PLIES = 6;
 
-// 3x3 block centered on `kingSquare` (its own square included), clamped to
-// the board — used both for the opponent-piece zone and (via a narrower
-// slice below) the pawn-shelter check.
-function kingZoneSquares(kingSquare: string): string[] {
+// debrief-v2 gate fix (game 127, her REAL moves — see turningPoints.test.ts):
+// the original 3x3/2-shelter-pawns geometry missed her real king-pressure
+// episode entirely. In the real game the opponent queen sat at h3 with her
+// king on g1/h1 — Chebyshev distance up to 2, OUTSIDE the old 3x3 (distance
+// <=1) zone — and after gxf3 her f2+f3+h2 pawns still counted as "2+
+// shelter pawns" even though the g-file next to her king was ripped open.
+// Widened to a literal-board-fact definition that catches both:
+// opponent-piece proximity out to distance 2, and shelter defined as
+// open-file exposure rather than a raw pawn count.
+export const EP_QUEEN_DIST = 2;
+export const EP_PIECE_DIST = 2;
+// Shelter: a file counts as covered only if a friendly pawn stands within
+// this many ranks in front of the king on that file.
+export const EP_SHELTER_RANKS = 3;
+
+// Chebyshev-distance block centered on `kingSquare` (its own square
+// included), clamped to the board.
+function kingZoneSquares(kingSquare: string, dist: number): string[] {
   const file = kingSquare.charCodeAt(0) - 97;
   const rank = parseInt(kingSquare[1], 10) - 1;
   const squares: string[] = [];
-  for (let df = -1; df <= 1; df++) {
-    for (let dr = -1; dr <= 1; dr++) {
+  for (let df = -dist; df <= dist; df++) {
+    for (let dr = -dist; dr <= dist; dr++) {
       const f = file + df;
       const r = rank + dr;
       if (f < 0 || f > 7 || r < 0 || r > 7) continue;
@@ -253,10 +267,15 @@ function kingZoneSquares(kingSquare: string): string[] {
   return squares;
 }
 
-// Both literal board facts, ANDed per the brief: (1) an opponent queen, or
-// 2+ opponent N/B/R/Q pieces, stand in the king's 3x3 zone; (2) her pawn
-// shelter is broken — fewer than 2 friendly pawns on the 3 files around her
-// king within 2 ranks in FRONT of the king (white's front = higher ranks).
+// Both literal board facts, ANDed per the brief: (1) an opponent queen
+// within Chebyshev distance EP_QUEEN_DIST of her king, or 2+ opponent
+// N/B/R/Q pieces within Chebyshev distance EP_PIECE_DIST; (2) her pawn
+// shelter is broken — open-file exposure, not a raw pawn count: at least
+// one of the up-to-3 files containing or adjacent to her king has NO
+// friendly pawn within EP_SHELTER_RANKS ranks in FRONT of the king (white's
+// front = higher ranks). This catches a doubled-pawn shelter that still
+// leaves an open file next to the king (her real game 127: f2+f3 doubled,
+// g-file wide open) — a raw pawn-count check cannot.
 function kingPressureHolds(chess: Chess): boolean {
   const board = chess.board(); // board[0] = rank 8 ... board[7] = rank 1
   let kingSquare: string | null = null;
@@ -268,7 +287,8 @@ function kingPressureHolds(chess: Chess): boolean {
   }
   if (!kingSquare) return false;
 
-  const zone = new Set(kingZoneSquares(kingSquare));
+  const queenZone = new Set(kingZoneSquares(kingSquare, EP_QUEEN_DIST));
+  const pieceZone = new Set(kingZoneSquares(kingSquare, EP_PIECE_DIST));
   let queenInZone = false;
   let pieceCount = 0;
   for (let r = 0; r < 8; r++) {
@@ -276,9 +296,10 @@ function kingPressureHolds(chess: Chess): boolean {
       const sq = board[r][f];
       if (!sq || sq.color !== "b") continue;
       const alg = String.fromCharCode(97 + f) + (8 - r);
-      if (!zone.has(alg)) continue;
-      if (sq.type === "q") queenInZone = true;
-      if (sq.type === "n" || sq.type === "b" || sq.type === "r" || sq.type === "q") pieceCount++;
+      if (sq.type === "q" && queenZone.has(alg)) queenInZone = true;
+      if ((sq.type === "n" || sq.type === "b" || sq.type === "r" || sq.type === "q") && pieceZone.has(alg)) {
+        pieceCount++;
+      }
     }
   }
   if (!queenInZone && pieceCount < 2) return false;
@@ -286,15 +307,17 @@ function kingPressureHolds(chess: Chess): boolean {
   const kingFile = kingSquare.charCodeAt(0) - 97;
   const kingRank = parseInt(kingSquare[1], 10) - 1; // 0-indexed
   const files = [kingFile - 1, kingFile, kingFile + 1].filter((f) => f >= 0 && f <= 7);
-  const ranksInFront = [kingRank + 1, kingRank + 2].filter((r) => r >= 0 && r <= 7);
-  let pawnCount = 0;
   for (const f of files) {
-    for (const r of ranksInFront) {
+    let covered = false;
+    for (let dr = 1; dr <= EP_SHELTER_RANKS; dr++) {
+      const r = kingRank + dr;
+      if (r < 0 || r > 7) continue;
       const sq = board[7 - r][f];
-      if (sq && sq.type === "p" && sq.color === "w") pawnCount++;
+      if (sq && sq.type === "p" && sq.color === "w") covered = true;
     }
+    if (!covered) return true; // an open file next to the king: shelter broken
   }
-  return pawnCount < 2;
+  return false;
 }
 
 export interface KingPressureEpisode {

@@ -1,7 +1,16 @@
 import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
-import { computeTurningPoints, detectKingPressureEpisode, EP_MIN_PLIES, type MoveEval } from "./turningPoints";
+import { Chess } from "chess.js";
+import {
+  computeTurningPoints,
+  detectKingPressureEpisode,
+  EP_MIN_PLIES,
+  EP_QUEEN_DIST,
+  EP_PIECE_DIST,
+  EP_SHELTER_RANKS,
+  type MoveEval,
+} from "./turningPoints";
 
 // The three ACCEPTANCE FIXTURES from
 // .superpowers/sdd/rounds/2026-07-18-increment-3b/panel-ruling.md, with eval
@@ -282,21 +291,96 @@ describe("computeTurningPoints — dedup keeps her swings (debrief-v2)", () => {
 });
 
 describe("king-pressure episode detector (debrief-v2)", () => {
-  // GAME 127 reconstruction: the owner's real game (feedback.md) is a
-  // 24-ply draw-adjudicated game whose eval curve — ply 14 mallow Nd4
-  // blunders (p .87), ply 15 she castles instead of punishing (dp -0.283,
-  // blunder band), plies 17-24 flat eval (~-80) while mallow's queen/pieces
-  // camp on her king and she shuffles defensively — is reproduced here only
-  // in shape (feedback.md gives the winprob curve's key points, not a full
-  // ply-by-ply PGN, so the exact opening/middlegame moves below are a
-  // hardcoded RECONSTRUCTION verified move-by-move for chess.js legality,
-  // not a transcription of the real game). Ply 14 "Nd4" and ply 15 "O-O"
-  // and their eval deltas match feedback.md's stated numbers; the ply
-  // 17-24 king-pressure geometry (2 black knights camped in her king's 3x3
-  // zone, pawn shelter broken from ply 17 on) is constructed to satisfy the
-  // detector's literal definition, reaching it by ply 18 (matching
-  // feedback.md's "plies 17-24" framing) and holding through ply 24 (the
-  // game's last ply, per "the backpedaling" continuing to the end).
+  // GAME 127, her REAL moves (gate-fix round: the shipped Task-1 fixture
+  // below this one was a chess.js-legal RECONSTRUCTION, not a transcription
+  // — it satisfied the detector without ever exercising her real siege.
+  // These 24 ply/san/eval_cp triples are copied verbatim from
+  // .superpowers/sdd/rounds/2026-07-19-debrief-v2/game-127-real-moves.json
+  // (never read from a file or the db in a test — brief's standing rule;
+  // this is the hardcoded copy). eval_mate is null throughout this game, so
+  // evalMate is always null here. finalResult "1/2-1/2" per the round doc
+  // (24-ply draw-adjudicated game).
+  const GAME_127_REAL: MoveEval[] = [
+    { ply: 1, san: "c4", evalCp: -35, evalMate: null },
+    { ply: 2, san: "d6", evalCp: 50, evalMate: null },
+    { ply: 3, san: "d3", evalCp: -17, evalMate: null },
+    { ply: 4, san: "Nf6", evalCp: 23, evalMate: null },
+    { ply: 5, san: "Bd2", evalCp: -4, evalMate: null },
+    { ply: 6, san: "h6", evalCp: 20, evalMate: null },
+    { ply: 7, san: "e4", evalCp: -10, evalMate: null },
+    { ply: 8, san: "Qd7", evalCp: 46, evalMate: null },
+    { ply: 9, san: "Be2", evalCp: -59, evalMate: null },
+    { ply: 10, san: "Nc6", evalCp: 72, evalMate: null },
+    { ply: 11, san: "b3", evalCp: -31, evalMate: null },
+    { ply: 12, san: "Qe6", evalCp: 88, evalMate: null },
+    { ply: 13, san: "Nf3", evalCp: -84, evalMate: null },
+    { ply: 14, san: "Nd4", evalCp: 519, evalMate: null }, // opponent blunder: hangs the knight
+    { ply: 15, san: "O-O", evalCp: -97, evalMate: null }, // she castles instead of punishing: blunder band
+    { ply: 16, san: "Nxf3+", evalCp: 106, evalMate: null },
+    { ply: 17, san: "gxf3", evalCp: 91, evalMate: null }, // g-file ripped open next to her king
+    { ply: 18, san: "Qh3", evalCp: -91, evalMate: null }, // opponent queen camps at Chebyshev distance 2 from g1
+    { ply: 19, san: "Kh1", evalCp: 94, evalMate: null },
+    { ply: 20, san: "e5", evalCp: -71, evalMate: null },
+    { ply: 21, san: "Rg1", evalCp: 74, evalMate: null },
+    { ply: 22, san: "Nh5", evalCp: -65, evalMate: null },
+    { ply: 23, san: "Bf1", evalCp: 79, evalMate: null },
+    { ply: 24, san: "Qh4", evalCp: -87, evalMate: null }, // queen retreats to h4 — see plyEnd note below
+  ];
+
+  it("her REAL sans replay as a legal game from the start position (chess.js)", () => {
+    const chess = new Chess();
+    for (const mv of GAME_127_REAL) {
+      expect(() => chess.move(mv.san)).not.toThrow();
+    }
+  });
+
+  it("GAME-127 REAL acceptance: opponent blunder, her missed-punish blunder, and the king-pressure episode", () => {
+    const tps = computeTurningPoints(GAME_127_REAL, "1/2-1/2");
+
+    // ply 14 Nd4, opponent blunder.
+    const oppBlunder = tps.find((t) => t.ply === 14);
+    expect(oppBlunder).toMatchObject({ san: "Nd4", label: "opponent blunder", kind: "swing" });
+
+    // ply 15 O-O, her negative, blunder band, missedPunish.
+    const herMiss = tps.find((t) => t.ply === 15);
+    expect(herMiss).toMatchObject({ san: "O-O", label: "blunder", kind: "swing", missedPunish: true });
+    expect(herMiss!.deltaP).toBeLessThan(0);
+
+    // The king-pressure episode itself. plyStart lands at 18 (queen Qh3
+    // reaches Chebyshev distance 2 of her king on g1 — the exact geometry
+    // the widened zone exists to catch), within the brief's 17-19 window.
+    //
+    // VERIFIED DEVIATION (STOP-and-report per this file's own established
+    // convention — see its header comment — rather than force a fixture
+    // match): the brief's acceptance detail states plyEnd 24 (the game's
+    // final ply). Replaying her ACTUAL sans through this exact detector
+    // shows plyEnd is 23, not 24: at ply 24 ("Qh4") the opponent queen
+    // retreats from h3 to h4, Chebyshev distance 3 from her h1 king —
+    // outside EP_QUEEN_DIST (2) — and no other opponent N/B/R/Q piece
+    // (knight sits on h5, distance 4) is within EP_PIECE_DIST (2) either,
+    // so the qualifying run ends one ply before the game itself does. This
+    // is a real board fact from her actual moves, not an implementation
+    // bug — EP_QUEEN_DIST/EP_PIECE_DIST are used exactly as specified.
+    const episode = tps.find((t) => t.kind === "episode");
+    expect(episode).toBeTruthy();
+    expect(episode!.label).toBe("king pressure");
+    expect(episode!.ply).toBeGreaterThanOrEqual(17);
+    expect(episode!.ply).toBeLessThanOrEqual(19);
+    expect(episode!.plyEnd).toBe(23);
+
+    expect(tps.length).toBeGreaterThan(1);
+  });
+
+  // GAME 127 reconstruction (Task-1's original fixture, KEPT as a secondary
+  // check, not dropped): the owner's real game (feedback.md) is a 24-ply
+  // draw-adjudicated game whose eval curve was reproduced here only in
+  // shape — a hardcoded RECONSTRUCTION verified move-by-move for chess.js
+  // legality, not a transcription. Still passes unchanged under the widened
+  // geometry (verified), and it covers something the REAL fixture above no
+  // longer does: an episode that holds all the way through the game's
+  // final ply (this reconstruction's plyEnd 24 IS the last ply — the real
+  // game's queen retreat one ply early means its episode does NOT reach the
+  // end). Kept for that reason, not redundant with the real fixture above.
   const GAME_127: MoveEval[] = [
     { ply: 1, san: "f4", evalCp: 0, evalMate: null },
     { ply: 2, san: "d5", evalCp: 0, evalMate: null },
@@ -324,7 +408,7 @@ describe("king-pressure episode detector (debrief-v2)", () => {
     { ply: 24, san: "Rb8", evalCp: 12, evalMate: null }, // game end, still under pressure
   ];
 
-  it("GAME-127 acceptance: her missed punish, the opponent blunder, and the king-pressure episode all survive", () => {
+  it("GAME-127 acceptance (secondary, synthetic): her missed punish, the opponent blunder, and the king-pressure episode all survive", () => {
     const tps = computeTurningPoints(GAME_127, "1/2-1/2");
 
     // (b) ply 14 Nd4, opponent blunder — the point the old algorithm kept.
@@ -357,20 +441,32 @@ describe("king-pressure episode detector (debrief-v2)", () => {
     expect(detectKingPressureEpisode(truncated)).toBeNull();
   });
 
-  it("no episode when her pawn shelter is intact (2+ pawns), even with 2+ opponent pieces near her king", () => {
-    // King never castles (stays e1); two black knights capture the
-    // undeveloped queen and bishop on d1/f1 — both inside her king's 3x3
-    // zone — without ever touching the d2/e2/f2 shelter pawns, so shelter
-    // stays at 2 pawns throughout (not "fewer than 2"). Verified legal
-    // move-by-move via chess.js.
-    const moves: MoveEval[] = [
-      "a3", "Nc6", "a4", "Ne5", "b3", "Ng4", "b4", "Nxf2", "c3", "Nf6",
-      "c4", "N6e4", "h3", "Ng3", "h4", "Nxf1", "g4", "a6", "g5", "a5",
-    ].map((san, i) => ({ ply: i + 1, san, evalCp: 0, evalMate: null }));
+  it("no episode when her pawn shelter is intact, even with an opponent queen inside the widened zone", () => {
+    // debrief-v2 gate-fix update: this used to test the OLD raw-pawn-count
+    // shelter model (2+ pawns anywhere across the 3 king files) via two
+    // knights capturing on f2/f1 — a scenario the NEW open-file model
+    // correctly flags as broken shelter (the f-file itself is emptied by
+    // the Nxf2 capture), so that fixture became contradictory with the
+    // redefinition rather than a valid negative case. Replaced with a
+    // fixture that's a genuine negative under the NEW open-file semantics:
+    // king stays on e1, her f2 pawn is never captured, and the black queen
+    // reaches g3 — Chebyshev distance 2 from e1 (inside the widened
+    // EP_QUEEN_DIST zone) via the e1-f2-g3 diagonal, but f2 (her own pawn)
+    // blocks that diagonal, so the queen's arrival there doesn't even give
+    // check. Every king-adjacent file (d, e, f) still has its own pawn
+    // within EP_SHELTER_RANKS ranks in front of the king, so shelter holds
+    // even though the queen sits inside the zone. Verified legal move-by-
+    // move via chess.js.
+    const moves: MoveEval[] = ["h3", "e5", "h4", "Qg5", "a3", "Qg3", "a4", "a6"].map((san, i) => ({
+      ply: i + 1,
+      san,
+      evalCp: 0,
+      evalMate: null,
+    }));
     expect(detectKingPressureEpisode(moves)).toBeNull();
   });
 
-  it("episode plyEnd is the game's last ply when the qualifying run reaches the end", () => {
+  it("episode plyEnd is the game's last ply when the qualifying run reaches the end (secondary reconstruction)", () => {
     const episode = detectKingPressureEpisode(GAME_127);
     expect(episode).toBeTruthy();
     expect(episode!.plyEnd).toBe(GAME_127[GAME_127.length - 1].ply);
@@ -378,6 +474,12 @@ describe("king-pressure episode detector (debrief-v2)", () => {
 
   it("EP_MIN_PLIES is 6 (3 full moves) per the brief", () => {
     expect(EP_MIN_PLIES).toBe(6);
+  });
+
+  it("EP_QUEEN_DIST and EP_PIECE_DIST are 2, EP_SHELTER_RANKS is 3 (gate-fix widened geometry)", () => {
+    expect(EP_QUEEN_DIST).toBe(2);
+    expect(EP_PIECE_DIST).toBe(2);
+    expect(EP_SHELTER_RANKS).toBe(3);
   });
 });
 
