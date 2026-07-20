@@ -350,6 +350,39 @@ export class GameManager {
     return { result: "1/2-1/2" };
   }
 
+  // Increment 3.91 (Task 5): the "try the line" sandbox's engine reply.
+  // Stateless and DB-free BY DESIGN — no gameId in or out, and no call
+  // anywhere in this method to recordMove/attachEval/insertVerdict/
+  // finishGame/insertTurningPoints or any other db.ts writer. It reuses
+  // opponentFor's engine-process cache (an in-memory Map of live lc0/
+  // stockfish handles, not persistence) so repeated explore calls at the
+  // same elo don't re-spawn an engine every time, same as real games do.
+  async exploreReply(
+    fen: string,
+    elo: number
+  ): Promise<{ ok: boolean; reply?: { from: string; to: string; promotion?: string; san: string }; gameOver?: boolean }> {
+    let chess: Chess;
+    try {
+      chess = new Chess(fen);
+    } catch {
+      return { ok: false };
+    }
+    if (this.gameOver(chess)) return { ok: true, gameOver: true };
+
+    const opponent = await this.opponentFor(elo);
+    const replyUci = await opponent.pickMove(chess.fen());
+    const mv = chess.move({
+      from: replyUci.slice(0, 2),
+      to: replyUci.slice(2, 4),
+      promotion: (replyUci[4] as any) ?? undefined,
+    });
+    return {
+      ok: true,
+      reply: { from: mv.from, to: mv.to, promotion: mv.promotion, san: mv.san },
+      gameOver: this.gameOver(chess) ? true : undefined,
+    };
+  }
+
   // `override` (C4): set when the player confirmed a pending move the judge
   // had marked "warning" (never for a "nudge" confirm — see
   // src/game/moveFlow.ts's isOverrideConfirm, the client-side gate that
