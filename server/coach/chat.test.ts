@@ -111,6 +111,28 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
+  // Whole-branch review Important #1: SAN_RE required an uppercase piece
+  // letter, so a fabricated lowercase SAN (e.g. "qxh7") was never even
+  // extracted as a SAN-shaped token and passed validation by default,
+  // sourced "model" -- while the identical fabrication typed uppercase
+  // ("Qxh7") was correctly blocked. The chat persona demands lowercase
+  // prose, so a lowercased fabrication is the likely case, not an edge one.
+  describe("validateChat — lowercase SAN normalization (Important #1 fix)", () => {
+    it("rejects a fabricated lowercase-piece-letter SAN not backed by any allowed move", () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      const result = validateChat("qxh7 wins the game right now.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations).toContain("qxh7");
+    });
+
+    it("passes a lowercase echo of a legal move once piece-letter case is normalized (Nc6 is legal for black to reply to e4)", () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      expect(facts.legalSans).toContain("Nc6");
+      const result = validateChat("nc6 develops your knight nicely.", facts);
+      expect(result).toEqual({ ok: true });
+    });
+  });
+
   // (e)
   describe("chat() — low-level surface", () => {
     it("backend down -> redirect text with cause backend-down, no second attempt", async () => {
@@ -173,6 +195,24 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     it("(c) inventing an unplayed, illegal san regenerates once, then falls back to the redirect template", async () => {
       const gameId = seedGame(["e4"]);
       gm.setCoachBackendForTesting(fakeBackend(async () => "Qxh7 wins the game right now."));
+
+      const result = await gm.chat(gameId, { message: "what should I do next?", context: { mode: "live" } });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      expect(result.source).toBe("template");
+      expect(result.text).toBe(
+        "let's keep it on the board. ask me about a move from this game and i'll break it down."
+      );
+
+      const traces = getAdviceTraces(gameId);
+      expect(traces).toHaveLength(1);
+      expect(traces[0].regen_count).toBe(1);
+      expect(traces[0].kind).toBe("chat");
+    });
+
+    it("(c2) inventing an unplayed, illegal san in LOWERCASE regenerates once, then falls back to the redirect template — the reviewer's probe case", async () => {
+      const gameId = seedGame(["e4"]);
+      gm.setCoachBackendForTesting(fakeBackend(async () => "qxh7 wins the game right now."));
 
       const result = await gm.chat(gameId, { message: "what should I do next?", context: { mode: "live" } });
       expect(result.ok).toBe(true);
