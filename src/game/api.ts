@@ -305,6 +305,20 @@ export function chatWithCoach(
   return postJson(`/game/${gameId}/chat`, body);
 }
 
+// Increment 3.9, Task 4 (F19): thumbs up/down with optional one-line
+// feedback on a traced coach output (coach's corner narration or a chat
+// reply -- anything carrying a traceId). Mirrors server/index.ts's route
+// contract exactly: rating is 1 | -1, feedback is thumbs-down-only and
+// optional (skipping it keeps the -1), and re-rating the same trace
+// overwrites -- latest wins.
+export interface RateTraceResponse {
+  ok: boolean;
+}
+
+export function rateTrace(traceId: number, rating: 1 | -1, feedback?: string): Promise<RateTraceResponse> {
+  return postJson(`/trace/${traceId}/rate`, feedback !== undefined ? { rating, feedback } : { rating });
+}
+
 // Wave C, task C-B: fire-and-forget hint-escalation observability. Never
 // awaited by its caller for anything but a `.catch` — a failed log write
 // must never block confirm/retract or the hint reveal itself.

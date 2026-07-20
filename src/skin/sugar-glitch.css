@@ -322,6 +322,11 @@
   border: 1.5px dashed #C9BFEF; border-radius: 50%;
   background: rgba(255,255,255,.4);
 }
+/* Task 4 (F19): the narration copy grows to fill the slot so the thumb pair
+   (appended as a third flex child, only once real coachText has arrived)
+   sits pinned at the trailing edge rather than crowding the text. */
+.gc-app .coach-slot-copy { flex: 1 1 auto; }
+.gc-app .coach-hint-slot .thumb-rating { flex: 0 0 auto; margin-top: 0; }
 
 /* coach-hint panel: rendered starting increment 3; the band above reserves
    its space now */
@@ -1378,6 +1383,50 @@
   background: #E3D9F5; border-radius: 999px;
   padding: 2px 8px; margin-left: 12px;
 }
+/* Task 4 (F19): thumbs up/down with feedback capture on any traced coach
+   output -- coach's corner narration (GamePage) and chat replies here,
+   including template/redirect ones (they DO have traces per the declared
+   scope). Shared class names, one definition, since ThumbRating is a single
+   component rendered from both surfaces. Two-axis law: everything you can
+   touch is candy -- a squishy circular pill per thumb, same press-shadow
+   recipe as button.small/coach-pill, scaled to the 16px icon inside. Chosen
+   state fills solid: cyan for thumbs-up (the player's own color), magenta
+   for thumbs-down (the app's one alarm color -- "something was off" is a
+   small alarm, its honest use here, same ruling .chat-offline-chip notes
+   above). Unchosen stays the quiet coach-pill-off family so an un-rated
+   output doesn't compete with the text next to it. */
+.gc-app .thumb-rating { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; margin-top: 4px; }
+.gc-app .thumb-pair { display: flex; gap: 6px; }
+.gc-app .thumb-btn {
+  width: 24px; height: 24px; border: none; border-radius: 50%; padding: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff; color: #A594C4;
+  box-shadow: 0 2px 0 #E3D9F5, 0 4px 8px rgba(90,70,180,.12);
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease, color .12s ease;
+}
+.gc-app .thumb-btn:hover { transform: translateY(-1px); }
+.gc-app .thumb-btn:active { transform: translateY(1px); box-shadow: 0 1px 0 #E3D9F5, 0 2px 4px rgba(90,70,180,.1); }
+.gc-app .thumb-up.chosen {
+  background: #D7FAFF; color: #1A7A93;
+  box-shadow: 0 2px 0 #23A8C7, 0 4px 8px rgba(35,168,199,.28);
+}
+.gc-app .thumb-down.chosen {
+  background: #FFE9F4; color: #C22B7E;
+  box-shadow: 0 2px 0 #FF3DA6, 0 4px 8px rgba(255,61,166,.28);
+}
+/* feedback whisper: a one-line input, never a modal -- same inset-pressed
+   candy language as .chat-input, scaled down, in the alarm-adjacent pale
+   magenta tint (this only ever appears after a thumbs-down). */
+.gc-app .thumb-feedback-row { display: flex; }
+.gc-app .thumb-feedback-input {
+  font-family: 'Quicksand', sans-serif; font-weight: 600; font-size: 11.5px;
+  color: #C22B7E; background: #FFE9F4;
+  border: none; border-radius: 999px; padding: 6px 12px; min-width: 190px;
+  box-shadow: inset 0 2px 4px rgba(255,61,166,.14);
+}
+.gc-app .thumb-feedback-input::placeholder { color: #A594C4; }
+.gc-app .thumb-feedback-input:focus { outline: 2px solid #FF3DA6; outline-offset: 1px; }
+
 .gc-app .chat-input-row { display: flex; align-items: center; gap: 8px; }
 /* input: squishy pressable, Quicksand 600 (user prose, not Fredoka), candy
    shadow — same press-down shadow language as button.small, but inset (a

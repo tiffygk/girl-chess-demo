@@ -1,5 +1,98 @@
 import { useEffect, useRef, useState } from "react";
-import { chatWithCoach, type ChatContext } from "./api";
+import { chatWithCoach, rateTrace, type ChatContext } from "./api";
+
+// Increment 3.9, Task 4 (F19): thumbs up/down with feedback capture on any
+// traced coach output. Exported here and imported by GamePage's coach
+// corner so both surfaces (chat replies AND narration) render the exact
+// same 16px pair rather than two hand-rolled copies. Scope per declared cut
+// #3: renders beside anything carrying a traceId -- the client-derived
+// debrief lesson/bullets have no server trace and get no thumbs (deferred
+// to increment 4).
+//
+// A thumbs-down click records the plain -1 immediately (so "skip the text"
+// really does keep the -1, per the brief) and reveals a one-line whisper
+// input -- never a modal, rating should feel like a flick. Submitting text
+// re-rates with the feedback attached; re-rating (switching thumbs, or
+// re-submitting) overwrites server-side (rateAdviceTrace: latest wins), and
+// this component mirrors that locally.
+const THUMB_UP_PATH =
+  "M1 21h4V9H1v12zM23 10c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z";
+const THUMB_DOWN_PATH =
+  "M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05C1.05 11.5 1 11.75 1 12v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z";
+
+export function ThumbRating({ traceId }: { traceId: number }) {
+  const [rating, setRating] = useState<1 | -1 | null>(null);
+  const [showInput, setShowInput] = useState(false);
+  const [feedback, setFeedback] = useState("");
+
+  const rateUp = () => {
+    setRating(1);
+    setShowInput(false);
+    setFeedback("");
+    rateTrace(traceId, 1).catch(() => undefined);
+  };
+
+  const rateDown = () => {
+    setRating(-1);
+    setShowInput(true);
+    rateTrace(traceId, -1).catch(() => undefined); // skipping the text below keeps this -1
+  };
+
+  const submitFeedback = () => {
+    const text = feedback.trim();
+    if (!text) return;
+    rateTrace(traceId, -1, text).catch(() => undefined);
+    setShowInput(false);
+  };
+
+  const onFeedbackKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    submitFeedback();
+  };
+
+  return (
+    <div className="thumb-rating">
+      <div className="thumb-pair">
+        <button
+          type="button"
+          aria-label="thumbs up"
+          aria-pressed={rating === 1}
+          className={rating === 1 ? "thumb-btn thumb-up chosen" : "thumb-btn thumb-up"}
+          onClick={rateUp}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+            <path d={THUMB_UP_PATH} />
+          </svg>
+        </button>
+        <button
+          type="button"
+          aria-label="thumbs down"
+          aria-pressed={rating === -1}
+          className={rating === -1 ? "thumb-btn thumb-down chosen" : "thumb-btn thumb-down"}
+          onClick={rateDown}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+            <path d={THUMB_DOWN_PATH} />
+          </svg>
+        </button>
+      </div>
+      {showInput && (
+        <div className="thumb-feedback-row">
+          <input
+            type="text"
+            className="thumb-feedback-input"
+            value={feedback}
+            placeholder="tell the coach what was off"
+            onChange={(e) => setFeedback(e.target.value)}
+            onKeyDown={onFeedbackKeyDown}
+            onBlur={submitFeedback}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Increment 3.9, Task 3 (F16 chat client): the pull-based "chat with the
 // coach" drawer. Distinct surface from coach's corner (narrate()) — the
@@ -24,6 +117,10 @@ interface ChatBubble {
   role: "user" | "coach";
   text: string;
   cause?: "backend-down";
+  // Task 4 (F19): every coach reply has a trace -- model, template, AND
+  // backend-down redirect all write one (Task 2's scope). Undefined only in
+  // the truly defensive case where the server's envelope omitted it.
+  traceId?: number;
 }
 
 // Client-owned fallback for the rare case the server call itself fails
@@ -89,7 +186,7 @@ export function CoachChat({ gameId, mode, buildContext, hidden }: CoachChatProps
         // truthiness — an empty-string reply is a real (if odd) reply, not
         // a failure, and shouldn't fall through to the fallback copy.
         if (res.ok && res.text != null) {
-          setMessages((prev) => [...prev, { role: "coach", text: res.text!, cause: res.cause }]);
+          setMessages((prev) => [...prev, { role: "coach", text: res.text!, cause: res.cause, traceId: res.traceId }]);
         } else {
           setMessages((prev) => [...prev, { role: "coach", text: FALLBACK_TEXT }]);
         }
@@ -143,6 +240,7 @@ export function CoachChat({ gameId, mode, buildContext, hidden }: CoachChatProps
             >
               <p className="chat-bubble-text">{m.text}</p>
               {m.cause === "backend-down" && <span className="chat-offline-chip">offline</span>}
+              {m.role === "coach" && m.traceId != null && <ThumbRating traceId={m.traceId} />}
             </div>
           ))}
           {pending && (

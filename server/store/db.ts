@@ -102,6 +102,13 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     { name: "regen_count", addSql: "regen_count INTEGER" },
     { name: "latency_ms", addSql: "latency_ms INTEGER" },
     { name: "created_at", addSql: "created_at TEXT DEFAULT (datetime('now'))" },
+    // Increment 3.9 Task 4 (F19): thumbs up/down + optional one-line
+    // feedback on a traced coach output. Both nullable — a trace is
+    // unrated until the player thumbs it, and feedback is thumbs-down-only
+    // (see rateAdviceTrace below). Additive/nullable so every pre-3.9 row
+    // and insertAdviceTrace call site keeps working unchanged.
+    { name: "rating", addSql: "rating INTEGER" },
+    { name: "feedback_text", addSql: "feedback_text TEXT" },
   ],
   // Increment 3b: panel-ruled turning points (server/annotator/turningPoints.ts),
   // up to 3 rows per game, written once at game end. Brand-new table (CREATE
@@ -193,7 +200,7 @@ export function openDb(path = "data/girlchess.db") {
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), ply INTEGER,
       kind TEXT, facts_json TEXT, prompt TEXT, output TEXT, source TEXT,
       backend TEXT, validated INTEGER, regen_count INTEGER, latency_ms INTEGER,
-      created_at TEXT DEFAULT (datetime('now')));
+      created_at TEXT DEFAULT (datetime('now')), rating INTEGER, feedback_text TEXT);
     CREATE TABLE IF NOT EXISTS turning_points(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), rank INTEGER,
       ply INTEGER, san TEXT, label TEXT, punish_san TEXT, delta_p REAL,
@@ -301,6 +308,17 @@ export const insertAdviceTrace = (t: {
   );
 export const getAdviceTraces = (gameId: number) =>
   db.prepare("SELECT * FROM advice_traces WHERE game_id = ? ORDER BY id").all(gameId) as any[];
+// Increment 3.9 Task 4 (F19): thumbs up/down with optional feedback on a
+// traced coach output. "Re-rating overwrites, latest wins" (the route
+// contract) means the WHOLE row reflects only the most recent call -- both
+// rating and feedback_text are overwritten together, so a stale feedback
+// string from an earlier thumbs-down doesn't linger after a later
+// thumbs-up with no text. Returns false (no-op) for an unknown trace id
+// rather than throwing, so the route can turn that straight into
+// { ok: false } without its own existence check.
+export const rateAdviceTrace = (id: number, rating: 1 | -1, feedback?: string): boolean =>
+  db.prepare("UPDATE advice_traces SET rating = ?, feedback_text = ? WHERE id = ?")
+    .run(rating, feedback ?? null, id).changes > 0;
 
 // Increment 3b: written once by manager.ts's persistGameSummary at game
 // end. Idempotency choice (per the brief: delete-then-insert is NOT this
