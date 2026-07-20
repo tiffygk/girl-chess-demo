@@ -189,6 +189,20 @@ describe("couldImprove (part ii)", () => {
     expect(note.couldImprove).not.toContain("blunder");
   });
 
+  // Adversarial: a blunder is an eval-magnitude band, not a tactical-cause
+  // signal — it could be a hung piece, but it could just as easily be a
+  // missed mate, a walked-into fork, or a positional collapse with no
+  // material lost at all. couldImprove must stay true either way.
+  it("adversarial: a blunder couldImprove does not claim material was dropped", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Kg1" }),
+      undefined,
+      line({ bestSan: "Rd8+", pvSans: ["Rd8+"] })
+    );
+    expect(note.couldImprove).toBeTruthy();
+    expect(note.couldImprove).not.toMatch(/dropped material|material|hang|hanging/i);
+  });
+
   it("a missedPunish point gets couldImprove text even without a matching label nudge", () => {
     const note = buildTurningPointNote(
       tp({ label: "opponent blunder", missedPunish: true, san: "O-O" }),
