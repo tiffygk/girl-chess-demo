@@ -40,8 +40,11 @@ export function ThumbRating({ traceId }: { traceId: number }) {
 
   const submitFeedback = () => {
     const text = feedback.trim();
-    if (!text) return;
-    rateTrace(traceId, -1, text).catch(() => undefined);
+    // Reviewer fix (Task 4 follow-up): an empty blur/Enter still closes the
+    // whisper input -- the plain -1 from rateDown's own click already
+    // stands, there's just no feedback text to attach. Only a non-empty
+    // submit makes the extra rateTrace call.
+    if (text) rateTrace(traceId, -1, text).catch(() => undefined);
     setShowInput(false);
   };
 
