@@ -269,6 +269,13 @@ export function GamePage() {
   const endGameBusyRef = useRef(false);
   const inputHintTimerRef = useRef<number | null>(null);
   const replayingRef = useRef(false);
+  // Fix (task-reviewer, post task-3 approval): reactive twin of replayingRef,
+  // for the one thing a ref can't do — drive conditional UI (here, hiding
+  // coach chat during the takedown cinematic so its full-screen overlay
+  // can't cover the board mid-replay). replayingRef stays as the
+  // synchronous re-entrancy guard (a state update isn't safe to rely on for
+  // that — see handleReplayTakedown); this is purely additive.
+  const [cinematicActive, setCinematicActive] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
 
   // Fires the right terminal-sequence celebration for a game-over result:
@@ -1071,12 +1078,18 @@ export function GamePage() {
   // Visibility (panel B1, binding): gameId present OR reviewGame — NOT
   // gated on coachOn (the pull-based chat is always reachable; coachOn only
   // suppresses unsolicited verdicts). reviewGame takes priority over a
-  // finished live gameId, same precedence as activeReviewMoves above. Hidden
-  // mid-replay: rewindPly!=null is this codebase's one reactive "replay"
-  // state (a turning-point card's "replay" button), shared by both the live
-  // and review debriefs.
+  // finished live gameId, same precedence as activeReviewMoves above.
   const chatGameId = reviewGame ? reviewGame.id : gameId;
-  const showCoachChat = chatGameId != null && rewindPly === null;
+  // Fix (task-reviewer, post task-3 approval): this is now a `hidden` flag
+  // fed to an always-mounted CoachChat, not a mount/unmount gate — an
+  // unmount was silently wiping the conversation on every rewind (state
+  // must reset ONLY on a gameId change, per the brief). Hidden whenever
+  // there's no game to talk about yet, mid-replay (rewindPly!=null is this
+  // codebase's one reactive "replay" state — a turning-point card's
+  // "replay" button, shared by both the live and review debriefs), or
+  // mid-cinematic (cinematicActive — the end-game takedown replay, whose
+  // full-screen chat overlay would otherwise cover it).
+  const chatHidden = chatGameId == null || rewindPly !== null || cinematicActive;
 
   const handleRewind = useCallback(
     (ply: number) => {
@@ -1170,6 +1183,7 @@ export function GamePage() {
   const handleReplayTakedown = useCallback(async () => {
     if (!takedownMove || replayingRef.current) return;
     replayingRef.current = true;
+    setCinematicActive(true);
     try {
       const history = mirrorRef.current.history({ verbose: true });
       const plan = replayPlan(history, 4);
@@ -1178,6 +1192,7 @@ export function GamePage() {
       if (gameOver) celebrate(gameOver.result, { big: true });
     } finally {
       replayingRef.current = false;
+      setCinematicActive(false);
     }
   }, [takedownMove, gameOver, celebrate]);
 
@@ -1579,13 +1594,17 @@ export function GamePage() {
         />
       )}
       <PastGamesDrawer open={pastGamesOpen} games={pastGames} onSelect={selectPastGame} onClose={closePastGames} />
-      {showCoachChat && (
-        <CoachChat
-          gameId={chatGameId as number}
-          mode={reviewGame ? "review" : "live"}
-          buildContext={buildChatContext}
-        />
-      )}
+      {/* Fix (task-reviewer, post task-3 approval): always mounted (same
+          precedent as PastGamesDrawer's `open` prop above) — `hidden` is a
+          visibility flag, not a mount gate, so its conversation survives a
+          rewind or the takedown cinematic instead of being wiped and
+          remounted blank. */}
+      <CoachChat
+        gameId={chatGameId}
+        mode={reviewGame ? "review" : "live"}
+        buildContext={buildChatContext}
+        hidden={chatHidden}
+      />
     </div>
   );
 }
