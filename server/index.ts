@@ -181,8 +181,17 @@ app.post("/api/game/:id/chat", async (req, res) => {
 // comment in store/db.ts).
 app.post("/api/trace/:id/rate", (req, res) => {
   const { rating, feedback } = req.body;
+  // Reviewer fix (Task 4 follow-up): only exactly 1 or -1 is a valid
+  // rating -- a missing/garbage/0/2 value must be rejected with no write,
+  // never silently folded into a thumbs-up. F19 exists to capture exact
+  // player feedback; laundering a malformed request into +1 would pollute
+  // that dataset with ratings nobody actually gave.
+  if (rating !== 1 && rating !== -1) {
+    res.json({ ok: false });
+    return;
+  }
   try {
-    const ok = rateAdviceTrace(Number(req.params.id), Number(rating) === -1 ? -1 : 1, feedback);
+    const ok = rateAdviceTrace(Number(req.params.id), rating, feedback);
     res.json({ ok });
   } catch (error) {
     res.status(500).json({ ok: false });

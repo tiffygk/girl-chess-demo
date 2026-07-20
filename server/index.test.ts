@@ -452,8 +452,39 @@ describe("api", () => {
   });
 
   it("returns ok:false for rating an unknown trace id", async () => {
+    await ready;
     const r = await request(app).post("/api/trace/999999/rate").send({ rating: 1 }).expect(200);
     expect(r.body.ok).toBe(false);
+  });
+
+  // Reviewer fix (Task 4 follow-up): a malformed rating (0, 2, a string, or
+  // missing entirely) must be rejected outright -- never silently coerced
+  // into a thumbs-up -- and must leave the trace row unrated, not just
+  // return ok:false.
+  it("rejects a malformed rating (0) without writing, leaving the trace unrated", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const traceId = seedTrace(g.body.gameId);
+
+    const r = await request(app).post(`/api/trace/${traceId}/rate`).send({ rating: 0 }).expect(200);
+    expect(r.body.ok).toBe(false);
+
+    const rows = getAdviceTraces(g.body.gameId);
+    expect(rows[0].rating).toBeNull();
+  });
+
+  it("rejects a missing rating without writing, leaving the trace unrated", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const traceId = seedTrace(g.body.gameId);
+
+    const r = await request(app).post(`/api/trace/${traceId}/rate`).send({}).expect(200);
+    expect(r.body.ok).toBe(false);
+
+    const rows = getAdviceTraces(g.body.gameId);
+    expect(rows[0].rating).toBeNull();
   });
 
   it("overwrites a rating on re-rate via the route -- latest wins", async () => {
