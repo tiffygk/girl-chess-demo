@@ -13,6 +13,8 @@ import {
   narrate,
   fetchSummary,
   fetchGames,
+  getTurningLines,
+  exploreReply,
   type MoveResponse,
   type GameOverInfo,
   type Verdict,
@@ -20,6 +22,7 @@ import {
   type SummaryResponse,
   type GameListEntry,
   type ChatContext,
+  type TurningLine,
 } from "./api";
 import { CoachChat, ThumbRating } from "./CoachChat";
 import { describeMove, type MoveRender } from "./describeMove";
@@ -42,6 +45,7 @@ import {
   type HintCopyCtx,
 } from "./hintFlow";
 import { PlayerBar } from "./PlayerBar";
+import { startExplore, applyPlayerMove, applyEngineReply, type ExploreState } from "./explore";
 
 type Captured = CapturedBySide;
 
@@ -157,6 +161,46 @@ function adoptServerFen(mirror: Chess, serverFen: string | undefined | null): st
   }
   mirror.undo();
   return mirror.fen();
+}
+
+// Increment 3.91 (Task 4): a turning-point card's "replay" click threads a
+// TurningLine (already replay-derived server-side, see api.ts's TurningLine
+// comment) into the board's arrows/highlightSquares props. Pure and
+// additive-only — never recomputes or guesses a from/to, only reshapes the
+// fields TurningLine already carries.
+type ArrowColor = "played" | "best" | "threat";
+
+function turningLineArrows(line: TurningLine): { from: string; to: string; color: ArrowColor }[] {
+  const arrows: { from: string; to: string; color: ArrowColor }[] = [];
+  if (line.playedFromTo) arrows.push({ ...line.playedFromTo, color: "played" });
+  if (line.bestFromTo) arrows.push({ ...line.bestFromTo, color: "best" });
+  if (line.threat) arrows.push({ ...line.threat, color: "threat" });
+  return arrows;
+}
+
+function turningLineHighlights(line: TurningLine): { square: string; kind: ArrowColor }[] {
+  const highlights: { square: string; kind: ArrowColor }[] = [];
+  const add = (ft: { from: string; to: string } | undefined, kind: ArrowColor) => {
+    if (!ft) return;
+    highlights.push({ square: ft.from, kind });
+    highlights.push({ square: ft.to, kind });
+  };
+  add(line.playedFromTo, "played");
+  add(line.bestFromTo, "best");
+  add(line.threat, "threat");
+  return highlights;
+}
+
+// Increment 3.91 (Task 6): explore's engine-reply elo — the live debrief's
+// opponentElo state is correct for the game that just finished, but a
+// REVIEWED past game may have been played at a different elo, so this
+// parses it back out of the persisted "maia-1400"/"fallback-1400" opponent
+// string. Same hand-mirroring convention as DebriefPage's own eloFromOpponent
+// (kept local here rather than exported across the file's ownership line).
+function exploreElo(reviewOpponent: string | null, liveElo: number): number {
+  if (!reviewOpponent) return liveElo;
+  const m = reviewOpponent.match(/(\d+)\s*$/);
+  return m ? Number(m[1]) : liveElo;
 }
 
 export function GamePage() {
@@ -286,6 +330,29 @@ export function GamePage() {
   const [rewindPly, setRewindPly] = useState<number | null>(null);
   const [pastGamesOpen, setPastGamesOpen] = useState(false);
   const [pastGames, setPastGames] = useState<GameListEntry[] | null>(null);
+  // Increment 3.91 (Task 4): the current debrief's persisted turning-point
+  // PV/best-move lines, fetched once per debrief (see the effect below) and
+  // looked up by ply in handleRewind. reviewArrows/reviewHighlights are the
+  // board overlay derived from whichever turning-point card's "replay" was
+  // last clicked; both clear on backToEnd/backToPlay/new game so they never
+  // bleed into live play.
+  const [turningLines, setTurningLines] = useState<TurningLine[]>([]);
+  const [reviewArrows, setReviewArrows] = useState<{ from: string; to: string; color: ArrowColor }[]>([]);
+  const [reviewHighlights, setReviewHighlights] = useState<{ square: string; kind: ArrowColor }[]>([]);
+  // Increment 3.91 (Task 6): "try the line" — a debrief turning-point card's
+  // sandbox against mallow. null = not exploring (the debrief is static, the
+  // board shows whatever rewindPly/back-to-end left it at). Non-null drives
+  // the SAME <Board> live: its own onMove seam (handleExploreMove below)
+  // replaces handleBoardMove, and arrows/highlightSquares are forced off
+  // (declared cut #2) while it's active. Nothing here ever calls sendMove,
+  // judgeMove, or any persisting endpoint — exploreReply is the only network
+  // call and it writes nothing server-side (see server/game/manager.ts's
+  // exploreReply + its zero-row-count test).
+  const [explore, setExplore] = useState<ExploreState | null>(null);
+  // True only while a exploreReply request is in flight, so a second click
+  // can't fire a second one on top of it (mirrors busyRef's role for the
+  // real game, scoped to the sandbox instead).
+  const [exploreThinking, setExploreThinking] = useState(false);
 
   const boardRef = useRef<BoardHandle>(null);
   const mirrorRef = useRef(new Chess());
@@ -325,6 +392,16 @@ export function GamePage() {
   // that — see handleReplayTakedown); this is purely additive.
   const [cinematicActive, setCinematicActive] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
+  // Increment 3.91 (Task 6): the debrief `fen` at the moment "try the line"
+  // was clicked — exit restores exactly this, same pattern as
+  // preReviewFenRef restoring the pre-review live fen. exploreBusyRef gates
+  // a second player move from firing a second exploreReply while one is
+  // already in flight; exploreTokenRef supersedes an in-flight exploreReply
+  // when the player exits (or starts a fresh session) before it resolves —
+  // its response must never land on a session it no longer belongs to.
+  const preExploreFenRef = useRef<string | null>(null);
+  const exploreBusyRef = useRef(false);
+  const exploreTokenRef = useRef(0);
 
   // Fires the right terminal-sequence celebration for a game-over result:
   // confetti for a player win, an electric storm for a loss, a soft shimmer
@@ -386,6 +463,11 @@ export function GamePage() {
     setReviewGame(null);
     setRewindPly(null);
     preReviewFenRef.current = null;
+    // Increment 3.91 (Task 4): a fresh/new game must never carry over the
+    // last debrief's turning-lines cache or board arrows.
+    setTurningLines([]);
+    setReviewArrows([]);
+    setReviewHighlights([]);
   }, []);
 
   const startGame = useCallback(async (sid: number, elo: number) => {
@@ -445,6 +527,27 @@ export function GamePage() {
       cancelled = true;
     };
   }, [gameOver, gameId]);
+
+  // Increment 3.91 (Task 4): fetch the persisted per-turning-point PV/best-
+  // move lines once per debrief — live-just-finished game or a reviewed
+  // past game, same "which debrief is active" id as activeReviewMoves below
+  // computes. Cached in state and looked up by ply in handleRewind; never
+  // refetched just because rewindPly changes.
+  useEffect(() => {
+    const debriefGameId = reviewGame ? reviewGame.id : gameOver ? gameId : null;
+    if (!debriefGameId) return;
+    let cancelled = false;
+    getTurningLines(debriefGameId)
+      .then((r) => {
+        if (!cancelled) setTurningLines(r.ok ? r.lines : []);
+      })
+      .catch(() => {
+        if (!cancelled) setTurningLines([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewGame, gameOver, gameId]);
 
   useEffect(() => {
     window.localStorage.setItem(COACH_HINTS_KEY, String(coachHints));
@@ -1178,8 +1281,14 @@ export function GamePage() {
       setFen(fenAtPly(activeReviewMoves, ply));
       setResyncTick((t) => t + 1);
       setRewindPly(ply);
+      // Increment 3.91 (Task 4): a turning-point card's replay threads its
+      // TurningLine into the board's arrows/highlightSquares; a plain
+      // bullet-section replay (no matching turning-point ply) clears them.
+      const line = turningLines.find((l) => l.ply === ply);
+      setReviewArrows(line ? turningLineArrows(line) : []);
+      setReviewHighlights(line ? turningLineHighlights(line) : []);
     },
-    [activeReviewMoves]
+    [activeReviewMoves, turningLines]
   );
 
   const handleBackToEnd = useCallback(() => {
@@ -1187,7 +1296,92 @@ export function GamePage() {
     setFen(fenAtPly(activeReviewMoves, activeReviewMoves.length));
     setResyncTick((t) => t + 1);
     setRewindPly(null);
+    setReviewArrows([]);
+    setReviewHighlights([]);
   }, [activeReviewMoves]);
+
+  // Increment 3.91 (Task 6): keeps the board's `fen` (and its hard-remount
+  // resyncTick) in lockstep with the explore session's own fen — the single
+  // source of truth for the position is `explore.fen` while a session is
+  // active, mirrored out here rather than set redundantly at every call site
+  // that changes it (openExplore/handleExploreMove/the engine-reply
+  // handler). Fires only on a genuine explore state transition (each
+  // reducer call returns a fresh object; a rejected illegal move returns the
+  // SAME object back, so no-op moves never remount the board). Skips
+  // entirely once explore goes back to null — exitExplore restores the
+  // pre-explore fen itself, below.
+  useEffect(() => {
+    if (!explore) return;
+    setFen(explore.fen);
+    setResyncTick((t) => t + 1);
+  }, [explore]);
+
+  // Seeds a sandbox at the position before/after `ply` (fenAtPly, same as a
+  // turning-point card's "replay") and hands the board over to it live.
+  // Snapshotting `fen` first is what lets exitExplore return to exactly
+  // where the static debrief was, whether that was the final position or a
+  // rewound one.
+  const openExplore = useCallback(
+    (ply: number) => {
+      if (!activeReviewMoves) return;
+      preExploreFenRef.current = fen;
+      exploreTokenRef.current += 1; // supersede any still-in-flight reply from a prior session
+      exploreBusyRef.current = false;
+      setExploreThinking(false);
+      setExplore(startExplore(fenAtPly(activeReviewMoves, ply)));
+    },
+    [activeReviewMoves, fen]
+  );
+
+  // Tears the session down and hands the board back to the static debrief —
+  // nothing to persist, nothing to undo server-side, just discard the
+  // sandbox state and restore the fen it started from.
+  const exitExplore = useCallback(() => {
+    exploreTokenRef.current += 1; // any reply that lands after this is stale
+    exploreBusyRef.current = false;
+    setExploreThinking(false);
+    setExplore(null);
+    if (preExploreFenRef.current != null) {
+      setFen(preExploreFenRef.current);
+      setResyncTick((t) => t + 1);
+    }
+  }, []);
+
+  // The explore-specific onMove Board is given while a session is active —
+  // parallels handleBoardMove's role for the real game, but validates
+  // locally (applyPlayerMove, same chess.js-clone-and-try pattern
+  // handlePendingStart uses for the pending preview) and never touches
+  // gameId, mirrorRef, sendMove, or judgeMove. On a legal move that isn't
+  // itself game-over, fires exploreReply at the game's own elo and applies
+  // whatever it comes back with — the ONLY network call this whole mode
+  // makes, and it persists nothing (server/game/manager.ts's exploreReply).
+  const handleExploreMove = useCallback(
+    (from: string, to: string) => {
+      if (!explore || exploreBusyRef.current) return;
+      const { next, ok } = applyPlayerMove(explore, from, to);
+      if (!ok) return;
+      setExplore(next);
+      if (!next.awaitingReply) return; // move ended the sandbox position — nothing to reply to
+      exploreBusyRef.current = true;
+      setExploreThinking(true);
+      const token = exploreTokenRef.current;
+      const elo = exploreElo(reviewGame?.opponent ?? null, opponentElo);
+      exploreReply(next.fen, elo)
+        .then((res) => {
+          if (exploreTokenRef.current !== token) return; // superseded — drop it
+          if (!res.ok || !res.reply) return;
+          setExplore((cur) => (cur ? applyEngineReply(cur, res.reply!) : cur));
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (exploreTokenRef.current === token) {
+            exploreBusyRef.current = false;
+            setExploreThinking(false);
+          }
+        });
+    },
+    [explore, reviewGame, opponentElo]
+  );
 
   // "file it away" saved-games menu. Reachable only from the pregame panel
   // and the live debrief (see render below) — both contexts already
@@ -1214,7 +1408,18 @@ export function GamePage() {
       setFen(fenAtPly(summary.moves, summary.moves.length));
       setResyncTick((t) => t + 1);
       setRewindPly(null);
+      setReviewArrows([]);
+      setReviewHighlights([]);
+      setTurningLines([]);
       setPastGamesOpen(false);
+      // Increment 3.91 (Task 6): switching past games while a sandbox from
+      // the PREVIOUS one is open would otherwise leave it live over a fen
+      // that no longer belongs to it — drop it, no restore needed since the
+      // fen above already wins.
+      exploreTokenRef.current += 1;
+      exploreBusyRef.current = false;
+      setExploreThinking(false);
+      setExplore(null);
     },
     [fen]
   );
@@ -1226,6 +1431,15 @@ export function GamePage() {
     }
     setReviewGame(null);
     setRewindPly(null);
+    setReviewArrows([]);
+    setReviewHighlights([]);
+    setTurningLines([]);
+    // Increment 3.91 (Task 6): same reasoning as selectPastGame above — an
+    // open sandbox must not survive leaving review mode.
+    exploreTokenRef.current += 1;
+    exploreBusyRef.current = false;
+    setExploreThinking(false);
+    setExplore(null);
   }, []);
 
   // Owner feedback 2026-07-17: the pregame elo picker was only reappearing
@@ -1243,6 +1457,12 @@ export function GamePage() {
     mirrorRef.current = new Chess();
     setFen(mirrorRef.current.fen());
     setStatus("");
+    // Increment 3.91 (Task 6): a sandbox from the game that just ended must
+    // not survive into the fresh pregame state.
+    exploreTokenRef.current += 1;
+    exploreBusyRef.current = false;
+    setExploreThinking(false);
+    setExplore(null);
   }, [resetGameState]);
 
   // "replay the takedown" (Wave D) — owner feedback, verbatim: "play the
@@ -1498,10 +1718,15 @@ export function GamePage() {
           key={`${gameId ?? "loading"}-${resyncTick}`}
           ref={boardRef}
           fen={fen}
-          onMove={handleBoardMove}
+          // Increment 3.91 (Task 6): explore mode swaps the whole pending-
+          // move seam out for its own direct onMove — pending/judge/hint
+          // overlays and the arrows/highlights layer (declared cut #2) are
+          // all debrief-review furniture that has no meaning once the board
+          // is a live sandbox.
+          onMove={explore ? handleExploreMove : handleBoardMove}
           checkSquare={check.square}
           checkmate={check.mate}
-          pending={pending}
+          pending={explore ? null : pending}
           onRetarget={handleRetargetPending}
           onCancelPending={handleRetractPending}
           onConfirmPending={handleConfirmPending}
@@ -1509,6 +1734,8 @@ export function GamePage() {
           lastMove={lastMove}
           hintReveal={hintReveal}
           threatReveal={threatReveal}
+          arrows={explore ? [] : reviewArrows}
+          highlightSquares={explore ? [] : reviewHighlights}
         />
         <PlayerBar
           seat="you"
@@ -1682,12 +1909,16 @@ export function GamePage() {
               <DebriefPage
                 turningPoints={liveSummary.turningPoints}
                 classifications={liveSummary.classifications}
+                turningLines={turningLines}
                 totalPlies={liveSummary.moves.length}
                 result={gameOver.result}
                 rewindPly={rewindPly}
                 onRewind={handleRewind}
                 onBackToEnd={handleBackToEnd}
                 onOpenPastGames={openPastGames}
+                exploring={explore ? { thinking: exploreThinking, over: explore.over } : null}
+                onTryLine={openExplore}
+                onExitExplore={exitExplore}
               />
             ) : null
           }
@@ -1697,6 +1928,7 @@ export function GamePage() {
         <DebriefPage
           turningPoints={reviewGame.summary.turningPoints}
           classifications={reviewGame.summary.classifications}
+          turningLines={turningLines}
           totalPlies={reviewGame.summary.moves.length}
           result={reviewGame.result}
           rewindPly={rewindPly}
@@ -1705,6 +1937,9 @@ export function GamePage() {
           onOpenPastGames={openPastGames}
           reviewing={{ opponent: reviewGame.opponent, result: reviewGame.result }}
           onBackToPlay={backToPlay}
+          exploring={explore ? { thinking: exploreThinking, over: explore.over } : null}
+          onTryLine={openExplore}
+          onExitExplore={exitExplore}
         />
       )}
       <PastGamesDrawer open={pastGamesOpen} games={pastGames} onSelect={selectPastGame} onClose={closePastGames} />

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
+import { Chess } from "chess.js";
 import { app, ready, gm } from "./index";
-import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages, getAdviceTraces, insertAdviceTrace } from "./store/db";
+import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages, getAdviceTraces, insertAdviceTrace, getAllTableCounts } from "./store/db";
 import { CHAT_MAX_LEN } from "./coach/chat";
 
 describe("api", () => {
@@ -570,5 +571,49 @@ describe("api", () => {
     const rows = getAdviceTraces(g.body.gameId);
     expect(rows[0].rating).toBe(1);
     expect(rows[0].feedback_text).toBeNull();
+  });
+
+  // Increment 3.91 (Task 5): POST /api/explore/reply — the "try the line"
+  // sandbox's engine move. Stateless: no gameId, no persisted game at all.
+  describe("POST /api/explore/reply", () => {
+    // 1.e4 e5 2.Nf3 — a mid-game (well, mid-opening) fen with no persisted
+    // game backing it whatsoever.
+    const MID_GAME_FEN = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2";
+    // Fool's mate: 1.f3 e5 2.g4 Qh4# — white to move, already checkmated.
+    const CHECKMATE_FEN = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
+
+    it("returns a legal maia reply for a mid-game fen, verified independently via chess.js", async () => {
+      await ready;
+      const r = await request(app).post("/api/explore/reply")
+        .send({ fen: MID_GAME_FEN, elo: 1100 }).expect(200);
+      expect(r.body.ok).toBe(true);
+      expect(r.body.reply).toBeTruthy();
+      const { from, to, promotion, san } = r.body.reply;
+
+      // Independent legality check: replay the reply on a fresh clone of
+      // the same fen and confirm chess.js accepts it and agrees on the san.
+      const clone = new Chess(MID_GAME_FEN);
+      const mv = clone.move({ from, to, promotion: promotion ?? "q" });
+      expect(mv).toBeTruthy();
+      expect(mv!.san).toBe(san);
+    }, 60000);
+
+    it("writes nothing to any table — every row count is identical before and after the call", async () => {
+      await ready;
+      const before = getAllTableCounts();
+      await request(app).post("/api/explore/reply")
+        .send({ fen: MID_GAME_FEN, elo: 1200 }).expect(200);
+      const after = getAllTableCounts();
+      expect(after).toEqual(before);
+    }, 60000);
+
+    it("returns gameOver:true and no reply for an already-terminal fen", async () => {
+      await ready;
+      const r = await request(app).post("/api/explore/reply")
+        .send({ fen: CHECKMATE_FEN, elo: 1100 }).expect(200);
+      expect(r.body.ok).toBe(true);
+      expect(r.body.gameOver).toBe(true);
+      expect(r.body.reply).toBeUndefined();
+    });
   });
 });
