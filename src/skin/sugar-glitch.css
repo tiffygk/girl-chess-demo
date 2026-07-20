@@ -1287,6 +1287,114 @@
 /* Wave D: replay-finish celebration — same gcStormFlicker keyframe
    stretched longer, driven by Board's storm({ big: true }). */
 .gc-storm-overlay.big { animation-duration: 3.2s; }
+
+/* Increment 3.9, Task 3 (F16): coach chat drawer. Introduces the third color
+   voice — lavender for the coach, alongside your own cyan and mallow's
+   magenta (panel B10, binding): not your color, not hers, the third seat at
+   the table. No new hex values below — everything is lifted from an
+   existing family (bark-bubble, bar-chip.you, coach-pill/chp-kicker,
+   past-games-overlay/-drawer, button.small.confirm-pending). */
+
+/* opener: the app's existing lavender candy pill (confirm-pending's exact
+   recipe) rather than the plain white past-games-btn, so the coach's own
+   color announces itself before the drawer even opens. Fredoka 600 comes
+   free from the shared button font stack. */
+.gc-app button.small.chat-opener-btn {
+  background: #C9B8FF; color: #4A3B7E;
+  box-shadow: 0 3px 0 #A99AE0, 0 6px 10px rgba(120,95,200,.3);
+}
+.gc-app button.small.chat-opener-btn:hover { box-shadow: 0 5px 0 #A99AE0, 0 8px 14px rgba(120,95,200,.35); }
+.gc-app button.small.chat-opener-btn:active { box-shadow: 0 1px 0 #A99AE0, 0 4px 8px rgba(120,95,200,.25); }
+
+/* drawer: same centered-overlay anatomy as .past-games-overlay/-drawer —
+   the app's one "drawer" pattern, reused rather than a second one invented
+   for this surface. New class names since it's a distinct feature. */
+.gc-app .chat-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(74,59,126,.28);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--space-3);
+}
+.gc-app .chat-drawer {
+  width: min(92vw, 420px);
+  max-height: 78vh;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 12px 0 #C9BFEF, 0 22px 40px rgba(90,70,180,.3);
+  padding: var(--space-3);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.gc-app .chat-drawer-head { display: flex; align-items: center; justify-content: space-between; }
+/* kicker: signal register, same anatomy as .chp-kicker/.debrief-review-
+   kicker, in the purple-ink variant already used for the coach pill's "on"
+   state and the review banner's own kicker — the third voice's ink. */
+.gc-app .chat-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #6952C4;
+}
+.gc-app .chat-messages {
+  flex: 1 1 auto; min-height: 120px; max-height: 46vh;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 4px 2px;
+}
+.gc-app .chat-empty {
+  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13px;
+  color: #9C8FC7; text-align: center; padding: 20px 0; margin: 0;
+}
+.gc-app .chat-bubble { display: flex; flex-direction: column; gap: 4px; max-width: 88%; }
+/* coach bubbles: bark-bubble family verbatim (whisper depth — soft two-part
+   shadow, no press shadow at all, you cannot press words) minus the
+   absolute positioning that anchors mallow's bark to her bar; here the
+   bubble sits in normal flow inside the scrolling message list. pop-in
+   (shared keyframe, already used for game-over UI and the past-games
+   drawer) plays once per newly-arrived bubble since messages only ever
+   append — existing bubbles' DOM nodes are never recreated by a later
+   render. */
+.gc-app .chat-bubble-coach {
+  align-self: flex-start;
+  font-family: 'Quicksand', sans-serif; font-size: 13px; font-weight: 700; color: #7A6BB5;
+  background: #fff; border-radius: 14px;
+  box-shadow: 0 3px 0 rgba(201,191,239,.45), 0 6px 10px rgba(90,70,180,.15);
+}
+.gc-app .chat-bubble-coach .chat-bubble-text { margin: 0; padding: 8px 12px; line-height: 1.4; }
+/* user bubbles: flat tint, your own cyan — a record, not an affordance, so
+   no press shadow at all (bar-chip.you's exact palette). */
+.gc-app .chat-bubble-user {
+  align-self: flex-end;
+  font-family: 'Quicksand', sans-serif; font-size: 13px; font-weight: 700; color: #1A7A93;
+  background: #D6F2FA; border: 1.5px solid #23A8C7; border-radius: 14px;
+  box-shadow: none;
+}
+.gc-app .chat-bubble-user .chat-bubble-text { margin: 0; padding: 8px 12px; line-height: 1.4; }
+.gc-app .chat-thinking .chat-bubble-text { color: #9C8FC7; font-style: italic; }
+/* offline chip: muted, tiny, NOT magenta — backend-down is infrastructure
+   status, not chess danger; the app's one alarm color (magenta) stays
+   reserved for warnings/thumbs-down (panel B10's explicit ruling). */
+.gc-app .chat-offline-chip {
+  align-self: flex-start;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .1em; text-transform: lowercase; color: #9C8FC7;
+  background: #E3D9F5; border-radius: 999px;
+  padding: 2px 8px; margin-left: 12px;
+}
+.gc-app .chat-input-row { display: flex; align-items: center; gap: 8px; }
+/* input: squishy pressable, Quicksand 600 (user prose, not Fredoka), candy
+   shadow — same press-down shadow language as button.small, but inset (a
+   field you press INTO, not a button you press). */
+.gc-app .chat-input {
+  flex: 1 1 auto; min-width: 0;
+  font-family: 'Quicksand', sans-serif; font-weight: 600; font-size: 13px;
+  color: #4A3B7E; background: #F6F1FF;
+  border: none; border-radius: 999px; padding: 10px 16px;
+  box-shadow: inset 0 2px 4px rgba(120,95,200,.16);
+}
+.gc-app .chat-input::placeholder { color: #A594C4; }
+.gc-app .chat-input:focus { outline: 2px solid #C9B8FF; outline-offset: 1px; }
+/* send: plain squishy candy pill, button.small's own default recipe — an
+   action, not a color identity of its own. */
+.gc-app button.small.chat-send-btn { flex: 0 0 auto; }
+
 @keyframes gcStormFlicker {
   0%, 100% { box-shadow: inset 0 0 0 0 transparent; }
   4%  { box-shadow: inset 0 0 60px 18px rgba(255,61,166,.55), inset 0 0 120px 40px rgba(35,229,255,.25); }
