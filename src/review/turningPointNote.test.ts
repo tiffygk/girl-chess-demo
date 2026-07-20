@@ -71,6 +71,9 @@ describe("NEXT_TIME_TIPS motif bank", () => {
     expect(mistake.nextTime).toBe(NEXT_TIME_TIPS["eval-drop"]);
     const inaccuracy = buildTurningPointNote(tp({ label: "inaccuracy" }), undefined, undefined);
     expect(inaccuracy.nextTime).toBe(NEXT_TIME_TIPS["eval-drop"]);
+    // article grammar: "an inaccuracy", never "a inaccuracy" (2026-07-19 gate)
+    expect(inaccuracy.couldImprove).toContain("an inaccuracy");
+    expect(mistake.couldImprove).toContain("a mistake");
   });
 
   it("king-safety: an episode turning point maps to the king-safety tip", () => {

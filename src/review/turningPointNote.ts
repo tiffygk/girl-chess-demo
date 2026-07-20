@@ -115,7 +115,10 @@ function buildCouldImprove(
   const nudge = IMPROVE_NUDGE[label];
   if (!nudge) return undefined;
   const bestClause = line?.bestSan && line.bestSan !== tp.san ? ` ${line.bestSan} was the stronger idea.` : "";
-  return `${tp.san} was a ${label}, ${nudge}.${bestClause}`;
+  // "an inaccuracy" vs "a blunder/mistake" — pure article grammar, not a
+  // copy retune (2026-07-19 visual gate).
+  const article = /^[aeiou]/.test(label) ? "an" : "a";
+  return `${tp.san} was ${article} ${label}, ${nudge}.${bestClause}`;
 }
 
 // Phrased straight off the replay-derived SAN list — never an added
