@@ -18,9 +18,14 @@
 // deltaP is deliberately never rendered anywhere in this file — "the story
 // is words, not numbers" (brief).
 
-import type { GameListEntry, MoveClassification, TurningPoint } from "../game/api";
+import type { GameListEntry, MoveClassification, TurningPoint, TurningLine } from "../game/api";
 import { moveNumberForPly } from "./debriefLesson";
 import { debriefBullets, type DebriefBullet } from "./debriefBullets";
+// Increment 3.91 (Task 4): the four-part note, rendered under a turning-
+// point card once its own "replay" has been clicked (see `active` below).
+// Pure/deterministic module — see turningPointNote.ts's header for why it
+// deliberately doesn't import from debriefBullets.ts.
+import { buildTurningPointNote } from "./turningPointNote";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -46,9 +51,17 @@ function eloFromOpponent(opponent: string): string {
 interface TurningPointCardProps {
   point: TurningPoint;
   onRewind: (ply: number) => void;
+  // Increment 3.91 (Task 4): the matching classification/TurningLine for
+  // this point's ply (lookup done once by the caller), and whether this
+  // card's own "replay" is the one currently driving the board — the
+  // four-part note only renders under the active card, mirroring the
+  // arrows GamePage threads onto the board for that same click.
+  classification: MoveClassification | undefined;
+  line: TurningLine | undefined;
+  active: boolean;
 }
 
-function TurningPointCard({ point, onRewind }: TurningPointCardProps) {
+function TurningPointCard({ point, onRewind, classification, line, active }: TurningPointCardProps) {
   // debrief-v2: an episode card is a warning-class fact by construction (a
   // sustained king-pressure run), so it always gets the magenta tint —
   // same flat-tint card family as a negative-labeled swing/backfill card,
@@ -57,6 +70,7 @@ function TurningPointCard({ point, onRewind }: TurningPointCardProps) {
   const negative = NEGATIVE_CARD_LABELS.has(point.label) || isEpisode;
   const startMove = moveNumberForPly(point.ply);
   const endMove = point.plyEnd != null ? moveNumberForPly(point.plyEnd) : startMove;
+  const note = active ? buildTurningPointNote(point, classification, line) : null;
   return (
     <div className={"debrief-card" + (negative ? " debrief-card-negative" : "")}>
       <div className="debrief-card-head">
@@ -72,6 +86,16 @@ function TurningPointCard({ point, onRewind }: TurningPointCardProps) {
       <button className="small debrief-replay-btn" onClick={() => onRewind(point.ply)}>
         replay
       </button>
+      {note && (
+        <>
+          {note.didWell && <p className="debrief-card-punish">did well: {note.didWell}</p>}
+          {note.couldImprove && <p className="debrief-card-punish">could improve: {note.couldImprove}</p>}
+          <p className="debrief-card-punish">next time: {note.nextTime}</p>
+          {note.whatMayHaveHappened && (
+            <p className="debrief-card-punish">what may have happened: {note.whatMayHaveHappened}</p>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -125,6 +149,12 @@ export interface DebriefPageProps {
   // dedup comment) and the ply count phase derivation needs. Both come
   // straight off SummaryResponse (classifications, moves.length).
   classifications: MoveClassification[];
+  // Increment 3.91 (Task 4): the persisted per-turning-point PV/best-move
+  // lines, fetched once by GamePage and passed straight through (see the
+  // TurningLine comment in game/api.ts) — a point missing here (e.g. no
+  // pv/best_move persisted for that ply) simply renders the note without
+  // the whatMayHaveHappened/couldImprove-bestClause parts.
+  turningLines: TurningLine[];
   totalPlies: number;
   // The finished game's result — live path passes gameOver.result, review
   // path passes reviewGame.result. Both are plain strings on the wire
@@ -147,6 +177,7 @@ export interface DebriefPageProps {
 export function DebriefPage({
   turningPoints,
   classifications,
+  turningLines,
   totalPlies,
   result,
   rewindPly,
@@ -179,7 +210,14 @@ export function DebriefPage({
       {turningPoints.length > 0 && (
         <div className="debrief-cards">
           {turningPoints.map((point) => (
-            <TurningPointCard key={point.rank} point={point} onRewind={onRewind} />
+            <TurningPointCard
+              key={point.rank}
+              point={point}
+              onRewind={onRewind}
+              classification={classifications.find((c) => c.ply === point.ply)}
+              line={turningLines.find((l) => l.ply === point.ply)}
+              active={rewindPly === point.ply}
+            />
           ))}
         </div>
       )}
