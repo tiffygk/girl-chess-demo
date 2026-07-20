@@ -2,7 +2,7 @@ import { Chess } from "chess.js";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
 import type { CoachBackend } from "./backends/types";
 import { getPersona, type NarrateTraceContext } from "./index";
-import { SAN_RE } from "./validate";
+import { SAN_RE, isAllowedSanToken } from "./validate";
 import { insertAdviceTrace } from "../store/db";
 
 // F16 (this-game grounding chat): a second, independent narration surface
@@ -124,7 +124,7 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
   for (const raw of text.match(SAN_RE) ?? []) {
     const token = stripTrailingPunctuation(raw);
     if (isBareSquare(token)) continue; // geography, always allowed -- cut #2
-    if (!allowedSans.has(token)) violations.push(token);
+    if (!isAllowedSanToken(token, allowedSans)) violations.push(token);
   }
 
   if (violations.length > 0) return { ok: false, violations };
@@ -195,10 +195,13 @@ function correctiveSuffix(violations: string[]): string {
 // validateChat -> on violation (including empty output), ONE corrective
 // regeneration -> on second violation or backend error/timeout, the
 // persona's "- redirect:" template. Never throws; always returns text.
-// Writes exactly one advice_traces row (kind "chat") per call. history is
-// caller-supplied (the server, never the client -- see manager.ts's chat()
-// method, the sole caller) so this function itself has no opinion about
-// where history comes from beyond using it verbatim.
+// Writes exactly one advice_traces row (kind "chat") per call that reaches
+// this function -- i.e. per call that passes GameManager.chat's CHAT_MAX_LEN
+// gate; over-length messages are rejected before chat() is ever called, so
+// they write no trace row at all (see manager.ts's chat() method, the sole
+// caller). history is caller-supplied (the server, never the client) so
+// this function itself has no opinion about where history comes from beyond
+// using it verbatim.
 export async function chat(
   userMessage: string,
   history: { role: "user" | "coach"; text: string }[],
@@ -255,6 +258,10 @@ export async function chat(
     gameId: trace.gameId,
     ply: trace.ply,
     kind: "chat",
+    // Full facts, uci fields included -- intentional, not a leak: this is
+    // F40 Lab trace data for the owner, not the model prompt. Only
+    // factsForModel's stripped copy (built above, no uci) ever reaches the
+    // backend; this is the one JSON.stringify(facts) in the whole function.
     factsJson: JSON.stringify(facts),
     prompt: attemptPrompt,
     output: attemptOutput,

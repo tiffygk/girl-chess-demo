@@ -15,10 +15,46 @@ const SQUARE_RE = /\b[a-h][1-8]\b/g;
 // Exported: server/coach/chat.ts's validateChat (F16) reuses this exact
 // pattern rather than redefining an equivalent one that could drift out of
 // sync with narrate()'s validation.
-export const SAN_RE = /\b(?:O-O(?:-O)?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)\b/g;
+//
+// Piece letters (leading and promotion) are matched case-INSENSITIVELY
+// ([KQRBNkqrbn] / [QRBNqrbn]): the coach persona writes lowercase prose, so
+// a fabricated move like "qxh7" would otherwise slip past the uppercase-only
+// [KQRBN] class entirely -- never even extracted as a SAN-shaped token, let
+// alone checked against allowedSans. Matching case-insensitively and then
+// normalizing (see normalizeSan below) before the allowedSans membership
+// check closes that hole in both this file's validateNarration and
+// chat.ts's validateChat, since both consume this one pattern.
+export const SAN_RE = /\b(?:O-O(?:-O)?|[KQRBNkqrbn]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBNqrbn])?[+#]?)\b/g;
 
 function stripTrailingPunctuation(token: string): string {
   return token.replace(/[.,!?;:'"]+$/, "");
+}
+
+// Uppercases a leading piece letter (k/q/r/b/n) and/or a promotion piece
+// letter (=q/=r/=b/=n), leaving everything else untouched. Deliberately
+// does NOT touch a lone file letter: standard SAN pawn captures are
+// file-led and lowercase already ("exd5", "bxc3"), and "b" is the one file
+// letter that collides with a piece letter (Bishop) -- normalizeSan must
+// never turn a legitimate pawn capture into a fabricated bishop move.
+// Callers check the RAW token against allowedSans first and fall back to
+// the normalized form (see isAllowedSanToken), so an ambiguous token like
+// "bxc3" matches whichever of "bxc3" (pawn) / "Bxc3" (bishop) is actually
+// in the fact list, and a genuinely fabricated token matches neither.
+export function normalizeSan(token: string): string {
+  let out = token;
+  if (/^[kqrbn]/.test(out)) out = out[0].toUpperCase() + out.slice(1);
+  out = out.replace(/=([qrbn])$/, (_m, p: string) => `=${p.toUpperCase()}`);
+  return out;
+}
+
+// Shared membership check for a SAN-shaped token: allowed as-is, or allowed
+// once its piece-letter case is normalized. Exported so chat.ts's
+// validateChat uses the exact same rule as validateNarration below --
+// one place decides what counts as an allowed move, for both surfaces.
+export function isAllowedSanToken(token: string, allowed: Set<string>): boolean {
+  if (allowed.has(token)) return true;
+  const normalized = normalizeSan(token);
+  return normalized !== token && allowed.has(normalized);
 }
 
 export function validateNarration(
@@ -36,7 +72,7 @@ export function validateNarration(
 
   for (const raw of text.match(SAN_RE) ?? []) {
     const san = stripTrailingPunctuation(raw);
-    if (!allowedSans.has(san)) violations.push(san);
+    if (!isAllowedSanToken(san, allowedSans)) violations.push(san);
   }
 
   if (violations.length > 0) return { ok: false, violations };

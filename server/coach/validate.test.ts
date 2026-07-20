@@ -79,6 +79,23 @@ describe("validateNarration", () => {
     const facts = mkFacts();
     expect(validateNarration("", facts)).toEqual({ ok: true });
   });
+
+  // Whole-branch review Important #1: SAN_RE required an uppercase piece
+  // letter, so a fabricated lowercase SAN never even got extracted as a
+  // token and passed validation by default. The persona writes lowercase
+  // prose, making a lowercased SAN likely.
+  it("fails a fabricated lowercase-piece-letter SAN not backed by any allowed move", () => {
+    const facts = mkFacts();
+    const result = validateNarration("qxh7 wins on the spot.", facts);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.violations).toContain("qxh7");
+  });
+
+  it("passes a lowercase echo of an allowed SAN once piece-letter case is normalized (Rxd8 is allowed)", () => {
+    const facts = mkFacts();
+    expect(facts.allowedSans).toContain("Rxd8");
+    expect(validateNarration("rxd8 grabs it right back.", facts)).toEqual({ ok: true });
+  });
 });
 
 describe("buildPrompt (calibration sweep task 7d): factsForModel is stripped of uci/refutationUci", () => {
