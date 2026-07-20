@@ -535,6 +535,9 @@
 }
 .gc-app .settings-switch.sw-cyan input { accent-color: #23A8C7; }
 .gc-app .settings-switch .np-glyph { margin-right: -4px; }
+/* Task 5 (F17): coach voice radio row — same settings-switch look per
+   option, just a tighter vertical stack than the popover's own 12px gap. */
+.gc-app .settings-radio-group { display: flex; flex-direction: column; gap: 6px; }
 
 /* Wave B: player bars replace the side trays. If the board+bars were a
    physical object, mallow's tray would be bolted to the top edge of the

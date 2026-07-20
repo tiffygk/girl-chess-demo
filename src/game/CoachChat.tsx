@@ -141,9 +141,13 @@ export interface CoachChatProps {
   mode: "live" | "review";
   buildContext: () => ChatContext;
   hidden: boolean;
+  // Task 5 (F17): "claude" | "ollama" | "template" — GamePage owns the
+  // localStorage-synced settings-popover state; this component has no
+  // opinion of its own, it just forwards whatever it's given on every send.
+  backendPref: string;
 }
 
-export function CoachChat({ gameId, mode, buildContext, hidden }: CoachChatProps) {
+export function CoachChat({ gameId, mode, buildContext, hidden, backendPref }: CoachChatProps) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatBubble[]>([]);
   const [draft, setDraft] = useState("");
@@ -182,7 +186,7 @@ export function CoachChat({ gameId, mode, buildContext, hidden }: CoachChatProps
     setPending(true);
     setMessages((prev) => [...prev, { role: "user", text }]);
     setDraft("");
-    chatWithCoach(gameId, { message: text, context: buildContext() })
+    chatWithCoach(gameId, { message: text, context: buildContext(), backendPref })
       .then((res) => {
         if (requestTokenRef.current !== token) return; // superseded — drop it
         // Minor fix (task-reviewer): `res.text != null` rather than

@@ -54,6 +54,22 @@ function readEloPref(): number {
   return OPPONENT_ELOS.includes(raw) ? raw : 1100;
 }
 
+// Task 5 (F17): the coach voice picker's wire tokens are pinned verbatim by
+// the plan (panel A4) — "claude" | "ollama" | "template", default "claude".
+// UI labels map client-side only; the wire token itself never changes.
+const COACH_BACKEND_KEY = "gc-coach-backend";
+type CoachBackendPref = "claude" | "ollama" | "template";
+const COACH_BACKEND_OPTIONS: { value: CoachBackendPref; label: string }[] = [
+  { value: "claude", label: "claude" },
+  { value: "ollama", label: "local (ollama)" },
+  { value: "template", label: "templates only" },
+];
+
+function readCoachBackendPref(): CoachBackendPref {
+  const raw = localStorage.getItem(COACH_BACKEND_KEY);
+  return raw === "claude" || raw === "ollama" || raw === "template" ? raw : "claude";
+}
+
 // Owner-calibratable: her displayed rating. A later increment computes this
 // from game history in data/girlchess.db; until then it is a fixed label
 // (owner, 2026-07-17: "for now let's just put that my elo is 1350").
@@ -206,6 +222,10 @@ export function GamePage() {
   const [opponentElo, setOpponentElo] = useState<number>(readEloPref);
   // V1: independent of coachOn (judging) — not read by any hint logic yet.
   const [coachHints, setCoachHints] = useState<boolean>(() => readBoolPref(COACH_HINTS_KEY));
+  // Task 5 (F17): which backend narrate()/chatWithCoach() ask for, per
+  // request — independent of coachOn/coachHints (a picked voice has nothing
+  // to do with whether judging or hints are on).
+  const [coachBackend, setCoachBackend] = useState<CoachBackendPref>(() => readCoachBackendPref());
   const [settingsOpen, setSettingsOpen] = useState(false);
   // judge-post (coach-only) mode: the move already played, so there's no
   // pending overlay to hang a badge off of — this is that badge's own
@@ -406,6 +426,10 @@ export function GamePage() {
   useEffect(() => {
     window.localStorage.setItem(COACH_HINTS_KEY, String(coachHints));
   }, [coachHints]);
+
+  useEffect(() => {
+    window.localStorage.setItem(COACH_BACKEND_KEY, coachBackend);
+  }, [coachBackend]);
 
   // The popover shouldn't linger open across a move it can no longer
   // safely act on — close it the moment input locks up, same "no queuing"
@@ -862,6 +886,7 @@ export function GamePage() {
         to: hintFacts.bestToSquare,
       },
       recommendation: hintFacts.recommendation,
+      backendPref: coachBackend,
     })
       .then((res) => {
         if (pendingTokenRef.current !== token) return; // superseded — drop it
@@ -875,7 +900,7 @@ export function GamePage() {
         if (pendingTokenRef.current !== token) return;
         setCoachLoading(false);
       });
-  }, [gameId, pending, verdict, hintLevel, hintFacts, coachHints]);
+  }, [gameId, pending, verdict, hintLevel, hintFacts, coachHints, coachBackend]);
 
   // A5: surfaces a short "you tried something, here's why it didn't work"
   // message in the status line for a few seconds (currently only "can't
@@ -968,6 +993,14 @@ export function GamePage() {
     (v: boolean) => {
       if (uiBusy || pending) return;
       setCoachHints(v);
+    },
+    [uiBusy, pending]
+  );
+
+  const setCoachBackendPref = useCallback(
+    (v: CoachBackendPref) => {
+      if (uiBusy || pending) return;
+      setCoachBackend(v);
     },
     [uiBusy, pending]
   );
@@ -1379,6 +1412,22 @@ export function GamePage() {
                 </svg>
                 coach gives hints
               </label>
+              <div className="settings-divider" aria-hidden="true"></div>
+              <span className="settings-section-head">coach voice</span>
+              <div className="settings-radio-group" role="radiogroup" aria-label="coach voice">
+                {COACH_BACKEND_OPTIONS.map((opt) => (
+                  <label key={opt.value} className="settings-switch">
+                    <input
+                      type="radio"
+                      name="coach-backend"
+                      checked={coachBackend === opt.value}
+                      disabled={togglesDisabled}
+                      onChange={() => setCoachBackendPref(opt.value)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1618,6 +1667,7 @@ export function GamePage() {
         mode={reviewGame ? "review" : "live"}
         buildContext={buildChatContext}
         hidden={chatHidden}
+        backendPref={coachBackend}
       />
     </div>
   );

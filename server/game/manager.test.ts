@@ -391,6 +391,129 @@ describe("GameManager", () => {
     expect(result.ok).toBe(false);
   });
 
+  // Task 5 (F17): per-request backend preference. pickCoachBackend caches
+  // per pref in a Map, not a single shared member — these three tests pin
+  // that "template" is a first-class no-probe choice, "ollama" falls to
+  // template when unavailable, and two different prefs running concurrently
+  // never leak one call's backend into the other's.
+  describe("backend picker (F17, per-request pref)", () => {
+    it('narrate: pref "template" yields source "template" even with a working fake backend registered', async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      // Seed the default ("claude") slot with a backend that WOULD succeed —
+      // proves "template" bypasses it entirely rather than merely losing a race.
+      gm.setCoachBackendForTesting({
+        name: "fake-claude",
+        async available() {
+          return true;
+        },
+        async generate() {
+          return "her knight lands badly. Nxe4 wins a pawn back instead.";
+        },
+      });
+      const result = await gm.narrate(g.gameId, {
+        herPiece: "n",
+        from: "f6",
+        to: "g4",
+        tier: "warning",
+        deltaCp: 300,
+        best: { san: "Nxe4", uci: "f6e4", pieceKind: "n", from: "f6", to: "e4" },
+        recommendation: {
+          accomplishment: "captures",
+          pieceKind: "n",
+          fromSquare: "f6",
+          toSquare: "e4",
+          san: "Nxe4",
+          capturesSquare: "e4",
+          capturedPieceKind: "p",
+        },
+        backendPref: "template",
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.source).toBe("template");
+    }, 20000);
+
+    it('narrate: pref "ollama" falls back to template source when ollama is unavailable', async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      // Seed the "ollama" slot directly with the unavailable outcome (a
+      // backend that always rejects), simulating "ollama probed
+      // unavailable" without depending on a real network probe in tests.
+      gm.setCoachBackendForTesting(
+        {
+          name: "none",
+          async available() {
+            return false;
+          },
+          async generate(): Promise<string> {
+            throw new Error("no coach backend available");
+          },
+        },
+        "ollama"
+      );
+      const result = await gm.narrate(g.gameId, {
+        herPiece: "n",
+        from: "f6",
+        to: "g4",
+        tier: "nudge",
+        deltaCp: 80,
+        backendPref: "ollama",
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.source).toBe("template");
+    }, 20000);
+
+    it("concurrent narrate(pref claude, working fake) and chat(pref template) don't cross-contaminate backends", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      // Seeds the default ("claude") slot only — the chat call below asks
+      // for "template" and must never see this backend.
+      gm.setCoachBackendForTesting({
+        name: "claude-fake",
+        async available() {
+          return true;
+        },
+        async generate() {
+          return "her knight lands badly. Nxe4 wins a pawn back instead.";
+        },
+      });
+
+      const [narrateResult, chatResult] = await Promise.all([
+        gm.narrate(g.gameId, {
+          herPiece: "n",
+          from: "f6",
+          to: "g4",
+          tier: "warning",
+          deltaCp: 300,
+          best: { san: "Nxe4", uci: "f6e4", pieceKind: "n", from: "f6", to: "e4" },
+          recommendation: {
+            accomplishment: "captures",
+            pieceKind: "n",
+            fromSquare: "f6",
+            toSquare: "e4",
+            san: "Nxe4",
+            capturesSquare: "e4",
+            capturedPieceKind: "p",
+          },
+          backendPref: "claude",
+        }),
+        gm.chat(g.gameId, {
+          message: "what should I do?",
+          context: { mode: "live" },
+          backendPref: "template",
+        }),
+      ]);
+
+      expect(narrateResult.ok).toBe(true);
+      if (narrateResult.ok) expect(narrateResult.source).toBe("model");
+      expect(chatResult.ok).toBe(true);
+      if (chatResult.ok) expect(chatResult.source).toBe("template");
+
+      const traces = getAdviceTraces(g.gameId);
+      const narrateTrace = traces.find((t: any) => t.kind === "warning");
+      const chatTrace = traces.find((t: any) => t.kind === "chat");
+      expect(narrateTrace?.backend).toBe("claude-fake");
+      expect(chatTrace?.backend).toBe("none");
+    }, 20000);
+  });
+
   // debrief-v2: algo versioning self-heal. A game finished under the OLD
   // algorithm (dedup-swallows-her-swings, no episode detector) has a stale
   // algo_version=1 row set — getSummary must recompute under the current

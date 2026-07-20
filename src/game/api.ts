@@ -252,6 +252,10 @@ export interface NarrateResponse {
   traceId?: number;
 }
 
+// backendPref (Task 5, F17): "claude" | "ollama" | "template" | undefined,
+// read from localStorage gc-coach-backend by the caller (GamePage.tsx) and
+// passed straight through — this client stays a thin typed wrapper with no
+// opinion of its own about the preference's source or default.
 export function narrate(
   gameId: number,
   body: {
@@ -263,6 +267,7 @@ export function narrate(
     threat?: ThreatFacts;
     best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
     recommendation?: RecommendationFacts;
+    backendPref?: string;
   }
 ): Promise<NarrateResponse> {
   return postJson(`/game/${gameId}/narrate`, body);
@@ -295,9 +300,10 @@ export interface ChatResponse {
   error?: string;
 }
 
-// backendPref is accepted for forward-compat with Task 5's backend picker —
-// server/index.ts already reads it off the body — but is otherwise inert
-// today; callers simply omit it until that task wires a picker to it.
+// backendPref (Task 5, F17): now live end to end — server/index.ts reads it
+// off the body and threads it to GameManager.chat's pickCoachBackend. Same
+// "caller supplies it, this client has no opinion" convention as narrate()
+// above.
 export function chatWithCoach(
   gameId: number,
   body: { message: string; context: ChatContext; backendPref?: string }

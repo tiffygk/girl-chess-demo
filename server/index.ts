@@ -133,7 +133,7 @@ app.post("/api/game/:id/hint", (req, res) => {
 // throws either — worst case is a template-sourced string), so the 500
 // branch here is purely defensive.
 app.post("/api/game/:id/narrate", async (req, res) => {
-  const { herPiece, from, to, tier, deltaCp, threat, best, recommendation } = req.body;
+  const { herPiece, from, to, tier, deltaCp, threat, best, recommendation, backendPref } = req.body;
   try {
     const result = await gm.narrate(Number(req.params.id), {
       herPiece,
@@ -144,6 +144,7 @@ app.post("/api/game/:id/narrate", async (req, res) => {
       threat,
       best,
       recommendation,
+      backendPref,
     });
     res.json(result);
   } catch (error) {
@@ -154,16 +155,16 @@ app.post("/api/game/:id/narrate", async (req, res) => {
 // Increment 3.9, F16: this-game grounding chat. Mirrors narrate's envelope
 // (ok:true/false, never a thrown error past gm.chat -- that method's own
 // chat() call never throws either, worst case is a template-sourced
-// redirect string, so the 500 branch here is purely defensive). backendPref
-// is accepted for forward-compat with Task 5's backend picker but not yet
-// wired to anything -- gm.pickCoachBackend() still probes/caches on its own
-// until that lands.
+// redirect string, so the 500 branch here is purely defensive). Task 5
+// (F17): backendPref is now threaded straight through to gm.chat, which
+// hands it to pickCoachBackend (per-pref cache — see manager.ts).
 app.post("/api/game/:id/chat", async (req, res) => {
-  const { message, context } = req.body;
+  const { message, context, backendPref } = req.body;
   try {
     const result = await gm.chat(Number(req.params.id), {
       message: String(message ?? ""),
       context: context ?? { mode: "live" },
+      backendPref,
     });
     res.json(result);
   } catch (error) {
