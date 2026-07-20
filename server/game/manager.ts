@@ -219,20 +219,27 @@ export class GameManager {
   // Increment 3.91 (Task 2): GET /api/game/:id/turning-lines. Exposes the
   // ALREADY-PERSISTED Stockfish best-move + principal variation for each of
   // the game's turning points (moves.best_move/pv, written by attachEval on
-  // the move path) — a new ADDITIVE endpoint, deliberately separate from
-  // getSummary (which this method reads from, unmodified, to get the same
-  // healed/consistent turning-point set) rather than changing that
-  // 3.9-shared method's shape. Every from/to below comes from a chess.js
-  // REPLAY (moveEndpoints for the played SAN; the pv-replay loop for the
-  // engine line) — never from parsing SAN/UCI text as truth, the same rule
-  // classify.ts/hint.ts already follow. A ply whose eval never attached (or
-  // attached with an empty pv) degrades gracefully: pvSans: [], no
-  // bestSan/bestFromTo — never a guess. `threat` is populated only when a
-  // persisted verdicts.facts_json row for that ply already carries a
+  // the move path) — a new ADDITIVE endpoint. Reads turning points via the
+  // pure getTurningPoints(gameId) SELECT accessor (server/store/db.ts)
+  // rather than getSummary: getSummary's self-heal can INSERT a fresh
+  // TP_ALGO_VERSION row set when a game's persisted rows are below the
+  // current algo version, and a GET must never write to the db (review
+  // finding). turning_points rows are persisted at game end
+  // (persistGameSummary), so getTurningPoints returns them with zero
+  // compute-on-read write; a game whose rows are still at an older algo
+  // version just degrades gracefully (the arrows reflect the stale set)
+  // rather than triggering a heal here — this endpoint reads only, ever.
+  // Every from/to below comes from a chess.js REPLAY (moveEndpoints for the
+  // played SAN; the pv-replay loop for the engine line) — never from
+  // parsing SAN/UCI text as truth, the same rule classify.ts/hint.ts
+  // already follow. A ply whose eval never attached (or attached with an
+  // empty pv) degrades gracefully: pvSans: [], no bestSan/bestFromTo —
+  // never a guess. `threat` is populated only when a persisted
+  // verdicts.facts_json row for that ply AND played san already carries a
   // refutation (no new engine call is made here, ever).
   getTurningLines(gameId: number): { ok: boolean; lines: TurningLine[] } {
     try {
-      const { turningPoints } = this.getSummary(gameId);
+      const turningPoints = getTurningPoints(gameId) as { ply: number; san: string }[];
       const rows = getGameMoves(gameId);
       const sans = rows.map((r: any) => r.san as string);
       const evals = getMoveEvalsByPlies(gameId, turningPoints.map((t) => t.ply));
@@ -249,7 +256,7 @@ export class GameManager {
 
         const playedFromTo = moveEndpoints(fenBefore, t.san);
         const { pvSans, bestSan, bestFromTo } = this.pvLine(fenBefore, evalByPly.get(t.ply));
-        const threat = this.threatForPly(verdicts, t.ply);
+        const threat = this.threatForPly(verdicts, t.ply, t.san);
 
         const line: TurningLine = { ply: t.ply, pvSans };
         if (playedFromTo) line.playedFromTo = playedFromTo;
@@ -302,11 +309,18 @@ export class GameManager {
 
   // The opponent's refutation of this ply, when a judge call for it already
   // computed and persisted one (verdicts.facts_json — see motifs.ts's
-  // ThreatFacts and judgeMove's insertVerdict call below). Best-effort only:
-  // malformed/missing json, or a facts payload without the refutation
-  // squares, both resolve to "no claim" rather than throwing.
-  private threatForPly(verdicts: any[], ply: number): { from: string; to: string } | undefined {
-    const matches = verdicts.filter((v) => v.ply === ply && v.facts_json);
+  // ThreatFacts and judgeMove's insertVerdict call below). Matched on BOTH
+  // ply AND verdicts.move === the turning point's played san (review
+  // finding): a ply can carry multiple verdicts rows — one per judge call,
+  // including retracted candidates she looked at and backed out of — and
+  // attaching a retracted candidate's refutation to the played move's line
+  // would be a false threat claim. If no row matches both, this returns "no
+  // claim" rather than falling back to another candidate's row.
+  // Best-effort only: malformed/missing json, or a facts payload without
+  // the refutation squares, both resolve to "no claim" rather than
+  // throwing.
+  private threatForPly(verdicts: any[], ply: number, playedSan: string): { from: string; to: string } | undefined {
+    const matches = verdicts.filter((v) => v.ply === ply && v.move === playedSan && v.facts_json);
     if (matches.length === 0) return undefined;
     try {
       const facts = JSON.parse(matches[matches.length - 1].facts_json) as Partial<ThreatFacts>;
