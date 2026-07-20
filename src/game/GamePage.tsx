@@ -1272,6 +1272,7 @@ export function GamePage() {
       setRewindPly(null);
       setReviewArrows([]);
       setReviewHighlights([]);
+      setTurningLines([]);
       setPastGamesOpen(false);
       // Increment 3.91 (Task 6): switching past games while a sandbox from
       // the PREVIOUS one is open would otherwise leave it live over a fen
@@ -1294,6 +1295,7 @@ export function GamePage() {
     setRewindPly(null);
     setReviewArrows([]);
     setReviewHighlights([]);
+    setTurningLines([]);
     // Increment 3.91 (Task 6): same reasoning as selectPastGame above — an
     // open sandbox must not survive leaving review mode.
     exploreTokenRef.current += 1;
