@@ -13,12 +13,14 @@ import {
   narrate,
   fetchSummary,
   fetchGames,
+  getTurningLines,
   type MoveResponse,
   type GameOverInfo,
   type Verdict,
   type HintFactsResponse,
   type SummaryResponse,
   type GameListEntry,
+  type TurningLine,
 } from "./api";
 import { describeMove, type MoveRender } from "./describeMove";
 import { victimKind, materialDiff, rollbackCapture, type CapturedBySide } from "./captures";
@@ -119,6 +121,34 @@ function adoptServerFen(mirror: Chess, serverFen: string | undefined | null): st
   }
   mirror.undo();
   return mirror.fen();
+}
+
+// Increment 3.91 (Task 4): a turning-point card's "replay" click threads a
+// TurningLine (already replay-derived server-side, see api.ts's TurningLine
+// comment) into the board's arrows/highlightSquares props. Pure and
+// additive-only — never recomputes or guesses a from/to, only reshapes the
+// fields TurningLine already carries.
+type ArrowColor = "played" | "best" | "threat";
+
+function turningLineArrows(line: TurningLine): { from: string; to: string; color: ArrowColor }[] {
+  const arrows: { from: string; to: string; color: ArrowColor }[] = [];
+  if (line.playedFromTo) arrows.push({ ...line.playedFromTo, color: "played" });
+  if (line.bestFromTo) arrows.push({ ...line.bestFromTo, color: "best" });
+  if (line.threat) arrows.push({ ...line.threat, color: "threat" });
+  return arrows;
+}
+
+function turningLineHighlights(line: TurningLine): { square: string; kind: ArrowColor }[] {
+  const highlights: { square: string; kind: ArrowColor }[] = [];
+  const add = (ft: { from: string; to: string } | undefined, kind: ArrowColor) => {
+    if (!ft) return;
+    highlights.push({ square: ft.from, kind });
+    highlights.push({ square: ft.to, kind });
+  };
+  add(line.playedFromTo, "played");
+  add(line.bestFromTo, "best");
+  add(line.threat, "threat");
+  return highlights;
 }
 
 export function GamePage() {
@@ -236,6 +266,15 @@ export function GamePage() {
   const [rewindPly, setRewindPly] = useState<number | null>(null);
   const [pastGamesOpen, setPastGamesOpen] = useState(false);
   const [pastGames, setPastGames] = useState<GameListEntry[] | null>(null);
+  // Increment 3.91 (Task 4): the current debrief's persisted turning-point
+  // PV/best-move lines, fetched once per debrief (see the effect below) and
+  // looked up by ply in handleRewind. reviewArrows/reviewHighlights are the
+  // board overlay derived from whichever turning-point card's "replay" was
+  // last clicked; both clear on backToEnd/backToPlay/new game so they never
+  // bleed into live play.
+  const [turningLines, setTurningLines] = useState<TurningLine[]>([]);
+  const [reviewArrows, setReviewArrows] = useState<{ from: string; to: string; color: ArrowColor }[]>([]);
+  const [reviewHighlights, setReviewHighlights] = useState<{ square: string; kind: ArrowColor }[]>([]);
 
   const boardRef = useRef<BoardHandle>(null);
   const mirrorRef = useRef(new Chess());
@@ -328,6 +367,11 @@ export function GamePage() {
     setReviewGame(null);
     setRewindPly(null);
     preReviewFenRef.current = null;
+    // Increment 3.91 (Task 4): a fresh/new game must never carry over the
+    // last debrief's turning-lines cache or board arrows.
+    setTurningLines([]);
+    setReviewArrows([]);
+    setReviewHighlights([]);
   }, []);
 
   const startGame = useCallback(async (sid: number, elo: number) => {
@@ -387,6 +431,27 @@ export function GamePage() {
       cancelled = true;
     };
   }, [gameOver, gameId]);
+
+  // Increment 3.91 (Task 4): fetch the persisted per-turning-point PV/best-
+  // move lines once per debrief — live-just-finished game or a reviewed
+  // past game, same "which debrief is active" id as activeReviewMoves below
+  // computes. Cached in state and looked up by ply in handleRewind; never
+  // refetched just because rewindPly changes.
+  useEffect(() => {
+    const debriefGameId = reviewGame ? reviewGame.id : gameOver ? gameId : null;
+    if (!debriefGameId) return;
+    let cancelled = false;
+    getTurningLines(debriefGameId)
+      .then((r) => {
+        if (!cancelled) setTurningLines(r.ok ? r.lines : []);
+      })
+      .catch(() => {
+        if (!cancelled) setTurningLines([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewGame, gameOver, gameId]);
 
   useEffect(() => {
     window.localStorage.setItem(COACH_HINTS_KEY, String(coachHints));
@@ -1040,8 +1105,14 @@ export function GamePage() {
       setFen(fenAtPly(activeReviewMoves, ply));
       setResyncTick((t) => t + 1);
       setRewindPly(ply);
+      // Increment 3.91 (Task 4): a turning-point card's replay threads its
+      // TurningLine into the board's arrows/highlightSquares; a plain
+      // bullet-section replay (no matching turning-point ply) clears them.
+      const line = turningLines.find((l) => l.ply === ply);
+      setReviewArrows(line ? turningLineArrows(line) : []);
+      setReviewHighlights(line ? turningLineHighlights(line) : []);
     },
-    [activeReviewMoves]
+    [activeReviewMoves, turningLines]
   );
 
   const handleBackToEnd = useCallback(() => {
@@ -1049,6 +1120,8 @@ export function GamePage() {
     setFen(fenAtPly(activeReviewMoves, activeReviewMoves.length));
     setResyncTick((t) => t + 1);
     setRewindPly(null);
+    setReviewArrows([]);
+    setReviewHighlights([]);
   }, [activeReviewMoves]);
 
   // "file it away" saved-games menu. Reachable only from the pregame panel
@@ -1076,6 +1149,8 @@ export function GamePage() {
       setFen(fenAtPly(summary.moves, summary.moves.length));
       setResyncTick((t) => t + 1);
       setRewindPly(null);
+      setReviewArrows([]);
+      setReviewHighlights([]);
       setPastGamesOpen(false);
     },
     [fen]
@@ -1088,6 +1163,8 @@ export function GamePage() {
     }
     setReviewGame(null);
     setRewindPly(null);
+    setReviewArrows([]);
+    setReviewHighlights([]);
   }, []);
 
   // Owner feedback 2026-07-17: the pregame elo picker was only reappearing
@@ -1337,6 +1414,8 @@ export function GamePage() {
           lastMove={lastMove}
           hintReveal={hintReveal}
           threatReveal={threatReveal}
+          arrows={reviewArrows}
+          highlightSquares={reviewHighlights}
         />
         <PlayerBar
           seat="you"
@@ -1509,6 +1588,7 @@ export function GamePage() {
               <DebriefPage
                 turningPoints={liveSummary.turningPoints}
                 classifications={liveSummary.classifications}
+                turningLines={turningLines}
                 totalPlies={liveSummary.moves.length}
                 result={gameOver.result}
                 rewindPly={rewindPly}
@@ -1524,6 +1604,7 @@ export function GamePage() {
         <DebriefPage
           turningPoints={reviewGame.summary.turningPoints}
           classifications={reviewGame.summary.classifications}
+          turningLines={turningLines}
           totalPlies={reviewGame.summary.moves.length}
           result={reviewGame.result}
           rewindPly={rewindPly}
