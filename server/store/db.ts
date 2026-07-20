@@ -222,6 +222,25 @@ export const getModeSeconds = (sessionId: number, mode: string) =>
     | undefined)?.seconds ?? 0;
 export const getGameMoves = (gameId: number) =>
   db.prepare("SELECT * FROM moves WHERE game_id = ? ORDER BY ply").all(gameId) as any[];
+// Increment 3.91 (Task 2, turning-lines endpoint): read-only accessor over
+// the ALREADY-PERSISTED best_move/pv columns (written by attachEval above)
+// for a specific set of plies — no schema change. Scoped to `plies` (rather
+// than reusing getGameMoves' full-row scan) because the caller only ever
+// wants this for a game's small turning-point set. A ply with no attached
+// eval yet simply has no row in the result (best_move/pv NULL if a row
+// exists but eval hasn't landed) — callers must handle both gracefully.
+export const getMoveEvalsByPlies = (
+  gameId: number,
+  plies: number[]
+): { ply: number; bestMove: string | null; pv: string | null }[] => {
+  if (plies.length === 0) return [];
+  const placeholders = plies.map(() => "?").join(",");
+  return (
+    db
+      .prepare(`SELECT ply, best_move, pv FROM moves WHERE game_id = ? AND ply IN (${placeholders})`)
+      .all(gameId, ...plies) as any[]
+  ).map((r) => ({ ply: r.ply, bestMove: r.best_move ?? null, pv: r.pv ?? null }));
+};
 export const logGameEvent = (gameId: number, type: string, detail?: string) =>
   db.prepare("INSERT INTO game_events(game_id, type, detail) VALUES(?,?,?)").run(gameId, type, detail ?? null);
 export const getGameEvents = (gameId: number) =>

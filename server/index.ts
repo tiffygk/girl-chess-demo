@@ -160,6 +160,19 @@ app.get("/api/game/:id/summary", (req, res) => {
   }
 });
 
+// Increment 3.91 (Task 2): additive — exposes the persisted Stockfish
+// best-move/pv per turning point (see manager.ts's getTurningLines). Sync
+// (reads only, same as /summary above), same try/catch envelope as every
+// other route. Deliberately its own route rather than folded into
+// /summary, so 3.9's getSummary shape never changes.
+app.get("/api/game/:id/turning-lines", (req, res) => {
+  try {
+    res.json(gm.getTurningLines(Number(req.params.id)));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 // Increment 3c: GET /api/games — the "past games" / saved-games menu list.
 // Finished games only, newest first, capped at 30 inside listGames/
 // listFinishedGames. Sync, same try/catch envelope as every other route.

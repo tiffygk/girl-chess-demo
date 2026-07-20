@@ -1,11 +1,13 @@
 // server/game/manager.test.ts
 import { describe, it, expect, beforeAll } from "vitest";
+import { Chess } from "chess.js";
 import {
   openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces,
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
 } from "../store/db";
 import { GameManager } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
+import { moveEndpoints } from "../annotator/moveEndpoints";
 
 describe("GameManager", () => {
   let gm: GameManager;
@@ -430,5 +432,69 @@ describe("GameManager", () => {
     // Idempotent: reading again doesn't insert yet another row set.
     gm.getSummary(g);
     expect(getTurningPointsAllVersions(g).length).toBe(allVersions.length);
+  });
+
+  // Increment 3.91, Task 2: turning-lines endpoint. Additive read only —
+  // built directly against the db accessors (same pattern as the healing
+  // test above) so this stays fast and self-contained, no live engine
+  // needed. Verifies playedFromTo/bestFromTo/pvSans against an INDEPENDENT
+  // chess.js replay (moveEndpoints + a fresh Chess()), never trusting the
+  // implementation's own math.
+  it("getTurningLines exposes the persisted best-move/pv for a turning point, derived by chess.js replay", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    attachEval(g, 2, { cp: 10, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+    recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
+    attachEval(g, 3, { cp: 15, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
+    finishGame(g, "1-0");
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 3, san: "Nf3", label: "good move", deltaP: 0.1, lowConfidence: false, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    const result = gm.getTurningLines(g);
+    expect(result.ok).toBe(true);
+    expect(result.lines).toHaveLength(1);
+    const line = result.lines[0];
+    expect(line.ply).toBe(3);
+
+    // Independent verification: replay 1.e4 e5 on a fresh chess.js and
+    // derive the same from/to via the pure moveEndpoints helper.
+    const check = new Chess();
+    check.move("e4");
+    check.move("e5");
+    const fenBefore = check.fen();
+    expect(moveEndpoints(fenBefore, "Nf3")).toEqual({ from: "g1", to: "f3" });
+
+    expect(line.playedFromTo).toEqual({ from: "g1", to: "f3" });
+    expect(line.bestSan).toBe("Nf3");
+    expect(line.bestFromTo).toEqual({ from: "g1", to: "f3" });
+    expect(line.pvSans).toEqual(["Nf3", "Nc6", "Bc4"]);
+  });
+
+  it("getTurningLines returns pvSans: [] and no bestFromTo when the ply's eval never attached (graceful)", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, san: "d5", uci: "d7d5", fenAfter: "fen2", timeSpentMs: 0 });
+    // Deliberately no attachEval call: best_move/pv stay NULL, the same
+    // shape as a game whose async eval hadn't landed at persist time.
+    finishGame(g, "1/2-1/2");
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 2, san: "d5", label: "quiet move", deltaP: 0.02, lowConfidence: true, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    const result = gm.getTurningLines(g);
+    expect(result.ok).toBe(true);
+    const line = result.lines[0];
+    expect(line.pvSans).toEqual([]);
+    expect(line.bestFromTo).toBeUndefined();
+    expect(line.bestSan).toBeUndefined();
+    // playedFromTo is independent of eval — still derived from the SAN replay.
+    expect(line.playedFromTo).toEqual({ from: "d7", to: "d5" });
   });
 });
