@@ -59,9 +59,16 @@ interface TurningPointCardProps {
   classification: MoveClassification | undefined;
   line: TurningLine | undefined;
   active: boolean;
+  // Increment 3.91 (Task 6): "try the line" seeds a live sandbox at this
+  // card's own ply (GamePage's openExplore). `exploring` disables every
+  // card's replay/try-line buttons while a session is already running — the
+  // banner's own "exit" is the one sanctioned way back to a static debrief,
+  // so a second card can't be clicked out from under the live board.
+  onTryLine: (ply: number) => void;
+  exploring: boolean;
 }
 
-function TurningPointCard({ point, onRewind, classification, line, active }: TurningPointCardProps) {
+function TurningPointCard({ point, onRewind, classification, line, active, onTryLine, exploring }: TurningPointCardProps) {
   // debrief-v2: an episode card is a warning-class fact by construction (a
   // sustained king-pressure run), so it always gets the magenta tint —
   // same flat-tint card family as a negative-labeled swing/backfill card,
@@ -83,8 +90,11 @@ function TurningPointCard({ point, onRewind, classification, line, active }: Tur
           : `${point.missedPunish ? "the miss · " : ""}${point.san} · ${point.label}`}
       </p>
       {point.punishSan && <p className="debrief-card-punish">you punished with {point.punishSan}</p>}
-      <button className="small debrief-replay-btn" onClick={() => onRewind(point.ply)}>
+      <button className="small debrief-replay-btn" disabled={exploring} onClick={() => onRewind(point.ply)}>
         replay
+      </button>
+      <button className="small debrief-tryline-btn" disabled={exploring} onClick={() => onTryLine(point.ply)}>
+        try the line
       </button>
       {note && (
         <>
@@ -106,7 +116,17 @@ function TurningPointCard({ point, onRewind, classification, line, active }: Tur
 // in practice, but this stays defensive rather than assuming).
 const BULLET_SECTION_ORDER: DebriefBullet["section"][] = ["done well", "could be better", "watch next time"];
 
-function DebriefBulletList({ bullets, onRewind }: { bullets: DebriefBullet[]; onRewind: (ply: number) => void }) {
+function DebriefBulletList({
+  bullets,
+  onRewind,
+  exploring,
+}: {
+  bullets: DebriefBullet[];
+  onRewind: (ply: number) => void;
+  // Increment 3.91 (Task 6): same "the live board can't be yanked out from
+  // under itself" rule as TurningPointCard's replay/try-line buttons.
+  exploring: boolean;
+}) {
   return (
     <div className="debrief-bullets">
       {BULLET_SECTION_ORDER.map((section) => {
@@ -123,7 +143,11 @@ function DebriefBulletList({ bullets, onRewind }: { bullets: DebriefBullet[]; on
                     {b.phase} · {b.category}
                   </span>
                   {b.ply != null && (
-                    <button className="small debrief-replay-btn" onClick={() => onRewind(b.ply!)}>
+                    <button
+                      className="small debrief-replay-btn"
+                      disabled={exploring}
+                      onClick={() => onRewind(b.ply!)}
+                    >
                       replay
                     </button>
                   )}
@@ -172,6 +196,15 @@ export interface DebriefPageProps {
   // rather than the just-finished live game's own debrief.
   reviewing?: DebriefReviewing;
   onBackToPlay?: () => void;
+  // Increment 3.91 (Task 6): GamePage owns the actual sandbox (src/game/
+  // explore.ts's ExploreState) — this component only ever sees a small
+  // read-only projection of it (null while no session is running) plus the
+  // two entry points. `thinking` shows while GamePage's exploreReply call is
+  // in flight; `over` marks a sandbox position that hit checkmate/stalemate
+  // (nothing left to play, but the session stays open until "exit").
+  exploring: { thinking: boolean; over: boolean } | null;
+  onTryLine: (ply: number) => void;
+  onExitExplore: () => void;
 }
 
 export function DebriefPage({
@@ -186,6 +219,9 @@ export function DebriefPage({
   onOpenPastGames,
   reviewing,
   onBackToPlay,
+  exploring,
+  onTryLine,
+  onExitExplore,
 }: DebriefPageProps) {
   const bullets = debriefBullets({
     turningPoints,
@@ -206,7 +242,26 @@ export function DebriefPage({
           </button>
         </div>
       )}
-      <DebriefBulletList bullets={bullets} onRewind={onRewind} />
+      {/* Increment 3.91 (Task 6): the sandbox's own banner — the only way
+          out is its "exit" button, deliberately separate from "back to
+          play"/"back to the end" above so a live board is never abandoned
+          by a click that meant something else. */}
+      {exploring && (
+        <div className="debrief-explore-banner">
+          <span className="debrief-explore-kicker">trying the line</span>
+          <span className="debrief-explore-meta">
+            {exploring.over
+              ? "the line ended. exit to keep browsing"
+              : exploring.thinking
+                ? "mallow is thinking..."
+                : "play it out, nothing is saved"}
+          </span>
+          <button className="small" onClick={onExitExplore}>
+            exit
+          </button>
+        </div>
+      )}
+      <DebriefBulletList bullets={bullets} onRewind={onRewind} exploring={!!exploring} />
       {turningPoints.length > 0 && (
         <div className="debrief-cards">
           {turningPoints.map((point) => (
@@ -217,19 +272,19 @@ export function DebriefPage({
               classification={classifications.find((c) => c.ply === point.ply)}
               line={turningLines.find((l) => l.ply === point.ply)}
               active={rewindPly === point.ply}
+              onTryLine={onTryLine}
+              exploring={!!exploring}
             />
           ))}
         </div>
       )}
       <div className="debrief-footer">
-        {rewindPly != null && (
+        {rewindPly != null && !exploring && (
           <button className="small" onClick={onBackToEnd}>
             back to the end
           </button>
         )}
-        {!reviewing && (
-          <PastGamesButton onClick={onOpenPastGames} />
-        )}
+        {!reviewing && !exploring && <PastGamesButton onClick={onOpenPastGames} />}
       </div>
     </div>
   );
