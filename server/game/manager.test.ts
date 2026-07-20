@@ -1,8 +1,10 @@
 // server/game/manager.test.ts
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
+import { Chess } from "chess.js";
 import {
   openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces,
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
+  insertVerdict,
 } from "../store/db";
 import { GameManager } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
@@ -12,6 +14,7 @@ import { TP_ALGO_VERSION } from "../annotator/turningPoints";
 // ternary in manager.ts actually runs and gets covered (pre-seeding the
 // cache made that branch a no-op — see the test's own comment).
 import { ollamaBackend } from "../coach/backends/ollama";
+import { moveEndpoints } from "../annotator/moveEndpoints";
 
 describe("GameManager", () => {
   let gm: GameManager;
@@ -586,5 +589,166 @@ describe("GameManager", () => {
     // Idempotent: reading again doesn't insert yet another row set.
     gm.getSummary(g);
     expect(getTurningPointsAllVersions(g).length).toBe(allVersions.length);
+  });
+
+  // Increment 3.91, Task 2: turning-lines endpoint. Additive read only —
+  // built directly against the db accessors (same pattern as the healing
+  // test above) so this stays fast and self-contained, no live engine
+  // needed. Verifies playedFromTo/bestFromTo/pvSans against an INDEPENDENT
+  // chess.js replay (moveEndpoints + a fresh Chess()), never trusting the
+  // implementation's own math.
+  it("getTurningLines exposes the persisted best-move/pv for a turning point, derived by chess.js replay", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    attachEval(g, 2, { cp: 10, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+    recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
+    attachEval(g, 3, { cp: 15, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
+    finishGame(g, "1-0");
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 3, san: "Nf3", label: "good move", deltaP: 0.1, lowConfidence: false, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    const result = gm.getTurningLines(g);
+    expect(result.ok).toBe(true);
+    expect(result.lines).toHaveLength(1);
+    const line = result.lines[0];
+    expect(line.ply).toBe(3);
+
+    // Independent verification: replay 1.e4 e5 on a fresh chess.js and
+    // derive the same from/to via the pure moveEndpoints helper.
+    const check = new Chess();
+    check.move("e4");
+    check.move("e5");
+    const fenBefore = check.fen();
+    expect(moveEndpoints(fenBefore, "Nf3")).toEqual({ from: "g1", to: "f3" });
+
+    expect(line.playedFromTo).toEqual({ from: "g1", to: "f3" });
+    expect(line.bestSan).toBe("Nf3");
+    expect(line.bestFromTo).toEqual({ from: "g1", to: "f3" });
+    expect(line.pvSans).toEqual(["Nf3", "Nc6", "Bc4"]);
+  });
+
+  it("getTurningLines returns pvSans: [] and no bestFromTo when the ply's eval never attached (graceful)", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, san: "d5", uci: "d7d5", fenAfter: "fen2", timeSpentMs: 0 });
+    // Deliberately no attachEval call: best_move/pv stay NULL, the same
+    // shape as a game whose async eval hadn't landed at persist time.
+    finishGame(g, "1/2-1/2");
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 2, san: "d5", label: "quiet move", deltaP: 0.02, lowConfidence: true, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    const result = gm.getTurningLines(g);
+    expect(result.ok).toBe(true);
+    const line = result.lines[0];
+    expect(line.pvSans).toEqual([]);
+    expect(line.bestFromTo).toBeUndefined();
+    expect(line.bestSan).toBeUndefined();
+    // playedFromTo is independent of eval — still derived from the SAN replay.
+    expect(line.playedFromTo).toEqual({ from: "d7", to: "d5" });
+  });
+
+  // Review finding 1: getTurningLines is a GET-path read and must never
+  // write to the db, even for a game whose persisted turning_points rows
+  // are stale (below TP_ALGO_VERSION) — the exact case getSummary's
+  // self-heal recomputes-and-INSERTs for. getTurningLines must read via the
+  // pure getTurningPoints SELECT accessor instead, never getSummary.
+  it("getTurningLines never writes to turning_points, even on a stale (pre-heal) algo_version row set", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    attachEval(g, 2, { cp: 900, mate: null, bestMove: "e7e5", pv: ["e7e5"] }); // dramatic swing, always clears TP_FLOOR
+    finishGame(g, "1-0");
+
+    // Stale row set: algo_version below current, the same shape getSummary's
+    // self-heal recomputes-and-inserts for. getTurningLines must NOT do that.
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 2, san: "e5", label: "opponent blunder", deltaP: 0.9, lowConfidence: false, kind: "swing" }],
+      TP_ALGO_VERSION - 1
+    );
+    const before = getTurningPointsAllVersions(g).length;
+
+    const result = gm.getTurningLines(g);
+    expect(result.ok).toBe(true);
+
+    // Zero heal-write: reading turning-lines must never mutate turning_points.
+    expect(getTurningPointsAllVersions(g).length).toBe(before);
+  });
+
+  // Review finding 2: threatForPly must only attach `threat` when a
+  // verdicts row matches BOTH the ply AND the turning point's played SAN —
+  // never a different (e.g. retracted) candidate move's row at the same
+  // ply, even if that row happens to carry a populated facts_json threat.
+  it("does not attribute a retracted candidate's threat to the played move's turning-point line", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    attachEval(g, 2, { cp: 10, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+    finishGame(g, "1-0");
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 2, san: "e5", label: "quiet move", deltaP: 0.02, lowConfidence: true, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    // A retracted candidate at ply 2 (she looked at Nf6, retracted, played
+    // e5 instead) whose refutation WAS computed and persisted.
+    insertVerdict({
+      gameId: g, ply: 2, fen: "fen-before-2", move: "Nf6", tier: "warning",
+      deltaCp: -80, mateAgainst: false, latencyMs: 900, adviceLevel: "L1",
+      factsJson: JSON.stringify({
+        motif: "capture", refutationUci: "g1f3", refutationSan: "Nf3",
+        refutationPieceKind: "n", refutationFromSquare: "g1", refutationToSquare: "f3",
+        givesCheck: false, capturesHerJustMovedPiece: false,
+      }),
+    });
+    // The move she actually played (e5) has its own verdict row, no threat.
+    insertVerdict({
+      gameId: g, ply: 2, fen: "fen-before-2", move: "e5", tier: "ok",
+      deltaCp: 0, mateAgainst: false, latencyMs: 850, adviceLevel: "L0",
+      factsJson: null,
+    });
+
+    const result = gm.getTurningLines(g);
+    const line = result.lines.find((l) => l.ply === 2);
+    expect(line?.threat).toBeUndefined();
+  });
+
+  it("attaches threat when the played move's OWN verdict row carries a refutation", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 0 });
+    attachEval(g, 1, { cp: 20, mate: null, bestMove: "d2d4", pv: ["d2d4"] });
+    recordMove({ gameId: g, ply: 2, san: "f5", uci: "f7f5", fenAfter: "fen2", timeSpentMs: 0 });
+    attachEval(g, 2, { cp: -400, mate: null, bestMove: "f7f5", pv: ["f7f5"] });
+    finishGame(g, "1-0");
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 2, san: "f5", label: "blunder", deltaP: 0.4, lowConfidence: false, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    insertVerdict({
+      gameId: g, ply: 2, fen: "fen-before-2", move: "f5", tier: "warning",
+      deltaCp: -400, mateAgainst: false, latencyMs: 900, adviceLevel: "L1",
+      factsJson: JSON.stringify({
+        motif: "capture", refutationUci: "h5e8", refutationSan: "Qh5+",
+        refutationPieceKind: "q", refutationFromSquare: "h5", refutationToSquare: "e8",
+        givesCheck: true, capturesHerJustMovedPiece: false,
+      }),
+    });
+
+    const result = gm.getTurningLines(g);
+    const line = result.lines.find((l) => l.ply === 2);
+    expect(line?.threat).toEqual({ from: "h5", to: "e8" });
   });
 });

@@ -888,6 +888,39 @@
 .gc-app .sq.threat-attacker { box-shadow: inset 0 0 0 3px #FF3DA6, 0 0 10px rgba(255, 61, 166, .45); }
 .gc-app .sq.threat-victim { box-shadow: inset 0 0 0 3px rgba(255, 61, 166, .5); }
 
+/* Increment 3.91 (Task 1): debrief turning-point square wash + annotation
+   arrows. Render-only — same three-color language as the rest of the board
+   (cyan #23E5FF = played/you, mint-green rgb(76,175,140) = the engine's
+   best, magenta #FF3DA6 = an opponent threat), no new hex values. Arrows
+   are signal, not decoration: flat fill, no glitch, ~0.9 opacity. */
+.gc-app .sq.tp-played { box-shadow: inset 0 0 0 3px rgba(35,229,255,.55), inset 0 0 10px rgba(35,229,255,.3); }
+.gc-app .sq.tp-best { box-shadow: inset 0 0 0 3px rgba(76,175,140,.7), inset 0 0 10px rgba(76,175,140,.35); }
+.gc-app .sq.tp-threat { box-shadow: inset 0 0 0 3px rgba(255,61,166,.6), inset 0 0 10px rgba(255,61,166,.35); }
+
+.gc-app .board-arrows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 6;
+}
+.gc-app .board-arrows .arrow line,
+.gc-app .board-arrows .arrow polygon {
+  opacity: .9;
+}
+.gc-app .board-arrows .arrow line {
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  fill: none;
+}
+.gc-app .board-arrows .arrow-played line,
+.gc-app .board-arrows .arrow-played polygon { stroke: #23E5FF; fill: #23E5FF; }
+.gc-app .board-arrows .arrow-best line,
+.gc-app .board-arrows .arrow-best polygon { stroke: rgb(76,175,140); fill: rgb(76,175,140); }
+.gc-app .board-arrows .arrow-threat line,
+.gc-app .board-arrows .arrow-threat polygon { stroke: #FF3DA6; fill: #FF3DA6; }
+
 /* check ring — sits under the piece sprite (.pieces layer paints over .squares) */
 .gc-app .sq.check-ring {
   box-shadow: inset 0 0 0 4px #FF3DA6, 0 0 16px 3px rgba(255,61,166,.6);
@@ -1179,6 +1212,33 @@
 .gc-app .debrief-review-meta {
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
   color: #4A3B7E;
+}
+
+/* Increment 3.91 (Task 6): "try the line" sandbox banner — same pill
+   shape/layout as .debrief-review-banner above, reusing the exact mint-green
+   already defined for the "best" arrow (line 912) rather than introducing a
+   new hue, since this banner is that same "try the better line" idea. */
+.gc-app .debrief-explore-banner {
+  display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+  background: #DFF7EC; border-radius: 999px; padding: 6px 14px;
+}
+.gc-app .debrief-explore-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; color: rgb(76,175,140);
+}
+.gc-app .debrief-explore-meta {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
+  color: #4A3B7E;
+}
+/* Same pressable-family button used everywhere ("small"), just its own
+   resting tint so it reads as the "start a sandbox" affordance next to
+   .debrief-replay-btn on a turning-point card. */
+/* Dimming while disabled is already handled by the global
+   button:disabled rule above — nothing extra needed here. */
+.gc-app button.small.debrief-tryline-btn {
+  align-self: flex-start;
+  background: #fff; color: rgb(76,175,140);
+  box-shadow: 0 3px 0 #BEEBD8, 0 6px 10px rgba(76,175,140,.14);
 }
 
 /* "past games" trigger — a plain candy pill, reused verbatim at both call

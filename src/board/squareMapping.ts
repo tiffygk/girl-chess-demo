@@ -36,3 +36,17 @@ export function idxToSquare(idx: number): string {
   const col = idx % 8;
   return String.fromCharCode(97 + col) + (8 - row);
 }
+
+// Increment 3.91 (Task 1): the arrow + highlight overlay's only new
+// geometry. Returns a square's center as a percentage point (0..100) in
+// the same white-at-bottom orientation as squareToIdx/idxToSquare above,
+// reusing the exact square-center math already proven live in Board.tsx's
+// burst() ((col+0.5)*rect.width/8) — just expressed as a percentage of the
+// board rather than pixels, so the SVG overlay's viewBox="0 0 100 100" can
+// consume it directly regardless of the board's rendered size.
+export function squareCenter(square: string): { xPct: number; yPct: number } {
+  const idx = squareToIdx(square);
+  const row = Math.floor(idx / 8);
+  const col = idx % 8;
+  return { xPct: (col + 0.5) * 12.5, yPct: (row + 0.5) * 12.5 };
+}

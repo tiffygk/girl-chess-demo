@@ -2,13 +2,14 @@ import { Chess } from "chess.js";
 import { MaiaOpponent } from "../engines/maia";
 import { StockfishEvaluator } from "../engines/stockfish";
 import {
-  createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict,
+  createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict, getVerdicts,
   getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
-  listFinishedGames, insertChatMessage, getChatMessages,
+  listFinishedGames, insertChatMessage, getChatMessages, getMoveEvalsByPlies,
 } from "../store/db";
 import { classifyMove, isAdviceLevel, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
 import { computeHint as computeHintFacts, type HintFacts } from "../annotator/hint";
+import { moveEndpoints } from "../annotator/moveEndpoints";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
 // Increment 3b: panel-ruled turning points + move classifications. Reads
 // STORED evals only (see persistGameSummary below) — never touches
@@ -31,6 +32,22 @@ import { ollamaBackend } from "../coach/backends/ollama";
 import { noBackend, type CoachBackend } from "../coach/backends/types";
 
 interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number; finished: boolean }
+
+// Increment 3.91 (Task 2): the turning-lines endpoint's per-point shape —
+// mirrored (hand-mirroring, same convention as TurningPoint's own
+// server/client split) by src/game/api.ts's client-side TurningLine. Every
+// from/to here is derived by chess.js REPLAY (moveEndpoints, or the pv
+// replay loop in getTurningLines below) — never by parsing SAN/UCI text as
+// truth. Optional fields are omitted (not fabricated as empty/zero values)
+// when the underlying data isn't available for that ply.
+export interface TurningLine {
+  ply: number;
+  playedFromTo?: { from: string; to: string };
+  bestSan?: string;
+  bestFromTo?: { from: string; to: string };
+  pvSans: string[];
+  threat?: { from: string; to: string };
+}
 
 // Playtest-calibrated draw-acceptance band: the computer accepts an offer
 // when the position is within this many centipawns of dead equal. Starting
@@ -226,6 +243,123 @@ export class GameManager {
     };
   }
 
+  // Increment 3.91 (Task 2): GET /api/game/:id/turning-lines. Exposes the
+  // ALREADY-PERSISTED Stockfish best-move + principal variation for each of
+  // the game's turning points (moves.best_move/pv, written by attachEval on
+  // the move path) — a new ADDITIVE endpoint. Reads turning points via the
+  // pure getTurningPoints(gameId) SELECT accessor (server/store/db.ts)
+  // rather than getSummary: getSummary's self-heal can INSERT a fresh
+  // TP_ALGO_VERSION row set when a game's persisted rows are below the
+  // current algo version, and a GET must never write to the db (review
+  // finding). turning_points rows are persisted at game end
+  // (persistGameSummary), so getTurningPoints returns them with zero
+  // compute-on-read write; a game whose rows are still at an older algo
+  // version just degrades gracefully (the arrows reflect the stale set)
+  // rather than triggering a heal here — this endpoint reads only, ever.
+  // Every from/to below comes from a chess.js REPLAY (moveEndpoints for the
+  // played SAN; the pv-replay loop for the engine line) — never from
+  // parsing SAN/UCI text as truth, the same rule classify.ts/hint.ts
+  // already follow. A ply whose eval never attached (or attached with an
+  // empty pv) degrades gracefully: pvSans: [], no bestSan/bestFromTo —
+  // never a guess. `threat` is populated only when a persisted
+  // verdicts.facts_json row for that ply AND played san already carries a
+  // refutation (no new engine call is made here, ever).
+  getTurningLines(gameId: number): { ok: boolean; lines: TurningLine[] } {
+    try {
+      const turningPoints = getTurningPoints(gameId) as { ply: number; san: string }[];
+      const rows = getGameMoves(gameId);
+      const sans = rows.map((r: any) => r.san as string);
+      const evals = getMoveEvalsByPlies(gameId, turningPoints.map((t) => t.ply));
+      const evalByPly = new Map(evals.map((e) => [e.ply, e]));
+      const verdicts = getVerdicts(gameId);
+
+      const lines: TurningLine[] = turningPoints.map((t) => {
+        // Fen immediately BEFORE this ply: replay every SAN strictly before
+        // it, starting from the initial position (same replay-from-scratch
+        // pattern as src/review/Rewind.tsx's fenAtPly).
+        const before = new Chess();
+        for (let i = 0; i < t.ply - 1 && i < sans.length; i++) before.move(sans[i]);
+        const fenBefore = before.fen();
+
+        const playedFromTo = moveEndpoints(fenBefore, t.san);
+        const { pvSans, bestSan, bestFromTo } = this.pvLine(fenBefore, evalByPly.get(t.ply));
+        const threat = this.threatForPly(verdicts, t.ply, t.san);
+
+        const line: TurningLine = { ply: t.ply, pvSans };
+        if (playedFromTo) line.playedFromTo = playedFromTo;
+        if (bestSan) line.bestSan = bestSan;
+        if (bestFromTo) line.bestFromTo = bestFromTo;
+        if (threat) line.threat = threat;
+        return line;
+      });
+
+      return { ok: true, lines };
+    } catch (err) {
+      console.warn("[girl-chess] getTurningLines failed:", (err as Error).message);
+      return { ok: false, lines: [] };
+    }
+  }
+
+  // Replays a persisted pv (space-separated UCI moves, e.g. "g1f3 b8c6
+  // f1c4") from fenBefore through chess.js, collecting SANs as it goes.
+  // Falls back to a single-move replay of bestMove when pv is absent but
+  // bestMove isn't (defensive — normal engine output always sets both
+  // together). Stops at the first illegal/malformed step rather than
+  // throwing, so a corrupted pv degrades to a shorter true line instead of
+  // failing the whole endpoint.
+  private pvLine(
+    fenBefore: string,
+    ev: { bestMove: string | null; pv: string | null } | undefined
+  ): { pvSans: string[]; bestSan?: string; bestFromTo?: { from: string; to: string } } {
+    if (!ev) return { pvSans: [] };
+    const uciList =
+      ev.pv && ev.pv.trim().length > 0 ? ev.pv.trim().split(/\s+/) : ev.bestMove ? [ev.bestMove] : [];
+    if (uciList.length === 0) return { pvSans: [] };
+
+    const replay = new Chess(fenBefore);
+    const pvSans: string[] = [];
+    let bestFromTo: { from: string; to: string } | undefined;
+    for (const uci of uciList) {
+      if (uci.length < 4) break;
+      let mv;
+      try {
+        mv = replay.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: (uci[4] as any) ?? "q" });
+      } catch {
+        mv = null;
+      }
+      if (!mv) break;
+      pvSans.push(mv.san);
+      if (!bestFromTo) bestFromTo = { from: mv.from, to: mv.to };
+    }
+    return { pvSans, bestSan: pvSans[0], bestFromTo };
+  }
+
+  // The opponent's refutation of this ply, when a judge call for it already
+  // computed and persisted one (verdicts.facts_json — see motifs.ts's
+  // ThreatFacts and judgeMove's insertVerdict call below). Matched on BOTH
+  // ply AND verdicts.move === the turning point's played san (review
+  // finding): a ply can carry multiple verdicts rows — one per judge call,
+  // including retracted candidates she looked at and backed out of — and
+  // attaching a retracted candidate's refutation to the played move's line
+  // would be a false threat claim. If no row matches both, this returns "no
+  // claim" rather than falling back to another candidate's row.
+  // Best-effort only: malformed/missing json, or a facts payload without
+  // the refutation squares, both resolve to "no claim" rather than
+  // throwing.
+  private threatForPly(verdicts: any[], ply: number, playedSan: string): { from: string; to: string } | undefined {
+    const matches = verdicts.filter((v) => v.ply === ply && v.move === playedSan && v.facts_json);
+    if (matches.length === 0) return undefined;
+    try {
+      const facts = JSON.parse(matches[matches.length - 1].facts_json) as Partial<ThreatFacts>;
+      if (facts.refutationFromSquare && facts.refutationToSquare) {
+        return { from: facts.refutationFromSquare, to: facts.refutationToSquare };
+      }
+    } catch {
+      // malformed json — no claim, never a guess.
+    }
+    return undefined;
+  }
+
   // Increment 3c: GET /api/games — the "past games" saved-games menu. Thin
   // passthrough to the db accessor, kept as a GameManager method for the
   // same reason every other route goes through gm rather than db directly
@@ -241,6 +375,39 @@ export class GameManager {
     if (!chess.isGameOver()) return undefined;
     if (chess.isCheckmate()) return { result: chess.turn() === "w" ? "0-1" : "1-0" };
     return { result: "1/2-1/2" };
+  }
+
+  // Increment 3.91 (Task 5): the "try the line" sandbox's engine reply.
+  // Stateless and DB-free BY DESIGN — no gameId in or out, and no call
+  // anywhere in this method to recordMove/attachEval/insertVerdict/
+  // finishGame/insertTurningPoints or any other db.ts writer. It reuses
+  // opponentFor's engine-process cache (an in-memory Map of live lc0/
+  // stockfish handles, not persistence) so repeated explore calls at the
+  // same elo don't re-spawn an engine every time, same as real games do.
+  async exploreReply(
+    fen: string,
+    elo: number
+  ): Promise<{ ok: boolean; reply?: { from: string; to: string; promotion?: string; san: string }; gameOver?: boolean }> {
+    let chess: Chess;
+    try {
+      chess = new Chess(fen);
+    } catch {
+      return { ok: false };
+    }
+    if (this.gameOver(chess)) return { ok: true, gameOver: true };
+
+    const opponent = await this.opponentFor(elo);
+    const replyUci = await opponent.pickMove(chess.fen());
+    const mv = chess.move({
+      from: replyUci.slice(0, 2),
+      to: replyUci.slice(2, 4),
+      promotion: (replyUci[4] as any) ?? undefined,
+    });
+    return {
+      ok: true,
+      reply: { from: mv.from, to: mv.to, promotion: mv.promotion, san: mv.san },
+      gameOver: this.gameOver(chess) ? true : undefined,
+    };
   }
 
   // `override` (C4): set when the player confirmed a pending move the judge

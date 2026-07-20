@@ -14,7 +14,7 @@ import type { MoveRender } from "../game/describeMove";
 import { resolveClickMove, isCastleAttempt } from "../game/resolveClick";
 import { resolvePendingClick } from "../game/resolvePendingClick";
 import type { Takedown } from "../game/terminal";
-import { squareToIdx, idxToSquare } from "./squareMapping";
+import { squareToIdx, idxToSquare, squareCenter } from "./squareMapping";
 
 interface PieceEntry {
   id: string;
@@ -135,6 +135,22 @@ interface BoardProps {
    * it never reads as "move here" the way hintReveal's mint ring does.
    */
   threatReveal?: { attacker: string; victim: string } | null;
+  /**
+   * Increment 3.91 (Task 1): debrief-only Lichess-style annotation arrows —
+   * the played move (cyan), the engine's best move (green), and an
+   * opponent threat (magenta/red), any subset of which may be present at
+   * once. Purely render-only, same contract as lastMove/hintReveal above:
+   * `entries`, animation, and interaction are completely untouched. Drawn
+   * in a new SVG layer inside `.board-inner`, sibling of `.squares`/
+   * `.pieces`, using `squareCenter` (squareMapping.ts) for geometry.
+   */
+  arrows?: { from: string; to: string; color: "played" | "best" | "threat" }[];
+  /**
+   * Increment 3.91 (Task 1): companion square wash for the arrows above —
+   * reuses the existing square-name-class pass on `.sq` (below) with new
+   * `.tp-played`/`.tp-best`/`.tp-threat` classes, same render-only contract.
+   */
+  highlightSquares?: { square: string; kind: "played" | "best" | "threat" }[];
 }
 
 // ambient decorative jitter squares, same indices as the demo — staggered
@@ -155,6 +171,35 @@ const SPRINKLE_PALETTE = ["#FF3DA6", "#23E5FF", "#FFD84D", "#A9EFD3", "#FF8FBF",
 // file a at each row's left edge), so this ordering matches the grid as-drawn.
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"];
+
+// Increment 3.91 (Task 1): pure geometry for one annotation arrow, in the
+// same 0..100 percentage space as the overlay SVG's viewBox="0 0 100 100"
+// (squareCenter, squareMapping.ts). The shaft is pulled back from the
+// destination's center by the arrowhead's own length so the head doesn't
+// double up on top of the line, and the head is a small filled triangle
+// pointing along the shaft's direction — no SVG markers, so nothing here
+// depends on element ids that could collide across multiple boards.
+function arrowGeometry(from: string, to: string) {
+  const a = squareCenter(from);
+  const b = squareCenter(to);
+  const dx = b.xPct - a.xPct;
+  const dy = b.yPct - a.yPct;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const headLen = 3.4;
+  const headWidth = 2.1;
+  const shaftEndX = b.xPct - ux * headLen;
+  const shaftEndY = b.yPct - uy * headLen;
+  const perpX = -uy;
+  const perpY = ux;
+  const headPoints = [
+    `${b.xPct},${b.yPct}`,
+    `${shaftEndX + perpX * headWidth},${shaftEndY + perpY * headWidth}`,
+    `${shaftEndX - perpX * headWidth},${shaftEndY - perpY * headWidth}`,
+  ].join(" ");
+  return { x1: a.xPct, y1: a.yPct, x2: shaftEndX, y2: shaftEndY, headPoints };
+}
 
 // Increment 2.5: squareToIdx/idxToSquare moved to ./squareMapping.ts (owner
 // playtest square-coordinate verification) — see that module for the full
@@ -235,6 +280,8 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     lastMove,
     hintReveal,
     threatReveal,
+    arrows,
+    highlightSquares,
   },
   ref
 ) {
@@ -790,11 +837,16 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               const isCheckRing = !cinematicActive && square === checkSquare && !matedKingGone;
               const isLastMove =
                 !cinematicActive && !!lastMove && (square === lastMove.from || square === lastMove.to);
+              // Increment 3.91 (Task 1): debrief square wash for the
+              // played/best/threat arrows — render-only, same square-name
+              // comparison pattern as every other overlay in this pass.
+              const tpHighlight = highlightSquares?.find((h) => h.square === square)?.kind;
               const classes = [
                 "sq",
                 light ? "light" : "dark",
                 corruptMap.has(idx) ? "corrupt" : "",
                 isLastMove ? "last-move" : "",
+                tpHighlight ? `tp-${tpHighlight}` : "",
                 square === effectiveSelected ? "target-hint" : "",
                 legalTargets.capture.has(square) ? "hint-capture" : "",
                 legalTargets.normal.has(square) ? "hint" : "",
@@ -903,6 +955,30 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               );
             })()}
           </div>
+          {arrows && arrows.length > 0 && (
+            // Increment 3.91 (Task 1): render-only annotation arrow layer —
+            // sibling of .squares/.pieces, absolutely positioned over the
+            // full board, never intercepts clicks. Colors pull straight
+            // from the existing cyan/green/magenta tokens used elsewhere on
+            // this board (hint-origin/target-hint, hint-reveal, threat-*) —
+            // no new hex values.
+            <svg
+              className="board-arrows"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              {arrows.map((arrow, i) => {
+                const g = arrowGeometry(arrow.from, arrow.to);
+                return (
+                  <g key={`${arrow.from}-${arrow.to}-${arrow.color}-${i}`} className={`arrow arrow-${arrow.color}`}>
+                    <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} />
+                    <polygon points={g.headPoints} />
+                  </g>
+                );
+              })}
+            </svg>
+          )}
         </div>
         </div>
         <div className="coords-sharp" aria-hidden="true">
