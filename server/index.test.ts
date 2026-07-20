@@ -102,6 +102,41 @@ describe("api", () => {
     expect(rows[1].mode).toBe("guardian");
   }, 20000);
 
+  // Task 6 (judge strictness dial, F10 tuning — UI label "judge strictness",
+  // not "advice level"): the /judge route accepts and stores a `strictness`
+  // field. The verdict row's existing advice_level column stores the
+  // strictness key itself (single semantic: which ADVICE_LEVELS table
+  // judged this move); an omitted strictness stores "standard"
+  // (DEFAULT_ADVICE_LEVEL).
+  it("threads strictness to the stored verdict row's advice_level column; omitted strictness stores standard", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    await request(app).post(`/api/game/${g.body.gameId}/judge`)
+      .send({ from: "e2", to: "e4", strictness: "blunt" }).expect(200);
+    await request(app).post(`/api/game/${g.body.gameId}/judge`)
+      .send({ from: "d2", to: "d4" }).expect(200);
+
+    const rows = getVerdicts(g.body.gameId);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].advice_level).toBe("blunt");
+    expect(rows[1].advice_level).toBe("standard");
+  }, 20000);
+
+  it("an unrecognized strictness value falls back to standard rather than erroring", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    const j = await request(app).post(`/api/game/${g.body.gameId}/judge`)
+      .send({ from: "e2", to: "e4", strictness: "not-a-real-level" }).expect(200);
+    expect(j.body.ok).toBe(true);
+
+    const rows = getVerdicts(g.body.gameId);
+    expect(rows[0].advice_level).toBe("standard");
+  }, 20000);
+
   it("judging then confirming through /move produces exactly one recorded player move (no double-apply)", async () => {
     await ready;
     const s = await request(app).post("/api/session").expect(200);

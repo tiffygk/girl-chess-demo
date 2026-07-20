@@ -38,14 +38,28 @@ export interface Verdict {
   threat?: ThreatFacts;
 }
 
-// The user-facing "advice dial" (how chatty the judge is) arrives in a
-// later increment — this table is its seam. Every threshold below is a
-// labeled starting value, playtest-calibrated at C5; none of them are
-// final.
+// The user-facing "judge strictness" dial (how chatty the judge is; UI
+// label "judge strictness" — NOT "advice level", which the PRD reserves for
+// the future F13 comprehension-ELO dial, panel B5) — this table is its
+// threshold seam. Every threshold below is a labeled starting value,
+// playtest-calibrated at C5 (standard) / owner-calibratable (gentle,
+// blunt, Task 6); none of them are final.
 export const ADVICE_LEVELS: Record<string, { nudgeCp: number; warningCp: number }> = {
   standard: {
     nudgeCp: 60, // starting value: delta below this is silent (no comment)
     warningCp: 150, // starting value: delta at/above this (or any mateAgainst) is a warning
+  },
+  // Owner-calibratable starting value: less chatty than standard — higher
+  // thresholds mean fewer nudges/warnings for the same delta.
+  gentle: {
+    nudgeCp: 90,
+    warningCp: 200,
+  },
+  // Owner-calibratable starting value: more chatty than standard — lower
+  // thresholds mean more nudges/warnings for the same delta.
+  blunt: {
+    nudgeCp: 40,
+    warningCp: 110,
   },
 };
 
@@ -111,7 +125,12 @@ export function deriveFacts(beforeFen: string, bestUci: string | undefined): Mov
  * never import from server/coach/ — the verdict path is engine math only,
  * no LLM call, ever.
  */
-export async function classifyMove(chess: Chess, move: Move, evaluator: Evaluator): Promise<Verdict> {
+export async function classifyMove(
+  chess: Chess,
+  move: Move,
+  evaluator: Evaluator,
+  level: string = DEFAULT_ADVICE_LEVEL
+): Promise<Verdict> {
   const start = Date.now();
 
   // The proposed move is itself checkmate — the mover just won outright.
@@ -122,7 +141,9 @@ export async function classifyMove(chess: Chess, move: Move, evaluator: Evaluato
     return { tier: "silent", deltaCp: 0, mateAgainst: false, latencyMs: Date.now() - start };
   }
 
-  const { nudgeCp, warningCp } = ADVICE_LEVELS[DEFAULT_ADVICE_LEVEL];
+  // Defensive fallback: an unrecognized level (stale/garbled client value)
+  // judges at standard rather than throwing on an undefined lookup.
+  const { nudgeCp, warningCp } = ADVICE_LEVELS[level] ?? ADVICE_LEVELS[DEFAULT_ADVICE_LEVEL];
 
   const [beforeEval, afterEval] = await Promise.all([
     evaluator.evaluate(move.before, EVAL_MOVETIME_MS),

@@ -2,8 +2,36 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "fs";
 import path from "path";
 import { Chess } from "chess.js";
+import type { Evaluation, Evaluator } from "../engines/types";
 import { StockfishEvaluator } from "../engines/stockfish";
 import { classifyMove, ADVICE_LEVELS, DEFAULT_ADVICE_LEVEL } from "./classify";
+
+// Task 6 (judge strictness dial, F10 tuning): a mocked evaluator per
+// existing classify.test patterns (see adjudicate.test.ts's MockEvaluator)
+// — a real-engine fixture that lands on an exact, known eval delta at a
+// chosen position is impractical, so this pins the eval-delta math to a
+// controlled, deterministic value and only varies `level`. classifyMove
+// calls evaluator.evaluate() exactly twice per verdict via Promise.all,
+// before-position first — the two evaluate() calls happen synchronously in
+// that order even though both promises resolve concurrently, so the first
+// call's return is deterministically the before-eval and the second the
+// after-eval. This mock returns the requested deltaCp (mover's
+// perspective, "objectively best") on the first call and a flat 0 (the
+// opponent's reported perspective, negated to 0 by classifyMove) on the
+// second — so bestEvalCp - actualEvalCp == deltaCp exactly, regardless of
+// which fen is passed.
+class FixedDeltaEvaluator implements Evaluator {
+  private calls = 0;
+  constructor(private deltaCp: number) {}
+  async init() {}
+  async evaluate(_fen: string, _movetimeMs?: number): Promise<Evaluation> {
+    this.calls += 1;
+    return this.calls === 1
+      ? { cp: this.deltaCp, mate: null, bestMove: "e2e4", pv: [] }
+      : { cp: 0, mate: null, bestMove: "e7e5", pv: [] };
+  }
+  quit() {}
+}
 
 describe("classify.ts LLM-free gate", () => {
   // HARD CONSTRAINT (PRD gate, verbatim): the verdict path makes no LLM
@@ -134,6 +162,63 @@ describe("ADVICE_LEVELS seam", () => {
   it("has a standard default level with the brief's starting thresholds", () => {
     expect(DEFAULT_ADVICE_LEVEL).toBe("standard");
     expect(ADVICE_LEVELS[DEFAULT_ADVICE_LEVEL]).toEqual({ nudgeCp: 60, warningCp: 150 });
+  });
+
+  // Task 6 (judge strictness dial, F10 tuning): gentle/blunt gain the
+  // brief's owner-calibratable starting values (panel A6, verbatim).
+  it("has gentle and blunt levels with the brief's starting thresholds", () => {
+    expect(ADVICE_LEVELS.gentle).toEqual({ nudgeCp: 90, warningCp: 200 });
+    expect(ADVICE_LEVELS.blunt).toEqual({ nudgeCp: 40, warningCp: 110 });
+  });
+});
+
+// Task 6 (judge strictness dial, F10 tuning): classifyMove's new `level`
+// param threads straight into the ADVICE_LEVELS lookup that decides
+// tier. Note on the brief's "a fixed 100cp delta is silent at gentle,
+// nudge at standard, warning at blunt": under the brief's own locked
+// threshold values (gentle 90/200, standard 60/150, blunt 40/110) a
+// single 100cp delta actually lands in "nudge" at all three levels (100
+// is >= every nudgeCp and < every warningCp) — silent-at-gentle requires
+// delta < 90, and warning-at-blunt requires delta >= 110, which no single
+// delta can satisfy simultaneously. So this exercises the same intent
+// (silent at gentle / nudge at standard / warning at blunt) with three
+// deltas chosen to land in each level's respective band, all still in the
+// same ~100cp neighborhood the brief describes, plus a same-delta
+// same-level control between the standard and default-omitted cases.
+describe("classifyMove — judge strictness dial (Task 6, mocked evaluator)", () => {
+  it("an 80cp delta is silent at gentle (below gentle's 90cp nudge threshold)", async () => {
+    const chess = new Chess();
+    const move = chess.move({ from: "g1", to: "f3" });
+    const verdict = await classifyMove(chess, move, new FixedDeltaEvaluator(80), "gentle");
+    expect(verdict.tier).toBe("silent");
+  });
+
+  it("a 100cp delta is a nudge at standard (in standard's [60,150) nudge band)", async () => {
+    const chess = new Chess();
+    const move = chess.move({ from: "g1", to: "f3" });
+    const verdict = await classifyMove(chess, move, new FixedDeltaEvaluator(100), "standard");
+    expect(verdict.tier).toBe("nudge");
+  });
+
+  it("a 120cp delta is a warning at blunt (at/above blunt's 110cp warning threshold)", async () => {
+    const chess = new Chess();
+    const move = chess.move({ from: "g1", to: "f3" });
+    const verdict = await classifyMove(chess, move, new FixedDeltaEvaluator(120), "blunt");
+    expect(verdict.tier).toBe("warning");
+  });
+
+  it("the same 100cp delta that nudges at standard also nudges when level is omitted (defaults to standard)", async () => {
+    const chess = new Chess();
+    const move = chess.move({ from: "g1", to: "f3" });
+    const verdict = await classifyMove(chess, move, new FixedDeltaEvaluator(100));
+    expect(verdict.tier).toBe("nudge");
+  });
+
+  it("an unrecognized level falls back to standard rather than throwing", async () => {
+    const chess = new Chess();
+    const move = chess.move({ from: "g1", to: "f3" });
+    const verdict = await classifyMove(chess, move, new FixedDeltaEvaluator(100), "not-a-real-level");
+    expect(verdict.tier).toBe("nudge"); // standard: nudgeCp=60, warningCp=150
   });
 });
 

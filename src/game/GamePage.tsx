@@ -70,6 +70,26 @@ function readCoachBackendPref(): CoachBackendPref {
   return raw === "claude" || raw === "ollama" || raw === "template" ? raw : "claude";
 }
 
+// Task 6 (F10 tuning): the judge-strictness dial — which ADVICE_LEVELS
+// threshold table classify.ts judges against. UI label is "judge
+// strictness", deliberately NOT "advice level" (panel B5 ruling: the PRD
+// reserves that name for the future F13 comprehension-ELO dial). Wire
+// tokens match the server's ADVICE_LEVELS keys verbatim, default
+// "standard" — independent of coachOn/coachHints/coachBackend, this tunes
+// verdict-tier sensitivity itself, not whether/how the coach speaks.
+const JUDGE_STRICTNESS_KEY = "gc-judge-strictness";
+type JudgeStrictnessPref = "gentle" | "standard" | "blunt";
+const JUDGE_STRICTNESS_OPTIONS: { value: JudgeStrictnessPref; label: string }[] = [
+  { value: "gentle", label: "gentle" },
+  { value: "standard", label: "standard" },
+  { value: "blunt", label: "blunt" },
+];
+
+function readJudgeStrictnessPref(): JudgeStrictnessPref {
+  const raw = localStorage.getItem(JUDGE_STRICTNESS_KEY);
+  return raw === "gentle" || raw === "standard" || raw === "blunt" ? raw : "standard";
+}
+
 // Owner-calibratable: her displayed rating. A later increment computes this
 // from game history in data/girlchess.db; until then it is a fixed label
 // (owner, 2026-07-17: "for now let's just put that my elo is 1350").
@@ -226,6 +246,9 @@ export function GamePage() {
   // request — independent of coachOn/coachHints (a picked voice has nothing
   // to do with whether judging or hints are on).
   const [coachBackend, setCoachBackend] = useState<CoachBackendPref>(() => readCoachBackendPref());
+  // Task 6 (F10 tuning): independent of coachBackend/coachOn/coachHints —
+  // this is the judge path's own threshold-table pick, not a coach setting.
+  const [judgeStrictness, setJudgeStrictness] = useState<JudgeStrictnessPref>(() => readJudgeStrictnessPref());
   const [settingsOpen, setSettingsOpen] = useState(false);
   // judge-post (coach-only) mode: the move already played, so there's no
   // pending overlay to hang a badge off of — this is that badge's own
@@ -430,6 +453,10 @@ export function GamePage() {
   useEffect(() => {
     window.localStorage.setItem(COACH_BACKEND_KEY, coachBackend);
   }, [coachBackend]);
+
+  useEffect(() => {
+    window.localStorage.setItem(JUDGE_STRICTNESS_KEY, judgeStrictness);
+  }, [judgeStrictness]);
 
   // The popover shouldn't linger open across a move it can no longer
   // safely act on — close it the moment input locks up, same "no queuing"
@@ -672,7 +699,7 @@ export function GamePage() {
         const startedAt = Date.now();
         let result: Verdict | null = null;
         try {
-          const res = await judgeMove(gameId, from, to, render.promotion);
+          const res = await judgeMove(gameId, from, to, render.promotion, undefined, judgeStrictness);
           result = res.verdict ?? null;
         } catch {
           // No verdict to show — confirm/retract never depend on this call
@@ -686,7 +713,7 @@ export function GamePage() {
         setJudgePhase("judged");
       })();
     },
-    [gameId, gameOver]
+    [gameId, gameOver, judgeStrictness]
   );
 
   // Confirm: never blocked by the verdict, whatever it says — runs the
@@ -923,7 +950,7 @@ export function GamePage() {
     (from: string, to: string) => {
       if (!gameId || busyRef.current || gameOver) return;
       const token = (postVerdictTokenRef.current += 1);
-      judgeMove(gameId, from, to, undefined, "post")
+      judgeMove(gameId, from, to, undefined, "post", judgeStrictness)
         .then((res) => {
           if (postVerdictTokenRef.current !== token) return; // superseded by a newer move
           setPostVerdict(res.verdict ?? null);
@@ -933,7 +960,7 @@ export function GamePage() {
         });
       handleMove(from, to);
     },
-    [gameId, gameOver, handleMove]
+    [gameId, gameOver, handleMove, judgeStrictness]
   );
 
   // Single dispatch point for every destination click Board reports.
@@ -1001,6 +1028,14 @@ export function GamePage() {
     (v: CoachBackendPref) => {
       if (uiBusy || pending) return;
       setCoachBackend(v);
+    },
+    [uiBusy, pending]
+  );
+
+  const setJudgeStrictnessPref = useCallback(
+    (v: JudgeStrictnessPref) => {
+      if (uiBusy || pending) return;
+      setJudgeStrictness(v);
     },
     [uiBusy, pending]
   );
@@ -1383,6 +1418,22 @@ export function GamePage() {
                 />
                 confirm before playing
               </label>
+              <div className="settings-divider" aria-hidden="true"></div>
+              <span className="settings-section-head">judge strictness</span>
+              <div className="settings-radio-group" role="radiogroup" aria-label="judge strictness">
+                {JUDGE_STRICTNESS_OPTIONS.map((opt) => (
+                  <label key={opt.value} className="settings-switch">
+                    <input
+                      type="radio"
+                      name="judge-strictness"
+                      checked={judgeStrictness === opt.value}
+                      disabled={togglesDisabled}
+                      onChange={() => setJudgeStrictnessPref(opt.value)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
               <div className="settings-divider" aria-hidden="true"></div>
               <span className="settings-section-head">coach</span>
               <label className="settings-switch">
