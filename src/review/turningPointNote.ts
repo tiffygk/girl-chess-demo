@@ -90,10 +90,15 @@ function buildDidWell(tp: TurningPoint): string | undefined {
 
 // Nudge vocabulary keyed off the played move's own label/classification —
 // same three-word vocabulary classify.ts/turningPoints.ts already use
-// (blunder/mistake/inaccuracy), not reinvented here.
+// (blunder/mistake/inaccuracy), not reinvented here. These labels are pure
+// eval-magnitude bands (classifications.ts), not a tactical-cause signal, so
+// the nudge text stays neutral to magnitude only — never a specific claim
+// (material dropped, a "right idea/wrong follow-up" story, a hung piece)
+// that the eval delta alone doesn't establish. Retuned 2026-07-19 alongside
+// the NEXT_TIME_TIPS honesty sweep.
 const IMPROVE_NUDGE: Record<string, string> = {
-  blunder: "that dropped material outright",
-  mistake: "the idea was right, the follow-up wasn't",
+  blunder: "that was the biggest slip here",
+  mistake: "that gave back real ground",
   inaccuracy: "a small slip",
 };
 
