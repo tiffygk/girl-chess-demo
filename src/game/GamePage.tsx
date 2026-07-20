@@ -19,7 +19,9 @@ import {
   type HintFactsResponse,
   type SummaryResponse,
   type GameListEntry,
+  type ChatContext,
 } from "./api";
+import { CoachChat } from "./CoachChat";
 import { describeMove, type MoveRender } from "./describeMove";
 import { victimKind, materialDiff, rollbackCapture, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
@@ -1034,6 +1036,48 @@ export function GamePage() {
   // comment) — never builds a second board.
   const activeReviewMoves = reviewGame ? reviewGame.summary.moves : gameOver ? (liveSummary?.moves ?? null) : null;
 
+  // Increment 3.9, Task 3: coach chat's per-message context. Review mode is
+  // bare (the server grounds against the whole stored game); live mode
+  // mirrors the exact pending/verdict/hintFacts trio the coach's corner
+  // narrate() call above builds from, when that trio is actually in hand —
+  // otherwise just {mode:"live"} (per the brief: "current pending/verdict/
+  // hintFacts when present else {mode:'live'}"). A fresh closure read at
+  // send time, not memoized to a token — chat is player-initiated, so
+  // there's no "fires once per pending move" concern the narrate effect has.
+  const buildChatContext = useCallback((): ChatContext => {
+    if (reviewGame) return { mode: "review" };
+    if (pending && verdict && verdict.tier !== "silent") {
+      const herPieceKind = mirrorRef.current.get(pending.from as Square)?.type ?? "piece";
+      return {
+        mode: "live",
+        herMove: { pieceKind: herPieceKind, from: pending.from, to: pending.to },
+        tier: verdict.tier,
+        threat: verdict.threat,
+        best: hintFacts
+          ? {
+              san: hintFacts.bestSan,
+              uci: hintFacts.bestUci,
+              pieceKind: hintFacts.bestPieceKind,
+              from: hintFacts.bestFromSquare,
+              to: hintFacts.bestToSquare,
+            }
+          : undefined,
+        recommendation: hintFacts?.recommendation,
+      };
+    }
+    return { mode: "live" };
+  }, [reviewGame, pending, verdict, hintFacts]);
+
+  // Visibility (panel B1, binding): gameId present OR reviewGame — NOT
+  // gated on coachOn (the pull-based chat is always reachable; coachOn only
+  // suppresses unsolicited verdicts). reviewGame takes priority over a
+  // finished live gameId, same precedence as activeReviewMoves above. Hidden
+  // mid-replay: rewindPly!=null is this codebase's one reactive "replay"
+  // state (a turning-point card's "replay" button), shared by both the live
+  // and review debriefs.
+  const chatGameId = reviewGame ? reviewGame.id : gameId;
+  const showCoachChat = chatGameId != null && rewindPly === null;
+
   const handleRewind = useCallback(
     (ply: number) => {
       if (!activeReviewMoves) return;
@@ -1535,6 +1579,13 @@ export function GamePage() {
         />
       )}
       <PastGamesDrawer open={pastGamesOpen} games={pastGames} onSelect={selectPastGame} onClose={closePastGames} />
+      {showCoachChat && (
+        <CoachChat
+          gameId={chatGameId as number}
+          mode={reviewGame ? "review" : "live"}
+          buildContext={buildChatContext}
+        />
+      )}
     </div>
   );
 }

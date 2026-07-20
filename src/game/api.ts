@@ -268,6 +268,43 @@ export function narrate(
   return postJson(`/game/${gameId}/narrate`, body);
 }
 
+// Increment 3.9, Task 3 (F16 chat client): client-side mirror of
+// server/coach/chat.ts's ChatContext — same hand-mirroring convention as
+// ThreatFacts/RecommendationFacts above. Live mode carries whatever
+// pending/verdict/hint facts GamePage has in hand at send time; review mode
+// is bare (the server already has the whole game to ground against, per
+// manager.ts's chat() — it never trusts body.context.mode over the db's own
+// result column).
+export interface ChatContext {
+  mode: "live" | "review";
+  herMove?: { pieceKind: string; from: string; to: string };
+  tier?: "nudge" | "warning";
+  threat?: ThreatFacts;
+  best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
+  recommendation?: RecommendationFacts;
+}
+
+// Mirrors manager.ts's chat() return envelope (ok:true text/source/cause?/
+// traceId, or a bare ok:false on an unknown game / an over-length message).
+export interface ChatResponse {
+  ok: boolean;
+  text?: string;
+  source?: "model" | "template";
+  cause?: "backend-down";
+  traceId?: number;
+  error?: string;
+}
+
+// backendPref is accepted for forward-compat with Task 5's backend picker —
+// server/index.ts already reads it off the body — but is otherwise inert
+// today; callers simply omit it until that task wires a picker to it.
+export function chatWithCoach(
+  gameId: number,
+  body: { message: string; context: ChatContext; backendPref?: string }
+): Promise<ChatResponse> {
+  return postJson(`/game/${gameId}/chat`, body);
+}
+
 // Wave C, task C-B: fire-and-forget hint-escalation observability. Never
 // awaited by its caller for anything but a `.catch` — a failed log write
 // must never block confirm/retract or the hint reveal itself.
