@@ -54,22 +54,23 @@ describe("NEXT_TIME_TIPS motif bank", () => {
   it("has a distinct tip for every declared motif", () => {
     const motifs = Object.keys(NEXT_TIME_TIPS);
     expect(motifs.sort()).toEqual(
-      ["good-defense", "hung-piece", "king-safety", "missed-punish", "missed-tactic"].sort()
+      ["eval-drop", "good-moment", "king-safety", "missed-punish"].sort()
     );
     const tips = Object.values(NEXT_TIME_TIPS);
     expect(new Set(tips).size).toBe(tips.length);
   });
 
-  it("hung-piece: her own blunder maps to the hung-piece tip", () => {
+  it("eval-drop: her own blunder maps to the eval-drop tip, not a hung-piece claim", () => {
     const note = buildTurningPointNote(tp({ label: "blunder" }), undefined, undefined);
-    expect(note.nextTime).toBe(NEXT_TIME_TIPS["hung-piece"]);
+    expect(note.nextTime).toBe(NEXT_TIME_TIPS["eval-drop"]);
+    expect(note.nextTime).not.toMatch(/hang|hanging/i);
   });
 
-  it("missed-tactic: mistake/inaccuracy maps to the missed-tactic tip", () => {
+  it("eval-drop: mistake/inaccuracy also maps to the eval-drop tip", () => {
     const mistake = buildTurningPointNote(tp({ label: "mistake" }), undefined, undefined);
-    expect(mistake.nextTime).toBe(NEXT_TIME_TIPS["missed-tactic"]);
+    expect(mistake.nextTime).toBe(NEXT_TIME_TIPS["eval-drop"]);
     const inaccuracy = buildTurningPointNote(tp({ label: "inaccuracy" }), undefined, undefined);
-    expect(inaccuracy.nextTime).toBe(NEXT_TIME_TIPS["missed-tactic"]);
+    expect(inaccuracy.nextTime).toBe(NEXT_TIME_TIPS["eval-drop"]);
   });
 
   it("king-safety: an episode turning point maps to the king-safety tip", () => {
@@ -90,16 +91,16 @@ describe("NEXT_TIME_TIPS motif bank", () => {
     expect(note.nextTime).toBe(NEXT_TIME_TIPS["missed-punish"]);
   });
 
-  it("good-defense: a strong move or a punished opponent blunder maps to the good-defense tip", () => {
+  it("good-moment: a strong move or a punished opponent blunder maps to the good-moment tip", () => {
     const strong = buildTurningPointNote(tp({ label: "strong move" }), undefined, undefined);
-    expect(strong.nextTime).toBe(NEXT_TIME_TIPS["good-defense"]);
+    expect(strong.nextTime).toBe(NEXT_TIME_TIPS["good-moment"]);
 
     const punished = buildTurningPointNote(
       tp({ label: "opponent blunder", punishSan: "Qxb5" }),
       undefined,
       undefined
     );
-    expect(punished.nextTime).toBe(NEXT_TIME_TIPS["good-defense"]);
+    expect(punished.nextTime).toBe(NEXT_TIME_TIPS["good-moment"]);
   });
 
   it("unrecognized motif falls back to a generic tip (declared cut)", () => {
@@ -112,6 +113,30 @@ describe("NEXT_TIME_TIPS motif bank", () => {
     const note = buildTurningPointNote(tp({ label: "the clincher", kind: "backfill" }), undefined, undefined);
     expect(note.nextTime).toBeTruthy();
     expect(typeof note.nextTime).toBe("string");
+  });
+
+  // Adversarial: a "strong move" turning point in a winning position must
+  // never produce "when you're worse" / "trade down" language — that claim
+  // isn't supported by a strong-move label alone (could be winning, could be
+  // equal, could be worse; the label doesn't say).
+  it("adversarial: a strong move in a winning position has no when-you're-worse / trade-down text", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "strong move", san: "Qh6", ply: 40 }),
+      undefined,
+      undefined
+    );
+    expect(note.nextTime).not.toMatch(/when you're worse|trade down|simplify/i);
+    expect(note.nextTime).toBe(NEXT_TIME_TIPS["good-moment"]);
+  });
+
+  // Adversarial: a plain blunder must not tell her to check what she left
+  // hanging — a blunder could be a missed mate, a walked-into fork, a
+  // back-rank issue, anything. The eval-band label alone doesn't establish
+  // a hanging piece.
+  it("adversarial: a blunder does not claim something was left hanging", () => {
+    const note = buildTurningPointNote(tp({ label: "blunder" }), undefined, undefined);
+    expect(note.nextTime).not.toMatch(/hang|hanging/i);
+    expect(note.nextTime).toBe(NEXT_TIME_TIPS["eval-drop"]);
   });
 });
 
@@ -172,6 +197,20 @@ describe("couldImprove (part ii)", () => {
     );
     expect(note.couldImprove).toBeTruthy();
     expect(note.couldImprove).toContain("Qxb5");
+  });
+
+  // Adversarial: missed-punish couldImprove/nextTime must not assume the
+  // stronger continuation was a capture — the missedPunish flag only says
+  // she failed to punish a slip, not that the punish was material-grabbing.
+  it("adversarial: missed-punish couldImprove and nextTime do not assert a capture", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "opponent blunder", missedPunish: true, san: "O-O" }),
+      undefined,
+      line({ bestSan: "Rd8+", pvSans: ["Rd8+"] })
+    );
+    expect(note.couldImprove).not.toMatch(/take the material|capture/i);
+    expect(note.nextTime).not.toMatch(/take the material|capture/i);
+    expect(note.nextTime).toBe(NEXT_TIME_TIPS["missed-punish"]);
   });
 
   it("is absent for a strong move (nothing to improve)", () => {

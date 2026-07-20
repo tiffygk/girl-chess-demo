@@ -24,22 +24,30 @@ export interface TurningPointNote {
   whatMayHaveHappened?: string; // (iv)  the pv line phrased plainly, present when bestSan/pvSans exist
 }
 
-// Fixed motif set per the plan. An unrecognized turning point (e.g. the
+// Fixed motif set per the plan (retuned per the 2026-07-19 truthfulness
+// review: the eval-band labels blunder/mistake/inaccuracy/strong-move are
+// pure winprob-delta magnitude bands from classifications.ts, NOT tactical-
+// cause signals — only kind === "episode" reliably means king pressure, and
+// missedPunish only means she failed to punish a slip, not that the punish
+// was a capture. Every motif below and its tip is true for exactly what the
+// signal establishes, nothing more. An unrecognized turning point (e.g. the
 // backfill labels "checkmate" / "the losing move" / "the clincher", which
 // carry no distinct motif of their own) falls through to GENERIC_TIP below —
 // a declared cut (plan Task 3), asserted directly in the test file.
-export type Motif = "hung-piece" | "missed-tactic" | "king-safety" | "missed-punish" | "good-defense";
+export type Motif = "king-safety" | "missed-punish" | "good-moment" | "eval-drop";
 
 function moveNumberForPly(ply: number): number {
   return Math.ceil(ply / 2);
 }
 
 export const NEXT_TIME_TIPS: Record<Motif, string> = {
-  "hung-piece": "before you commit to a move, check what you're leaving hanging behind it.",
-  "missed-tactic": "when the position opens up, look one move deeper for the tactic before you settle.",
-  "king-safety": "keep your king's pawn shelter intact, especially once you're under pressure.",
-  "missed-punish": "when she blunders, take the material first and clean up the position after.",
-  "good-defense": "when you're worse, trade down and simplify. that composure is what saved you here.",
+  "king-safety":
+    "keep your king's pawn cover intact. when her pieces gather near your king, defend that first before you push elsewhere.",
+  "missed-punish":
+    "she gave you a chance here. when your opponent slips, look for the move that makes them pay before you carry on with your own plan.",
+  "good-moment": "good eye. keep hunting for your most forcing move first every turn.",
+  "eval-drop":
+    "this move gave back the most ground here. before you commit, check every forcing reply she has: her checks, her captures, her threats.",
 };
 
 // Declared cut (plan Task 3): a turning point whose motif doesn't match the
@@ -49,13 +57,18 @@ const GENERIC_TIP = "look one move deeper before you commit next time.";
 
 // Motif inference is read-only off TurningPoint.label/kind/missedPunish —
 // never an engine call, never a guess beyond what those fields already say.
+// Order matters: kind === "episode" is the one reliable king-pressure
+// signal and wins first; missedPunish is checked next since it's a distinct
+// fact (she failed to punish a slip) independent of the eval-band label.
+// The remaining eval-band labels (blunder/mistake/inaccuracy/strong move)
+// are pure winprob-delta magnitude bands — they say nothing about *why* the
+// eval moved, so they only ever earn the honest eval-drop/good-moment tips.
 function inferMotif(tp: TurningPoint): Motif | undefined {
-  if (tp.missedPunish) return "missed-punish";
   if (tp.kind === "episode") return "king-safety";
-  if (tp.label === "blunder") return "hung-piece";
-  if (tp.label === "mistake" || tp.label === "inaccuracy") return "missed-tactic";
-  if (tp.label === "strong move") return "good-defense";
-  if (tp.label.startsWith("opponent") && !!tp.punishSan) return "good-defense";
+  if (tp.missedPunish) return "missed-punish";
+  if (tp.label === "strong move") return "good-moment";
+  if (tp.label.startsWith("opponent") && !!tp.punishSan) return "good-moment";
+  if (tp.label === "blunder" || tp.label === "mistake" || tp.label === "inaccuracy") return "eval-drop";
   return undefined;
 }
 
