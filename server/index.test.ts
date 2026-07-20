@@ -137,6 +137,29 @@ describe("api", () => {
     expect(rows[0].advice_level).toBe("standard");
   }, 20000);
 
+  // Fix (task-reviewer, post Task 6 approval — Critical): "constructor" is
+  // an Object.prototype-colliding string reachable via a direct POST to
+  // this route (no allowlist previously guarded gm.judgeMove's strictness
+  // param). Proves the fix through the full route -> manager -> classify
+  // path: the request still succeeds, and the stored advice_level column is
+  // "standard" — not the garbage "constructor" the pre-fix bracket-lookup
+  // bug would have stored (which would also have silently forced every
+  // verdict on this table to "silent"; see classify.test.ts's
+  // isAdviceLevel/classifyMove tests for the delta-precision half of this
+  // proof with a mocked evaluator).
+  it("an Object.prototype-colliding strictness value ('constructor') stores advice_level 'standard', not the colliding string", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+
+    const j = await request(app).post(`/api/game/${g.body.gameId}/judge`)
+      .send({ from: "e2", to: "e4", strictness: "constructor" }).expect(200);
+    expect(j.body.ok).toBe(true);
+
+    const rows = getVerdicts(g.body.gameId);
+    expect(rows[0].advice_level).toBe("standard");
+  }, 20000);
+
   it("judging then confirming through /move produces exactly one recorded player move (no double-apply)", async () => {
     await ready;
     const s = await request(app).post("/api/session").expect(200);

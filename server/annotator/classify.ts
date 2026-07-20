@@ -65,6 +65,21 @@ export const ADVICE_LEVELS: Record<string, { nudgeCp: number; warningCp: number 
 
 export const DEFAULT_ADVICE_LEVEL = "standard";
 
+// Fix (task-reviewer, post Task 6 approval — Critical): a plain
+// `ADVICE_LEVELS[strictness]` bracket lookup on an untrusted string is
+// unsafe — Object.prototype-colliding values ("constructor", "toString",
+// "valueOf", "__proto__", etc.) resolve to a truthy inherited value (e.g.
+// the Object constructor function) even though they were never assigned
+// as keys, so a naive truthy check treats them as valid levels. This
+// explicit literal allowlist is the single source of truth for "is this a
+// real ADVICE_LEVELS key" — used both here (classifyMove's own level
+// resolution) and by manager.ts's judgeMove, so neither layer can be
+// fooled by a garbage string reaching in via POST /api/game/:id/judge's
+// unvalidated strictness field.
+export function isAdviceLevel(x: unknown): x is keyof typeof ADVICE_LEVELS {
+  return x === "gentle" || x === "standard" || x === "blunt";
+}
+
 // Starting value: each of the two best-play evals classifyMove runs gets
 // this much thinking time. Two of them (~700ms worst case) plus overhead
 // stays inside the PRD's <2s p95 verdict-latency gate.
@@ -141,9 +156,11 @@ export async function classifyMove(
     return { tier: "silent", deltaCp: 0, mateAgainst: false, latencyMs: Date.now() - start };
   }
 
-  // Defensive fallback: an unrecognized level (stale/garbled client value)
-  // judges at standard rather than throwing on an undefined lookup.
-  const { nudgeCp, warningCp } = ADVICE_LEVELS[level] ?? ADVICE_LEVELS[DEFAULT_ADVICE_LEVEL];
+  // Defensive fallback: an unrecognized level (stale/garbled client value,
+  // or an Object.prototype-colliding string like "constructor" — see
+  // isAdviceLevel's comment) judges at standard rather than resolving to
+  // an inherited non-threshold value or throwing on an undefined lookup.
+  const { nudgeCp, warningCp } = isAdviceLevel(level) ? ADVICE_LEVELS[level] : ADVICE_LEVELS[DEFAULT_ADVICE_LEVEL];
 
   const [beforeEval, afterEval] = await Promise.all([
     evaluator.evaluate(move.before, EVAL_MOVETIME_MS),

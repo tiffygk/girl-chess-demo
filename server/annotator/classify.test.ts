@@ -4,7 +4,7 @@ import path from "path";
 import { Chess } from "chess.js";
 import type { Evaluation, Evaluator } from "../engines/types";
 import { StockfishEvaluator } from "../engines/stockfish";
-import { classifyMove, ADVICE_LEVELS, DEFAULT_ADVICE_LEVEL } from "./classify";
+import { classifyMove, ADVICE_LEVELS, DEFAULT_ADVICE_LEVEL, isAdviceLevel } from "./classify";
 
 // Task 6 (judge strictness dial, F10 tuning): a mocked evaluator per
 // existing classify.test patterns (see adjudicate.test.ts's MockEvaluator)
@@ -219,6 +219,51 @@ describe("classifyMove — judge strictness dial (Task 6, mocked evaluator)", ()
     const move = chess.move({ from: "g1", to: "f3" });
     const verdict = await classifyMove(chess, move, new FixedDeltaEvaluator(100), "not-a-real-level");
     expect(verdict.tier).toBe("nudge"); // standard: nudgeCp=60, warningCp=150
+  });
+
+  // Fix (task-reviewer, post Task 6 approval — Critical): "constructor" (and
+  // "toString"/"valueOf"/"__proto__"/etc.) is an Object.prototype-colliding
+  // string. A naive `ADVICE_LEVELS[level]` bracket lookup resolves this to
+  // the inherited Object constructor function — truthy, so a plain
+  // `level && ADVICE_LEVELS[level]` truthy check (the pre-fix bug) treats it
+  // as a "recognized" level, then destructuring `{ nudgeCp, warningCp }`
+  // from a function yields undefined for both, every `deltaCp >= threshold`
+  // comparison is false, and every verdict silently becomes "silent" — a
+  // hung queen reports silent. isAdviceLevel's explicit literal allowlist
+  // must reject this and fall back to standard: proven here by a 120cp
+  // delta, which standard's real thresholds (nudgeCp:60, warningCp:150)
+  // classify as "nudge", not "silent".
+  it("an Object.prototype-colliding level ('constructor') falls back to standard, not to garbage thresholds", async () => {
+    const chess = new Chess();
+    const move = chess.move({ from: "g1", to: "f3" });
+    const verdict = await classifyMove(chess, move, new FixedDeltaEvaluator(120), "constructor");
+    expect(verdict.tier).toBe("nudge");
+  });
+});
+
+describe("isAdviceLevel", () => {
+  it("accepts exactly the three real ADVICE_LEVELS keys", () => {
+    expect(isAdviceLevel("gentle")).toBe(true);
+    expect(isAdviceLevel("standard")).toBe(true);
+    expect(isAdviceLevel("blunt")).toBe(true);
+  });
+
+  // The exact bug class this guard exists to close: these are all "truthy"
+  // under a plain ADVICE_LEVELS[x] bracket lookup (they resolve to real,
+  // inherited Object.prototype members) despite never being assigned keys.
+  it("rejects Object.prototype-colliding strings", () => {
+    expect(isAdviceLevel("constructor")).toBe(false);
+    expect(isAdviceLevel("toString")).toBe(false);
+    expect(isAdviceLevel("valueOf")).toBe(false);
+    expect(isAdviceLevel("__proto__")).toBe(false);
+    expect(isAdviceLevel("hasOwnProperty")).toBe(false);
+  });
+
+  it("rejects other unrecognized strings and non-strings", () => {
+    expect(isAdviceLevel("not-a-real-level")).toBe(false);
+    expect(isAdviceLevel(undefined)).toBe(false);
+    expect(isAdviceLevel(null)).toBe(false);
+    expect(isAdviceLevel(123)).toBe(false);
   });
 });
 
