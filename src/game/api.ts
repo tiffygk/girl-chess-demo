@@ -352,3 +352,26 @@ export function modeTimer(sessionId: number, mode: string): () => void {
   }, 30_000);
   return () => clearInterval(id);
 }
+
+// Increment 3.91 (Task 2): mirrors server/game/manager.ts's TurningLine
+// (hand-mirroring, same convention as TurningPoint above) — the persisted
+// Stockfish best-move/pv for each turning point, additive to /summary.
+// Every from/to on the wire is server-derived by chess.js replay, never
+// guessed client-side.
+export interface TurningLine {
+  ply: number;
+  playedFromTo?: { from: string; to: string };
+  bestSan?: string;
+  bestFromTo?: { from: string; to: string };
+  pvSans: string[];
+  threat?: { from: string; to: string };
+}
+
+export interface TurningLinesResponse {
+  ok: boolean;
+  lines: TurningLine[];
+}
+
+export function getTurningLines(gameId: number): Promise<TurningLinesResponse> {
+  return getJson(`/game/${gameId}/turning-lines`);
+}
