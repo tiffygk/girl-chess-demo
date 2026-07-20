@@ -153,6 +153,22 @@ describe("GameManager", () => {
     expect(rows[1].mode).toBe("post");
   }, 20000);
 
+  // Fix (task-reviewer, post Task 6 approval — Critical): "constructor" is
+  // an Object.prototype-colliding string reachable via POST
+  // /api/game/:id/judge's unvalidated strictness field. Pre-fix,
+  // `strictness && ADVICE_LEVELS[strictness]` resolved truthy for it (the
+  // inherited Object constructor function), so `level` became the literal
+  // string "constructor" and got written straight to advice_level.
+  // isAdviceLevel's explicit literal allowlist must reject it here too and
+  // fall back to DEFAULT_ADVICE_LEVEL.
+  it("judgeMove falls back to standard advice_level for an Object.prototype-colliding strictness value", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const r = await gm.judgeMove(g.gameId, "e2", "e4", undefined, undefined, "constructor");
+    expect(r.ok).toBe(true);
+    const rows = getVerdicts(g.gameId);
+    expect(rows[0].advice_level).toBe("standard");
+  }, 20000);
+
   it("judgeMove rejects an illegal move without touching the game", async () => {
     const g = await gm.newGame(sessionId, 1100);
     const before = (gm as any).games.get(g.gameId).chess.fen();

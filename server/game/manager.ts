@@ -6,7 +6,7 @@ import {
   getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
   listFinishedGames, insertChatMessage, getChatMessages,
 } from "../store/db";
-import { classifyMove, ADVICE_LEVELS, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
+import { classifyMove, isAdviceLevel, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
 import { computeHint as computeHintFacts, type HintFacts } from "../annotator/hint";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
@@ -336,7 +336,14 @@ export class GameManager {
     } catch {
       return { ok: false };
     }
-    const level = strictness && ADVICE_LEVELS[strictness] ? strictness : DEFAULT_ADVICE_LEVEL;
+    // Fix (task-reviewer, post Task 6 approval — Critical): isAdviceLevel is
+    // an explicit literal allowlist, not a bracket-lookup truthy check — a
+    // plain `ADVICE_LEVELS[strictness]` here would resolve truthy for
+    // Object.prototype-colliding values ("constructor", "toString", etc.)
+    // reaching in via POST /api/game/:id/judge's unvalidated body, silently
+    // turning every verdict "silent" downstream in classifyMove. See
+    // isAdviceLevel's own comment in classify.ts for the full mechanism.
+    const level = isAdviceLevel(strictness) ? strictness : DEFAULT_ADVICE_LEVEL;
     const verdict = await classifyMove(clone, mv, this.evaluator, level);
     // Capture-first trace: every judged move gets a verdict row, silent
     // included (100% trace completeness) — even a move the player
