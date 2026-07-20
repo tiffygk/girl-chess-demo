@@ -1,11 +1,17 @@
 // server/game/manager.test.ts
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import {
   openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces,
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
 } from "../store/db";
 import { GameManager } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
+// Task 5 reviewer fix: the "ollama unavailable" test below spies on this
+// module's own available() rather than pre-seeding pickCoachBackend's cache,
+// so the real `(await ollamaBackend.available()) ? ollamaBackend : noBackend`
+// ternary in manager.ts actually runs and gets covered (pre-seeding the
+// cache made that branch a no-op — see the test's own comment).
+import { ollamaBackend } from "../coach/backends/ollama";
 
 describe("GameManager", () => {
   let gm: GameManager;
@@ -397,6 +403,13 @@ describe("GameManager", () => {
   // template when unavailable, and two different prefs running concurrently
   // never leak one call's backend into the other's.
   describe("backend picker (F17, per-request pref)", () => {
+    // Restores the ollamaBackend.available() spy the "ollama unavailable"
+    // test below installs — a no-op afterEach for every other test in this
+    // block, since only that one test ever calls vi.spyOn.
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it('narrate: pref "template" yields source "template" even with a working fake backend registered', async () => {
       const g = await gm.newGame(sessionId, 1100);
       // Seed the default ("claude") slot with a backend that WOULD succeed —
@@ -432,23 +445,15 @@ describe("GameManager", () => {
       if (result.ok) expect(result.source).toBe("template");
     }, 20000);
 
-    it('narrate: pref "ollama" falls back to template source when ollama is unavailable', async () => {
+    it('narrate: pref "ollama" falls back to template source when the real availability probe reports unavailable', async () => {
       const g = await gm.newGame(sessionId, 1100);
-      // Seed the "ollama" slot directly with the unavailable outcome (a
-      // backend that always rejects), simulating "ollama probed
-      // unavailable" without depending on a real network probe in tests.
-      gm.setCoachBackendForTesting(
-        {
-          name: "none",
-          async available() {
-            return false;
-          },
-          async generate(): Promise<string> {
-            throw new Error("no coach backend available");
-          },
-        },
-        "ollama"
-      );
+      // Reviewer fix: do NOT pre-seed the "ollama" map slot — that would
+      // hit pickCoachBackend's cache-hit branch and never exercise the real
+      // `(await ollamaBackend.available()) ? ollamaBackend : noBackend`
+      // ternary. Instead, spy on the real module's available() to report
+      // unavailable, and let pickCoachBackend run the ternary and cache the
+      // result itself — the ternary and the caching both get covered.
+      const availableSpy = vi.spyOn(ollamaBackend, "available").mockResolvedValue(false);
       const result = await gm.narrate(g.gameId, {
         herPiece: "n",
         from: "f6",
@@ -459,6 +464,18 @@ describe("GameManager", () => {
       });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.source).toBe("template");
+      // Proves the ternary's probe branch actually ran (not a cache hit
+      // skipping straight to a pre-seeded result).
+      expect(availableSpy).toHaveBeenCalled();
+      // source alone doesn't pin the ternary: narrate()'s own error-fallback
+      // would ALSO land on source "template" if the ternary picked the real
+      // (unreachable) ollamaBackend and its generate() call then failed —
+      // same visible source, wrong backend selected. The trace's `backend`
+      // field is the real ollama vs noBackend object's own .name, so it's
+      // the one signal that actually distinguishes "noBackend was chosen"
+      // from "ollamaBackend was chosen and then errored out."
+      const traces = getAdviceTraces(g.gameId);
+      expect(traces[traces.length - 1].backend).toBe("none");
     }, 20000);
 
     it("concurrent narrate(pref claude, working fake) and chat(pref template) don't cross-contaminate backends", async () => {
