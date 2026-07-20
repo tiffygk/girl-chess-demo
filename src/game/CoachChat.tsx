@@ -7,9 +7,16 @@ import { chatWithCoach, type ChatContext } from "./api";
 // game to talk about, independent of the Guardian Angel/Silent Partner
 // toggle (panel B1: coachOn only suppresses unsolicited verdicts, never a
 // pull the player asked for). GamePage owns the visibility gate (gameId
-// present OR reviewGame, hidden mid-replay) and passes a concrete gameId —
-// this component has no opinion about when it should exist, only about what
-// it looks like once mounted.
+// present OR reviewGame, hidden mid-replay/mid-cinematic) and passes a
+// concrete gameId — this component has no opinion about when it should
+// exist, only about what it looks like once mounted.
+//
+// Fix (task-reviewer, post task-3 approval): this component is now ALWAYS
+// mounted by GamePage (same precedent as PastGamesDrawer's `open` prop),
+// with `hidden` controlling visibility instead of a conditional unmount.
+// State (messages/draft/open/pending) resets ONLY on a gameId change, per
+// the brief — a rewind or the takedown cinematic toggling `hidden` must
+// never wipe an in-progress conversation about the same game.
 
 const CHAT_MAX_LEN = 500;
 
@@ -26,12 +33,17 @@ interface ChatBubble {
 const FALLBACK_TEXT = "something went wrong there, try asking again.";
 
 export interface CoachChatProps {
-  gameId: number;
+  // number | null (not just number): GamePage keeps this component always
+  // mounted, including before any game exists, so a gameId isn't always
+  // available yet — `hidden` covers that case (and every other visibility
+  // rule) rather than the caller having to conditionally render at all.
+  gameId: number | null;
   mode: "live" | "review";
   buildContext: () => ChatContext;
+  hidden: boolean;
 }
 
-export function CoachChat({ gameId, mode, buildContext }: CoachChatProps) {
+export function CoachChat({ gameId, mode, buildContext, hidden }: CoachChatProps) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatBubble[]>([]);
   const [draft, setDraft] = useState("");
@@ -63,6 +75,7 @@ export function CoachChat({ gameId, mode, buildContext }: CoachChatProps) {
   // which is also what guarantees a traceId (once Task 4 wires thumbs to
   // it) always binds to the bubble it actually answered.
   const send = () => {
+    if (gameId == null) return; // no game to talk about yet — hidden covers this in the UI too
     const text = draft.trim();
     if (!text || pending) return;
     const token = ++requestTokenRef.current;
@@ -72,7 +85,10 @@ export function CoachChat({ gameId, mode, buildContext }: CoachChatProps) {
     chatWithCoach(gameId, { message: text, context: buildContext() })
       .then((res) => {
         if (requestTokenRef.current !== token) return; // superseded — drop it
-        if (res.ok && res.text) {
+        // Minor fix (task-reviewer): `res.text != null` rather than
+        // truthiness — an empty-string reply is a real (if odd) reply, not
+        // a failure, and shouldn't fall through to the fallback copy.
+        if (res.ok && res.text != null) {
           setMessages((prev) => [...prev, { role: "coach", text: res.text!, cause: res.cause }]);
         } else {
           setMessages((prev) => [...prev, { role: "coach", text: FALLBACK_TEXT }]);
@@ -93,6 +109,11 @@ export function CoachChat({ gameId, mode, buildContext }: CoachChatProps) {
     e.preventDefault();
     send();
   };
+
+  // Visibility only — never touches state. Hiding (a debrief rewind, or the
+  // end-game takedown cinematic) must leave messages/draft/open exactly as
+  // they were so un-hiding picks the conversation back up.
+  if (hidden) return null;
 
   if (!open) {
     return (
