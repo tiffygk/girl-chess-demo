@@ -184,6 +184,20 @@ app.get("/api/games", (_req, res) => {
   }
 });
 
+// Increment 3.91 (Task 5): stateless explore-reply — the "try the line"
+// sandbox's engine move. No gameId, no persisted game: gm.exploreReply
+// (server/game/manager.ts) calls maia.pickMove at the snapped elo and
+// applies it to a throwaway Chess(fen), writing NOTHING to any table.
+app.post("/api/explore/reply", async (req, res) => {
+  const { fen, elo } = req.body;
+  try {
+    const result = await gm.exploreReply(String(fen), snapElo(elo));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 app.post("/api/session/:id/mode", (req, res) => {
   const { mode, seconds } = req.body;
   addModeMinutes(Number(req.params.id), String(mode), Number(seconds) || 0);

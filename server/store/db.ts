@@ -394,3 +394,18 @@ export const listFinishedGames = (limit = 30) =>
 // value — unlike turning_points above, this needs no existence guard.
 export const setMoveClassification = (gameId: number, ply: number, classification: string | null) =>
   db.prepare("UPDATE moves SET classification = ? WHERE game_id = ? AND ply = ?").run(classification, gameId, ply);
+
+// Increment 3.91 (Task 5): read-only helper for the explore-reply endpoint's
+// zero-persistence proof — counts every row, in every user table, keyed by
+// name straight off sqlite_master rather than a hardcoded list, so a future
+// table is covered automatically instead of silently drifting out of sync.
+export const getAllTableCounts = (): Record<string, number> => {
+  const tables = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+    .all() as { name: string }[];
+  const counts: Record<string, number> = {};
+  for (const { name } of tables) {
+    counts[name] = (db.prepare(`SELECT COUNT(*) as c FROM "${name}"`).get() as { c: number }).c;
+  }
+  return counts;
+};
