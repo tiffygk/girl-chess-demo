@@ -880,6 +880,39 @@
 .gc-app .sq.threat-attacker { box-shadow: inset 0 0 0 3px #FF3DA6, 0 0 10px rgba(255, 61, 166, .45); }
 .gc-app .sq.threat-victim { box-shadow: inset 0 0 0 3px rgba(255, 61, 166, .5); }
 
+/* Increment 3.91 (Task 1): debrief turning-point square wash + annotation
+   arrows. Render-only — same three-color language as the rest of the board
+   (cyan #23E5FF = played/you, mint-green rgb(76,175,140) = the engine's
+   best, magenta #FF3DA6 = an opponent threat), no new hex values. Arrows
+   are signal, not decoration: flat fill, no glitch, ~0.9 opacity. */
+.gc-app .sq.tp-played { box-shadow: inset 0 0 0 3px rgba(35,229,255,.55), inset 0 0 10px rgba(35,229,255,.3); }
+.gc-app .sq.tp-best { box-shadow: inset 0 0 0 3px rgba(76,175,140,.7), inset 0 0 10px rgba(76,175,140,.35); }
+.gc-app .sq.tp-threat { box-shadow: inset 0 0 0 3px rgba(255,61,166,.6), inset 0 0 10px rgba(255,61,166,.35); }
+
+.gc-app .board-arrows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 6;
+}
+.gc-app .board-arrows .arrow line,
+.gc-app .board-arrows .arrow polygon {
+  opacity: .9;
+}
+.gc-app .board-arrows .arrow line {
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  fill: none;
+}
+.gc-app .board-arrows .arrow-played line,
+.gc-app .board-arrows .arrow-played polygon { stroke: #23E5FF; fill: #23E5FF; }
+.gc-app .board-arrows .arrow-best line,
+.gc-app .board-arrows .arrow-best polygon { stroke: rgb(76,175,140); fill: rgb(76,175,140); }
+.gc-app .board-arrows .arrow-threat line,
+.gc-app .board-arrows .arrow-threat polygon { stroke: #FF3DA6; fill: #FF3DA6; }
+
 /* check ring — sits under the piece sprite (.pieces layer paints over .squares) */
 .gc-app .sq.check-ring {
   box-shadow: inset 0 0 0 4px #FF3DA6, 0 0 16px 3px rgba(255,61,166,.6);
