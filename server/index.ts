@@ -1,5 +1,5 @@
 import express from "express";
-import { openDb, createSession, addModeMinutes } from "./store/db";
+import { openDb, createSession, addModeMinutes, rateAdviceTrace } from "./store/db";
 import { GameManager } from "./game/manager";
 
 export const app = express();
@@ -168,6 +168,24 @@ app.post("/api/game/:id/chat", async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
+// Increment 3.9, Task 4 (F19): thumbs up/down with feedback capture on
+// traced coach outputs. Scope per declared cut #3: any advice_traces row
+// (narrations, chat replies -- including template/redirect ones, which DO
+// have traces) is fair game for rating; the route itself doesn't care which
+// endpoint produced the trace. Synchronous accessor -- rateAdviceTrace
+// returns false (no throw) for an unknown id, which maps straight to
+// { ok: false }; re-rating overwrites, latest wins (see rateAdviceTrace's
+// comment in store/db.ts).
+app.post("/api/trace/:id/rate", (req, res) => {
+  const { rating, feedback } = req.body;
+  try {
+    const ok = rateAdviceTrace(Number(req.params.id), Number(rating) === -1 ? -1 : 1, feedback);
+    res.json({ ok });
+  } catch (error) {
+    res.status(500).json({ ok: false });
   }
 });
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { app, ready, gm } from "./index";
-import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages, getAdviceTraces } from "./store/db";
+import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages, getAdviceTraces, insertAdviceTrace } from "./store/db";
 import { CHAT_MAX_LEN } from "./coach/chat";
 
 describe("api", () => {
@@ -413,5 +413,73 @@ describe("api", () => {
     const r = await request(app).post("/api/game/999999/chat")
       .send({ message: "hello", context: { mode: "live" } }).expect(200);
     expect(r.body.ok).toBe(false);
+  });
+
+  // Increment 3.9, Task 4 (F19): POST /api/trace/:id/rate — thumbs up/down
+  // with feedback capture on traced coach outputs. Seeds a trace row
+  // directly via insertAdviceTrace (the route doesn't care which endpoint
+  // produced the trace; any advice_traces row is fair game per the declared
+  // scope), then exercises the route itself.
+  function seedTrace(gameId: number) {
+    return insertAdviceTrace({
+      gameId,
+      ply: 1,
+      kind: "narrate",
+      factsJson: "{}",
+      prompt: "p",
+      output: "o",
+      source: "model",
+      backend: "claude-cli",
+      validated: true,
+      regenCount: 0,
+      latencyMs: 10,
+    });
+  }
+
+  it("rates a trace via POST /api/trace/:id/rate (happy path)", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const traceId = seedTrace(g.body.gameId);
+
+    const r = await request(app).post(`/api/trace/${traceId}/rate`)
+      .send({ rating: -1, feedback: "too fast" }).expect(200);
+    expect(r.body.ok).toBe(true);
+
+    const rows = getAdviceTraces(g.body.gameId);
+    expect(rows[0].rating).toBe(-1);
+    expect(rows[0].feedback_text).toBe("too fast");
+  });
+
+  it("returns ok:false for rating an unknown trace id", async () => {
+    const r = await request(app).post("/api/trace/999999/rate").send({ rating: 1 }).expect(200);
+    expect(r.body.ok).toBe(false);
+  });
+
+  it("overwrites a rating on re-rate via the route -- latest wins", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const traceId = seedTrace(g.body.gameId);
+
+    await request(app).post(`/api/trace/${traceId}/rate`).send({ rating: -1, feedback: "too fast" }).expect(200);
+    const r = await request(app).post(`/api/trace/${traceId}/rate`).send({ rating: 1 }).expect(200);
+    expect(r.body.ok).toBe(true);
+
+    const rows = getAdviceTraces(g.body.gameId);
+    expect(rows[0].rating).toBe(1);
+    expect(rows[0].feedback_text).toBeNull();
+  });
+
+  it("stores feedback only when provided via the route", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const traceId = seedTrace(g.body.gameId);
+
+    await request(app).post(`/api/trace/${traceId}/rate`).send({ rating: 1 }).expect(200);
+    const rows = getAdviceTraces(g.body.gameId);
+    expect(rows[0].rating).toBe(1);
+    expect(rows[0].feedback_text).toBeNull();
   });
 });

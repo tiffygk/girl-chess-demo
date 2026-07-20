@@ -21,7 +21,7 @@ import {
   type GameListEntry,
   type ChatContext,
 } from "./api";
-import { CoachChat } from "./CoachChat";
+import { CoachChat, ThumbRating } from "./CoachChat";
 import { describeMove, type MoveRender } from "./describeMove";
 import { victimKind, materialDiff, rollbackCapture, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
@@ -187,6 +187,11 @@ export function GamePage() {
   // last destination would talk about the wrong move).
   const [coachText, setCoachText] = useState<string | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
+  // Task 4 (F19): the trace id narrate() wrote for the currently-shown
+  // coachText, so a thumb click can rate the exact output on screen. Reset
+  // alongside coachText at every one of its reset sites, set alongside it
+  // in the narrate() success handler below.
+  const [coachTraceId, setCoachTraceId] = useState<number | null>(null);
   // C3: the two independent switches. coachOn = "coach judges my moves"
   // (the pill); confirmOn = "confirm before playing". Crossed via
   // resolveMoveFlow to pick one of the 4 move flows on every destination
@@ -320,6 +325,7 @@ export function GamePage() {
     setHintFacts(null);
     setHintFetching(false);
     setCoachText(null);
+    setCoachTraceId(null);
     setCoachLoading(false);
     narratedTokenRef.current = null;
     postVerdictTokenRef.current += 1;
@@ -624,6 +630,7 @@ export function GamePage() {
       setHintFacts(null);
       setHintFetching(false);
       setCoachText(null);
+      setCoachTraceId(null);
       setCoachLoading(false);
       narratedTokenRef.current = null;
 
@@ -680,6 +687,7 @@ export function GamePage() {
     setHintFacts(null);
     setHintFetching(false);
     setCoachText(null);
+    setCoachTraceId(null);
     setCoachLoading(false);
     narratedTokenRef.current = null;
     handleMove(from, to, overrideVerdict);
@@ -697,6 +705,7 @@ export function GamePage() {
     setHintFacts(null);
     setHintFetching(false);
     setCoachText(null);
+    setCoachTraceId(null);
     setCoachLoading(false);
     narratedTokenRef.current = null;
   }, []);
@@ -825,6 +834,7 @@ export function GamePage() {
     // earlier pending move could still be sitting in state) doesn't linger.
     if (!coachHints) {
       setCoachText(null);
+      setCoachTraceId(null);
       setCoachLoading(false);
       return;
     }
@@ -856,7 +866,10 @@ export function GamePage() {
       .then((res) => {
         if (pendingTokenRef.current !== token) return; // superseded — drop it
         setCoachLoading(false);
-        if (res.ok && res.text) setCoachText(res.text);
+        if (res.ok && res.text) {
+          setCoachText(res.text);
+          setCoachTraceId(res.traceId ?? null);
+        }
       })
       .catch(() => {
         if (pendingTokenRef.current !== token) return;
@@ -1550,6 +1563,7 @@ export function GamePage() {
             <span className="coach-slot-copy">
               {coachText ?? (coachLoading ? "coach is looking..." : "coach's corner, coming with the coach")}
             </span>
+            {coachText != null && coachTraceId != null && <ThumbRating traceId={coachTraceId} />}
           </div>
         )}
       </div>

@@ -13,6 +13,9 @@ import {
   getGameEvents,
   insertVerdict,
   getVerdicts,
+  insertAdviceTrace,
+  getAdviceTraces,
+  rateAdviceTrace,
 } from "./db";
 
 describe("store", () => {
@@ -184,5 +187,78 @@ describe("store", () => {
       fs.rmSync(`${dbPath}-shm`, { force: true });
       fs.rmSync(`${dbPath}-wal`, { force: true });
     }
+  });
+});
+
+// Increment 3.9, Task 4 (F19): thumbs + feedback capture on traced coach
+// outputs. advice_traces gains rating INTEGER + feedback_text TEXT
+// (additive, per EXPECTED_COLUMNS convention above) and a rateAdviceTrace
+// accessor. "Re-rating overwrites, latest wins" (route contract) means the
+// WHOLE row reflects only the most recent call — both rating and
+// feedback_text are overwritten together, so a stale feedback string from an
+// earlier thumbs-down doesn't linger after a later thumbs-up with no text.
+describe("rateAdviceTrace", () => {
+  function seedTrace(gameId: number) {
+    return insertAdviceTrace({
+      gameId,
+      ply: 1,
+      kind: "narrate",
+      factsJson: "{}",
+      prompt: "p",
+      output: "o",
+      source: "model",
+      backend: "claude-cli",
+      validated: true,
+      regenCount: 0,
+      latencyMs: 10,
+    });
+  }
+
+  it("rates a trace and stores rating + feedback (happy path)", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    const traceId = seedTrace(g);
+
+    const ok = rateAdviceTrace(traceId, -1, "too vague");
+    expect(ok).toBe(true);
+
+    const rows = getAdviceTraces(g);
+    expect(rows[0].rating).toBe(-1);
+    expect(rows[0].feedback_text).toBe("too vague");
+  });
+
+  it("returns false for an unknown trace id", () => {
+    openDb(":memory:");
+    const ok = rateAdviceTrace(999999, 1);
+    expect(ok).toBe(false);
+  });
+
+  it("overwrites on re-rating -- latest wins, clearing a stale feedback string", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    const traceId = seedTrace(g);
+
+    rateAdviceTrace(traceId, -1, "too vague");
+    rateAdviceTrace(traceId, 1); // re-rate, no feedback this time
+
+    const rows = getAdviceTraces(g);
+    expect(rows[0].rating).toBe(1);
+    expect(rows[0].feedback_text).toBeNull();
+  });
+
+  it("stores feedback only when provided, leaving it null on a thumbs-up with no text", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    const traceId = seedTrace(g);
+
+    const ok = rateAdviceTrace(traceId, 1);
+    expect(ok).toBe(true);
+
+    const rows = getAdviceTraces(g);
+    expect(rows[0].rating).toBe(1);
+    expect(rows[0].feedback_text).toBeNull();
   });
 });
