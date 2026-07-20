@@ -135,6 +135,65 @@ describe("GAME-127 acceptance (owner playtest fixture, feedback.md)", () => {
   });
 });
 
+describe("GAME-127 REAL acceptance (owner's actual played sans, calibration sweep task 7a)", () => {
+  // Real computeTurningPoints(GAME_127_REAL, "1/2-1/2") + classifyMoves
+  // output, captured once via a throwaway tsx script against her ACTUAL
+  // played moves (turningPoints.test.ts's GAME_127_REAL fixture — the real
+  // game.md sans, not the earlier hardcoded reconstruction mirrored above)
+  // — same no-cross-import convention as the file header describes. Her
+  // ply-17 gxf3 opens the g-file next to her own king one ply before the
+  // king-pressure episode detector's window starts at ply 18 (Qh3 reaches
+  // Chebyshev distance 2) — real board fact, not a guess.
+  const GAME_127_REAL_TPS: TurningPoint[] = [
+    {
+      rank: 1,
+      ply: 14,
+      san: "Nd4",
+      label: "opponent blunder",
+      deltaP: 0.29433971140956716,
+      lowConfidence: false,
+      kind: "swing",
+    },
+    {
+      rank: 2,
+      ply: 15,
+      san: "O-O",
+      label: "blunder",
+      deltaP: -0.2827058229023096,
+      lowConfidence: false,
+      kind: "swing",
+      missedPunish: true,
+    },
+    {
+      rank: 3,
+      ply: 18,
+      plyEnd: 23,
+      san: "Qh3",
+      label: "king pressure",
+      deltaP: 0.010773888393799502,
+      lowConfidence: false,
+      kind: "episode",
+    },
+  ];
+  const GAME_127_REAL_CLASSIFICATIONS: MoveClassification[] = [
+    { ply: 15, classification: "blunder" },
+    { ply: 17, classification: "mistake" },
+  ];
+
+  it("her ply-17 gxf3 mistake (1 ply before the king-pressure episode window) tags middlegame · king safety, not development", () => {
+    const bullets = debriefBullets({
+      turningPoints: GAME_127_REAL_TPS,
+      classifications: GAME_127_REAL_CLASSIFICATIONS,
+      result: "1/2-1/2",
+      totalPlies: 24,
+    });
+    const gxf3Bullet = bullets.find((b) => b.ply === 17);
+    expect(gxf3Bullet).toBeTruthy();
+    expect(gxf3Bullet!.phase).toBe("middlegame");
+    expect(gxf3Bullet!.category).toBe("king safety");
+  });
+});
+
 describe("phase derivation (recalibrated 2026-07-19 review: opening = ply <= min(16, floor(totalPlies/3)); endgame only when totalPlies >= 40 AND (totalPlies-ply) <= max(8, floor(totalPlies/4)); else middlegame)", () => {
   function phaseOfSoleCouldBeBetter(ply: number, totalPlies: number) {
     const bullets = debriefBullets({

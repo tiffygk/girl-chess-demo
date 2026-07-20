@@ -148,10 +148,17 @@ interface CategorizeFact {
 
 // Category mapping, deterministic priority chain per the brief (first match
 // wins): episode -> king safety; missedPunish -> missed tactic; her
-// blunder/mistake on a capture-allowing swing -> tactics; her negative swing
-// inside an active king-pressure episode (or an explicit "defense" label,
-// none exist yet but future-proofed) -> defense; opponent-blunder-punished
-// -> conversion; opening-phase her-negative -> opening play; endgame-phase
+// negative move whose ply sits inside the king-pressure episode's range, or
+// within 2 plies before the episode starts (the shelter-cracking move that
+// LETS the episode begin — e.g. game-127's ply-17 gxf3, one ply before the
+// ply-18 episode window — is exactly as much a king-safety fact as a move
+// inside the window itself) -> king safety; her blunder/mistake on a
+// capture-allowing swing -> tactics; her negative swing inside an active
+// king-pressure episode (or an explicit "defense" label, none exist yet but
+// future-proofed) -> defense [now only reachable when the episode-window
+// branch above doesn't already claim the ply, since that branch's range is
+// a superset of this one's inEpisode check]; opponent-blunder-punished ->
+// conversion; opening-phase her-negative -> opening play; endgame-phase
 // anything -> endgame technique; fallback development.
 //
 // The opponent-blunder-punished branch is currently unreachable from this
@@ -162,6 +169,11 @@ interface CategorizeFact {
 function categorize(fact: CategorizeFact, phase: GamePhase, episode: { ply: number; plyEnd?: number } | null): ChessCategory {
   if (fact.kind === "episode") return "king safety";
   if (fact.missedPunish) return "missed tactic";
+  if (episode != null && HER_NEG_LABELS.has(fact.label)) {
+    const windowStart = episode.ply - 2;
+    const windowEnd = episode.plyEnd ?? episode.ply;
+    if (fact.ply >= windowStart && fact.ply <= windowEnd) return "king safety";
+  }
   if (HER_NEG_LABELS.has(fact.label) && fact.san?.includes("x")) return "tactics";
   const inEpisode = episode != null && fact.ply >= episode.ply && fact.ply <= (episode.plyEnd ?? episode.ply);
   if ((HER_NEG_LABELS.has(fact.label) && inEpisode) || fact.label.toLowerCase().includes("defense")) return "defense";

@@ -267,13 +267,30 @@ export function buildTemplateNarration(facts: CoachFactList, persona: Persona = 
 
 const NARRATE_TIMEOUT_MS = 15000;
 
-function buildPrompt(facts: CoachFactList, persona: Persona): string {
+// SAN_RE false-positive source (calibration sweep task 7d): SAN_RE's
+// move-shape group has every piece/capture prefix optional, so a raw uci
+// string like "f6e4" (two squares concatenated, no separator) fully matches
+// it as a single move-shaped token. threat.refutationUci and best.uci were
+// the only two uci fields reaching the model prompt here — if a narration
+// ever echoed one of those literal strings out of the JSON, validateNarration
+// would flag it as an unsanctioned move (uci was never added to allowedSans,
+// only real SAN is) and burn a needless regen/template fallback. Mirrors
+// chat.ts's stripThreatUci/factsForModel pattern (chat.ts's serializer was
+// already built uci-free from the start; this brings narrate() in line).
+function stripThreatUci(t: ThreatFacts): Omit<ThreatFacts, "refutationUci"> {
+  const { refutationUci, ...rest } = t;
+  return rest;
+}
+
+export function buildPrompt(facts: CoachFactList, persona: Persona): string {
   const factsForModel = {
     herMove: facts.herMove,
     tier: facts.tier,
     deltaCp: facts.deltaCp,
-    threat: facts.threat,
-    best: facts.best,
+    threat: facts.threat ? stripThreatUci(facts.threat) : undefined,
+    best: facts.best
+      ? { san: facts.best.san, pieceKind: facts.best.pieceKind, from: facts.best.from, to: facts.best.to }
+      : undefined,
     recommendation: facts.recommendation,
   };
   return [
