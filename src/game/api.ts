@@ -189,14 +189,18 @@ export function reportMode(sessionId: number, mode: string, seconds: number): Pr
 // `mode` (C3): trace-tagging only — omit for the ordinary pre-move
 // (pending) judge call (server defaults it to "guardian"); pass "post"
 // when judging in parallel with an already-played move (coach-only mode).
+// `strictness` (Task 6, F10 tuning — UI label "judge strictness"): the
+// caller reads this from localStorage `gc-judge-strictness` (GamePage) and
+// passes it straight through; omitted, the server judges at "standard".
 export function judgeMove(
   gameId: number,
   from: string,
   to: string,
   promotion?: string,
-  mode?: string
+  mode?: string,
+  strictness?: string
 ): Promise<JudgeResponse> {
-  return postJson(`/game/${gameId}/judge`, { from, to, promotion, mode });
+  return postJson(`/game/${gameId}/judge`, { from, to, promotion, mode, strictness });
 }
 
 export function resign(gameId: number): Promise<ResignResponse> {

@@ -6,7 +6,7 @@ import {
   getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
   listFinishedGames, insertChatMessage, getChatMessages,
 } from "../store/db";
-import { classifyMove, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
+import { classifyMove, ADVICE_LEVELS, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
 import { computeHint as computeHintFacts, type HintFacts } from "../annotator/hint";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
@@ -317,7 +317,15 @@ export class GameManager {
   // insertVerdict, which defaults it to "guardian" when omitted — every
   // pre-C3 call site (judge-confirm's pending-render judge) keeps working
   // unchanged.
-  async judgeMove(gameId: number, from: string, to: string, promotion?: string, mode?: string) {
+  // `strictness` (Task 6, F10 tuning — UI label "judge strictness", NOT
+  // "advice level"): appended positionally so every pre-Task-6 call site
+  // keeps working unchanged, same convention as `mode` above. Selects which
+  // ADVICE_LEVELS threshold table classifyMove judges against; the verdict
+  // row's existing advice_level column stores this same key (single
+  // semantic: which table judged this move) — an omitted or unrecognized
+  // value falls back to DEFAULT_ADVICE_LEVEL ("standard") rather than
+  // throwing.
+  async judgeMove(gameId: number, from: string, to: string, promotion?: string, mode?: string, strictness?: string) {
     const live = this.games.get(gameId);
     if (!live) return { ok: false };
     if (live.finished) return { ok: false };
@@ -328,7 +336,8 @@ export class GameManager {
     } catch {
       return { ok: false };
     }
-    const verdict = await classifyMove(clone, mv, this.evaluator);
+    const level = strictness && ADVICE_LEVELS[strictness] ? strictness : DEFAULT_ADVICE_LEVEL;
+    const verdict = await classifyMove(clone, mv, this.evaluator, level);
     // Capture-first trace: every judged move gets a verdict row, silent
     // included (100% trace completeness) — even a move the player
     // retracts afterward. Retraction behavior is itself wanted data for
@@ -343,7 +352,7 @@ export class GameManager {
       deltaCp: verdict.deltaCp,
       mateAgainst: verdict.mateAgainst,
       latencyMs: verdict.latencyMs,
-      adviceLevel: DEFAULT_ADVICE_LEVEL,
+      adviceLevel: level,
       mode,
       factsJson: verdict.threat ? JSON.stringify(verdict.threat) : null,
     });

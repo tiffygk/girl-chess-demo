@@ -57,9 +57,12 @@ app.post("/api/game/:id/move", async (req, res) => {
 });
 
 app.post("/api/game/:id/judge", async (req, res) => {
-  const { from, to, promotion, mode } = req.body;
+  // `strictness` (Task 6, F10 tuning — UI label "judge strictness"):
+  // optional, appended after `mode` same as that field's own convention;
+  // gm.judgeMove defaults an omitted/unrecognized value to "standard".
+  const { from, to, promotion, mode, strictness } = req.body;
   try {
-    const result = await gm.judgeMove(Number(req.params.id), from, to, promotion, mode);
+    const result = await gm.judgeMove(Number(req.params.id), from, to, promotion, mode, strictness);
     res.json(result);
   } catch (error) {
     res.status(500).json({ ok: false, error: "internal" });
