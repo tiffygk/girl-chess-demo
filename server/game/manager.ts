@@ -41,28 +41,51 @@ export class GameManager {
   private games = new Map<number, LiveGame>();
   private evaluator = new StockfishEvaluator();
   private opponents = new Map<number, MaiaOpponent>();
-  // Probed once, cached, per the brief's "claude-cli if available else
-  // ollama if available else template-only" selection — narrate() below
-  // never re-probes on every call.
-  private coachBackend: CoachBackend | null = null;
+  // Task 5 (F17): probed once PER PREF, cached in a Map keyed by the pref
+  // string — never a single shared member. A single member would race: two
+  // concurrent requests carrying different backendPref values (e.g. one
+  // player narration asking for "claude" while a chat call asks for
+  // "template") would clobber each other's resolved backend mid-flight.
+  // Keying by pref means each preference resolves and caches independently,
+  // and repeat calls with the same pref skip re-probing.
+  private coachBackends = new Map<string, CoachBackend>();
 
   async init() { await this.evaluator.init(); }
 
-  private async pickCoachBackend(): Promise<CoachBackend> {
-    if (this.coachBackend) return this.coachBackend;
-    if (await claudeCliBackend.available()) this.coachBackend = claudeCliBackend;
-    else if (await ollamaBackend.available()) this.coachBackend = ollamaBackend;
-    else this.coachBackend = noBackend;
-    return this.coachBackend;
+  // pref semantics (panel A4/A5): "template" is a first-class choice with NO
+  // probe (always noBackend); "ollama" is ollama-if-available else
+  // noBackend (no claude-cli fallback — an explicit "local only" request
+  // shouldn't quietly upgrade to the cloud backend); "claude", undefined, or
+  // any unrecognized value gets the pre-existing claude -> ollama -> none
+  // chain (today's default behavior, unchanged).
+  private async pickCoachBackend(pref?: string): Promise<CoachBackend> {
+    const key = pref ?? "claude";
+    const cached = this.coachBackends.get(key);
+    if (cached) return cached;
+
+    let backend: CoachBackend;
+    if (key === "template") {
+      backend = noBackend;
+    } else if (key === "ollama") {
+      backend = (await ollamaBackend.available()) ? ollamaBackend : noBackend;
+    } else {
+      if (await claudeCliBackend.available()) backend = claudeCliBackend;
+      else if (await ollamaBackend.available()) backend = ollamaBackend;
+      else backend = noBackend;
+    }
+    this.coachBackends.set(key, backend);
+    return backend;
   }
 
-  // Test seam only: lets manager.test.ts inject a FAKE backend so tests
-  // never probe or invoke the real claude CLI / ollama (brief: "do NOT
-  // invoke the real claude CLI in tests"). Unused in production —
-  // pickCoachBackend's probe-and-cache runs unless a test has already
-  // primed this.
-  setCoachBackendForTesting(backend: CoachBackend) {
-    this.coachBackend = backend;
+  // Test seam only: lets manager.test.ts (and index.test.ts, chat.test.ts)
+  // inject a FAKE backend so tests never probe or invoke the real claude CLI
+  // / ollama (brief: "do NOT invoke the real claude CLI in tests"). Seeds
+  // the Map entry for a named pref — defaults to "claude" (the pref every
+  // pre-Task-5 caller implicitly used) so every existing call site keeps
+  // working unchanged. Unused in production — pickCoachBackend's
+  // probe-and-cache runs for any pref a test hasn't already primed.
+  setCoachBackendForTesting(backend: CoachBackend, pref?: string) {
+    this.coachBackends.set(pref ?? "claude", backend);
   }
 
   private async opponentFor(elo: number): Promise<MaiaOpponent> {
@@ -442,6 +465,11 @@ export class GameManager {
       threat?: ThreatFacts;
       best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
       recommendation?: RecommendationFacts;
+      // Task 5 (F17): per-request backend preference — "claude" | "ollama" |
+      // "template" | undefined. Threaded straight through to
+      // pickCoachBackend, which resolves and caches per-pref (see that
+      // method's comment).
+      backendPref?: string;
     }
   ): Promise<
     { ok: false } | { ok: true; text: string; source: "model" | "template"; traceId: number }
@@ -449,7 +477,7 @@ export class GameManager {
     const live = this.games.get(gameId);
     if (!live || live.finished) return { ok: false };
 
-    const backend = await this.pickCoachBackend();
+    const backend = await this.pickCoachBackend(body.backendPref);
     const facts = assembleFactList({
       herMove: { pieceKind: body.herPiece, from: body.from, to: body.to },
       tier: body.tier,
@@ -482,7 +510,9 @@ export class GameManager {
   // window never double-counts the message that's still in flight).
   async chat(
     gameId: number,
-    body: { message: string; context: ChatContext }
+    // Task 5 (F17): backendPref threaded through exactly like narrate()
+    // above — same pickCoachBackend seam, same per-pref cache.
+    body: { message: string; context: ChatContext; backendPref?: string }
   ): Promise<
     | { ok: false; error?: string }
     | { ok: true; text: string; source: "model" | "template"; cause?: "backend-down"; traceId: number }
@@ -506,7 +536,7 @@ export class GameManager {
 
     insertChatMessage({ gameId, role: "user", text: message });
 
-    const backend = await this.pickCoachBackend();
+    const backend = await this.pickCoachBackend(body.backendPref);
     // Review-mode ply = the game's total ply count; in live mode this is
     // the same number (the live in-memory ply counter and "total moves
     // recorded so far" agree while the game is still in progress) -- so one
