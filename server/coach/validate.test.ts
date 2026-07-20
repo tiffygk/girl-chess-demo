@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { assembleFactList } from "./index";
+import { assembleFactList, buildPrompt, getPersona } from "./index";
 import { validateNarration } from "./validate";
 
 // A small, realistic fact list: her rook hangs on d8, the opponent's
@@ -78,5 +78,31 @@ describe("validateNarration", () => {
   it("passes empty text (no tokens to flag) — index.ts is responsible for treating empty as needing a template", () => {
     const facts = mkFacts();
     expect(validateNarration("", facts)).toEqual({ ok: true });
+  });
+});
+
+describe("buildPrompt (calibration sweep task 7d): factsForModel is stripped of uci/refutationUci", () => {
+  // best.uci ("f6e4") and threat.refutationUci ("d1d8") are the SAN_RE
+  // false-positive source: SAN_RE's move-shape group has every
+  // piece/capture prefix optional, so a raw uci string like "f6e4" (two
+  // squares concatenated, no separator) fully matches it as if it were a
+  // real move token. If a model narration ever echoed the uci string
+  // straight out of the prompt JSON, validateNarration would flag it as an
+  // unsanctioned move (it was never added to allowedSans — only real SAN
+  // is) and burn a needless regen/template fallback. Stripping uci out of
+  // the prompt removes the source entirely; san is all a model ever needs.
+  it("the serialized prompt JSON carries no uci strings", () => {
+    const facts = mkFacts();
+    const prompt = buildPrompt(facts, getPersona());
+    expect(prompt).not.toContain("f6e4");
+    expect(prompt).not.toContain("d1d8");
+    expect(prompt).not.toContain('"uci"');
+    expect(prompt).not.toContain("refutationUci");
+  });
+
+  it("a played-SAN echo (Rxd8 / Nxe4) still validates cleanly — stripping uci from the prompt doesn't touch SAN validation", () => {
+    const facts = mkFacts();
+    const echo = "your rook hangs on d8, and Rxd8 just takes it. Nxe4 wins a pawn back instead.";
+    expect(validateNarration(echo, facts)).toEqual({ ok: true });
   });
 });

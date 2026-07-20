@@ -98,6 +98,21 @@ describe("deriveThreatFacts", () => {
     expect(facts!.givesCheck).toBe(true);
   });
 
+  it("mate-threat via the mate > 0 disjunct: a forced-mate eval on a non-mating replay still reports mate-threat", () => {
+    // Same quiet-reply position as the "positional" fixture above (a1a2 is
+    // not a capture, not a fork, not a check, and probe.isCheckmate() is
+    // false on the replayed board) — but afterEval.mate = 3 (a forced mate
+    // the engine sees a few moves out, not delivered on this literal
+    // replay) must still outrank check-threat/positional via the
+    // `afterEval.mate !== null && afterEval.mate > 0` disjunct, proving
+    // that branch is reachable independent of probe.isCheckmate() itself.
+    const afterFen = "4k3/8/1n6/8/8/8/8/R3K3 w - - 0 1";
+    const facts = deriveThreatFacts(afterFen, "b6", "b", mkEval("a1a2", { mate: 3 }));
+    expect(facts).toBeTruthy();
+    expect(facts!.motif).toBe("mate-threat");
+    expect(facts!.givesCheck).toBe(false);
+  });
+
   it("returns undefined when afterEval.bestMove is missing or empty", () => {
     const afterFen = "4k3/8/8/8/8/8/8/4K3 w - - 0 1";
     expect(deriveThreatFacts(afterFen, "a6", "b", mkEval(""))).toBeUndefined();

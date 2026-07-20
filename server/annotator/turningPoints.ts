@@ -328,7 +328,20 @@ export interface KingPressureEpisode {
   san: string;
 }
 
-export function detectKingPressureEpisode(moves: MoveEval[]): KingPressureEpisode | null {
+// debrief-v2 calibration sweep (task 7b): computeTurningPoints already
+// builds the winprob delta series once for its own swing detection and
+// then called this function with just `moves`, forcing a second, redundant
+// buildDeltaSeries pass over the exact same move list just to read
+// series[startIdx]/series[endIdx] below. The optional `series` param lets
+// that caller pass its already-computed series through; any DIRECT caller
+// (every existing test in this file calls detectKingPressureEpisode(moves)
+// with no second argument) still gets it computed internally, so behavior
+// is unchanged for them — this is a pure sharing optimization, not a
+// behavior change.
+export function detectKingPressureEpisode(
+  moves: MoveEval[],
+  series?: (DeltaPoint | null)[]
+): KingPressureEpisode | null {
   if (moves.length === 0) return null;
 
   const chess = new Chess();
@@ -367,9 +380,9 @@ export function detectKingPressureEpisode(moves: MoveEval[]): KingPressureEpisod
 
   const startIdx = bestStart;
   const endIdx = bestStart + bestLen - 1;
-  const series = buildDeltaSeries(moves);
-  const startP = series[startIdx]?.p ?? 0.5;
-  const endP = series[endIdx]?.p ?? 0.5;
+  const resolvedSeries = series ?? buildDeltaSeries(moves);
+  const startP = resolvedSeries[startIdx]?.p ?? 0.5;
+  const endP = resolvedSeries[endIdx]?.p ?? 0.5;
 
   return {
     plyStart: moves[startIdx].ply,
@@ -516,7 +529,7 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   // detector above structurally cannot see (eval stays flat while danger
   // sits on the board) — additional to, never instead of, the swing/backfill
   // points above. Max 4 cards total.
-  const episode = detectKingPressureEpisode(moves);
+  const episode = detectKingPressureEpisode(moves, series);
   if (episode) {
     points.push({
       rank: (points.length + 1) as 1 | 2 | 3 | 4,
