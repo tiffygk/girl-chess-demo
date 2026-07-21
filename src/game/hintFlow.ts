@@ -56,6 +56,15 @@ export interface HintFacts {
   // the deep hint fetch (server/annotator/hint.ts), read by
   // recommendationClause below at level 5 only.
   recommendation?: RecommendationFacts;
+  // Task 5 (trade-aware hints, increment 3.95): hand-mirroring
+  // server/annotator/hint.ts's HintFacts.pv/.trade (same convention as
+  // ThreatFacts/RecommendationFacts above). Not yet read by any copy here —
+  // Task 6 builds the "this trades but it's the strongest here" clause off
+  // `trade`, and `pv` off the chosen line's own moves. Optional here (unlike
+  // the server, which always sets them) since existing fixtures in this
+  // file's own tests predate this field and shouldn't have to grow it.
+  pv?: string[];
+  trade?: boolean;
 }
 
 /**

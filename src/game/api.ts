@@ -236,6 +236,10 @@ export interface HintFactsResponse {
     // Increment 3a Wave 3: "why the recommended move is good" — mirrors
     // server/annotator/hint.ts's HintFacts.recommendation.
     recommendation?: RecommendationFacts;
+    // Task 5 (trade-aware hints, increment 3.95): mirrors server/annotator/
+    // hint.ts's HintFacts.pv/.trade — always present, same as the server.
+    pv: string[];
+    trade: boolean;
   };
 }
 

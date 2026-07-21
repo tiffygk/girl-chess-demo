@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Chess } from "chess.js";
+import type { Evaluation, Evaluator } from "../engines/types";
 import { StockfishEvaluator } from "../engines/stockfish";
-import { computeHint, HINT_MAX_LOSS_CP } from "./hint";
+import { computeHint, HINT_MAX_LOSS_CP, HINT_TRADE_MARGIN_CP } from "./hint";
 
 // Real engine, same pattern as classify.test.ts — no mocks exist in this repo.
 describe("computeHint — deep engine-math hints", () => {
@@ -80,4 +81,105 @@ describe("computeHint — deep engine-math hints", () => {
     const facts = await computeHint(fen, sf);
     expect(facts).toBeNull();
   }, 30000);
+});
+
+// Task 5 (trade-aware hints, increment 3.95): owner decision -- "following
+// hints led my pieces to get captured and make trades... I could have
+// avoided the trade entirely" -- computeHint should prefer a quieter,
+// material-preserving candidate over one that trades pieces off, as long as
+// the quiet candidate is genuinely comparable (within HINT_TRADE_MARGIN_CP
+// of the single best line). A real engine can't be forced to land on a
+// specific, controlled cp gap between two named candidates on demand, so
+// this scripts the multipv seam directly -- same "mock the Evaluator
+// interface" pattern classify.test.ts's FixedDeltaEvaluator uses, chosen
+// because a real-engine fixture producing an exact, stable margin boundary
+// would be flaky.
+//
+// Fixture position: White King e1, Rook d1; Black King e8, Rook d8, white
+// to move. Rxd8+ (d1d8) trades rooks -- Black's only legal reply is Kxd8
+// (e8d8), which lands on the very square Rxd8 just captured on: the "moved
+// piece gets recaptured" shape isTradeMove exists to detect. Rd1-d5 (d1d5)
+// is a fully quiet rook lift on the same file -- no capture, nothing to
+// recapture.
+describe("computeHint — trade-aware selection (Task 5, mocked evaluator)", () => {
+  const fen = "3rk3/8/8/8/8/8/8/3RK3 w - - 0 1";
+  const tradeMove: Evaluation = { cp: 50, mate: null, bestMove: "d1d8", pv: ["d1d8", "e8d8"] };
+  const quietMove = (cp: number): Evaluation => ({
+    cp,
+    mate: null,
+    bestMove: "d1d5",
+    pv: ["d1d5", "e8e7"],
+  });
+
+  // Scripts evaluateMulti() to return the exact candidates a test wants,
+  // and evaluate() (used only for hintHoldsUp's post-move verification
+  // call here) to a flat, small eval -- every scripted candidate above is
+  // <= 50cp, comfortably inside HINT_MAX_LOSS_CP, so the verification pass
+  // always holds up and never escalates: the trade-aware selection under
+  // test is what decides the outcome, not the verification retry.
+  class ScriptedMultiEvaluator implements Evaluator {
+    constructor(private candidates: Evaluation[]) {}
+    async init() {}
+    async evaluate(): Promise<Evaluation> {
+      return { cp: 0, mate: null, bestMove: "e8e7", pv: [] };
+    }
+    async evaluateMulti(): Promise<Evaluation[]> {
+      return this.candidates;
+    }
+    quit() {}
+  }
+
+  it("prefers the quiet move when it's within HINT_TRADE_MARGIN_CP of the trade (gap 30)", async () => {
+    const facts = await computeHint(fen, new ScriptedMultiEvaluator([tradeMove, quietMove(20)]));
+    expect(facts).toBeTruthy();
+    expect(facts!.bestUci).toBe("d1d5");
+    expect(facts!.trade).toBe(false);
+  });
+
+  it("keeps the trade and marks trade:true when no comparable quiet alternative exists (gap 60)", async () => {
+    const facts = await computeHint(fen, new ScriptedMultiEvaluator([tradeMove, quietMove(-10)]));
+    expect(facts).toBeTruthy();
+    expect(facts!.bestUci).toBe("d1d8");
+    expect(facts!.trade).toBe(true);
+  });
+
+  it("margin gates correctly: a quiet move just outside the margin (gap 50) is NOT preferred", async () => {
+    const facts = await computeHint(fen, new ScriptedMultiEvaluator([tradeMove, quietMove(0)]));
+    expect(facts).toBeTruthy();
+    expect(facts!.bestUci).toBe("d1d8");
+    expect(facts!.trade).toBe(true);
+  });
+
+  it("margin boundary is inclusive: exactly HINT_TRADE_MARGIN_CP away still counts as comparable", async () => {
+    const facts = await computeHint(
+      fen,
+      new ScriptedMultiEvaluator([tradeMove, quietMove(tradeMove.cp! - HINT_TRADE_MARGIN_CP)])
+    );
+    expect(facts).toBeTruthy();
+    expect(facts!.bestUci).toBe("d1d5");
+    expect(facts!.trade).toBe(false);
+  });
+
+  it("exposes the chosen candidate's pv on HintFacts", async () => {
+    const facts = await computeHint(fen, new ScriptedMultiEvaluator([tradeMove, quietMove(20)]));
+    expect(facts!.pv).toEqual(["d1d5", "e8e7"]);
+  });
+
+  // Backward compatibility: an Evaluator that doesn't implement
+  // evaluateMulti (e.g. a future engine, or a simpler test double) must
+  // still work -- computeHint falls back to the existing single-line
+  // evaluate(), same as before this task.
+  it("falls back to single-line evaluate() when evaluateMulti is absent", async () => {
+    class SingleOnlyEvaluator implements Evaluator {
+      async init() {}
+      async evaluate(): Promise<Evaluation> {
+        return { cp: 10, mate: null, bestMove: "d1d5", pv: ["d1d5", "e8e7"] };
+      }
+      quit() {}
+    }
+    const facts = await computeHint(fen, new SingleOnlyEvaluator());
+    expect(facts).toBeTruthy();
+    expect(facts!.bestUci).toBe("d1d5");
+    expect(facts!.trade).toBe(false);
+  });
 });
