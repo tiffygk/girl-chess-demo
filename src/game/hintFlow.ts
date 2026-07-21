@@ -22,6 +22,7 @@
 // copy degrades to the honest fallback — it never speculates.
 import { Chess } from "chess.js";
 import type { ThreatFacts, RecommendationFacts } from "./api";
+import { deriveOpportunity } from "../review/opportunity";
 
 export type HintLevel = 0 | 1 | 2 | 3 | 4 | 5;
 
@@ -68,14 +69,28 @@ export interface HintFacts {
 }
 
 /**
- * Level 5 addendum: what the recommended move accomplishes, in the
+ * Level 4/5 addendum: what the recommended move accomplishes, in the
  * player's own template voice (lowercase, no em-dashes). Every branch reads
  * only the fields `deriveRecommendationFacts` (server/annotator/motifs.ts)
  * populates for that accomplishment — same HONESTY GATE as the L2/L3 threat
  * copy above. Returns null when there's no recommendation to describe.
+ *
+ * Task 6 (increment 3.95, trade honesty): when `trade` is true (Task 5's
+ * isTradeMove found the chosen move is a capture that gets immediately
+ * recaptured on the same square — server/annotator/hint.ts), the "it wins
+ * the X" wording below would misleadingly imply a clean material gain the
+ * replay doesn't actually show. Say so plainly instead, overriding whatever
+ * accomplishment fired — this is safe unconditionally because `trade` can
+ * only ever be true alongside accomplishment "captures" (isTradeMove itself
+ * requires the recommended move to be a capture), so there is no
+ * accomplishment branch this could wrongly override.
  */
-export function recommendationClause(rec: RecommendationFacts | null | undefined): string | null {
+export function recommendationClause(
+  rec: RecommendationFacts | null | undefined,
+  trade?: boolean
+): string | null {
   if (!rec) return null;
+  if (trade) return "this trades, but it's the strongest here.";
   switch (rec.accomplishment) {
     case "captures":
       return `it wins the ${pieceName(rec.capturedPieceKind ?? "")} on ${rec.capturesSquare}.`;
@@ -124,6 +139,82 @@ export function describeBestMove(facts: HintFacts, fen: string): string | null {
   let phrase = `${pieceName(facts.bestPieceKind)} ${isCapture ? "takes on" : "to"} ${mv.to}`;
   if (mv.flags.includes("p") && mv.promotion) phrase += `, becoming a ${pieceName(mv.promotion)}`;
   return `${phrase}${suffix}`;
+}
+
+/**
+ * Task 6 (increment 3.95): replays a raw UCI pv (e.g. `["e1e8"]`, as shipped
+ * on HintFacts.pv straight off the engine — see hint.ts) on top of `fen`,
+ * collecting SANs as it goes so deriveOpportunity (src/review/opportunity.ts,
+ * which requires SAN) can classify it. Mirrors server/game/manager.ts's
+ * private `pvLine` helper — same "stop cleanly at the first illegal/
+ * malformed step" contract, so a corrupted or stale pv degrades to a shorter
+ * true line (or none) rather than throwing.
+ */
+function pvSansFromUci(fen: string, uciPv: string[]): string[] {
+  let replay: Chess;
+  try {
+    replay = new Chess(fen);
+  } catch {
+    return [];
+  }
+  const sans: string[] = [];
+  for (const uci of uciPv) {
+    if (uci.length < 4) break;
+    let mv;
+    try {
+      mv = replay.move({
+        from: uci.slice(0, 2),
+        to: uci.slice(2, 4),
+        promotion: (uci[4] as "q" | "r" | "b" | "n" | undefined) ?? "q",
+      });
+    } catch {
+      mv = null;
+    }
+    if (!mv) break;
+    sans.push(mv.san);
+  }
+  return sans;
+}
+
+/**
+ * Task 6 (increment 3.95): "what it opens up" — reuses the Task-4
+ * deriveOpportunity classifier (src/review/opportunity.ts) on the hint's own
+ * pv, honesty-gated the same way that module is (only what the replay
+ * proves is a gain for the player). Returns undefined gracefully whenever
+ * there's no pv, the replay doesn't hold up, or deriveOpportunity itself
+ * finds nothing provable.
+ *
+ * Dedup: when the immediate "captures" clause already named this exact
+ * capture (same piece, e.g. "it wins the queen on d4"), and the pv-derived
+ * opportunity is the identical "wins the {piece}" claim, it's the same fact
+ * twice — omit it rather than pad the copy with a redundant repeat (this is
+ * a hint rung, not a paragraph).
+ */
+function opensUpOpportunity(facts: HintFacts, fen: string): string | undefined {
+  if (!facts.pv || facts.pv.length === 0) return undefined;
+  const sans = pvSansFromUci(fen, facts.pv);
+  if (sans.length === 0) return undefined;
+  const opportunity = deriveOpportunity(fen, sans);
+  if (!opportunity) return undefined;
+  const alreadyStated =
+    facts.recommendation?.accomplishment === "captures" &&
+    opportunity === `wins the ${pieceName(facts.recommendation.capturedPieceKind ?? "")}`;
+  return alreadyStated ? undefined : opportunity;
+}
+
+/**
+ * Task 6 (increment 3.95): composes level 4's WHY addendum — the immediate
+ * reason (recommendationClause, trade-honesty-gated) plus what the line
+ * opens up further out (opensUpOpportunity), or "" when neither is provable.
+ * Kept as its own function so hintCopy's level 4 branch stays a one-liner.
+ */
+function level4Why(facts: HintFacts, fen?: string): string {
+  const immediate = recommendationClause(facts.recommendation, facts.trade);
+  const opportunity = fen ? opensUpOpportunity(facts, fen) : undefined;
+  if (immediate && opportunity) return ` ${immediate} and it ${opportunity}.`;
+  if (immediate) return ` ${immediate}`;
+  if (opportunity) return ` it ${opportunity}.`;
+  return "";
 }
 
 /**
@@ -198,12 +289,15 @@ export function hintCopy(level: HintLevel, ctx: HintCopyCtx): string | null {
   if (level === 2) return motifL2(ctx);
   if (level === 3) return motifL3(ctx);
   if (!ctx.bestFacts) return null;
-  if (level === 4) return `better: your ${pieceName(ctx.bestFacts.bestPieceKind)} on ${ctx.bestFacts.bestFromSquare}`;
+  if (level === 4) {
+    const base = `better: your ${pieceName(ctx.bestFacts.bestPieceKind)} on ${ctx.bestFacts.bestFromSquare}`;
+    return `${base}${level4Why(ctx.bestFacts, ctx.fen)}`;
+  }
   const translation = ctx.fen ? describeBestMove(ctx.bestFacts, ctx.fen) : null;
   const base = translation
     ? `best here: ${ctx.bestFacts.bestSan} (${translation})`
     : `best here: ${ctx.bestFacts.bestSan}`;
-  const clause = recommendationClause(ctx.bestFacts.recommendation);
+  const clause = recommendationClause(ctx.bestFacts.recommendation, ctx.bestFacts.trade);
   return clause ? `${base} ${clause}` : base;
 }
 
