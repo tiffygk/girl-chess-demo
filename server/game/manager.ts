@@ -269,7 +269,25 @@ export class GameManager {
       const turningPoints = getTurningPoints(gameId) as { ply: number; san: string }[];
       const rows = getGameMoves(gameId);
       const sans = rows.map((r: any) => r.san as string);
-      const evals = getMoveEvalsByPlies(gameId, turningPoints.map((t) => t.ply));
+      // The line the player should see is the best line at the nearest
+      // position where the PLAYER (always white) is on move. Player moves
+      // on odd plies, mallow on even plies, so the player-to-move "seed"
+      // ply is: odd t.ply -> t.ply - 1 (the position right before her
+      // move, i.e. fenBefore); even t.ply -> t.ply itself (the position
+      // right after mallow's move, i.e. fenAfter(t.ply)). In both cases
+      // seedPly is even, and attachEval(seedPly) persisted the eval of
+      // fenAfter(seedPly) — exactly this seed position — so
+      // evalByPly.get(seedPly) is the correct, legal-for-white eval to
+      // replay from. Reading evalByPly.get(t.ply) against fenBefore (the
+      // old code) was the bug: that eval was computed for fenAfter(t.ply),
+      // the OPPONENT's turn, so its pv's first move is illegal from
+      // fenBefore and pvLine breaks at step 1. seedPly < 1 (a ply-1 turning
+      // point has no prior ply to seed from) degrades gracefully to an
+      // empty line.
+      const seedPlies = Array.from(
+        new Set(turningPoints.map((t) => t.ply - (t.ply % 2)).filter((p) => p >= 1))
+      );
+      const evals = getMoveEvalsByPlies(gameId, seedPlies);
       const evalByPly = new Map(evals.map((e) => [e.ply, e]));
       const verdicts = getVerdicts(gameId);
 
@@ -282,7 +300,22 @@ export class GameManager {
         const fenBefore = before.fen();
 
         const playedFromTo = moveEndpoints(fenBefore, t.san);
-        const { pvSans, bestSan, bestFromTo } = this.pvLine(fenBefore, evalByPly.get(t.ply));
+
+        const seedPly = t.ply - (t.ply % 2);
+        let pvSans: string[] = [];
+        let bestSan: string | undefined;
+        let bestFromTo: { from: string; to: string } | undefined;
+        if (seedPly >= 1) {
+          // fenSeed: replay every SAN strictly before seedPly (same
+          // replay-from-scratch pattern as fenBefore above) — this is the
+          // position attachEval(seedPly) actually evaluated (its
+          // fenAfter(seedPly)).
+          const seed = new Chess();
+          for (let i = 0; i < seedPly && i < sans.length; i++) seed.move(sans[i]);
+          const fenSeed = seed.fen();
+          ({ pvSans, bestSan, bestFromTo } = this.pvLine(fenSeed, evalByPly.get(seedPly)));
+        }
+
         const threat = this.threatForPly(verdicts, t.ply, t.san);
 
         const line: TurningLine = { ply: t.ply, pvSans };

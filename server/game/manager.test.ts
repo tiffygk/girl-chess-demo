@@ -591,20 +591,40 @@ describe("GameManager", () => {
     expect(getTurningPointsAllVersions(g).length).toBe(allVersions.length);
   });
 
-  // Increment 3.91, Task 2: turning-lines endpoint. Additive read only —
-  // built directly against the db accessors (same pattern as the healing
-  // test above) so this stays fast and self-contained, no live engine
-  // needed. Verifies playedFromTo/bestFromTo/pvSans against an INDEPENDENT
-  // chess.js replay (moveEndpoints + a fresh Chess()), never trusting the
-  // implementation's own math.
-  it("getTurningLines exposes the persisted best-move/pv for a turning point, derived by chess.js replay", () => {
+  // Increment 3.91, Task 2 (PV linchpin fix): turning-lines endpoint.
+  // Additive read only — built directly against the db accessors (same
+  // pattern as the healing test above) so this stays fast and
+  // self-contained, no live engine needed. Verifies playedFromTo/bestFromTo/
+  // pvSans against an INDEPENDENT chess.js replay (moveEndpoints + a fresh
+  // Chess()), never trusting the implementation's own math.
+  //
+  // The stored evals here are REALISTIC: attachEval(ply) always persists the
+  // eval of fenAfter(ply) (the position AFTER that ply, opponent to move —
+  // see db.ts's attachEval/getMoveEvalsByPlies comments), never of
+  // fenBefore. So ply 1's eval is black-to-move-shaped, ply 2's is
+  // white-to-move-shaped, ply 3's is black-to-move-shaped again. A turning
+  // point at the (her-move, odd) ply 3 must therefore seed its best-line
+  // from ply 2's eval (seedPly = 3 - 1 = 2, whose fenAfter equals fenBefore
+  // of ply 3) — not from ply 3's own eval, which is shaped for the WRONG
+  // side to move at that point and was the original bug (manager.ts,
+  // getTurningLines: it used to read evalByPly.get(t.ply) against
+  // fenBefore).
+  it("getTurningLines reads the player-to-move seed-ply eval, not the played-ply eval, for a her-move turning point", () => {
     const g = createGame(sessionId, "maia-1100");
     recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
-    attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
+    // Realistic: eval of fenAfter(ply 1) = after 1.e4, BLACK to move.
+    attachEval(g, 1, { cp: 30, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
     recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
-    attachEval(g, 2, { cp: 10, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+    // Realistic: eval of fenAfter(ply 2) = after 1.e4 e5, WHITE to move.
+    // This is the seed-ply eval a ply-3 turning point should read.
+    attachEval(g, 2, { cp: 25, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
     recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
-    attachEval(g, 3, { cp: 15, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
+    // Realistic: eval of fenAfter(ply 3) = after 1.e4 e5 2.Nf3, BLACK to
+    // move. Its pv is black-to-move-shaped and is NOT a legal replay from
+    // fenBefore(ply 3) (white to move) — the OLD buggy lookup
+    // (evalByPly.get(t.ply) replayed from fenBefore) would break at step 1
+    // and yield pvSans: [], exactly the reported empty-best-line bug.
+    attachEval(g, 3, { cp: 20, mate: null, bestMove: "b8c6", pv: ["b8c6", "f1c4", "f8c5"] });
     finishGame(g, "1-0");
     insertTurningPoints(
       g,
@@ -626,10 +646,50 @@ describe("GameManager", () => {
     const fenBefore = check.fen();
     expect(moveEndpoints(fenBefore, "Nf3")).toEqual({ from: "g1", to: "f3" });
 
+    // playedFromTo is unchanged: still the actual played move, from fenBefore.
     expect(line.playedFromTo).toEqual({ from: "g1", to: "f3" });
+
+    // The corrected seed-ply lookup: ply 3 is odd (her move), seedPly = 2,
+    // so the best-line comes from ply 2's realistic (white-to-move) eval —
+    // legal and non-empty, not the played-ply's own (black-to-move) eval.
+    expect(line.pvSans).toEqual(["Nf3", "Nc6", "Bc4"]);
     expect(line.bestSan).toBe("Nf3");
     expect(line.bestFromTo).toEqual({ from: "g1", to: "f3" });
-    expect(line.pvSans).toEqual(["Nf3", "Nc6", "Bc4"]);
+
+    // The arrow must point at a piece she can actually move: bestFromTo.from
+    // holds a WHITE piece in fenSeed (here fenSeed === fenBefore, since
+    // seedPly = ply - 1 for an odd ply).
+    const seedBoard = new Chess(fenBefore);
+    const piece = seedBoard.get(line.bestFromTo!.from as any);
+    expect(piece?.color).toBe("w");
+  });
+
+  // Guard: a turning point at ply 1 has no prior ply to seed a player-to-move
+  // eval from (seedPly = 1 - 1 = 0). Must degrade to pvSans: [] gracefully,
+  // never throw, and must not crash trying to fetch/replay a nonexistent
+  // ply-0 eval.
+  it("getTurningLines degrades to pvSans: [] for a ply-1 turning point (no prior ply to seed from)", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    attachEval(g, 1, { cp: 30, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    finishGame(g, "1-0");
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 1, san: "e4", label: "opening move", deltaP: 0.05, lowConfidence: true, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    expect(() => gm.getTurningLines(g)).not.toThrow();
+    const result = gm.getTurningLines(g);
+    expect(result.ok).toBe(true);
+    const line = result.lines[0];
+    expect(line.ply).toBe(1);
+    expect(line.pvSans).toEqual([]);
+    expect(line.bestSan).toBeUndefined();
+    expect(line.bestFromTo).toBeUndefined();
+    // playedFromTo is independent of eval — still derived from the SAN replay.
+    expect(line.playedFromTo).toEqual({ from: "e2", to: "e4" });
   });
 
   it("getTurningLines returns pvSans: [] and no bestFromTo when the ply's eval never attached (graceful)", () => {
