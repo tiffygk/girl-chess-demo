@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { Chess } from "chess.js";
-import { startExplore, applyPlayerMove, applyEngineReply } from "./explore";
+import {
+  startExplore,
+  applyPlayerMove,
+  applyEngineReply,
+  exploreSeedPly,
+  guidingArrow,
+} from "./explore";
 
 // Increment 3.91 (Task 6): the "try the line" sandbox's pure state machine.
 // No network, no db — every assertion here is chess.js-truth-checkable.
@@ -98,5 +104,44 @@ describe("exit / re-entry", () => {
     expect(restarted.fen).toBe(START_FEN);
     expect(restarted.awaitingReply).toBe(false);
     expect(restarted.over).toBe(false);
+  });
+});
+
+// Task 3 (increment 3.95): "try the line" was seeding fenAtPly(ply) — the
+// position AFTER her mistake move — instead of the position where she's on
+// move. exploreSeedPly rounds an odd (her-move) ply down to the even ply
+// right before it; an even ply (already player-to-move) is left alone.
+describe("exploreSeedPly", () => {
+  it("rounds an odd ply down to the previous (player-to-move) ply", () => {
+    expect(exploreSeedPly(15)).toBe(14);
+    expect(exploreSeedPly(1)).toBe(0);
+  });
+
+  it("leaves an even ply unchanged", () => {
+    expect(exploreSeedPly(14)).toBe(14);
+    expect(exploreSeedPly(0)).toBe(0);
+  });
+});
+
+// guidingArrow surfaces the matching turning-line's bestFromTo as a single
+// green "best" arrow while exploring — the "do this" prompt the seed
+// position was missing entirely before this task.
+describe("guidingArrow", () => {
+  const lines = [
+    { ply: 9, bestFromTo: { from: "d1", to: "h5" } },
+    { ply: 15, bestFromTo: { from: "c1", to: "g5" } },
+    { ply: 21 }, // no bestFromTo recorded
+  ];
+
+  it("returns the matching line's bestFromTo as a best-colored arrow", () => {
+    expect(guidingArrow(15, lines)).toEqual({ from: "c1", to: "g5", color: "best" });
+  });
+
+  it("returns null when no line matches the ply", () => {
+    expect(guidingArrow(99, lines)).toBeNull();
+  });
+
+  it("returns null when the matching line has no bestFromTo", () => {
+    expect(guidingArrow(21, lines)).toBeNull();
   });
 });
