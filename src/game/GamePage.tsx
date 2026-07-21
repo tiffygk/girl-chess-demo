@@ -23,6 +23,7 @@ import {
   type GameListEntry,
   type ChatContext,
   type TurningLine,
+  type SummaryMove,
 } from "./api";
 import { CoachChat, ThumbRating } from "./CoachChat";
 import { describeMove, type MoveRender } from "./describeMove";
@@ -185,17 +186,46 @@ function turningLineArrows(line: TurningLine): { from: string; to: string; color
   return arrows;
 }
 
-function turningLineHighlights(line: TurningLine): { square: string; kind: ArrowColor }[] {
+// Increment 3.95 (Task 4, Part 2): highlights are always just the arrows'
+// own endpoints, so deriving them FROM whatever arrows array actually ends
+// up on screen (rather than re-deriving separately from `line`) keeps the
+// two in lockstep by construction — including the played-arrow fallback
+// below, which has no `line` to derive highlights from at all.
+function arrowsToHighlights(
+  arrows: { from: string; to: string; color: ArrowColor }[]
+): { square: string; kind: ArrowColor }[] {
   const highlights: { square: string; kind: ArrowColor }[] = [];
-  const add = (ft: { from: string; to: string } | undefined, kind: ArrowColor) => {
-    if (!ft) return;
-    highlights.push({ square: ft.from, kind });
-    highlights.push({ square: ft.to, kind });
-  };
-  add(line.playedFromTo, "played");
-  add(line.bestFromTo, "best");
-  add(line.threat, "threat");
+  for (const a of arrows) {
+    highlights.push({ square: a.from, kind: a.color });
+    highlights.push({ square: a.to, kind: a.color });
+  }
   return highlights;
+}
+
+// Increment 3.95 (Task 4, Part 2): the owner's report — a turning-point note
+// with NO arrows at all — traced to debriefBullets.ts's could-be-better/
+// watch-next-time bullets, which (unlike the curated turning-point cards)
+// draw plies from the broader `classifications` list, a strict superset of
+// turningLines' plies (see debriefBullets.ts's buildCouldBeBetter: it falls
+// back to `classifications` once the turningPoints-derived candidates run
+// out). A bullet's "replay" click rewinds to a ply with NO matching
+// TurningLine, and reviewArrows previously cleared to [] in that case —
+// text with literally nothing to look at. This is the SAME replay-derived
+// from/to computation server/annotator/moveEndpoints.ts does for the played
+// move (chess.js replaying the game's own recorded SAN, never a guess),
+// just client-side against the already-loaded move list, so every rewind
+// gets at least its played (cyan) arrow regardless of whether a curated
+// TurningLine exists for that exact ply.
+function playedArrowForPly(moves: SummaryMove[], ply: number): { from: string; to: string } | undefined {
+  if (ply < 1 || ply > moves.length) return undefined;
+  const chess = new Chess();
+  try {
+    for (let i = 0; i < ply - 1; i++) chess.move(moves[i].san);
+    const mv = chess.move(moves[ply - 1].san);
+    return mv ? { from: mv.from, to: mv.to } : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // Increment 3.91 (Task 6): explore's engine-reply elo — the live debrief's
@@ -370,6 +400,14 @@ export function GamePage() {
     to: string;
     color: "best";
   } | null>(null);
+  // Increment 3.95 (Task 4, Part 1): the turning point's own ply the
+  // currently-open sandbox was seeded from (openExplore's own argument,
+  // NOT exploreSeedPly's rounded-down seed — same convention guidingArrow
+  // above already uses to look turningLines up by). Threaded to
+  // DebriefPage's `exploring` prop so the try-the-line banner can look up
+  // the matching TurningLine and render its opportunity clause; null
+  // whenever no sandbox is open.
+  const [exploreSourcePly, setExploreSourcePly] = useState<number | null>(null);
 
   const boardRef = useRef<BoardHandle>(null);
   const mirrorRef = useRef(new Chess());
@@ -1299,11 +1337,19 @@ export function GamePage() {
       setResyncTick((t) => t + 1);
       setRewindPly(ply);
       // Increment 3.91 (Task 4): a turning-point card's replay threads its
-      // TurningLine into the board's arrows/highlightSquares; a plain
-      // bullet-section replay (no matching turning-point ply) clears them.
+      // TurningLine into the board's arrows/highlightSquares.
+      // Increment 3.95 (Task 4, Part 2): every rewind gets at least the
+      // played (cyan) arrow now, even with no matching TurningLine (a plain
+      // bullet-section replay) or one whose own playedFromTo never
+      // resolved — see playedArrowForPly's header comment above.
       const line = turningLines.find((l) => l.ply === ply);
-      setReviewArrows(line ? turningLineArrows(line) : []);
-      setReviewHighlights(line ? turningLineHighlights(line) : []);
+      const arrows = line ? turningLineArrows(line) : [];
+      if (!arrows.some((a) => a.color === "played")) {
+        const played = playedArrowForPly(activeReviewMoves, ply);
+        if (played) arrows.unshift({ ...played, color: "played" });
+      }
+      setReviewArrows(arrows);
+      setReviewHighlights(arrowsToHighlights(arrows));
     },
     [activeReviewMoves, turningLines]
   );
@@ -1353,6 +1399,7 @@ export function GamePage() {
       setExploreThinking(false);
       setExplore(startExplore(fenAtPly(activeReviewMoves, exploreSeedPly(ply))));
       setExploreArrow(guidingArrow(ply, turningLines));
+      setExploreSourcePly(ply);
     },
     [activeReviewMoves, fen, turningLines]
   );
@@ -1365,6 +1412,7 @@ export function GamePage() {
     exploreBusyRef.current = false;
     setExploreThinking(false);
     setExplore(null);
+    setExploreSourcePly(null);
     if (preExploreFenRef.current != null) {
       setFen(preExploreFenRef.current);
       setResyncTick((t) => t + 1);
@@ -1448,6 +1496,7 @@ export function GamePage() {
       exploreBusyRef.current = false;
       setExploreThinking(false);
       setExplore(null);
+      setExploreSourcePly(null);
     },
     [fen]
   );
@@ -1468,6 +1517,7 @@ export function GamePage() {
     exploreBusyRef.current = false;
     setExploreThinking(false);
     setExplore(null);
+    setExploreSourcePly(null);
   }, []);
 
   // Owner feedback 2026-07-17: the pregame elo picker was only reappearing
@@ -1491,6 +1541,7 @@ export function GamePage() {
     exploreBusyRef.current = false;
     setExploreThinking(false);
     setExplore(null);
+    setExploreSourcePly(null);
   }, [resetGameState]);
 
   // "replay the takedown" (Wave D) — owner feedback, verbatim: "play the
@@ -1940,13 +1991,16 @@ export function GamePage() {
                 turningPoints={liveSummary.turningPoints}
                 classifications={liveSummary.classifications}
                 turningLines={turningLines}
+                gameSans={liveSummary.moves}
                 totalPlies={liveSummary.moves.length}
                 result={gameOver.result}
                 rewindPly={rewindPly}
                 onRewind={handleRewind}
                 onBackToEnd={handleBackToEnd}
                 onOpenPastGames={openPastGames}
-                exploring={explore ? { thinking: exploreThinking, over: explore.over } : null}
+                exploring={
+                  explore ? { thinking: exploreThinking, over: explore.over, ply: exploreSourcePly } : null
+                }
                 onTryLine={openExplore}
                 onExitExplore={exitExplore}
               />
@@ -1959,6 +2013,7 @@ export function GamePage() {
           turningPoints={reviewGame.summary.turningPoints}
           classifications={reviewGame.summary.classifications}
           turningLines={turningLines}
+          gameSans={reviewGame.summary.moves}
           totalPlies={reviewGame.summary.moves.length}
           result={reviewGame.result}
           rewindPly={rewindPly}
@@ -1967,7 +2022,7 @@ export function GamePage() {
           onOpenPastGames={openPastGames}
           reviewing={{ opponent: reviewGame.opponent, result: reviewGame.result }}
           onBackToPlay={backToPlay}
-          exploring={explore ? { thinking: exploreThinking, over: explore.over } : null}
+          exploring={explore ? { thinking: exploreThinking, over: explore.over, ply: exploreSourcePly } : null}
           onTryLine={openExplore}
           onExitExplore={exitExplore}
         />
