@@ -5,7 +5,7 @@ import { GameManager } from "./game/manager";
 export const app = express();
 app.use(express.json());
 
-openDb(process.env.NODE_ENV === "test" ? ":memory:" : "data/girlchess.db");
+openDb(process.env.NODE_ENV === "test" ? ":memory:" : process.env.DB_PATH || "data/girlchess.db");
 // Exported: index.test.ts (F16 chat route test) uses
 // gm.setCoachBackendForTesting to inject a fake backend before hitting
 // POST /api/game/:id/chat, the same seam manager.test.ts already relies on
