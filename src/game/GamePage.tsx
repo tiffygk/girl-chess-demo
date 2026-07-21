@@ -24,8 +24,10 @@ import {
   type ChatContext,
   type TurningLine,
   type SummaryMove,
+  type TurningPoint,
 } from "./api";
 import { CoachChat, ThumbRating } from "./CoachChat";
+import { hintFocusContext, turningPointFocusContext } from "./chatFocus";
 import { describeMove, type MoveRender } from "./describeMove";
 import { victimKind, materialDiff, rollbackCapture, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
@@ -286,6 +288,20 @@ export function GamePage() {
   // confirm/new pending — see handlePendingStart/handleConfirmPending/
   // handleRetractPending below.
   const [hintLevel, setHintLevel] = useState<HintLevel>(0);
+  // Increment 3.95, Task 7 ("ask about this"): the focus half of a chat
+  // message's context — at most one of hintFocus/turningPointFocus is set
+  // at a time (whichever entry point the player last clicked), merged into
+  // buildChatContext's return further down. Deliberately NOT reset on every
+  // focus change or rewind — per the brief, keeping the same conversation
+  // thread while the focus switches within a game is acceptable, simpler
+  // than wiping it; it IS reset alongside the rest of the per-game state in
+  // resetGameState/selectPastGame/backToPlay below (a genuine game switch).
+  const [chatFocus, setChatFocus] = useState<Pick<ChatContext, "hintFocus" | "turningPointFocus">>({});
+  // Bumped by either "ask about this" entry point to force the single
+  // always-mounted CoachChat open from outside (see CoachChat.tsx's
+  // openSignal prop) — the drawer's own "chat with the coach" button is the
+  // only other way it opens.
+  const [chatOpenSignal, setChatOpenSignal] = useState(0);
   // Wave B (increment 2.5): the deep verified facts fetched on the FIRST
   // "help?" click for the current pending move — the api response type, not
   // hintFlow's HintFacts: the state must carry bestUci (for reveal squares
@@ -518,6 +534,9 @@ export function GamePage() {
     setReviewGame(null);
     setRewindPly(null);
     preReviewFenRef.current = null;
+    // Increment 3.95 (Task 7): a fresh/new game must never carry an "ask
+    // about this" focus over from the last one.
+    setChatFocus({});
     // Increment 3.91 (Task 4): a fresh/new game must never carry over the
     // last debrief's turning-lines cache or board arrows.
     setTurningLines([]);
@@ -1282,6 +1301,8 @@ export function GamePage() {
   // comment) — never builds a second board.
   const activeReviewMoves = reviewGame ? reviewGame.summary.moves : gameOver ? (liveSummary?.moves ?? null) : null;
 
+  const requestChatOpen = useCallback(() => setChatOpenSignal((t) => t + 1), []);
+
   // Increment 3.9, Task 3: coach chat's per-message context. Review mode is
   // bare (the server grounds against the whole stored game); live mode
   // mirrors the exact pending/verdict/hintFacts trio the coach's corner
@@ -1290,8 +1311,10 @@ export function GamePage() {
   // hintFacts when present else {mode:'live'}"). A fresh closure read at
   // send time, not memoized to a token — chat is player-initiated, so
   // there's no "fires once per pending move" concern the narrate effect has.
+  // Task 7 adds chatFocus's fields on top of either branch's own facts —
+  // a focused hint/turning-point can be asked about in either mode.
   const buildChatContext = useCallback((): ChatContext => {
-    if (reviewGame) return { mode: "review" };
+    if (reviewGame) return { mode: "review", ...chatFocus };
     if (pending && verdict && verdict.tier !== "silent") {
       const herPieceKind = mirrorRef.current.get(pending.from as Square)?.type ?? "piece";
       return {
@@ -1309,10 +1332,24 @@ export function GamePage() {
             }
           : undefined,
         recommendation: hintFacts?.recommendation,
+        ...chatFocus,
       };
     }
-    return { mode: "live" };
-  }, [reviewGame, pending, verdict, hintFacts]);
+    return { mode: "live", ...chatFocus };
+  }, [reviewGame, pending, verdict, hintFacts, chatFocus]);
+
+  // Increment 3.95, Task 7: a debrief turning-point card's own "ask about
+  // this" — looks up the matching TurningLine itself (turningLines is
+  // already in hand from the debrief's own fetch) so the coach can legally
+  // name the best line once assembleChatFactList folds it into allowedSans.
+  const handleAskAboutTurningPoint = useCallback(
+    (point: TurningPoint) => {
+      const line = turningLines.find((l) => l.ply === point.ply);
+      setChatFocus({ turningPointFocus: turningPointFocusContext(point, line) });
+      requestChatOpen();
+    },
+    [turningLines, requestChatOpen]
+  );
 
   // Visibility (panel B1, binding): gameId present OR reviewGame — NOT
   // gated on coachOn (the pull-based chat is always reachable; coachOn only
@@ -1323,12 +1360,18 @@ export function GamePage() {
   // fed to an always-mounted CoachChat, not a mount/unmount gate — an
   // unmount was silently wiping the conversation on every rewind (state
   // must reset ONLY on a gameId change, per the brief). Hidden whenever
-  // there's no game to talk about yet, mid-replay (rewindPly!=null is this
-  // codebase's one reactive "replay" state — a turning-point card's
-  // "replay" button, shared by both the live and review debriefs), or
-  // mid-cinematic (cinematicActive — the end-game takedown replay, whose
-  // full-screen chat overlay would otherwise cover it).
-  const chatHidden = chatGameId == null || rewindPly !== null || cinematicActive;
+  // there's no game to talk about yet, or mid-cinematic (cinematicActive —
+  // the end-game takedown replay, whose full-screen chat overlay would
+  // otherwise cover it).
+  //
+  // Increment 3.95, Task 7: the rewindPly!=null gate that used to sit here
+  // too is gone — that condition only ever fires while looking at a
+  // replayed turning point (rewindPly is exclusively set by a debrief
+  // "replay" click and cleared on every game switch/back-to-end; it's never
+  // true during a live in-progress turn), which is exactly the moment a
+  // "ask about this" click on a turning-point card needs the drawer to be
+  // reachable. The cinematic gate is the one that still has to hide it.
+  const chatHidden = chatGameId == null || cinematicActive;
 
   const handleRewind = useCallback(
     (ply: number) => {
@@ -1488,6 +1531,9 @@ export function GamePage() {
       setReviewHighlights([]);
       setTurningLines([]);
       setPastGamesOpen(false);
+      // Increment 3.95 (Task 7): a newly-opened past game must never carry
+      // the last one's "ask about this" focus.
+      setChatFocus({});
       // Increment 3.91 (Task 6): switching past games while a sandbox from
       // the PREVIOUS one is open would otherwise leave it live over a fen
       // that no longer belongs to it — drop it, no restore needed since the
@@ -1511,6 +1557,8 @@ export function GamePage() {
     setReviewArrows([]);
     setReviewHighlights([]);
     setTurningLines([]);
+    // Increment 3.95 (Task 7): leaving review mode drops its focus too.
+    setChatFocus({});
     // Increment 3.91 (Task 6): same reasoning as selectPastGame above — an
     // open sandbox must not survive leaving review mode.
     exploreTokenRef.current += 1;
@@ -1636,6 +1684,24 @@ export function GamePage() {
         fen,
       }
     : null;
+
+  // Increment 3.95, Task 7: the exact rendered hint text at the current
+  // level — computed once here so both the visible <span> below and the
+  // "ask about this" click use the identical string (never a separate
+  // re-derivation that could drift from what's on screen).
+  const renderedHintCopy = hintLevel > 0 && hintCtx ? hintCopy(hintLevel, hintCtx) : null;
+
+  // Increment 3.95, Task 7: the hint ladder's own "ask about this" — opens
+  // the always-mounted CoachChat scoped to the hint text the player is
+  // actually looking at. A no-op before any hint level has rendered
+  // anything (hintFocusContext returns undefined at level 0, or when
+  // hintCopy itself has nothing to say yet at levels 4-5 mid-fetch).
+  const handleAskAboutHint = () => {
+    const focus = hintFocusContext(hintLevel, renderedHintCopy);
+    if (!focus) return;
+    setChatFocus({ hintFocus: focus });
+    requestChatOpen();
+  };
 
   return (
     <div className="game-page">
@@ -1854,8 +1920,17 @@ export function GamePage() {
                       renders; confirm/retract are never blocked on it). */}
                   {verdict?.threat && (verdict.tier === "nudge" || verdict.tier === "warning") && (
                     <span className="hint-block">
-                      {hintLevel > 0 && hintCtx && (
-                        <span className="hint-copy">{hintCopy(hintLevel, hintCtx)}</span>
+                      {renderedHintCopy && <span className="hint-copy">{renderedHintCopy}</span>}
+                      {/* Increment 3.95, Task 7: "ask about this" — only once
+                          there's an actual rendered hint to ask about. */}
+                      {renderedHintCopy && (
+                        <button
+                          type="button"
+                          className="small hint-ask-btn"
+                          onClick={handleAskAboutHint}
+                        >
+                          ask about this
+                        </button>
                       )}
                       {hintLevel < 5 && (
                         <button
@@ -2003,6 +2078,7 @@ export function GamePage() {
                 }
                 onTryLine={openExplore}
                 onExitExplore={exitExplore}
+                onAskAboutTurningPoint={handleAskAboutTurningPoint}
               />
             ) : null
           }
@@ -2025,6 +2101,7 @@ export function GamePage() {
           exploring={explore ? { thinking: exploreThinking, over: explore.over, ply: exploreSourcePly } : null}
           onTryLine={openExplore}
           onExitExplore={exitExplore}
+          onAskAboutTurningPoint={handleAskAboutTurningPoint}
         />
       )}
       <PastGamesDrawer open={pastGamesOpen} games={pastGames} onSelect={selectPastGame} onClose={closePastGames} />
@@ -2039,6 +2116,7 @@ export function GamePage() {
         buildContext={buildChatContext}
         hidden={chatHidden}
         backendPref={coachBackend}
+        openSignal={chatOpenSignal}
       />
     </div>
   );

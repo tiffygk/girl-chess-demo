@@ -102,6 +102,60 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
+  // Task 7 (increment 3.95, "ask about this" chat): the focused turning
+  // point's best line fold. Before this fold, a turning point's own
+  // san/punishSan were allowed (folded above from the turningPoints list)
+  // but its BEST line was not -- so a reply naming the better move would
+  // wrongly redirect even though the card the player asked about displays
+  // that exact line. ctx.turningPointFocus is the one piece that changes
+  // this; everything else about validateChat (geography-free squares,
+  // strict SAN) stays exactly as (d)/lowercase-normalization above exercise.
+  describe("assembleChatFactList — turningPointFocus folds bestSan/pvSans into allowedSans (Task 7)", () => {
+    it("a reply naming the focused best line passes validation instead of redirecting", () => {
+      const facts = assembleChatFactList(
+        [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }, { ply: 3, san: "Bc4" }],
+        {
+          mode: "review",
+          turningPointFocus: {
+            ply: 3,
+            san: "Bc4",
+            label: "inaccuracy",
+            bestSan: "Nf3",
+            pvSans: ["Nf3", "Nc6", "Bb5"],
+          },
+        }
+      );
+      expect(facts.allowedSans).toContain("Nf3");
+      expect(facts.allowedSans).toContain("Nc6");
+      expect(facts.allowedSans).toContain("Bb5");
+
+      const reply = "nf3 would have been stronger here, developing toward the center first.";
+      expect(validateChat(reply, facts)).toEqual({ ok: true });
+    });
+
+    it("a reply naming an UNfocused/illegal san still redirects (the fold doesn't open the gate wide)", () => {
+      const facts = assembleChatFactList(
+        [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }, { ply: 3, san: "Bc4" }],
+        {
+          mode: "review",
+          turningPointFocus: {
+            ply: 3,
+            san: "Bc4",
+            label: "inaccuracy",
+            bestSan: "Nf3",
+            pvSans: ["Nf3", "Nc6", "Bb5"],
+          },
+        }
+      );
+      expect(facts.allowedSans).not.toContain("Qxh7");
+
+      const reply = "qxh7 wins the game right now.";
+      const result = validateChat(reply, facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations).toContain("qxh7");
+    });
+  });
+
   // (d)
   describe("validateChat — declared cut #2 (geography is unverifiable by design)", () => {
     it("fluent off-topic prose with no square- or san-shaped tokens passes validation — chat polices only move-shaped tokens against the fact list, never topical relevance", () => {
@@ -130,6 +184,33 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(facts.legalSans).toContain("Nc6");
       const result = validateChat("nc6 develops your knight nicely.", facts);
       expect(result).toEqual({ ok: true });
+    });
+  });
+
+  // Task 7 (increment 3.95): the hint focus threads the hint level + text
+  // into the fact JSON the model prompt is built from (buildChatPrompt ->
+  // factsForModel is private, so this asserts against the actual prompt
+  // string chat() sends the backend, the same way test (f)'s history-window
+  // assertion below inspects capturedPrompt).
+  describe("chat() — hintFocus threads into the prompt (Task 7)", () => {
+    it("the prompt's fact JSON carries the hint's level and rendered text", async () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], {
+        mode: "live",
+        hintFocus: { level: 3, text: "her knight to f6 opens the door. her bishop takes your rook on d5." },
+      });
+      let capturedPrompt = "";
+      const backend = fakeBackend(async (prompt) => {
+        capturedPrompt = prompt;
+        return "e4 is a fine start for you.";
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      await chat("why is this hint going here?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+      expect(capturedPrompt).toContain('"hintFocus"');
+      expect(capturedPrompt).toContain('"level": 3');
+      expect(capturedPrompt).toContain("her knight to f6 opens the door. her bishop takes your rook on d5.");
     });
   });
 

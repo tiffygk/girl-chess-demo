@@ -1374,6 +1374,22 @@
 .gc-app button.small.chat-opener-btn:hover { box-shadow: 0 5px 0 #A99AE0, 0 8px 14px rgba(120,95,200,.35); }
 .gc-app button.small.chat-opener-btn:active { box-shadow: 0 1px 0 #A99AE0, 0 4px 8px rgba(120,95,200,.25); }
 
+/* Increment 3.95, Task 7 ("ask about this"): the two per-moment chat entry
+   points — a turning-point card's own button, and the open hint ladder's —
+   reuse .chat-opener-btn's exact lavender recipe verbatim rather than
+   auditioning a new tint, since both are the same "open the coach chat"
+   action as that button, just pre-scoped to a moment. No new hex. */
+.gc-app button.small.debrief-ask-btn,
+.gc-app button.small.hint-ask-btn {
+  align-self: flex-start;
+  background: #C9B8FF; color: #4A3B7E;
+  box-shadow: 0 3px 0 #A99AE0, 0 6px 10px rgba(120,95,200,.3);
+}
+.gc-app button.small.debrief-ask-btn:hover,
+.gc-app button.small.hint-ask-btn:hover { box-shadow: 0 5px 0 #A99AE0, 0 8px 14px rgba(120,95,200,.35); }
+.gc-app button.small.debrief-ask-btn:active,
+.gc-app button.small.hint-ask-btn:active { box-shadow: 0 1px 0 #A99AE0, 0 4px 8px rgba(120,95,200,.25); }
+
 /* drawer: same centered-overlay anatomy as .past-games-overlay/-drawer —
    the app's one "drawer" pattern, reused rather than a second one invented
    for this surface. New class names since it's a distinct feature. */
