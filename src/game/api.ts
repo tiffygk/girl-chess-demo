@@ -295,6 +295,18 @@ export interface ChatContext {
   threat?: ThreatFacts;
   best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
   recommendation?: RecommendationFacts;
+  // Task 7 (increment 3.95, "ask about this"): mirrors server/coach/chat.ts's
+  // ChatContext additions verbatim -- see chatFocus.ts for the pure focus ->
+  // context mapping that populates these two fields.
+  hintFocus?: { level: number; text: string };
+  turningPointFocus?: {
+    ply: number;
+    san: string;
+    label: string;
+    punishSan?: string;
+    bestSan?: string;
+    pvSans?: string[];
+  };
 }
 
 // Mirrors manager.ts's chat() return envelope (ok:true text/source/cause?/

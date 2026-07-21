@@ -145,15 +145,23 @@ export interface CoachChatProps {
   // localStorage-synced settings-popover state; this component has no
   // opinion of its own, it just forwards whatever it's given on every send.
   backendPref: string;
+  // Increment 3.95, Task 7 ("ask about this"): an incrementing token GamePage
+  // bumps to force this already-mounted drawer open from an external click
+  // (a hint's "ask about this", or a turning-point card's) — the normal
+  // "chat with the coach" opener button stays the only OTHER way to open it.
+  // Optional/undefined is a no-op (no external opener wired), so every other
+  // caller of this component is unaffected.
+  openSignal?: number;
 }
 
-export function CoachChat({ gameId, mode, buildContext, hidden, backendPref }: CoachChatProps) {
+export function CoachChat({ gameId, mode, buildContext, hidden, backendPref, openSignal }: CoachChatProps) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatBubble[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const requestTokenRef = useRef(0);
+  const openSignalRef = useRef(openSignal);
 
   // "component chat state resets when the viewed game id changes (server
   // owns durable history)" — the visible thread is per-view only; switching
@@ -171,6 +179,17 @@ export function CoachChat({ gameId, mode, buildContext, hidden, backendPref }: C
     if (!listRef.current) return;
     listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, pending, open]);
+
+  // Task 7: an "ask about this" click bumps openSignal — this only reacts to
+  // a genuine CHANGE (the ref, not a dependency-array staleness check, is
+  // what makes the first render a no-op even though openSignal starts at a
+  // real number rather than undefined).
+  useEffect(() => {
+    if (openSignal !== undefined && openSignal !== openSignalRef.current) {
+      openSignalRef.current = openSignal;
+      setOpen(true);
+    }
+  }, [openSignal]);
 
   // Single in-flight request (panel A11): send is disabled while pending is
   // true, and this guard is the belt to that button's suspenders — Enter

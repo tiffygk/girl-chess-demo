@@ -77,6 +77,11 @@ interface TurningPointCardProps {
   // so a second card can't be clicked out from under the live board.
   onTryLine: (ply: number) => void;
   exploring: boolean;
+  // Increment 3.95, Task 7 ("ask about this" chat): opens the single
+  // always-mounted CoachChat scoped to THIS card — GamePage looks up the
+  // matching TurningLine itself (it already holds turningLines), so this
+  // component only ever hands back the point, never a pre-built context.
+  onAskAboutThis: (point: TurningPoint) => void;
 }
 
 function TurningPointCard({
@@ -88,6 +93,7 @@ function TurningPointCard({
   active,
   onTryLine,
   exploring,
+  onAskAboutThis,
 }: TurningPointCardProps) {
   // debrief-v2: an episode card is a warning-class fact by construction (a
   // sustained king-pressure run), so it always gets the magenta tint —
@@ -115,6 +121,13 @@ function TurningPointCard({
       </button>
       <button className="small debrief-tryline-btn" disabled={exploring} onClick={() => onTryLine(point.ply)}>
         try the line
+      </button>
+      <button
+        className="small debrief-ask-btn"
+        disabled={exploring}
+        onClick={() => onAskAboutThis(point)}
+      >
+        ask about this
       </button>
       {note && (
         <>
@@ -237,6 +250,9 @@ export interface DebriefPageProps {
   exploring: { thinking: boolean; over: boolean; ply: number | null } | null;
   onTryLine: (ply: number) => void;
   onExitExplore: () => void;
+  // Increment 3.95, Task 7: threaded straight through to every
+  // TurningPointCard — see that prop's own comment.
+  onAskAboutTurningPoint: (point: TurningPoint) => void;
 }
 
 export function DebriefPage({
@@ -255,6 +271,7 @@ export function DebriefPage({
   exploring,
   onTryLine,
   onExitExplore,
+  onAskAboutTurningPoint,
 }: DebriefPageProps) {
   const bullets = debriefBullets({
     turningPoints,
@@ -316,6 +333,7 @@ export function DebriefPage({
               active={rewindPly === point.ply}
               onTryLine={onTryLine}
               exploring={!!exploring}
+              onAskAboutThis={onAskAboutTurningPoint}
             />
           ))}
         </div>

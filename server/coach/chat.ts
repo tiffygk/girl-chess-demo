@@ -25,6 +25,24 @@ export interface ChatContext {
   threat?: ThreatFacts;
   best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
   recommendation?: RecommendationFacts;
+  // Task 7 (increment 3.95, "ask about this"): the two per-moment focus
+  // fields. GamePage sets at most one of these per message -- hintFocus when
+  // the player opened chat from the open hint ladder, turningPointFocus when
+  // they opened it from a debrief turning-point card -- so the coach's reply
+  // can ground itself in THAT moment instead of the whole game/position.
+  hintFocus?: { level: number; text: string };
+  turningPointFocus?: {
+    ply: number;
+    san: string;
+    label: string;
+    punishSan?: string;
+    // bestSan/pvSans: the card's own TurningLine (server/game/manager.ts's
+    // getTurningLines), threaded through so assembleChatFactList below can
+    // fold them into allowedSans -- see that fold's comment for why this is
+    // the one piece that actually changes what the coach is allowed to say.
+    bestSan?: string;
+    pvSans?: string[];
+  };
 }
 
 export interface ChatFactList {
@@ -90,6 +108,16 @@ export function assembleChatFactList(
     sans.add(t.san);
     if (t.punishSan) sans.add(t.punishSan);
   }
+  // Task 7 fold: the turningPoints list above only ever carries a turning
+  // point's OWN san/punishSan (the debrief's persisted facts) -- never the
+  // best line, so a player asking "what should you have played instead" at
+  // a focused card would previously get a redirect even though the card
+  // itself displays that exact line (GamePage's turningLines fetch). Folding
+  // ctx.turningPointFocus's bestSan + pvSans in here is the one change that
+  // lets the coach legally NAME it. Geography-free-squares + strict-SAN
+  // validation in validateChat below is untouched by this fold.
+  if (ctx.turningPointFocus?.bestSan) sans.add(ctx.turningPointFocus.bestSan);
+  for (const s of ctx.turningPointFocus?.pvSans ?? []) sans.add(s);
 
   return {
     gameSans,
