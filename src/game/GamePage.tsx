@@ -27,7 +27,7 @@ import {
   type TurningPoint,
 } from "./api";
 import { CoachChat, ThumbRating } from "./CoachChat";
-import { hintFocusContext, turningPointFocusContext } from "./chatFocus";
+import { hintFocusContext, turningPointFocusContext, reconcileChatFocus } from "./chatFocus";
 import { describeMove, type MoveRender } from "./describeMove";
 import { victimKind, materialDiff, rollbackCapture, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
@@ -861,6 +861,12 @@ export function GamePage() {
       setCoachTraceId(null);
       setCoachLoading(false);
       narratedTokenRef.current = null;
+      // Reviewer fix (Task 7 follow-up, tidiness): a fresh pending move is a
+      // fresh moment — buildChatContext's reconcileChatFocus guard is what
+      // actually prevents a stale hintFocus from leaking into a message, but
+      // clearing it here too means the drawer's next context is never even
+      // built from a focus that's about to be invalidated.
+      setChatFocus({});
 
       if (!withJudge) {
         // confirm-only: pure two-step, zero /judge calls, no indicator.
@@ -918,6 +924,9 @@ export function GamePage() {
     setCoachTraceId(null);
     setCoachLoading(false);
     narratedTokenRef.current = null;
+    // Reviewer fix (Task 7 follow-up, tidiness): see handlePendingStart's
+    // comment above — a confirmed move ends this moment.
+    setChatFocus({});
     handleMove(from, to, overrideVerdict);
   }, [pending, verdict, handleMove]);
 
@@ -936,6 +945,9 @@ export function GamePage() {
     setCoachTraceId(null);
     setCoachLoading(false);
     narratedTokenRef.current = null;
+    // Reviewer fix (Task 7 follow-up, tidiness): see handlePendingStart's
+    // comment above — a retracted move ends this moment too.
+    setChatFocus({});
   }, []);
 
   // Wave C, tasks 5-6 (owner): "if I hit Enter on the keyboard... I'm not
@@ -1313,8 +1325,31 @@ export function GamePage() {
   // there's no "fires once per pending move" concern the narrate effect has.
   // Task 7 adds chatFocus's fields on top of either branch's own facts —
   // a focused hint/turning-point can be asked about in either mode.
+  //
+  // Reviewer fix (Task 7 follow-up): chatFocus is only cleared at full
+  // game/review-switch boundaries, not at the finer ones where the on-screen
+  // MOMENT changes (a new pending move resets and re-climbs the hint ladder;
+  // a different turning-point card gets replayed) — so a message could still
+  // carry a focus for a moment that's no longer on screen. Rather than
+  // relying on every state-transition handler to remember to clear it, this
+  // recomputes the CURRENT hint text fresh (exactly the same herPieceKind/
+  // herToSquare/threat/bestFacts/fen -> hintCopy path the visible hint-copy
+  // span uses) and runs reconcileChatFocus every send — a focus survives
+  // only if it still matches what's actually on screen right now.
   const buildChatContext = useCallback((): ChatContext => {
-    if (reviewGame) return { mode: "review", ...chatFocus };
+    const liveHintCtx: HintCopyCtx | null = pending
+      ? {
+          herPieceKind: mirrorRef.current.get(pending.from as Square)?.type ?? "piece",
+          herToSquare: pending.to,
+          threat: verdict?.threat,
+          bestFacts: hintFacts ?? undefined,
+          fen,
+        }
+      : null;
+    const currentHintText = hintLevel > 0 && liveHintCtx ? hintCopy(hintLevel, liveHintCtx) : null;
+    const focus = reconcileChatFocus(chatFocus, { hintLevel, renderedHintText: currentHintText, rewindPly });
+
+    if (reviewGame) return { mode: "review", ...focus };
     if (pending && verdict && verdict.tier !== "silent") {
       const herPieceKind = mirrorRef.current.get(pending.from as Square)?.type ?? "piece";
       return {
@@ -1332,11 +1367,11 @@ export function GamePage() {
             }
           : undefined,
         recommendation: hintFacts?.recommendation,
-        ...chatFocus,
+        ...focus,
       };
     }
-    return { mode: "live", ...chatFocus };
-  }, [reviewGame, pending, verdict, hintFacts, chatFocus]);
+    return { mode: "live", ...focus };
+  }, [reviewGame, pending, verdict, hintFacts, chatFocus, hintLevel, fen, rewindPly]);
 
   // Increment 3.95, Task 7: a debrief turning-point card's own "ask about
   // this" — looks up the matching TurningLine itself (turningLines is
@@ -1393,6 +1428,13 @@ export function GamePage() {
       }
       setReviewArrows(arrows);
       setReviewHighlights(arrowsToHighlights(arrows));
+      // Reviewer fix (Task 7 follow-up, tidiness): replaying ANY card (the
+      // same one again, or a different one) is a new "moment" — see
+      // handlePendingStart's comment above; buildChatContext's
+      // reconcileChatFocus guard is what actually prevents a mismatched
+      // turningPointFocus from leaking (see there), this just means the
+      // drawer isn't still holding a soon-to-be-invalidated one around.
+      setChatFocus({});
     },
     [activeReviewMoves, turningLines]
   );

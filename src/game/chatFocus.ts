@@ -46,3 +46,55 @@ export function turningPointFocusContext(
     pvSans: line?.pvSans,
   };
 }
+
+/**
+ * Reviewer fix (increment 3.95, Task 7 follow-up): `chatFocus` state in
+ * GamePage is only cleared at full game/review-switch boundaries, not at the
+ * finer ones where the on-screen MOMENT itself changes (a new pending move
+ * resets the hint ladder to level 0 then climbs it again; a different
+ * turning-point card gets replayed). Between those, a message could still
+ * carry a focus that no longer matches what's actually on screen -- real
+ * content, wrong moment.
+ *
+ * This is the load-bearing, self-correcting guard: called fresh every time
+ * buildChatContext runs (i.e. every send), it drops a focus that doesn't
+ * match the CURRENT state rather than relying on every state-transition
+ * handler remembering to clear it.
+ *
+ * - hintFocus survives only if a hint is actually showing right now
+ *   (current.hintLevel > 0) AND both the level and the exact rendered text
+ *   still match -- comparing the live re-rendered hintCopy output (not a
+ *   remembered position id) means a level that happens to match a stale
+ *   focus's level, but on a different pending move with different threat
+ *   facts, still gets caught (the text won't match).
+ * - turningPointFocus survives only if its own ply equals the ply currently
+ *   being looked at (current.rewindPly) -- rewindPly is null while no
+ *   turning point is being replayed, which drops the focus too.
+ */
+export function reconcileChatFocus(
+  focus: Pick<ChatContext, "hintFocus" | "turningPointFocus">,
+  current: {
+    hintLevel: number;
+    renderedHintText: string | null | undefined;
+    rewindPly: number | null;
+  }
+): Pick<ChatContext, "hintFocus" | "turningPointFocus"> {
+  const result: Pick<ChatContext, "hintFocus" | "turningPointFocus"> = {};
+
+  const hf = focus.hintFocus;
+  if (
+    hf &&
+    current.hintLevel > 0 &&
+    hf.level === current.hintLevel &&
+    hf.text === current.renderedHintText
+  ) {
+    result.hintFocus = hf;
+  }
+
+  const tf = focus.turningPointFocus;
+  if (tf && current.rewindPly != null && tf.ply === current.rewindPly) {
+    result.turningPointFocus = tf;
+  }
+
+  return result;
+}

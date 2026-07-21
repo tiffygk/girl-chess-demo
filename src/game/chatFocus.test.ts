@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hintFocusContext, turningPointFocusContext } from "./chatFocus";
+import { hintFocusContext, turningPointFocusContext, reconcileChatFocus } from "./chatFocus";
 
 describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", () => {
   describe("hintFocusContext", () => {
@@ -48,6 +48,69 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
         bestSan: undefined,
         pvSans: undefined,
       });
+    });
+  });
+
+  // Reviewer fix (Task 7 follow-up): the stale-focus guard. buildChatContext
+  // calls this fresh on every send, dropping a focus that no longer matches
+  // what's actually on screen rather than trusting a remembered state.
+  describe("reconcileChatFocus (stale-focus guard)", () => {
+    const hintFocus = { level: 3, text: "her knight to f6 opens the door." };
+
+    it("keeps a hintFocus whose level AND text match the currently-rendered hint", () => {
+      const result = reconcileChatFocus(
+        { hintFocus },
+        { hintLevel: 3, renderedHintText: "her knight to f6 opens the door.", rewindPly: null }
+      );
+      expect(result).toEqual({ hintFocus });
+    });
+
+    it("drops a hintFocus once the hint ladder has reset to level 0 (e.g. a new pending move started)", () => {
+      const result = reconcileChatFocus(
+        { hintFocus },
+        { hintLevel: 0, renderedHintText: null, rewindPly: null }
+      );
+      expect(result).toEqual({});
+    });
+
+    it("drops a hintFocus when the level coincidentally matches but the rendered text has moved on (a different pending move reached the same ladder rung)", () => {
+      const result = reconcileChatFocus(
+        { hintFocus },
+        { hintLevel: 3, renderedHintText: "this loses ground. nothing hangs, but the position gets worse.", rewindPly: null }
+      );
+      expect(result).toEqual({});
+    });
+
+    it("keeps a turningPointFocus whose ply equals the current rewindPly", () => {
+      const turningPointFocus = { ply: 15, san: "O-O", label: "blunder" };
+      const result = reconcileChatFocus(
+        { turningPointFocus },
+        { hintLevel: 0, renderedHintText: null, rewindPly: 15 }
+      );
+      expect(result).toEqual({ turningPointFocus });
+    });
+
+    it("drops a turningPointFocus once a DIFFERENT card is being replayed (rewindPly points elsewhere)", () => {
+      const turningPointFocus = { ply: 15, san: "O-O", label: "blunder" };
+      const result = reconcileChatFocus(
+        { turningPointFocus },
+        { hintLevel: 0, renderedHintText: null, rewindPly: 14 }
+      );
+      expect(result).toEqual({});
+    });
+
+    it("drops a turningPointFocus once nothing is being replayed at all (rewindPly back to null)", () => {
+      const turningPointFocus = { ply: 15, san: "O-O", label: "blunder" };
+      const result = reconcileChatFocus(
+        { turningPointFocus },
+        { hintLevel: 0, renderedHintText: null, rewindPly: null }
+      );
+      expect(result).toEqual({});
+    });
+
+    it("passes both fields through independently when neither is set (no focus active)", () => {
+      const result = reconcileChatFocus({}, { hintLevel: 0, renderedHintText: null, rewindPly: null });
+      expect(result).toEqual({});
     });
   });
 });
