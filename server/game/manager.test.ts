@@ -728,6 +728,68 @@ describe("GameManager", () => {
     expect(getTurningPointsAllVersions(g).length).toBe(allVersions.length);
   });
 
+  // Task 11 fix 2 (.superpowers/sdd/rounds/2026-07-20-inc-3.95/task-11-brief.md):
+  // on-read historical backfill. A finished game that has NEVER had
+  // turning_points computed (zero rows — not just a stale version, the case
+  // the healing test above covers) used to compute-and-return without ever
+  // persisting, so it kept showing "no clear lesson yet" forever. getSummary
+  // must now persist on first read, using STORED evals only (the moves table,
+  // never the live evaluator queue), strictly additively and idempotently.
+  describe("getSummary — on-read historical backfill (task 11 fix 2)", () => {
+    it("backfills turning_points for a finished game with zero persisted rows, and a second read inserts nothing", () => {
+      const g = createGame(sessionId, "maia-1100");
+      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
+      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      attachEval(g, 2, { cp: 900, mate: null, bestMove: "e7e5", pv: ["e7e5"] }); // dramatic swing, always clears TP_FLOOR
+      finishGame(g, "1-0");
+      expect(getTurningPointsAllVersions(g)).toHaveLength(0); // nothing persisted at all yet
+
+      const summary = gm.getSummary(g);
+      expect(summary.ok).toBe(true);
+      expect(summary.turningPoints.length).toBeGreaterThan(0);
+
+      const afterFirstRead = getTurningPointsAllVersions(g);
+      expect(afterFirstRead.length).toBeGreaterThan(0);
+      expect(afterFirstRead.every((r: any) => r.algo_version === TP_ALGO_VERSION)).toBe(true);
+
+      // Idempotent: a second read doesn't insert another row set.
+      gm.getSummary(g);
+      expect(getTurningPointsAllVersions(g).length).toBe(afterFirstRead.length);
+    });
+
+    it("leaves a game already persisted at the current algo version untouched", () => {
+      const g = createGame(sessionId, "maia-1100");
+      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
+      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      attachEval(g, 2, { cp: 900, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+      finishGame(g, "1-0");
+      insertTurningPoints(
+        g,
+        [{ rank: 1, ply: 2, san: "e5", label: "opponent blunder", deltaP: 0.9, lowConfidence: false, kind: "swing" }],
+        TP_ALGO_VERSION
+      );
+      expect(getTurningPointsAllVersions(g)).toHaveLength(1);
+
+      gm.getSummary(g);
+      expect(getTurningPointsAllVersions(g)).toHaveLength(1); // no second row set added
+    });
+
+    it("never persists for a finished game with no stored evals at all (graceful no-op)", () => {
+      const g = createGame(sessionId, "maia-1100");
+      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      // No attachEval calls — eval_cp/eval_mate stay NULL for both plies.
+      finishGame(g, "1-0");
+
+      const summary = gm.getSummary(g);
+      expect(summary.ok).toBe(true);
+      expect(summary.turningPoints).toEqual([]);
+      expect(getTurningPointsAllVersions(g)).toHaveLength(0);
+    });
+  });
+
   // Increment 3.91, Task 2 (PV linchpin fix): turning-lines endpoint.
   // Additive read only — built directly against the db accessors (same
   // pattern as the healing test above) so this stays fast and

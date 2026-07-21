@@ -9,6 +9,10 @@ import {
   EP_QUEEN_DIST,
   EP_PIECE_DIST,
   EP_SHELTER_RANKS,
+  TP_HOLD_THRESHOLD,
+  TP_HOLD_PLIES,
+  TP_K,
+  winProb,
   type MoveEval,
 } from "./turningPoints";
 
@@ -234,6 +238,69 @@ describe("computeTurningPoints — low-confidence null gap", () => {
     expect(tps.length).toBeGreaterThan(0);
     const point = tps.find((t) => t.ply === 5);
     expect(point?.lowConfidence).toBe(true);
+  });
+});
+
+// Task 11 fix 1 (.superpowers/sdd/rounds/2026-07-20-inc-3.95/task-11-brief.md):
+// the honest-backfill branch (computeTurningPoints' "the clincher"/"the
+// losing move" fallback, fired when fewer than 3 real swings qualified) used
+// to key on a single-ply touch of the winning/losing side of 0.5 — a
+// 3b-review LOW. It now requires the win-prob to HOLD >= TP_HOLD_THRESHOLD
+// across a TP_HOLD_PLIES-ply window before it counts. Fixtures below never
+// let any single-ply |Δp| clear TP_FLOOR (0.08), so no "swing" candidate is
+// ever produced — the ONLY way a turning point can appear at all is via this
+// backfill path, isolating exactly the behavior under test. `cpForP` inverts
+// winProb so each ply's target white-perspective win-prob can be dialed in
+// directly; `mv` converts that target into the correctly-signed evalCp for
+// whichever side is on move that ply (buildDeltaSeries negates odd/white
+// plies — see its own header comment).
+function cpForP(p: number): number {
+  return Math.log(p / (1 - p)) / TP_K;
+}
+function mv(ply: number, san: string, targetWhiteCp: number): MoveEval {
+  const isWhitePly = ply % 2 === 1;
+  return { ply, san, evalCp: Math.round(isWhitePly ? -targetWhiteCp : targetWhiteCp), evalMate: null };
+}
+
+describe("computeTurningPoints — backfill requires the hold, not a touch (task 11 fix 1)", () => {
+  it("TP_HOLD_THRESHOLD is 0.90 and TP_HOLD_PLIES is 2 (owner-calibratable defaults)", () => {
+    expect(TP_HOLD_THRESHOLD).toBe(0.9);
+    expect(TP_HOLD_PLIES).toBe(2);
+  });
+
+  it("a single-ply touch of >= .90 that immediately retreats does NOT backfill", () => {
+    // Gradual climb (each step well under TP_FLOOR) to p=.91 at ply 8, then
+    // retreats to .89 and stays there — touches the threshold for exactly
+    // one ply, never holds it for the TP_HOLD_PLIES window.
+    const targetPs = [0.5, 0.56, 0.62, 0.68, 0.74, 0.8, 0.86, 0.91, 0.89, 0.89, 0.89];
+    const moves = targetPs.map((p, i) => mv(i + 1, `m${i + 1}`, cpForP(p)));
+
+    expect(winProb(cpForP(0.91))).toBeGreaterThanOrEqual(TP_HOLD_THRESHOLD);
+    expect(winProb(cpForP(0.89))).toBeLessThan(TP_HOLD_THRESHOLD);
+
+    const tps = computeTurningPoints(moves, "1-0");
+    expect(tps).toEqual([]); // no real swing cleared the floor, and the touch didn't hold
+    expect(tps.some((t) => t.label === "the clincher")).toBe(false);
+  });
+
+  it("a climb that crosses >= .90 and HOLDS across the window DOES backfill, at the exact ply the hold begins", () => {
+    // Same climb, but ply 8 (.91) and ply 9 (.93) both clear the threshold —
+    // a genuine TP_HOLD_PLIES-ply hold starting at ply 8.
+    const targetPs = [0.5, 0.56, 0.62, 0.68, 0.74, 0.8, 0.86, 0.91, 0.93];
+    const moves = targetPs.map((p, i) => mv(i + 1, `m${i + 1}`, cpForP(p)));
+
+    const tps = computeTurningPoints(moves, "1-0");
+    expect(tps).toHaveLength(1);
+    expect(tps[0]).toMatchObject({ ply: 8, label: "the clincher", kind: "backfill" });
+  });
+
+  it("symmetric case for the losing side: hold below (1 - TP_HOLD_THRESHOLD) backfills as 'the losing move'", () => {
+    const targetPs = [0.5, 0.44, 0.38, 0.32, 0.26, 0.2, 0.14, 0.09, 0.07];
+    const moves = targetPs.map((p, i) => mv(i + 1, `m${i + 1}`, cpForP(p)));
+
+    const tps = computeTurningPoints(moves, "0-1");
+    expect(tps).toHaveLength(1);
+    expect(tps[0]).toMatchObject({ ply: 8, label: "the losing move", kind: "backfill" });
   });
 });
 

@@ -68,6 +68,23 @@ export const TP_FLOOR = 0.08;
 // (the same "2" both places).
 export const TP_DEDUP_PLIES = 2;
 
+// Task 11 fix 1: the honest-backfill branch below (fired only when fewer
+// than 3 real swings qualified) surfaces a turning point for a game that
+// trended inexorably toward a win/loss without any single ply's jump ever
+// being dramatic enough to clear TP_FLOOR. It used to key on a single-ply
+// touch of the winning/losing side of 0.5 — a 3b-review LOW, since a
+// fleeting one-ply crossing is noisy and not a genuine "this became clearly
+// winning/losing" moment. It now requires the win-prob to HOLD >=
+// TP_HOLD_THRESHOLD (for the side that won) or <= 1 - TP_HOLD_THRESHOLD (for
+// the side that lost) across a TP_HOLD_PLIES-ply window before it counts.
+// Owner-calibratable.
+export const TP_HOLD_THRESHOLD = 0.9;
+// Owner-calibratable: the hold window length, in plies (checked against
+// consecutive entries of the winprob delta series, indexed the same as
+// `moves` — a null-eval ply inside the window breaks the hold, since there's
+// no reading to confirm the win-prob actually stayed up).
+export const TP_HOLD_PLIES = 2;
+
 // Shared label-band boundaries (her moves AND opponent moves use the same
 // numeric tiers per the ruling's vocabulary line) — exported so
 // classifications.ts imports the same numbers rather than re-declaring them.
@@ -491,18 +508,29 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
         kind: "backfill",
       };
     } else {
-      for (const d of series) {
+      // Task 11 fix 1: scan the raw series (indexed the same as `moves`,
+      // one slot per ply — NOT the null-skipping candidate list) for the
+      // first ply whose win-prob crosses the threshold AND holds there for
+      // the next TP_HOLD_PLIES-1 plies. A null-eval ply anywhere inside the
+      // window breaks the hold (never claim it "held" without a reading to
+      // confirm it).
+      for (let i = 0; i < series.length; i++) {
+        const d = series[i];
         if (!d) continue;
-        const mv = moves[d.idx];
-        if (mv.evalMate == null) continue;
-        if (sheWon && d.p > 0.5) {
-          backfill = { ...d, label: "the clincher", kind: "backfill" };
-          break;
+        const crosses = sheWon ? d.p >= TP_HOLD_THRESHOLD : sheLost ? d.p <= 1 - TP_HOLD_THRESHOLD : false;
+        if (!crosses) continue;
+
+        let holds = true;
+        for (let j = i + 1; j < i + TP_HOLD_PLIES; j++) {
+          const w = j < series.length ? series[j] : null;
+          if (!w) { holds = false; break; }
+          const stillCrosses = sheWon ? w.p >= TP_HOLD_THRESHOLD : w.p <= 1 - TP_HOLD_THRESHOLD;
+          if (!stillCrosses) { holds = false; break; }
         }
-        if (sheLost && d.p < 0.5) {
-          backfill = { ...d, label: "the losing move", kind: "backfill" };
-          break;
-        }
+        if (!holds) continue;
+
+        backfill = { ...d, label: sheWon ? "the clincher" : "the losing move", kind: "backfill" };
+        break;
       }
     }
 

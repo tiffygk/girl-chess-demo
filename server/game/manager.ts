@@ -265,14 +265,47 @@ export class GameManager {
       };
     }
 
-    // Compute-on-read fallback (old games with no persisted rows at all —
-    // evals hadn't attached at persist time; nothing to heal here since
-    // there's no prior row set to be stale).
+    // Task 11 fix 2: on-read historical backfill. A finished game with ZERO
+    // persisted turning_points rows at all (predates increment 3b entirely,
+    // or evals hadn't attached by persist time) used to only compute here
+    // and hand the result back without ever writing it down — every future
+    // read recomputed from scratch and the game kept showing "no clear
+    // lesson yet" forever.
+    //
+    // DATA-RULE GUARD: strictly additive + idempotent — insertTurningPoints'
+    // own existence guard (keyed on (game_id, algo_version), see db.ts) is
+    // what makes a second read a no-op: it will find `persisted.length > 0`
+    // at the top of this function next time and return from the branch
+    // above without ever calling insert again, so there's no bookkeeping to
+    // duplicate here. STORED evals only: `evalMoves` comes from
+    // getGameMoves' already-persisted rows, never the live evaluator queue.
+    // Driven by this read, never a bulk pass — nothing outside getSummary
+    // triggers this.
+    //
+    // Only for FINISHED games (`game.result` set) — an in-progress game's
+    // evals are still trickling in via the async attachEval path, and
+    // persisting turning points as if final would fabricate data for a game
+    // that hasn't ended. A game with no stored evals at all naturally
+    // computes zero turning points (computeTurningPoints's all-null
+    // short-circuit), and the `computed.length > 0` guard below means
+    // nothing is ever written for it (graceful no-op).
     const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate }));
     const game = getGame(gameId);
+    const computed = computeTurningPoints(evalMoves, game?.result ?? "");
+    if (game?.result && computed.length > 0) {
+      insertTurningPoints(
+        gameId,
+        computed.map((t) => ({
+          rank: t.rank, ply: t.ply, san: t.san, label: t.label,
+          punishSan: t.punishSan ?? null, deltaP: t.deltaP, lowConfidence: t.lowConfidence, kind: t.kind,
+          plyEnd: t.plyEnd ?? null, missedPunish: t.missedPunish ?? false,
+        })),
+        TP_ALGO_VERSION
+      );
+    }
     return {
       ok: true,
-      turningPoints: computeTurningPoints(evalMoves, game?.result ?? ""),
+      turningPoints: computed,
       classifications: classifyMoves(evalMoves).filter((c): c is { ply: number; classification: string } => c != null),
       moves,
     };
