@@ -362,6 +362,33 @@ describe("recommendationClause", () => {
   });
 });
 
+// Task 6 (increment 3.95): a second recommendation fixture whose captured
+// piece is NOT a pawn, so its "wins the {piece}" claim can actually collide
+// with deriveOpportunity's own "wins the {piece}" wording (opportunity.ts's
+// MATERIAL_WIN_FLOOR excludes lone pawns, so a captures-pawn fixture like
+// capturesRec above can never collide with it - see the dedup test below).
+const capturesQueenRec: RecommendationFacts = {
+  accomplishment: "captures",
+  pieceKind: "r",
+  fromSquare: "d2",
+  toSquare: "d4",
+  san: "Rxd4",
+  capturesSquare: "d4",
+  capturedPieceKind: "q",
+};
+
+describe("recommendationClause trade override (Task 6)", () => {
+  it("trade: true overrides ANY accomplishment with honest trade wording, not a clean-win claim", () => {
+    expect(recommendationClause(capturesRec, true)).toBe("this trades, but it's the strongest here.");
+  });
+  it("trade: false behaves exactly as before (no regression)", () => {
+    expect(recommendationClause(capturesRec, false)).toBe("it wins the pawn on b5.");
+  });
+  it("omitted trade arg behaves exactly as before (no regression, existing single-arg callers)", () => {
+    expect(recommendationClause(capturesRec)).toBe("it wins the pawn on b5.");
+  });
+});
+
 describe("hintCopy level 1: vague nudge, her piece", () => {
   it("exact string", () => {
     expect(hintCopy(1, baseCtx)).toBe("hold on. look at your knight.");
@@ -471,6 +498,93 @@ describe("hintCopy levels 4-5: redirect to the recommended move", () => {
   });
 });
 
+// Task 6 (increment 3.95): enriches level 4 with the immediate why (reusing
+// recommendationClause), the "opens up" clause (reusing opportunity.ts's
+// deriveOpportunity on the hint's own pv), and honest trade wording. Every
+// fen/pv pair below is a real, independently-checkable chess position/line
+// (several reused verbatim from src/review/opportunity.test.ts's own
+// fixtures) - never a fabricated claim.
+describe("hintCopy level 4: enriched with immediate why + opens up + trade honesty (Task 6)", () => {
+  const bestFacts: HintFacts = {
+    bestPieceKind: "b",
+    bestFromSquare: "c1",
+    bestToSquare: "g5",
+    bestSan: "Bg5",
+    bestUci: "c1g5",
+  };
+
+  it("no recommendation, no pv: unchanged base copy (regression, matches the pre-Task-6 level 4 string)", () => {
+    expect(hintCopy(4, { ...baseCtx, bestFacts })).toBe("better: your bishop on c1");
+  });
+
+  it("includes the immediate why when a recommendation accomplishment is present", () => {
+    const facts: HintFacts = { ...bestFacts, recommendation: capturesRec };
+    expect(hintCopy(4, { ...baseCtx, bestFacts: facts })).toBe(
+      "better: your bishop on c1 it wins the pawn on b5."
+    );
+  });
+
+  it("includes the opens-up clause when the pv proves a player opportunity deeper in the line", () => {
+    // Back-rank mate fixture reused from opportunity.test.ts: white rook e1,
+    // black king g8 boxed in by its own pawns - Re8# (uci e1e8) is forced
+    // mate of black, independently verifiable, distinct from the immediate
+    // capture claim so both clauses carry real information.
+    const fen = "6k1/5ppp/8/8/8/8/8/4R2K w - - 0 1";
+    const facts: HintFacts = { ...bestFacts, recommendation: capturesRec, pv: ["e1e8"] };
+    expect(hintCopy(4, { ...baseCtx, bestFacts: facts, fen })).toBe(
+      "better: your bishop on c1 it wins the pawn on b5. and it leads to mate in 1."
+    );
+  });
+
+  it("omits the opens-up clause gracefully when the pv proves no honest opportunity for the player", () => {
+    // Adversarial fixture reused from opportunity.test.ts: the OPPONENT nets
+    // the material here (Bd3 Nxc2), so deriveOpportunity returns undefined -
+    // the L4 copy must degrade to just the immediate clause, never crash or
+    // print "undefined".
+    const fen = "4k3/8/8/8/1n6/8/2P5/4KB2 w - - 0 1";
+    const facts: HintFacts = { ...bestFacts, recommendation: capturesRec, pv: ["f1d3", "b4c2"] };
+    expect(hintCopy(4, { ...baseCtx, bestFacts: facts, fen })).toBe(
+      "better: your bishop on c1 it wins the pawn on b5."
+    );
+  });
+
+  it("dedupes the opens-up clause when it would just repeat the immediate capture claim", () => {
+    // White rook d2 wins the black queen on d4 outright (opportunity.test.ts
+    // fixture) - the SAME fact the immediate "captures" clause already
+    // states, so appending "and it wins the queen" would add no information.
+    const fen = "4k3/8/8/8/3q4/8/3R4/4K3 w - - 0 1";
+    const facts: HintFacts = { ...bestFacts, recommendation: capturesQueenRec, pv: ["d2d4"] };
+    expect(hintCopy(4, { ...baseCtx, bestFacts: facts, fen })).toBe(
+      "better: your bishop on c1 it wins the queen on d4."
+    );
+  });
+
+  it("trade: true overrides the immediate clause with honest trade wording, never a clean-win claim", () => {
+    const facts: HintFacts = { ...bestFacts, recommendation: capturesRec, trade: true };
+    const copy = hintCopy(4, { ...baseCtx, bestFacts: facts });
+    expect(copy).toBe("better: your bishop on c1 this trades, but it's the strongest here.");
+    expect(copy).not.toMatch(/wins the/);
+  });
+});
+
+describe("hintCopy level 5: trade honesty flows through the shared recommendationClause (Task 6)", () => {
+  it("level 5 states the trade honestly instead of implying a clean win", () => {
+    const bestFacts: HintFacts = {
+      bestPieceKind: "b",
+      bestFromSquare: "c1",
+      bestToSquare: "g5",
+      bestSan: "Bg5",
+      bestUci: "c1g5",
+      recommendation: capturesRec,
+      trade: true,
+    };
+    const fen = "4k3/8/8/8/8/8/8/2B1K3 w - - 0 1";
+    const copy = hintCopy(5, { ...baseCtx, bestFacts, fen });
+    expect(copy).toBe("best here: Bg5 (bishop to g5) this trades, but it's the strongest here.");
+    expect(copy).not.toMatch(/wins the/);
+  });
+});
+
 describe("hintCopy: no em-dashes or emojis at any level", () => {
   const bestFacts: HintFacts = {
     bestPieceKind: "b",
@@ -491,6 +605,23 @@ describe("hintCopy: no em-dashes or emojis at any level", () => {
       const copy = hintCopy(level, ctx)!;
       expect(copy).not.toMatch(/[—–]/);
     }
+  });
+
+  // Task 6 (increment 3.95): the enriched level 4 (immediate why + opens up +
+  // trade honesty) is new surface area for the em-dash/emoji/lowercase rule -
+  // cover it explicitly rather than trusting the plain-base case above.
+  it("the enriched level 4 copy (immediate why + opens up + trade) is clean and lowercase", () => {
+    const mateFen = "6k1/5ppp/8/8/8/8/8/4R2K w - - 0 1";
+    const enrichedFacts: HintFacts = { ...bestFacts, recommendation: capturesRec, pv: ["e1e8"] };
+    const enriched = hintCopy(4, { ...baseCtx, bestFacts: enrichedFacts, fen: mateFen })!;
+    expect(enriched).not.toMatch(/[—–]/);
+    expect(enriched).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
+    expect(enriched).toBe(enriched.toLowerCase());
+
+    const tradeFacts: HintFacts = { ...bestFacts, recommendation: capturesRec, trade: true };
+    const tradeCopy = hintCopy(4, { ...baseCtx, bestFacts: tradeFacts })!;
+    expect(tradeCopy).not.toMatch(/[—–]/);
+    expect(tradeCopy).toBe(tradeCopy.toLowerCase());
   });
 });
 
