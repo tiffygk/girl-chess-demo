@@ -6,7 +6,7 @@ import {
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
   insertVerdict,
 } from "../store/db";
-import { GameManager } from "./manager";
+import { GameManager, BACKEND_CACHE_TTL_MS } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
 // Task 5 reviewer fix: the "ollama unavailable" test below spies on this
 // module's own available() rather than pre-seeding pickCoachBackend's cache,
@@ -547,6 +547,143 @@ describe("GameManager", () => {
       const chatTrace = traces.find((t: any) => t.kind === "chat");
       expect(narrateTrace?.backend).toBe("claude-fake");
       expect(chatTrace?.backend).toBe("none");
+    }, 20000);
+  });
+
+  // Task 8 (inc 3.95): coach-backend hardening bundle, three fixes.
+  describe("coach-backend hardening (Task 8, inc 3.95)", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+      // Fix 2's clock override must never leak into a later test in this
+      // file — restore the real wall clock unconditionally, even for tests
+      // in this block that never touched it.
+      gm.setClockForTesting(() => Date.now());
+    });
+
+    // Fix 1, owner-ruled: "templates only" is a deliberate voice choice, not
+    // the coach going offline. chat.ts's own cause is "backend-down"
+    // whenever backend.generate() throws -- true both for a genuinely
+    // failed probe AND for pickCoachBackend's synchronous, no-probe
+    // "template" branch (noBackend.generate() always throws). manager.ts's
+    // chat() must reclassify only the second case, where the pref that
+    // caused the throw is known.
+    it('chat: pref "template" resolves source "template" and cause "templates-only", never "backend-down"', async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const result = await gm.chat(g.gameId, {
+        message: "what should I do?",
+        context: { mode: "live" },
+        backendPref: "template",
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.source).toBe("template");
+        expect(result.cause).toBe("templates-only");
+      }
+    }, 20000);
+
+    it('chat: pref "claude" against a genuinely failing backend still resolves cause "backend-down"', async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      gm.setCoachBackendForTesting(
+        {
+          name: "fake-down",
+          async available() {
+            return true;
+          },
+          async generate() {
+            throw new Error("down");
+          },
+        },
+        "claude"
+      );
+      const result = await gm.chat(g.gameId, {
+        message: "what should I do?",
+        context: { mode: "live" },
+        backendPref: "claude",
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.source).toBe("template");
+        expect(result.cause).toBe("backend-down");
+      }
+    }, 20000);
+
+    // Fix 2: pickCoachBackend's per-pref cache self-heals via
+    // BACKEND_CACHE_TTL_MS instead of pinning a pref to templates forever
+    // once probed unavailable. Uses the injected clock (setClockForTesting)
+    // rather than a real sleep, and spies on the real ollamaBackend.available
+    // (same reviewer-fixed pattern as the "ollama unavailable" test above)
+    // so the cache's own probe-and-cache branch actually runs, not a
+    // pre-seeded no-op.
+    it('pickCoachBackend: a stale "ollama unavailable" entry self-heals once the injected clock passes BACKEND_CACHE_TTL_MS', async () => {
+      // gm is shared across this whole file (single beforeAll), and an
+      // earlier test in the "backend picker" describe above already probed
+      // and cached the "ollama" pref at the real wall clock's Date.now().
+      // Starting the injected clock comfortably AHEAD of real time (rather
+      // than at an arbitrary small number) guarantees that stale entry
+      // reads as expired on this test's first call too -- otherwise
+      // `now - cached.cachedAt` would be a huge negative number, which is
+      // still "< BACKEND_CACHE_TTL_MS", producing a false cache hit that
+      // never re-probes at all.
+      let now = Date.now() + 10 * BACKEND_CACHE_TTL_MS;
+      gm.setClockForTesting(() => now);
+      const availableSpy = vi.spyOn(ollamaBackend, "available").mockResolvedValue(false);
+
+      const g1 = await gm.newGame(sessionId, 1100);
+      const first = await gm.narrate(g1.gameId, {
+        herPiece: "n",
+        from: "f6",
+        to: "g4",
+        tier: "nudge",
+        deltaCp: 80,
+        backendPref: "ollama",
+      });
+      expect(first.ok).toBe(true);
+      if (first.ok) expect(first.source).toBe("template");
+      let traces = getAdviceTraces(g1.gameId);
+      expect(traces[traces.length - 1].backend).toBe("none");
+      expect(availableSpy).toHaveBeenCalledTimes(1);
+
+      // Flip the daemon "on" but stay WELL inside the TTL window — the
+      // stale cache entry must still win here (proves the fix is a TTL, not
+      // an immediate re-probe on every call).
+      availableSpy.mockResolvedValue(true);
+      now += 1000;
+      const g2 = await gm.newGame(sessionId, 1100);
+      const stillCached = await gm.narrate(g2.gameId, {
+        herPiece: "n",
+        from: "f6",
+        to: "g4",
+        tier: "nudge",
+        deltaCp: 80,
+        backendPref: "ollama",
+      });
+      expect(stillCached.ok).toBe(true);
+      if (stillCached.ok) expect(stillCached.source).toBe("template");
+      traces = getAdviceTraces(g2.gameId);
+      expect(traces[traces.length - 1].backend).toBe("none");
+      expect(availableSpy).toHaveBeenCalledTimes(1); // no re-probe yet
+
+      // Now advance the injected clock past BACKEND_CACHE_TTL_MS — the next
+      // call for the same pref must re-probe and pick up the now-available
+      // real ollama backend instead of the stale cached "none". (Whether
+      // ollamaBackend.generate() then actually succeeds against a real local
+      // daemon is irrelevant to what's under test — the trace's `backend`
+      // field is the one signal that distinguishes "ollama was chosen" from
+      // "noBackend was chosen," same discipline as the test above.)
+      now += BACKEND_CACHE_TTL_MS + 1;
+      const g3 = await gm.newGame(sessionId, 1100);
+      const healed = await gm.narrate(g3.gameId, {
+        herPiece: "n",
+        from: "f6",
+        to: "g4",
+        tier: "nudge",
+        deltaCp: 80,
+        backendPref: "ollama",
+      });
+      expect(healed.ok).toBe(true);
+      traces = getAdviceTraces(g3.gameId);
+      expect(traces[traces.length - 1].backend).toBe("ollama");
+      expect(availableSpy).toHaveBeenCalledTimes(2); // re-probed exactly once more
     }, 20000);
   });
 

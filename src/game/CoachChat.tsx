@@ -119,7 +119,11 @@ const CHAT_MAX_LEN = 500;
 interface ChatBubble {
   role: "user" | "coach";
   text: string;
-  cause?: "backend-down";
+  // Task 8 (inc 3.95, Fix 1), owner-ruled: "templates-only" is a deliberate
+  // voice choice (the player picked "templates only" in the coach voice
+  // radio group), not the coach going offline -- the muted chip below
+  // renders ONLY for cause === "backend-down", never for "templates-only".
+  cause?: "backend-down" | "templates-only";
   // Task 4 (F19): every coach reply has a trace -- model, template, AND
   // backend-down redirect all write one (Task 2's scope). Undefined only in
   // the truly defensive case where the server's envelope omitted it.
