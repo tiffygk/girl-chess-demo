@@ -260,5 +260,6 @@ app.post("/api/session/:id/mode", (req, res) => {
 });
 
 if (process.env.NODE_ENV !== "test") {
-  ready.then(() => app.listen(3001, () => console.log("girl-chess server on :3001")));
+  const PORT = Number(process.env.PORT) || 3001;
+  ready.then(() => app.listen(PORT, () => console.log(`girl-chess server on :${PORT}`)));
 }
