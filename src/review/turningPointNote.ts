@@ -15,13 +15,22 @@
 // instruction ("copying the few lines it needs, not by importing/editing
 // that file").
 
-import type { TurningPoint, MoveClassification, TurningLine } from "../game/api";
+import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from "../game/api";
+// Increment 3.95 (Task 4, Part 1): fenAtPly is the same replay-from-scratch
+// helper GamePage's own rewind/explore seams already use (Rewind.tsx),
+// reused here (not re-derived) so the seed-fen math for the opportunity
+// clause can never drift from the seed-ply convention server/game/
+// manager.ts's getTurningLines and src/game/explore.ts's exploreSeedPly both
+// already share (seedPly = ply - (ply % 2)).
+import { fenAtPly } from "./Rewind";
+import { deriveOpportunity } from "./opportunity";
 
 export interface TurningPointNote {
   didWell?: string; // (i)   present when the point is a good moment / good defense
   couldImprove?: string; // (ii)  the played move vs the better idea, from label/classification
   nextTime: string; // (iii) motif-keyed template tip (always present; generic fallback allowed)
   whatMayHaveHappened?: string; // (iv)  the pv line phrased plainly, present when bestSan/pvSans exist
+  opportunity?: string; // (v)   what the pv's replay proves it opens up — present when line+gameSans exist and the pv replays at all
 }
 
 // Fixed motif set per the plan (retuned per the 2026-07-19 truthfulness
@@ -133,10 +142,33 @@ function buildWhatMayHaveHappened(line: TurningLine | undefined): string | undef
   return `if instead ${first}, then ${rest.join(" ")}.`;
 }
 
+// Increment 3.95 (Task 4, Part 1): the seed fen a line's pvSans was replayed
+// from server-side (getTurningLines' fenSeed) is never shipped to the
+// client — but it doesn't need to be. seedPly = ply - (ply % 2) is the same
+// public formula manager.ts documents and explore.ts's exploreSeedPly
+// already applies, so replaying gameSans up to that same seedPly with
+// fenAtPly reconstructs the EXACT position the server computed the pv
+// against. seedPly < 1 (a ply-1 turning point has no prior even ply) or a
+// missing gameSans/empty pv degrades to no opportunity clause — never a
+// guessed one. Exported so DebriefPage's "try the line" banner (which
+// doesn't go through buildTurningPointNote) can derive the same honest
+// clause for whichever ply the sandbox was seeded from.
+export function opportunityForLine(
+  line: TurningLine | undefined,
+  gameSans: SummaryMove[] | undefined
+): string | undefined {
+  if (!line || !gameSans || line.pvSans.length === 0) return undefined;
+  const seedPly = line.ply - (line.ply % 2);
+  if (seedPly < 1) return undefined;
+  const fenSeed = fenAtPly(gameSans, seedPly);
+  return deriveOpportunity(fenSeed, line.pvSans);
+}
+
 export function buildTurningPointNote(
   tp: TurningPoint,
   cls: MoveClassification | undefined,
-  line: TurningLine | undefined
+  line: TurningLine | undefined,
+  gameSans?: SummaryMove[]
 ): TurningPointNote {
   const motif = inferMotif(tp);
   const note: TurningPointNote = {
@@ -148,5 +180,7 @@ export function buildTurningPointNote(
   if (couldImprove) note.couldImprove = couldImprove;
   const whatMayHaveHappened = buildWhatMayHaveHappened(line);
   if (whatMayHaveHappened) note.whatMayHaveHappened = whatMayHaveHappened;
+  const opportunity = opportunityForLine(line, gameSans);
+  if (opportunity) note.opportunity = opportunity;
   return note;
 }

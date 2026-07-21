@@ -18,14 +18,19 @@
 // deltaP is deliberately never rendered anywhere in this file — "the story
 // is words, not numbers" (brief).
 
-import type { GameListEntry, MoveClassification, TurningPoint, TurningLine } from "../game/api";
+import type { GameListEntry, MoveClassification, TurningPoint, TurningLine, SummaryMove } from "../game/api";
 import { moveNumberForPly } from "./debriefLesson";
 import { debriefBullets, type DebriefBullet } from "./debriefBullets";
 // Increment 3.91 (Task 4): the four-part note, rendered under a turning-
 // point card once its own "replay" has been clicked (see `active` below).
 // Pure/deterministic module — see turningPointNote.ts's header for why it
 // deliberately doesn't import from debriefBullets.ts.
-import { buildTurningPointNote } from "./turningPointNote";
+// Increment 3.95 (Task 4, Part 1): opportunityForLine is the same helper
+// buildTurningPointNote uses internally, reused directly here so the
+// try-the-line banner (which never calls buildTurningPointNote — it has no
+// TurningPoint/classification, just a ply) can render the identical honest
+// clause for whichever line the sandbox was seeded from.
+import { buildTurningPointNote, opportunityForLine } from "./turningPointNote";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -58,6 +63,12 @@ interface TurningPointCardProps {
   // arrows GamePage threads onto the board for that same click.
   classification: MoveClassification | undefined;
   line: TurningLine | undefined;
+  // Increment 3.95 (Task 4, Part 1): the full game's SAN move list, passed
+  // straight through from GamePage's own activeReviewMoves — buildTurningPointNote
+  // needs it to reconstruct the pv's seed position (fenAtPly) for the
+  // opportunity clause. Absent (undefined) simply means no opportunity
+  // clause renders, never a guessed one.
+  gameSans: SummaryMove[] | undefined;
   active: boolean;
   // Increment 3.91 (Task 6): "try the line" seeds a live sandbox at this
   // card's own ply (GamePage's openExplore). `exploring` disables every
@@ -68,7 +79,16 @@ interface TurningPointCardProps {
   exploring: boolean;
 }
 
-function TurningPointCard({ point, onRewind, classification, line, active, onTryLine, exploring }: TurningPointCardProps) {
+function TurningPointCard({
+  point,
+  onRewind,
+  classification,
+  line,
+  gameSans,
+  active,
+  onTryLine,
+  exploring,
+}: TurningPointCardProps) {
   // debrief-v2: an episode card is a warning-class fact by construction (a
   // sustained king-pressure run), so it always gets the magenta tint —
   // same flat-tint card family as a negative-labeled swing/backfill card,
@@ -77,7 +97,7 @@ function TurningPointCard({ point, onRewind, classification, line, active, onTry
   const negative = NEGATIVE_CARD_LABELS.has(point.label) || isEpisode;
   const startMove = moveNumberForPly(point.ply);
   const endMove = point.plyEnd != null ? moveNumberForPly(point.plyEnd) : startMove;
-  const note = active ? buildTurningPointNote(point, classification, line) : null;
+  const note = active ? buildTurningPointNote(point, classification, line, gameSans) : null;
   return (
     <div className={"debrief-card" + (negative ? " debrief-card-negative" : "")}>
       <div className="debrief-card-head">
@@ -104,6 +124,7 @@ function TurningPointCard({ point, onRewind, classification, line, active, onTry
           {note.whatMayHaveHappened && (
             <p className="debrief-card-punish">what may have happened: {note.whatMayHaveHappened}</p>
           )}
+          {note.opportunity && <p className="debrief-card-punish">this opens up: {note.opportunity}.</p>}
         </>
       )}
     </div>
@@ -179,6 +200,12 @@ export interface DebriefPageProps {
   // pv/best_move persisted for that ply) simply renders the note without
   // the whatMayHaveHappened/couldImprove-bestClause parts.
   turningLines: TurningLine[];
+  // Increment 3.95 (Task 4, Part 1): the full game's SAN move list (GamePage's
+  // own activeReviewMoves), threaded straight through so a turning-point
+  // card's opportunity clause and the try-the-line banner below can both
+  // reconstruct the pv's seed position via fenAtPly — see
+  // turningPointNote.ts's opportunityForLine.
+  gameSans: SummaryMove[];
   totalPlies: number;
   // The finished game's result — live path passes gameOver.result, review
   // path passes reviewGame.result. Both are plain strings on the wire
@@ -201,8 +228,13 @@ export interface DebriefPageProps {
   // read-only projection of it (null while no session is running) plus the
   // two entry points. `thinking` shows while GamePage's exploreReply call is
   // in flight; `over` marks a sandbox position that hit checkmate/stalemate
-  // (nothing left to play, but the session stays open until "exit").
-  exploring: { thinking: boolean; over: boolean } | null;
+  // (nothing left to play, but the session stays open until "exit"). `ply`
+  // (Task 4, Part 1) is the turning point's own ply the sandbox was seeded
+  // from (same convention as onRewind/turningLines lookups) — carried so the
+  // banner can look up the matching TurningLine and render its opportunity
+  // clause; null only if a session were somehow open with no seed ply on
+  // record, in which case the banner simply omits the clause.
+  exploring: { thinking: boolean; over: boolean; ply: number | null } | null;
   onTryLine: (ply: number) => void;
   onExitExplore: () => void;
 }
@@ -211,6 +243,7 @@ export function DebriefPage({
   turningPoints,
   classifications,
   turningLines,
+  gameSans,
   totalPlies,
   result,
   rewindPly,
@@ -229,6 +262,13 @@ export function DebriefPage({
     result: result === "1-0" || result === "0-1" || result === "1/2-1/2" ? result : null,
     totalPlies,
   });
+  // Increment 3.95 (Task 4, Part 1): the try-the-line banner has no
+  // TurningPoint/classification to hand buildTurningPointNote — just the
+  // seed ply the sandbox opened at — so it looks up the matching
+  // TurningLine itself and derives the same honest opportunity clause
+  // directly via opportunityForLine.
+  const exploreLine = exploring?.ply != null ? turningLines.find((l) => l.ply === exploring.ply) : undefined;
+  const exploreOpportunity = exploreLine ? opportunityForLine(exploreLine, gameSans) : undefined;
   return (
     <div className="debrief pop-in">
       {reviewing && (
@@ -256,6 +296,7 @@ export function DebriefPage({
                 ? "mallow is thinking..."
                 : "play it out, nothing is saved"}
           </span>
+          {exploreOpportunity && <span className="debrief-explore-meta">this line {exploreOpportunity}.</span>}
           <button className="small" onClick={onExitExplore}>
             exit
           </button>
@@ -271,6 +312,7 @@ export function DebriefPage({
               onRewind={onRewind}
               classification={classifications.find((c) => c.ply === point.ply)}
               line={turningLines.find((l) => l.ply === point.ply)}
+              gameSans={gameSans}
               active={rewindPly === point.ply}
               onTryLine={onTryLine}
               exploring={!!exploring}

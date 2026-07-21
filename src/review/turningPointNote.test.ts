@@ -4,8 +4,21 @@
 // when its underlying fact is actually present (never fabricated).
 
 import { describe, it, expect } from "vitest";
-import { buildTurningPointNote, NEXT_TIME_TIPS } from "./turningPointNote";
-import type { TurningPoint, MoveClassification, TurningLine } from "../game/api";
+import { buildTurningPointNote, opportunityForLine, NEXT_TIME_TIPS } from "./turningPointNote";
+import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from "../game/api";
+
+// Scholar's Mate up to black's losing 3rd move — a real, independently
+// checkable game (1.e4 e5 2.Qh5 Nc6 3.Bc4 Nf6??), used below as a genuine
+// gameSans fixture so opportunityForLine/buildTurningPointNote's fenAtPly
+// replay lands on an actual position, not a synthetic one.
+const SCHOLARS_MATE_SANS: SummaryMove[] = [
+  { ply: 1, san: "e4" },
+  { ply: 2, san: "e5" },
+  { ply: 3, san: "Qh5" },
+  { ply: 4, san: "Nc6" },
+  { ply: 5, san: "Bc4" },
+  { ply: 6, san: "Nf6" },
+];
 
 function tp(overrides: Partial<TurningPoint>): TurningPoint {
   return {
@@ -268,6 +281,46 @@ describe("whatMayHaveHappened (part iv)", () => {
   it("never adds an interpretive claim beyond the SAN moves themselves", () => {
     const note = buildTurningPointNote(tp({}), undefined, line({ pvSans: ["Bxb5", "a6", "Ba4"] }));
     expect(note.whatMayHaveHappened).not.toMatch(/win|initiative|advantage|better position/i);
+  });
+});
+
+describe("opportunity (part v)", () => {
+  it("opportunityForLine reports an honest, replay-provable claim when line + gameSans are both given", () => {
+    const l = line({ ply: 6, pvSans: ["Qxf7#"], bestSan: "Qxf7#" });
+    expect(opportunityForLine(l, SCHOLARS_MATE_SANS)).toBe("leads to mate in 1");
+  });
+
+  it("opportunityForLine is undefined without gameSans (no seed position to replay from)", () => {
+    const l = line({ ply: 6, pvSans: ["Qxf7#"] });
+    expect(opportunityForLine(l, undefined)).toBeUndefined();
+  });
+
+  it("opportunityForLine is undefined without a line at all", () => {
+    expect(opportunityForLine(undefined, SCHOLARS_MATE_SANS)).toBeUndefined();
+  });
+
+  it("opportunityForLine is undefined when pvSans is empty (graceful degrade)", () => {
+    const l = line({ ply: 6, pvSans: [] });
+    expect(opportunityForLine(l, SCHOLARS_MATE_SANS)).toBeUndefined();
+  });
+
+  it("buildTurningPointNote surfaces the opportunity clause on note.opportunity when gameSans is passed", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Nf6", ply: 6 }),
+      undefined,
+      line({ ply: 6, pvSans: ["Qxf7#"], bestSan: "Qxf7#" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.opportunity).toBe("leads to mate in 1");
+  });
+
+  it("buildTurningPointNote never fabricates an opportunity clause when gameSans is omitted (backward compatible)", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Nf6", ply: 6 }),
+      undefined,
+      line({ ply: 6, pvSans: ["Qxf7#"], bestSan: "Qxf7#" })
+    );
+    expect(note.opportunity).toBeUndefined();
   });
 });
 
