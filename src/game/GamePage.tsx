@@ -29,7 +29,7 @@ import {
 import { CoachChat, ThumbRating } from "./CoachChat";
 import { hintFocusContext, turningPointFocusContext, reconcileChatFocus } from "./chatFocus";
 import { describeMove, type MoveRender } from "./describeMove";
-import { victimKind, materialDiff, rollbackCapture, type CapturedBySide } from "./captures";
+import { victimKind, materialDiff, rollbackCapture, capturesAtPly, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
 import { reconcile } from "./reconcile";
 import { findTakedownPiece, type Takedown } from "./terminal";
@@ -1703,7 +1703,23 @@ export function GamePage() {
   // "reply (or failure) resolved" — that's mallow's side of the board being
   // "in play"; anything else is the player's side. mallowThinking narrows
   // the mallow-active window to just the network round-trip (see handleMove).
-  const material = materialDiff(captured);
+  // Increment 3.95 (Task 10, capture-tray fold-in): review mode has no
+  // incrementally-tracked `captured` state the way a live in-progress game
+  // does — loading a past game (or scrubbing an already-finished one) never
+  // replays its moves through handleMove's optimistic pushes, so the trays
+  // used to just sit wherever they were left before "past games" was
+  // opened, regardless of the rewound ply (the known v1 gap this task folds
+  // in). Whenever a debrief is actually showing (activeReviewMoves
+  // non-null — either a reviewed past game or a just-finished live game),
+  // the trays are recomputed purely for whatever ply is on screen right now
+  // (rewindPly, or the full game once back at "the end"/never rewound) via
+  // capturesAtPly, the fenAtPly counterpart for captures. Mid-game live play
+  // (activeReviewMoves null) is untouched: `captured` keeps being the
+  // incrementally-pushed/rolled-back state handleMove already maintains.
+  const displayedCaptured = activeReviewMoves
+    ? capturesAtPly(activeReviewMoves, rewindPly ?? activeReviewMoves.length)
+    : captured;
+  const material = materialDiff(displayedCaptured);
   const moveNumber = Number(fen.split(" ")[5]) || 1;
   const mallowActive = !!gameId && !gameOver && uiBusy;
   const youActive = !!gameId && !gameOver && !uiBusy;
@@ -1923,7 +1939,7 @@ export function GamePage() {
       <div className="board-stack">
         <PlayerBar
           seat="mallow"
-          captured={captured.w}
+          captured={displayedCaptured.w}
           capturedColor="w"
           materialLead={material.leader === "mallow" ? material.points : null}
           active={mallowActive}
@@ -1958,7 +1974,7 @@ export function GamePage() {
         />
         <PlayerBar
           seat="you"
-          captured={captured.b}
+          captured={displayedCaptured.b}
           capturedColor="b"
           materialLead={material.leader === "you" ? material.points : null}
           active={youActive}

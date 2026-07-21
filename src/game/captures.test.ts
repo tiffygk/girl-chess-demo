@@ -1,7 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { Chess } from "chess.js";
 import { describeMove } from "./describeMove";
-import { victimKind, sortByValue, materialDiff, pieceValue, rollbackCapture, type CapturedBySide } from "./captures";
+import {
+  victimKind,
+  sortByValue,
+  materialDiff,
+  pieceValue,
+  rollbackCapture,
+  capturesAtPly,
+  type CapturedBySide,
+} from "./captures";
 import type { PieceKind } from "../board/pieces";
 
 describe("victimKind", () => {
@@ -131,5 +139,45 @@ describe("rollbackCapture", () => {
     const prev: CapturedBySide = { w: [], b: ["p", "n"] };
     rollbackCapture(prev, "b", "n");
     expect(prev).toEqual({ w: [], b: ["p", "n"] });
+  });
+});
+
+describe("capturesAtPly", () => {
+  // 1. e4 d5 2. exd5 Qxd5 — a plain pawn trade followed by black recapturing
+  // with the queen (no queen capture involved, just a clean two-capture line
+  // to exercise both trays).
+  const moves = [
+    { ply: 1, san: "e4" },
+    { ply: 2, san: "d5" },
+    { ply: 3, san: "exd5" },
+    { ply: 4, san: "Qxd5" },
+  ];
+
+  it("returns empty trays at ply 0 (start position)", () => {
+    expect(capturesAtPly(moves, 0)).toEqual({ w: [], b: [] });
+  });
+
+  it("returns empty trays before any capture has happened", () => {
+    expect(capturesAtPly(moves, 2)).toEqual({ w: [], b: [] });
+  });
+
+  it("puts a white capture's victim in captured.b (\"pieces you've captured\")", () => {
+    expect(capturesAtPly(moves, 3)).toEqual({ w: [], b: ["p"] });
+  });
+
+  it("puts a black capture's victim in captured.w (\"pieces mallow has captured\") once both captures have happened", () => {
+    expect(capturesAtPly(moves, 4)).toEqual({ w: ["p"], b: ["p"] });
+  });
+
+  it("clamps a ply beyond the move list to the final position", () => {
+    expect(capturesAtPly(moves, 99)).toEqual(capturesAtPly(moves, moves.length));
+  });
+
+  it("clamps a negative ply to the start position", () => {
+    expect(capturesAtPly(moves, -5)).toEqual({ w: [], b: [] });
+  });
+
+  it("returns correct trays and material for an empty move list", () => {
+    expect(capturesAtPly([], 0)).toEqual({ w: [], b: [] });
   });
 });

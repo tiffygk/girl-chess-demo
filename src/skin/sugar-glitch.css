@@ -1195,6 +1195,58 @@
   color: #6952C4; margin: 0;
 }
 .gc-app .debrief-replay-btn { align-self: flex-start; }
+
+/* Increment 3.95 (Task 10): the full-game move-list navigator — sits below
+   the turning-point cards, prev/next scrub above a scrollable list of every
+   move number. The list itself is a flat-tint bubble (same family as
+   .debrief-card — the machine's own record, not a pressable), while each
+   SAN move is its own small pressable pill, tinted with the exact same
+   you/mallow pale-bubble recipe the name plates (.np-you/.np-mallow) already
+   use — no new hex. The currently-shown ply gets the bolder solid
+   #23E5FF/#FF3DA6 fill also used for .arrow-played/.arrow-threat and
+   button.small.confirming, again no new hex. */
+.gc-app .debrief-movelist {
+  background: #F4F0FF; border: 1.5px solid #E3D9F5;
+  border-radius: 14px; padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.gc-app .debrief-movelist-scrub {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.gc-app .debrief-movelist-scrub-label {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .1em; text-transform: lowercase; color: #6952C4;
+}
+.gc-app .debrief-movelist-rows {
+  display: flex; flex-direction: column; gap: 3px;
+  max-height: 220px; overflow-y: auto;
+}
+.gc-app .debrief-movelist-row { display: flex; align-items: center; gap: 6px; }
+.gc-app .debrief-movelist-num {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 11px;
+  color: #9C8FC7; min-width: 18px;
+}
+.gc-app button.small.debrief-movelist-move {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12px;
+  padding: 3px 10px;
+}
+.gc-app button.small.debrief-movelist-you {
+  background: #C9EEF9; color: #1A7A93;
+  box-shadow: 0 2px 0 #23A8C7, 0 4px 8px rgba(35,168,199,.2);
+}
+.gc-app button.small.debrief-movelist-mallow {
+  background: #FFE9F4; color: #C22B7E;
+  box-shadow: 0 2px 0 #FF3DA6, 0 4px 8px rgba(255,61,166,.2);
+}
+.gc-app button.small.debrief-movelist-move.active.debrief-movelist-you {
+  background: #23E5FF; color: #05323C;
+  box-shadow: 0 2px 0 #1A7A93, 0 4px 8px rgba(35,229,255,.35);
+}
+.gc-app button.small.debrief-movelist-move.active.debrief-movelist-mallow {
+  background: #FF3DA6; color: #fff;
+  box-shadow: 0 2px 0 #C22B7E, 0 4px 8px rgba(255,61,166,.35);
+}
+
 .gc-app .debrief-footer {
   display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
 }

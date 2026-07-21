@@ -31,6 +31,15 @@ import { debriefBullets, type DebriefBullet } from "./debriefBullets";
 // TurningPoint/classification, just a ply) can render the identical honest
 // clause for whichever line the sandbox was seeded from.
 import { buildTurningPointNote, opportunityForLine } from "./turningPointNote";
+// Increment 3.95 (Task 10): the full-game move-list navigator, rendered
+// alongside the turning-point cards below using props this page already
+// has in hand (gameSans, rewindPly, onRewind, exploring) — no new props on
+// DebriefPage itself. File is MoveListNav.tsx (not MoveList.tsx) to dodge a
+// macOS case-insensitive-filesystem collision with the pure moveList.ts
+// helper it wraps — same directory, names differing only by case, which
+// trips up TS module resolution (tried and reverted; see task-10 report).
+// The exported component itself is still named MoveList.
+import { MoveList } from "./MoveListNav";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -338,6 +347,12 @@ export function DebriefPage({
           ))}
         </div>
       )}
+      <MoveList
+        sans={gameSans.map((m) => m.san)}
+        currentPly={rewindPly}
+        onSelect={onRewind}
+        disabled={!!exploring}
+      />
       <div className="debrief-footer">
         {rewindPly != null && !exploring && (
           <button className="small" onClick={onBackToEnd}>
