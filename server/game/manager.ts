@@ -54,6 +54,22 @@ export interface TurningLine {
 // value only — expect this to move once real playtest data comes in.
 const DRAW_ACCEPT_CP_BAND = 60;
 
+// Task 8 (inc 3.95, Fix 2), owner-calibratable starting value: how long a
+// per-pref resolved backend is trusted before pickCoachBackend re-probes
+// availability instead of reusing the cached entry. Before this, the Map
+// cached forever — picking "ollama" before the daemon was running pinned
+// that pref to noBackend/templates for the rest of the process's life, with
+// no way back to ollama short of a server restart. A TTL means a daemon
+// that comes up later self-heals the next time that pref is used, without
+// giving up the "probe once, not on every call" cost savings the cache
+// exists for in the first place.
+export const BACKEND_CACHE_TTL_MS = 30000;
+
+interface CachedBackend {
+  backend: CoachBackend;
+  cachedAt: number;
+}
+
 export class GameManager {
   private games = new Map<number, LiveGame>();
   private evaluator = new StockfishEvaluator();
@@ -64,10 +80,25 @@ export class GameManager {
   // player narration asking for "claude" while a chat call asks for
   // "template") would clobber each other's resolved backend mid-flight.
   // Keying by pref means each preference resolves and caches independently,
-  // and repeat calls with the same pref skip re-probing.
-  private coachBackends = new Map<string, CoachBackend>();
+  // and repeat calls with the same pref skip re-probing until the entry
+  // ages past BACKEND_CACHE_TTL_MS (Task 8, Fix 2).
+  private coachBackends = new Map<string, CachedBackend>();
+  // Task 8 (inc 3.95, Fix 2): injectable clock — production code never calls
+  // Date.now() directly anywhere in this class, only through this seam, so
+  // manager.test.ts can advance time deterministically past
+  // BACKEND_CACHE_TTL_MS instead of sleeping for real in a test. Defaults to
+  // the real wall clock; setClockForTesting below is the only thing that
+  // ever overrides it.
+  private clock: () => number = () => Date.now();
 
   async init() { await this.evaluator.init(); }
+
+  // Test seam only (Task 8, Fix 2): lets manager.test.ts control "now" for
+  // the backend cache's TTL check below without a real sleep. Unused in
+  // production.
+  setClockForTesting(clock: () => number) {
+    this.clock = clock;
+  }
 
   // pref semantics (panel A4/A5): "template" is a first-class choice with NO
   // probe (always noBackend); "ollama" is ollama-if-available else
@@ -77,8 +108,9 @@ export class GameManager {
   // chain (today's default behavior, unchanged).
   private async pickCoachBackend(pref?: string): Promise<CoachBackend> {
     const key = pref ?? "claude";
+    const now = this.clock();
     const cached = this.coachBackends.get(key);
-    if (cached) return cached;
+    if (cached && now - cached.cachedAt < BACKEND_CACHE_TTL_MS) return cached.backend;
 
     let backend: CoachBackend;
     if (key === "template") {
@@ -90,7 +122,7 @@ export class GameManager {
       else if (await ollamaBackend.available()) backend = ollamaBackend;
       else backend = noBackend;
     }
-    this.coachBackends.set(key, backend);
+    this.coachBackends.set(key, { backend, cachedAt: this.clock() });
     return backend;
   }
 
@@ -100,9 +132,12 @@ export class GameManager {
   // the Map entry for a named pref — defaults to "claude" (the pref every
   // pre-Task-5 caller implicitly used) so every existing call site keeps
   // working unchanged. Unused in production — pickCoachBackend's
-  // probe-and-cache runs for any pref a test hasn't already primed.
+  // probe-and-cache runs for any pref a test hasn't already primed. Stamps
+  // the seeded entry with the (possibly injected) clock's current time, same
+  // as a real probe-and-cache, so it participates in the same TTL rule
+  // rather than being permanently exempt from it.
   setCoachBackendForTesting(backend: CoachBackend, pref?: string) {
-    this.coachBackends.set(pref ?? "claude", backend);
+    this.coachBackends.set(pref ?? "claude", { backend, cachedAt: this.clock() });
   }
 
   private async opponentFor(elo: number): Promise<MaiaOpponent> {
@@ -731,7 +766,13 @@ export class GameManager {
     body: { message: string; context: ChatContext; backendPref?: string }
   ): Promise<
     | { ok: false; error?: string }
-    | { ok: true; text: string; source: "model" | "template"; cause?: "backend-down"; traceId: number }
+    | {
+        ok: true;
+        text: string;
+        source: "model" | "template";
+        cause?: "backend-down" | "templates-only";
+        traceId: number;
+      }
   > {
     const message = body.message ?? "";
     if (message.length > CHAT_MAX_LEN) return { ok: false, error: "too-long" };
@@ -762,8 +803,23 @@ export class GameManager {
 
     insertChatMessage({ gameId, role: "coach", text: result.text, traceId: result.traceId });
 
-    return result.cause
-      ? { ok: true, text: result.text, source: result.source, cause: result.cause, traceId: result.traceId }
+    // Task 8 (inc 3.95, Fix 1), owner-ruled: chat.ts's own cause is always
+    // "backend-down" whenever backend.generate() throws — true both for a
+    // genuine failed claude/ollama probe AND for pickCoachBackend's
+    // synchronous, no-probe "template" branch (noBackend.generate() always
+    // throws). Those are not the same thing to the player: choosing
+    // "templates only" is a deliberate voice pick, not the coach going
+    // offline, so CoachChat's muted offline chip must never render for it.
+    // Reclassify only that one case, here, where the pref that CAUSED the
+    // throw is actually known — chat.ts itself has no visibility into pref
+    // and its own "backend-down" meaning stays unchanged for every other
+    // caller (including chat.test.ts's own backend-down test, which asks
+    // for the default "claude" pref and gets a real failure).
+    const cause: "backend-down" | "templates-only" | undefined =
+      result.cause === "backend-down" && body.backendPref === "template" ? "templates-only" : result.cause;
+
+    return cause
+      ? { ok: true, text: result.text, source: result.source, cause, traceId: result.traceId }
       : { ok: true, text: result.text, source: result.source, traceId: result.traceId };
   }
 

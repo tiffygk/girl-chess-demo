@@ -315,7 +315,11 @@ export interface ChatResponse {
   ok: boolean;
   text?: string;
   source?: "model" | "template";
-  cause?: "backend-down";
+  // Task 8 (inc 3.95, Fix 1): "templates-only" (a deliberate voice choice)
+  // vs "backend-down" (a genuine failure) -- see manager.ts's chat() and
+  // CoachChat.tsx's offline-chip predicate, which renders only for the
+  // latter.
+  cause?: "backend-down" | "templates-only";
   traceId?: number;
   error?: string;
 }
