@@ -207,11 +207,21 @@ function opensUpOpportunity(facts: HintFacts, fen: string): string | undefined {
  * reason (recommendationClause, trade-honesty-gated) plus what the line
  * opens up further out (opensUpOpportunity), or "" when neither is provable.
  * Kept as its own function so hintCopy's level 4 branch stays a one-liner.
+ *
+ * Copy-polish pass: the caller (hintCopy) terminates the base "better: your
+ * {piece} on {square}" clause with a period before appending this, so every
+ * branch here starts with a leading space and reads as its own sentence —
+ * no run-on. When both the immediate reason and the opens-up clause fire,
+ * they're joined with ", and" (immediate's own trailing period stripped
+ * first) rather than a bare "and" dangling after a full stop.
  */
 function level4Why(facts: HintFacts, fen?: string): string {
   const immediate = recommendationClause(facts.recommendation, facts.trade);
   const opportunity = fen ? opensUpOpportunity(facts, fen) : undefined;
-  if (immediate && opportunity) return ` ${immediate} and it ${opportunity}.`;
+  if (immediate && opportunity) {
+    const trimmed = immediate.endsWith(".") ? immediate.slice(0, -1) : immediate;
+    return ` ${trimmed}, and it ${opportunity}.`;
+  }
   if (immediate) return ` ${immediate}`;
   if (opportunity) return ` it ${opportunity}.`;
   return "";
@@ -223,7 +233,8 @@ function level4Why(facts: HintFacts, fen?: string): string {
  * available for free off the client mirror + the pending move). threat is
  * verdict.threat, arriving with the judge response (levels 2-3). bestFacts
  * is the deep-fetched facts, present only after the 3->4 fetch (levels 4-5).
- * fen is the live mirror fen, used only at level 5 for describeBestMove.
+ * fen is the live mirror fen: read at level 4 (level4Why's opens-up clause,
+ * via opensUpOpportunity) and at level 5 for describeBestMove.
  */
 export interface HintCopyCtx {
   herPieceKind: string;
@@ -290,14 +301,25 @@ export function hintCopy(level: HintLevel, ctx: HintCopyCtx): string | null {
   if (level === 3) return motifL3(ctx);
   if (!ctx.bestFacts) return null;
   if (level === 4) {
-    const base = `better: your ${pieceName(ctx.bestFacts.bestPieceKind)} on ${ctx.bestFacts.bestFromSquare}`;
+    // Copy-polish pass: base clause ends in its own period (mirrors this
+    // file's L1 style, "hold on. look at your knight.") so level4Why's
+    // addendum never runs on into it.
+    const base = `better: your ${pieceName(ctx.bestFacts.bestPieceKind)} on ${ctx.bestFacts.bestFromSquare}.`;
     return `${base}${level4Why(ctx.bestFacts, ctx.fen)}`;
   }
   const translation = ctx.fen ? describeBestMove(ctx.bestFacts, ctx.fen) : null;
   const base = translation
     ? `best here: ${ctx.bestFacts.bestSan} (${translation})`
     : `best here: ${ctx.bestFacts.bestSan}`;
-  const clause = recommendationClause(ctx.bestFacts.recommendation, ctx.bestFacts.trade);
+  // Copy-polish pass: L4 now owns the immediate-reason clause (level4Why
+  // above), so L5 no longer repeats it — a player walking the ladder would
+  // otherwise read the identical reason twice. The one exception is the
+  // trade-honesty note: it's about the move she's about to commit to here,
+  // not a repeat of L4's "why", so it still surfaces via the same
+  // honesty-gated recommendationClause when trade is true.
+  const clause = ctx.bestFacts.trade
+    ? recommendationClause(ctx.bestFacts.recommendation, ctx.bestFacts.trade)
+    : null;
   return clause ? `${base} ${clause}` : base;
 }
 
