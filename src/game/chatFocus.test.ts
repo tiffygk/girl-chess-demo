@@ -113,4 +113,44 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
       expect(result).toEqual({});
     });
   });
+
+  // Reviewer fix (Task 7 follow-up #2, CRITICAL): the real GamePage call-site
+  // pairing. handleAskAboutTurningPoint now sets BOTH rewindPly (to the
+  // card's own ply, the exact same board-state fields handleRewind computes)
+  // AND chatFocus.turningPointFocus (built from the same point) in the same
+  // click, rather than only the focus -- this composes turningPointFocusContext
+  // and reconcileChatFocus exactly the way buildChatContext does, to prove
+  // that pairing survives reconcile and keeps the bestSan/pvSans the
+  // allowedSans fold needs, even when this is the FIRST click on the
+  // debrief (rewindPly was null beforehand).
+  describe("real call-site pairing (Task 7 follow-up #2): ask-about-this sets rewindPly=ply too", () => {
+    it("a card clicked directly from the debrief landing (rewindPly was null) keeps its focus, bestSan included, once handleAskAboutTurningPoint's own rewindPly=point.ply write lands first", () => {
+      const point = { ply: 15, san: "O-O", label: "blunder", punishSan: undefined };
+      const line = { bestSan: "Nxd4", pvSans: ["Nxd4", "Qd7", "Nc2"] };
+      const focus = { turningPointFocus: turningPointFocusContext(point, line) };
+
+      // The click sets rewindPly to the card's own ply IN ADDITION to the
+      // focus (handleAskAboutTurningPoint's fix) -- so by the time a message
+      // is sent, current.rewindPly already equals point.ply, not null.
+      const result = reconcileChatFocus(focus, {
+        hintLevel: 0,
+        renderedHintText: null,
+        rewindPly: point.ply,
+      });
+
+      expect(result).toEqual(focus);
+      expect(result.turningPointFocus?.bestSan).toBe("Nxd4");
+      expect(result.turningPointFocus?.pvSans).toEqual(["Nxd4", "Qd7", "Nc2"]);
+    });
+
+    it("regression guard: the SAME focus is dropped if rewindPly were left null (the bug this follow-up fixes)", () => {
+      const point = { ply: 15, san: "O-O", label: "blunder", punishSan: undefined };
+      const line = { bestSan: "Nxd4", pvSans: ["Nxd4", "Qd7", "Nc2"] };
+      const focus = { turningPointFocus: turningPointFocusContext(point, line) };
+
+      const result = reconcileChatFocus(focus, { hintLevel: 0, renderedHintText: null, rewindPly: null });
+
+      expect(result).toEqual({});
+    });
+  });
 });

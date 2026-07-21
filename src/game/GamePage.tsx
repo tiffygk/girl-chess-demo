@@ -1377,13 +1377,43 @@ export function GamePage() {
   // this" — looks up the matching TurningLine itself (turningLines is
   // already in hand from the debrief's own fetch) so the coach can legally
   // name the best line once assembleChatFactList folds it into allowedSans.
+  //
+  // Reviewer fix (Task 7 follow-up #2, CRITICAL): reconcileChatFocus (see
+  // buildChatContext below) only keeps a turningPointFocus whose `ply`
+  // equals the CURRENT `rewindPly` — a card clicked directly from the
+  // debrief landing (rewindPly still null) would otherwise have its own
+  // just-set focus dropped at send time, silently losing the allowedSans
+  // fold and the coach's ability to name the best line. So this now puts
+  // the board into that card's own replay state too (the exact same fen/
+  // arrows/highlights handleRewind computes) rather than only setting the
+  // focus — both showing the moment being asked about AND satisfying
+  // reconcileChatFocus's ply match.
+  //
+  // Deliberately NOT a call to handleRewind: that function now also clears
+  // chatFocus for its own "replaying is a new moment" tidiness (see its own
+  // comment) — calling it here would immediately wipe the focus this
+  // function is about to set. Board-state fields are set directly instead,
+  // and chatFocus is set AFTER them, so the final state has both
+  // rewindPly === point.ply and turningPointFocus.ply === point.ply.
   const handleAskAboutTurningPoint = useCallback(
     (point: TurningPoint) => {
       const line = turningLines.find((l) => l.ply === point.ply);
+      if (activeReviewMoves) {
+        setFen(fenAtPly(activeReviewMoves, point.ply));
+        setResyncTick((t) => t + 1);
+        setRewindPly(point.ply);
+        const arrows = line ? turningLineArrows(line) : [];
+        if (!arrows.some((a) => a.color === "played")) {
+          const played = playedArrowForPly(activeReviewMoves, point.ply);
+          if (played) arrows.unshift({ ...played, color: "played" });
+        }
+        setReviewArrows(arrows);
+        setReviewHighlights(arrowsToHighlights(arrows));
+      }
       setChatFocus({ turningPointFocus: turningPointFocusContext(point, line) });
       requestChatOpen();
     },
-    [turningLines, requestChatOpen]
+    [activeReviewMoves, turningLines, requestChatOpen]
   );
 
   // Visibility (panel B1, binding): gameId present OR reviewGame — NOT
