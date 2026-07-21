@@ -30,6 +30,35 @@ export function startExplore(fen: string): ExploreState {
 }
 
 /**
+ * Task 3 (increment 3.95): a turning-point card's ply is the mistake move
+ * itself. The player is always white, so an odd ply (her move just landed)
+ * leaves the position black-to-move — she can't touch her own pieces there.
+ * Rounding down to the nearest even ply lands on the position she actually
+ * needs to retry, white to move. An already-even ply (player-to-move) is a
+ * no-op.
+ */
+export function exploreSeedPly(ply: number): number {
+  return ply - (ply % 2);
+}
+
+/**
+ * The single green "best" guiding arrow shown while a sandbox is open —
+ * the matching turning line's bestFromTo, keyed by the SAME ply passed to
+ * openExplore (the mistake's own ply, not the seed ply), matching how the
+ * static debrief already looks turning lines up by ply (GamePage's
+ * handleRewind). Null when there's no matching line or it has no
+ * bestFromTo recorded (declared cut — nothing to point at).
+ */
+export function guidingArrow(
+  ply: number,
+  lines: { ply: number; bestFromTo?: { from: string; to: string } }[]
+): { from: string; to: string; color: "best" } | null {
+  const line = lines.find((l) => l.ply === ply);
+  if (!line?.bestFromTo) return null;
+  return { from: line.bestFromTo.from, to: line.bestFromTo.to, color: "best" };
+}
+
+/**
  * Validates and applies the player's move locally against `s.fen` (same
  * throwaway-clone pattern GamePage's handlePendingStart/mirrorRef flow
  * already uses for the real game — chess.js is the only source of legality,

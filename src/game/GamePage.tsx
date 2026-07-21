@@ -45,7 +45,14 @@ import {
   type HintCopyCtx,
 } from "./hintFlow";
 import { PlayerBar } from "./PlayerBar";
-import { startExplore, applyPlayerMove, applyEngineReply, type ExploreState } from "./explore";
+import {
+  startExplore,
+  applyPlayerMove,
+  applyEngineReply,
+  exploreSeedPly,
+  guidingArrow,
+  type ExploreState,
+} from "./explore";
 
 type Captured = CapturedBySide;
 
@@ -353,6 +360,16 @@ export function GamePage() {
   // can't fire a second one on top of it (mirrors busyRef's role for the
   // real game, scoped to the sandbox instead).
   const [exploreThinking, setExploreThinking] = useState(false);
+  // Task 3 (increment 3.95): the single green "best" guiding arrow shown
+  // while a sandbox is open (guidingArrow, src/game/explore.ts) — set once
+  // at openExplore, cleared after her first move in the sandbox lands (see
+  // handleExploreMove below) since it's a "do this" prompt, not persistent
+  // annotation.
+  const [exploreArrow, setExploreArrow] = useState<{
+    from: string;
+    to: string;
+    color: "best";
+  } | null>(null);
 
   const boardRef = useRef<BoardHandle>(null);
   const mirrorRef = useRef(new Chess());
@@ -1316,8 +1333,14 @@ export function GamePage() {
     setResyncTick((t) => t + 1);
   }, [explore]);
 
-  // Seeds a sandbox at the position before/after `ply` (fenAtPly, same as a
-  // turning-point card's "replay") and hands the board over to it live.
+  // Seeds a sandbox at the player-to-move position and hands the board over
+  // to it live. Task 3 (increment 3.95) fix: `ply` is the turning point's own
+  // ply — her mistake move itself — so fenAtPly(ply) directly is the
+  // position AFTER she played it (opponent to move, her white pieces
+  // untouchable). exploreSeedPly rounds that down to the position where she
+  // was actually on move, matching Task 2's getTurningLines seed exactly.
+  // The guiding arrow is looked up by the ORIGINAL ply (turning lines are
+  // keyed by the mistake's own ply, same convention as handleRewind above).
   // Snapshotting `fen` first is what lets exitExplore return to exactly
   // where the static debrief was, whether that was the final position or a
   // rewound one.
@@ -1328,9 +1351,10 @@ export function GamePage() {
       exploreTokenRef.current += 1; // supersede any still-in-flight reply from a prior session
       exploreBusyRef.current = false;
       setExploreThinking(false);
-      setExplore(startExplore(fenAtPly(activeReviewMoves, ply)));
+      setExplore(startExplore(fenAtPly(activeReviewMoves, exploreSeedPly(ply))));
+      setExploreArrow(guidingArrow(ply, turningLines));
     },
-    [activeReviewMoves, fen]
+    [activeReviewMoves, fen, turningLines]
   );
 
   // Tears the session down and hands the board back to the static debrief —
@@ -1361,6 +1385,10 @@ export function GamePage() {
       const { next, ok } = applyPlayerMove(explore, from, to);
       if (!ok) return;
       setExplore(next);
+      // Task 3 (increment 3.95): the guiding arrow is a "do this" prompt for
+      // the position she's retrying, not a persistent annotation — it's
+      // stale the instant her first move in the sandbox lands.
+      setExploreArrow(null);
       if (!next.awaitingReply) return; // move ended the sandbox position — nothing to reply to
       exploreBusyRef.current = true;
       setExploreThinking(true);
@@ -1720,9 +1748,11 @@ export function GamePage() {
           fen={fen}
           // Increment 3.91 (Task 6): explore mode swaps the whole pending-
           // move seam out for its own direct onMove — pending/judge/hint
-          // overlays and the arrows/highlights layer (declared cut #2) are
-          // all debrief-review furniture that has no meaning once the board
-          // is a live sandbox.
+          // overlays and the reviewArrows/reviewHighlights debrief furniture
+          // have no meaning once the board is a live sandbox. Task 3
+          // (increment 3.95): arrows aren't forced off during explore any
+          // more, though — see the `arrows` prop below, which swaps in the
+          // single exploreArrow guiding-move prompt instead.
           onMove={explore ? handleExploreMove : handleBoardMove}
           checkSquare={check.square}
           checkmate={check.mate}
@@ -1734,7 +1764,7 @@ export function GamePage() {
           lastMove={lastMove}
           hintReveal={hintReveal}
           threatReveal={threatReveal}
-          arrows={explore ? [] : reviewArrows}
+          arrows={explore ? (exploreArrow ? [exploreArrow] : []) : reviewArrows}
           highlightSquares={explore ? [] : reviewHighlights}
         />
         <PlayerBar
