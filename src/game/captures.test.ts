@@ -143,41 +143,86 @@ describe("rollbackCapture", () => {
 });
 
 describe("capturesAtPly", () => {
-  // 1. e4 d5 2. exd5 Qxd5 — a plain pawn trade followed by black recapturing
-  // with the queen (no queen capture involved, just a clean two-capture line
-  // to exercise both trays).
-  const moves = [
-    { ply: 1, san: "e4" },
-    { ply: 2, san: "d5" },
-    { ply: 3, san: "exd5" },
-    { ply: 4, san: "Qxd5" },
-  ];
+  // Independent oracle for the expected trays: replays the SAME sans
+  // through its own fresh chess.js instance, but derives each capture's
+  // victim via describeMove + victimKind — the pair already unit-tested in
+  // their own suite above, which reads the captured piece off the PRE-MOVE
+  // board state — rather than capturesAtPly's own implementation, which
+  // reads chess.js's move.captured/move.color fields directly. A subtle
+  // w/b tray swap or material-sign bug inside capturesAtPly can't
+  // accidentally agree with this independently-derived oracle by
+  // construction, the way a hand-typed literal tray could.
+  function expectedCapturesAtPly(sans: string[], ply: number): CapturedBySide {
+    const chess = new Chess();
+    const captured: CapturedBySide = { w: [], b: [] };
+    const count = Math.max(0, Math.min(ply, sans.length));
+    for (let i = 0; i < count; i++) {
+      const mover = chess.turn(); // color making this move, before it's applied
+      const preMove = new Chess(chess.fen());
+      const m = chess.move(sans[i]);
+      const victim = victimKind(preMove, describeMove(m));
+      if (victim) {
+        if (mover === "w") captured.b.push(victim);
+        else captured.w.push(victim);
+      }
+    }
+    return captured;
+  }
 
-  it("returns empty trays at ply 0 (start position)", () => {
-    expect(capturesAtPly(moves, 0)).toEqual({ w: [], b: [] });
+  // 1. e4 d5 2. exd5 Qxd5 — a plain, equal-value pawn trade: one capture on
+  // each side, same value, the "even material" edge case.
+  const evenTradeSans = ["e4", "d5", "exd5", "Qxd5"];
+  const evenTradeMoves = evenTradeSans.map((san, i) => ({ ply: i + 1, san }));
+
+  // Continues the same game with 3. Nf3 Qxf3 — black's queen (already on
+  // d5 from the pawn trade above) captures the white knight too. White has
+  // only ever captured the one black pawn (ply 3); black now has TWO
+  // captures on record (the pawn from ply 4, the knight from ply 6) — a
+  // real capture on each side, but unequal value, so material is non-zero.
+  const unequalSans = [...evenTradeSans, "Nf3", "Qxf3"];
+  const unequalMoves = unequalSans.map((san, i) => ({ ply: i + 1, san }));
+
+  it("returns empty trays at ply 0 (start position), matching the independent replay", () => {
+    expect(capturesAtPly(evenTradeMoves, 0)).toEqual(expectedCapturesAtPly(evenTradeSans, 0));
+    expect(capturesAtPly(evenTradeMoves, 0)).toEqual({ w: [], b: [] });
   });
 
-  it("returns empty trays before any capture has happened", () => {
-    expect(capturesAtPly(moves, 2)).toEqual({ w: [], b: [] });
+  it("returns empty trays before any capture has happened, matching the independent replay", () => {
+    expect(capturesAtPly(evenTradeMoves, 2)).toEqual(expectedCapturesAtPly(evenTradeSans, 2));
+    expect(capturesAtPly(evenTradeMoves, 2)).toEqual({ w: [], b: [] });
   });
 
-  it("puts a white capture's victim in captured.b (\"pieces you've captured\")", () => {
-    expect(capturesAtPly(moves, 3)).toEqual({ w: [], b: ["p"] });
+  it("matches the independent replay for a white-side capture (\"pieces you've captured\")", () => {
+    expect(capturesAtPly(evenTradeMoves, 3)).toEqual(expectedCapturesAtPly(evenTradeSans, 3));
+    expect(capturesAtPly(evenTradeMoves, 3)).toEqual({ w: [], b: ["p"] });
   });
 
-  it("puts a black capture's victim in captured.w (\"pieces mallow has captured\") once both captures have happened", () => {
-    expect(capturesAtPly(moves, 4)).toEqual({ w: ["p"], b: ["p"] });
+  it("matches the independent replay once both sides have captured equal material", () => {
+    expect(capturesAtPly(evenTradeMoves, 4)).toEqual(expectedCapturesAtPly(evenTradeSans, 4));
+    expect(capturesAtPly(evenTradeMoves, 4)).toEqual({ w: ["p"], b: ["p"] });
+    expect(materialDiff(capturesAtPly(evenTradeMoves, 4))).toEqual({ leader: null, points: 0 });
   });
 
-  it("clamps a ply beyond the move list to the final position", () => {
-    expect(capturesAtPly(moves, 99)).toEqual(capturesAtPly(moves, moves.length));
+  it("matches the independent replay for unequal captures on each side, with non-zero signed material", () => {
+    const actual = capturesAtPly(unequalMoves, 6);
+    const expected = expectedCapturesAtPly(unequalSans, 6);
+    expect(actual).toEqual(expected);
+    expect(actual).toEqual({ w: ["p", "n"], b: ["p"] });
+    expect(actual.w.length).toBeGreaterThan(0);
+    expect(actual.b.length).toBeGreaterThan(0);
+    expect(materialDiff(actual)).toEqual({ leader: "mallow", points: 3 });
+  });
+
+  it("clamps a ply beyond the move list to the final position, matching the independent replay", () => {
+    expect(capturesAtPly(unequalMoves, 99)).toEqual(expectedCapturesAtPly(unequalSans, unequalSans.length));
+    expect(capturesAtPly(unequalMoves, 99)).toEqual(capturesAtPly(unequalMoves, unequalMoves.length));
   });
 
   it("clamps a negative ply to the start position", () => {
-    expect(capturesAtPly(moves, -5)).toEqual({ w: [], b: [] });
+    expect(capturesAtPly(unequalMoves, -5)).toEqual({ w: [], b: [] });
   });
 
-  it("returns correct trays and material for an empty move list", () => {
+  it("returns correct trays for an empty move list", () => {
     expect(capturesAtPly([], 0)).toEqual({ w: [], b: [] });
   });
 });

@@ -73,7 +73,7 @@ export function MoveList({ sans, currentPly, onSelect, disabled }: MoveListProps
                 disabled={disabled}
                 className={
                   "small debrief-movelist-move debrief-movelist-you" +
-                  (currentPly === row.white.ply ? " active" : "")
+                  (shownPly === row.white.ply ? " active" : "")
                 }
                 onClick={() => onSelect(row.white!.ply)}
               >
@@ -86,7 +86,7 @@ export function MoveList({ sans, currentPly, onSelect, disabled }: MoveListProps
                 disabled={disabled}
                 className={
                   "small debrief-movelist-move debrief-movelist-mallow" +
-                  (currentPly === row.black.ply ? " active" : "")
+                  (shownPly === row.black.ply ? " active" : "")
                 }
                 onClick={() => onSelect(row.black!.ply)}
               >
