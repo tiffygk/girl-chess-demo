@@ -359,6 +359,61 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
+  // Side-to-move validation (round 2026-07-22, Task 2 -- "the stronger
+  // version"): the coach once attributed the PLAYER's own move to mallow
+  // ("mallow plays Qh5" while it was actually the player's own pending
+  // move). toMove/legalSansBelongTo (above) give the model the fact;
+  // checkSideAttributionClaims checks the model's OWN prose against it,
+  // modeled directly on checkDefenseClaims's shape: a fixed, narrow set of
+  // subject+verb forms, no synonym expansion, no pronoun resolution across
+  // sentences. A hand-built literal ChatFactList is used (not
+  // assembleChatFactList, which only replays gameSans from the start
+  // position) -- same pattern defenderFacts() above uses -- since only
+  // toMove/legalSans/allowedSans matter for this check. allowedSans mirrors
+  // legalSans (as assembleChatFactList's real fold always does) so the
+  // primary SAN-shaped-token check never fires here, isolating the
+  // side-claim check in each assertion below.
+  function sideAttrFacts(overrides: Partial<ChatFactList> = {}): ChatFactList {
+    const legalSans = ["Qh5", "Nf3", "e4"];
+    return {
+      gameSans: [],
+      currentFen: DEFENDER_FEN,
+      toMove: "you",
+      occupancy: [],
+      legalSans,
+      allowedSans: [...legalSans],
+      contested: [],
+      ...overrides,
+    };
+  }
+
+  describe("validateChat — side-attribution claim validation (side-to-move grounding, Task 2)", () => {
+    it("flags 'mallow plays Qh5' when toMove is you and Qh5 is the player's own legal move", () => {
+      const facts = sideAttrFacts({ toMove: "you" });
+      const result = validateChat("mallow plays Qh5, winning material.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.includes("side-claim"))).toBe(true);
+    });
+
+    it("does not flag 'mallow plays Qh5' when toMove is mallow and Qh5 genuinely is mallow's legal move", () => {
+      const facts = sideAttrFacts({ toMove: "mallow" });
+      const result = validateChat("mallow plays Qh5, winning material.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("does not flag 'you play Qh5' in the same (toMove: you) position -- correct attribution", () => {
+      const facts = sideAttrFacts({ toMove: "you" });
+      const result = validateChat("you play Qh5 and win her queen.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("does not flag an ambiguous phrasing outside the fixed verb list (the cut)", () => {
+      const facts = sideAttrFacts({ toMove: "you" });
+      const result = validateChat("mallow could try Qh5 here.", facts);
+      expect(result.ok).toBe(true);
+    });
+  });
+
   // (d)
   describe("validateChat — declared cut #2 (geography is unverifiable by design)", () => {
     it("fluent off-topic prose with no square- or san-shaped tokens passes validation — chat polices only move-shaped tokens against the fact list, never topical relevance", () => {
