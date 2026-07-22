@@ -297,12 +297,18 @@ export function CoachChat({
           <div className="chat-corner-head-title">
             {/* cookie's registry entry -- same plate anatomy as np-you/
                 np-mallow (PlayerBar.tsx), lavender trio, role in the elo
-                seat. NO glyph: the fortune-cookie icon is on its own track
-                (owner ruling 2026-07-21), so the plate ships as name +
-                divider + role only. D7 ruled: the c00kie corruption frame,
-                lavender shadows only. */}
+                seat. Glyph ported from the vault component library
+                (component-library.html #cc-glyph-candidates, pixel weight
+                (C): deep ink body #6952C4) -- owner-approved 2026-07-21,
+                reversing the earlier no-glyph ruling. D7 ruled: the c00kie
+                corruption frame, lavender shadows only. */}
             <span className="name-plate np-cookie">
               <span className="np-body">
+                <svg className="np-glyph" width="28" height="24" viewBox="0 0 14 12" shapeRendering="crispEdges" aria-hidden="true">
+                  <path fill="#FFFFFF" d="M11 0h2v1h-2zM10 1h2v1h-2zM9 2h2v1H9zM8 3h2v1H8z" />
+                  <path fill="#6952C4" d="M3 1h5v1H3zM1 2h8v1H1zM12 2h2v1h-2zM0 3h8v1H0zM11 3h3v1h-3zM0 4h7v1H0zM8 4h6v1H8zM0 5h6v1H0zM7 5h7v1H7zM0 6h14v1H0zM0 7h14v1H0zM1 8h12v1H1zM1 9h12v1H1zM2 10h9v1H2zM4 11h5v1H4z" />
+                  <path fill="#C9BFEF" d="M2 5h1v1H2zM2 6h1v1H2zM3 7h1v1H3z" />
+                </svg>
                 <span className="np-name">
                   <span className="np-name-real">cookie</span>
                   <span className="np-name-glitch" aria-hidden="true">c00kie</span>
