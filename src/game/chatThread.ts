@@ -5,7 +5,16 @@
 import type { ChatContext } from "./api";
 
 export type ThreadEntry =
-  | { kind: "message"; role: "user" | "coach"; text: string; cause?: "backend-down" | "templates-only"; traceId?: number }
+  | {
+      kind: "message";
+      role: "user" | "coach";
+      text: string;
+      // Task 2 (2026-07-22, truthfulness leaks): "timeout" is a third
+      // cause, distinct from "backend-down" -- see CoachChat.tsx's chip
+      // predicate, which reserves the offline chip for backend-down alone.
+      cause?: "backend-down" | "templates-only" | "timeout";
+      traceId?: number;
+    }
   | { kind: "context-anchor"; source: "hint" | "turning-point"; moveNumber: number | null; label: string; text: string }
   | { kind: "intent-marker" };
 

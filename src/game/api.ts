@@ -331,8 +331,10 @@ export interface ChatResponse {
   // Task 8 (inc 3.95, Fix 1): "templates-only" (a deliberate voice choice)
   // vs "backend-down" (a genuine failure) -- see manager.ts's chat() and
   // CoachChat.tsx's offline-chip predicate, which renders only for the
-  // latter.
-  cause?: "backend-down" | "templates-only";
+  // latter. Task 2 (2026-07-22, truthfulness leaks): "timeout" is a third,
+  // distinct cause -- a slow-but-healthy backend, not a down one -- rendered
+  // as its own "slow" chip, never the offline chip.
+  cause?: "backend-down" | "templates-only" | "timeout";
   traceId?: number;
   error?: string;
 }

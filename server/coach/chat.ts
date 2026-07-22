@@ -451,13 +451,32 @@ function correctiveSuffix(violations: string[]): string {
 // caller). history is caller-supplied (the server, never the client) so
 // this function itself has no opinion about where history comes from beyond
 // using it verbatim.
+// Task 2 (2026-07-22, truthfulness leaks): a rejection whose message
+// indicates the backend just ran out of time is a different fact from the
+// backend actually being down -- the gate measured hard timeouts rendering
+// the "offline" chip while other asks in the very same session answered in
+// 4-5s. All three backends' timeout paths format their own error text
+// through the literal words "timed out" (claude-cli.ts's formatTimeoutError,
+// agent-sdk.ts's generate()/probe rejects, ollama.ts's probe reject) --
+// detect on that substring rather than adding a typed error class, so this
+// stays a one-line classification with no backend-side changes.
+function isTimeoutError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.toLowerCase().includes("timed out");
+}
+
 export async function chat(
   userMessage: string,
   history: { role: "user" | "coach"; text: string }[],
   facts: ChatFactList,
   backend: CoachBackend,
   trace: NarrateTraceContext
-): Promise<{ text: string; source: "model" | "template"; cause?: "backend-down"; traceId: number }> {
+): Promise<{
+  text: string;
+  source: "model" | "template";
+  cause?: "backend-down" | "timeout";
+  traceId: number;
+}> {
   const start = Date.now();
   const persona = getPersona();
   const basePrompt = buildChatPrompt(facts, history, userMessage, persona);
@@ -466,7 +485,7 @@ export async function chat(
   let attemptOutput = "";
   let regenCount = 0;
   let modelText: string | null = null;
-  let backendDown = false;
+  let failureCause: "backend-down" | "timeout" | null = null;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -476,7 +495,7 @@ export async function chat(
       // redirect template below -- never worth a second network/process
       // call, mirrors narrate()'s discipline exactly.
       attemptOutput = `[backend error] ${err instanceof Error ? err.message : String(err)}`;
-      backendDown = true;
+      failureCause = isTimeoutError(err) ? "timeout" : "backend-down";
       break;
     }
 
@@ -521,5 +540,5 @@ export async function chat(
     latencyMs,
   });
 
-  return backendDown ? { text, source, cause: "backend-down", traceId } : { text, source, traceId };
+  return failureCause ? { text, source, cause: failureCause, traceId } : { text, source, traceId };
 }
