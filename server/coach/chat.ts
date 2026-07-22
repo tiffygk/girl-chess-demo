@@ -281,6 +281,50 @@ function checkDefenseClaims(text: string, fen: string): string[] {
   return violations;
 }
 
+// ---- side-attribution claim validation ------------------------------------
+// The coach once attributed the PLAYER's own pending move to mallow ("you
+// win her queen for free" about the player's own Qh5) -- toMove and
+// legalSansBelongTo (ChatFactList/factsForModel above) give the model the
+// fact, but nothing previously checked the model's OWN prose against it.
+// Modeled directly on checkDefenseClaims above: one narrow claim shape, chess
+// facts already in hand (no engine call), routed into the same violations
+// array. The claim shape: a SAN token explicitly attributed to a named side
+// via a fixed, small verb list, in the four fixed subject forms "mallow/she
+// /you/your <verb> <SAN>". Ownership is only adjudicated against legalSans
+// (the CURRENT toMove side's moves) -- gameSans don't carry a per-san side
+// label, so a token that isn't a legal move right now is left unflagged
+// rather than guessed at. Precision over recall, same as the guard/safety
+// checker: a verb outside the fixed list, a pronoun ("her"/"him"), or a
+// second clause naming the other side is never chased -- a missed
+// attribution costs nothing, a false positive costs a real reply.
+const SIDE_ATTR_SUBJECTS = "mallow|she|you|your";
+const SIDE_ATTR_VERBS = "plays the|plays as|plays|played|moves|moved|takes|took";
+const SAN_TOKEN_SRC = "(?:O-O(?:-O)?|[KQRBNkqrbn]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBNqrbn])?[+#]?)";
+
+function sideAttributionRe(): RegExp {
+  // group 1: the subject (mallow/she/you/your), group 2: the SAN token
+  // immediately following the verb -- no filler allowed between subject,
+  // verb, and token, so this never crosses into a second clause.
+  return new RegExp(`\\b(${SIDE_ATTR_SUBJECTS})\\s+(?:${SIDE_ATTR_VERBS})\\s+(${SAN_TOKEN_SRC})\\b`, "gi");
+}
+
+function checkSideAttributionClaims(text: string, facts: ChatFactList): string[] {
+  const violations: string[] = [];
+  const legalSans = new Set(facts.legalSans);
+
+  for (const m of text.matchAll(sideAttributionRe())) {
+    const [, subjectRaw, sanRaw] = m;
+    const subject = subjectRaw.toLowerCase();
+    const claimedSide: "you" | "mallow" = subject === "mallow" || subject === "she" ? "mallow" : "you";
+    if (claimedSide === facts.toMove) continue; // correctly attributed
+    const token = stripTrailingPunctuation(sanRaw);
+    if (!isAllowedSanToken(token, legalSans)) continue; // not toMove's legal move right now -- can't adjudicate
+    violations.push(`side-claim: ${token} is ${facts.toMove}'s move to play, not ${claimedSide}'s`);
+  }
+
+  return violations;
+}
+
 export function validateChat(text: string, facts: ChatFactList): { ok: true } | { ok: false; violations: string[] } {
   const allowedSans = new Set(facts.allowedSans);
   const violations: string[] = [];
@@ -292,6 +336,7 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
   }
 
   violations.push(...checkDefenseClaims(text, facts.currentFen));
+  violations.push(...checkSideAttributionClaims(text, facts));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };
