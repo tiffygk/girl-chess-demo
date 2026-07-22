@@ -4,6 +4,7 @@ import type { CoachBackend } from "./backends/types";
 import { getPersona, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
+import { checkPlacementClaims } from "./placementClaims";
 import { insertAdviceTrace } from "../store/db";
 
 // F16 (this-game grounding chat): a second, independent narration surface
@@ -367,6 +368,12 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
     violations.push(...currentDefense);
   }
   violations.push(...checkSideAttributionClaims(text, facts));
+  // Task 1 (R3, 2026-07-22 fact-gap round): the placement-claim check takes
+  // both occupancy lists itself and applies the same both-positions
+  // intersection internally (see checkPlacementClaims's own comment) --
+  // unlike checkDefenseClaims above, there's no separate current/focus call
+  // + filter needed here.
+  violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };
