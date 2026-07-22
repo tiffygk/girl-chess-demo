@@ -92,6 +92,11 @@ export interface ThreatFacts {
   capturedPieceKind?: string; // only on capture motifs
   capturesHerJustMovedPiece: boolean;
   forkTargets?: { square: string; pieceKind: string }[]; // only when motif === "fork", length >= 2
+  // Task 1 (defender grounding): true when the player has a piece that
+  // recaptures on the actual captured square -- a defended capture is a
+  // trade, not a clean loss. Always present; only meaningful on capture
+  // motifs (false otherwise, since there's nothing to defend).
+  capturedSquareDefended: boolean;
 }
 
 // Increment 3a Wave 3: mirrors server/annotator/motifs.ts's

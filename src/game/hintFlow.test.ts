@@ -216,6 +216,7 @@ const forkThreat: ThreatFacts = {
     { square: "e6", pieceKind: "n" },
     { square: "h8", pieceKind: "r" },
   ],
+  capturedSquareDefended: false,
 };
 
 const captureMovedThreat: ThreatFacts = {
@@ -229,6 +230,7 @@ const captureMovedThreat: ThreatFacts = {
   capturesSquare: "h5",
   capturedPieceKind: "n",
   capturesHerJustMovedPiece: true,
+  capturedSquareDefended: false,
 };
 
 const captureOtherThreat: ThreatFacts = {
@@ -242,6 +244,7 @@ const captureOtherThreat: ThreatFacts = {
   capturesSquare: "f7",
   capturedPieceKind: "p",
   capturesHerJustMovedPiece: false,
+  capturedSquareDefended: false,
 };
 
 const mateThreat: ThreatFacts = {
@@ -253,6 +256,7 @@ const mateThreat: ThreatFacts = {
   refutationToSquare: "h4",
   givesCheck: true,
   capturesHerJustMovedPiece: false,
+  capturedSquareDefended: false,
 };
 
 const checkThreat: ThreatFacts = {
@@ -264,6 +268,7 @@ const checkThreat: ThreatFacts = {
   refutationToSquare: "h5",
   givesCheck: true,
   capturesHerJustMovedPiece: false,
+  capturedSquareDefended: false,
 };
 
 const positionalThreat: ThreatFacts = {
@@ -275,6 +280,7 @@ const positionalThreat: ThreatFacts = {
   refutationToSquare: "d2",
   givesCheck: false,
   capturesHerJustMovedPiece: false,
+  capturedSquareDefended: false,
 };
 
 const baseCtx: HintCopyCtx = { herPieceKind: "n", herToSquare: "e4" };
@@ -459,6 +465,41 @@ describe("hintCopy level 3: concrete why per motif", () => {
   });
   it("undefined threat falls back honestly, same as positional", () => {
     expect(hintCopy(3, baseCtx)).toBe("this loses ground. nothing hangs, but the position gets worse.");
+  });
+});
+
+// Task 1 (defender grounding): a defended capture is a trade, not a clean
+// loss -- the loss line ("she takes it" / "takes your X on Y") must never
+// fire when the player can recapture. capturedSquareDefended: true routes
+// capture-moved and capture-other to the same honest fallback the
+// no-threat/positional case already uses.
+describe("hintCopy level 3: defended captures route to the honest fallback, not a loss claim", () => {
+  const honestFallback = "this loses ground. nothing hangs, but the position gets worse.";
+
+  it("capture-moved, defended: honest fallback, not the loss line", () => {
+    const defended: ThreatFacts = { ...captureMovedThreat, capturedSquareDefended: true };
+    const copy = hintCopy(3, { herPieceKind: "n", herToSquare: "h5", threat: defended });
+    expect(copy).toBe(honestFallback);
+    expect(copy).not.toContain("takes it");
+  });
+
+  it("capture-moved, undefended: unchanged loss line", () => {
+    const undefended: ThreatFacts = { ...captureMovedThreat, capturedSquareDefended: false };
+    const copy = hintCopy(3, { herPieceKind: "n", herToSquare: "h5", threat: undefended });
+    expect(copy).toBe("knight to h5 walks into her queen. she just takes it.");
+  });
+
+  it("capture-other, defended: honest fallback, not 'takes your X on Y'", () => {
+    const defended: ThreatFacts = { ...captureOtherThreat, capturedSquareDefended: true };
+    const copy = hintCopy(3, { herPieceKind: "b", herToSquare: "g5", threat: defended });
+    expect(copy).toBe(honestFallback);
+    expect(copy).not.toContain("takes your");
+  });
+
+  it("capture-other, undefended: unchanged loss line", () => {
+    const undefended: ThreatFacts = { ...captureOtherThreat, capturedSquareDefended: false };
+    const copy = hintCopy(3, { herPieceKind: "b", herToSquare: "g5", threat: undefended });
+    expect(copy).toBe("bishop to g5 opens the door. her queen takes your pawn on f7.");
   });
 });
 

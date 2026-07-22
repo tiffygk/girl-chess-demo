@@ -28,6 +28,11 @@ export interface ThreatFacts {
   capturedPieceKind?: string; // only on capture motifs
   capturesHerJustMovedPiece: boolean;
   forkTargets?: { square: string; pieceKind: string }[]; // only when motif === "fork", length >= 2
+  // Task 1 (defender grounding): true when the player has a piece that
+  // recaptures on the actual captured square -- a defended capture is a
+  // trade, not a clean loss. Always present; only meaningful on capture
+  // motifs (false otherwise, since there's nothing to defend).
+  capturedSquareDefended: boolean;
 }
 
 const MINOR_PLUS = new Set(["n", "b", "r", "q"]);
@@ -98,6 +103,12 @@ export function deriveThreatFacts(
     const actualCaptureSquare = resolveCaptureSquare(mv, herColor);
     const isCapture = Boolean(mv.captured);
     const capturesHerJustMovedPiece = isCapture && actualCaptureSquare === herToSquare;
+    // probe is now the position AFTER the opponent's refutation capture, with
+    // herColor (the player) to move -- so attackers() on the captured square
+    // answers "can she recapture right now," the literal test for a trade.
+    const capturedSquareDefended = isCapture
+      ? probe.attackers(actualCaptureSquare as Square, herColor).length > 0
+      : false;
 
     let motif: ThreatMotif;
     if (isCapture && capturesHerJustMovedPiece) {
@@ -125,6 +136,7 @@ export function deriveThreatFacts(
       refutationToSquare: mv.to,
       givesCheck: probe.inCheck(),
       capturesHerJustMovedPiece,
+      capturedSquareDefended,
     };
 
     if (motif === "capture-moved" || motif === "capture-other") {
