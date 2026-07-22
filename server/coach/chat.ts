@@ -16,7 +16,17 @@ import { insertAdviceTrace } from "../store/db";
 // untouched; chat gets its own ChatFactList so a change to one surface's
 // shape can never silently break the other.
 export const CHAT_HISTORY_WINDOW = 8; // messages (4 exchanges), owner-calibratable
-export const CHAT_TIMEOUT_MS = 20000; // owner-calibratable
+// Owner-calibratable. Raised 20000 -> 30000 on 2026-07-22 from her own
+// advice_traces, not a guess: plain asks answer in 4.6-5.1s, but the
+// focused "ask about this" turns carry a much larger prompt and her two
+// hardest questions (traces 57/58) burned the full 20s and served a
+// template instead of an answer. Chat lives in the coach's corner and
+// provably does not block play (that is what moving it out of the centre
+// modal bought), so waiting longer for a real answer beats a fast
+// non-answer -- and the "slow" chip tells her which one she is getting.
+// narrate()'s own budget is deliberately NOT raised with it: that surface
+// speaks unprompted while she plays, where a late reply is worse than none.
+export const CHAT_TIMEOUT_MS = 30000;
 export const CHAT_MAX_LEN = 500;
 
 export interface ChatContext {
