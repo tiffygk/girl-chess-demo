@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { assembleFactList, buildPrompt, getPersona } from "./index";
-import { validateNarration } from "./validate";
+import { validateNarration, isAllowedSanToken } from "./validate";
 
 // A small, realistic fact list: her rook hangs on d8, the opponent's
 // refutation Rxd8 takes it, and the recommended move Nxe4 wins a pawn.
@@ -203,5 +203,44 @@ describe("validateNarration -- defender-claim validation (Task 3)", () => {
   it("does not flag 'aren't defended' when d5 is genuinely undefended", () => {
     const result = validateNarration("your pawns on d5 aren't defended.", facts(UNDEFENDED_FEN));
     expect(result.ok).toBe(true);
+  });
+});
+
+// Latency/accuracy experiment, 2026-07-22. Measured on 36 real chat calls:
+// regenerations were by far the strongest predictor of a slow reply
+// (r = +0.70 against latency; median 3.8s without one, 29-44s with one),
+// and prompt size predicted nothing (r = -0.12). Trace 89 showed why one
+// fired: the game ended with Qh4#, the coach truthfully wrote "queen on h4
+// ... Qh4", and validation rejected the bare token because allowedSans
+// holds the suffixed "Qh4#". The truthful answer was thrown away,
+// regenerated, rejected again, and the player got a template 29s later.
+//
+// A check/mate suffix is an annotation on a move, not a different move, so
+// a bare token must match its suffixed form. The reverse must NOT hold: a
+// token that CLAIMS check or mate against an allowed move without one is
+// asserting something about the position, and that stays a violation.
+describe("isAllowedSanToken: check/mate suffixes", () => {
+  it("accepts a bare token when the played move was mate", () => {
+    expect(isAllowedSanToken("Qh4", new Set(["Qh4#"]))).toBe(true);
+  });
+
+  it("accepts a bare token when the played move was check", () => {
+    expect(isAllowedSanToken("Qd4", new Set(["Qd4+"]))).toBe(true);
+  });
+
+  it("accepts a lowercase bare token against a suffixed allowed move", () => {
+    expect(isAllowedSanToken("qh4", new Set(["Qh4#"]))).toBe(true);
+  });
+
+  it("REJECTS a token claiming mate when the allowed move carries no suffix", () => {
+    expect(isAllowedSanToken("Qh4#", new Set(["Qh4"]))).toBe(false);
+  });
+
+  it("REJECTS a token claiming check when the allowed move carries no suffix", () => {
+    expect(isAllowedSanToken("Qh4+", new Set(["Qh4"]))).toBe(false);
+  });
+
+  it("still rejects a genuinely fabricated move", () => {
+    expect(isAllowedSanToken("Qh5", new Set(["Qh4#"]))).toBe(false);
   });
 });
