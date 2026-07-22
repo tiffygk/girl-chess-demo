@@ -3,24 +3,37 @@ import { hintFocusContext, turningPointFocusContext, reconcileChatFocus } from "
 
 describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", () => {
   describe("hintFocusContext", () => {
-    it("returns the level + text when a hint is actually rendered", () => {
-      expect(hintFocusContext(2, "there's a fork brewing.")).toEqual({
+    it("returns the level + text + ply when a hint is actually rendered", () => {
+      expect(hintFocusContext(2, "there's a fork brewing.", 9)).toEqual({
         level: 2,
         text: "there's a fork brewing.",
+        ply: 9,
       });
     });
 
     it("returns undefined at level 0 (nothing revealed yet)", () => {
-      expect(hintFocusContext(0, "should never happen")).toBeUndefined();
+      expect(hintFocusContext(0, "should never happen", 9)).toBeUndefined();
     });
 
     it("returns undefined when text is null (levels 4-5 mid-fetch, before hintCopy has anything to say)", () => {
-      expect(hintFocusContext(4, null)).toBeUndefined();
-      expect(hintFocusContext(5, undefined)).toBeUndefined();
+      expect(hintFocusContext(4, null, 9)).toBeUndefined();
+      expect(hintFocusContext(5, undefined, 9)).toBeUndefined();
     });
 
     it("returns undefined for an empty-string text", () => {
-      expect(hintFocusContext(3, "")).toBeUndefined();
+      expect(hintFocusContext(3, "", 9)).toBeUndefined();
+    });
+
+    // Regression (Phase 3 review F1): two different pending moves reaching
+    // the SAME level with hintCopy's fixed-template text (levels 1-2) must
+    // still produce focuses with different ply -- this is the field
+    // chatThread.ts's focusKey now relies on to tell them apart.
+    it("carries a different ply for two colliding-text focuses at the same level", () => {
+      const first = hintFocusContext(1, "hold on. look at your knight.", 7);
+      const second = hintFocusContext(1, "hold on. look at your knight.", 19);
+      expect(first?.ply).toBe(7);
+      expect(second?.ply).toBe(19);
+      expect(first).not.toEqual(second);
     });
   });
 
@@ -55,12 +68,12 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
   // calls this fresh on every send, dropping a focus that no longer matches
   // what's actually on screen rather than trusting a remembered state.
   describe("reconcileChatFocus (stale-focus guard)", () => {
-    const hintFocus = { level: 3, text: "her knight to f6 opens the door." };
+    const hintFocus = { level: 3, text: "her knight to f6 opens the door.", ply: 11 };
 
-    it("keeps a hintFocus whose level AND text match the currently-rendered hint", () => {
+    it("keeps a hintFocus whose level, text, AND ply match the currently-rendered hint", () => {
       const result = reconcileChatFocus(
         { hintFocus },
-        { hintLevel: 3, renderedHintText: "her knight to f6 opens the door.", rewindPly: null }
+        { hintLevel: 3, renderedHintText: "her knight to f6 opens the door.", pendingPly: 11, rewindPly: null }
       );
       expect(result).toEqual({ hintFocus });
     });
@@ -68,7 +81,7 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
     it("drops a hintFocus once the hint ladder has reset to level 0 (e.g. a new pending move started)", () => {
       const result = reconcileChatFocus(
         { hintFocus },
-        { hintLevel: 0, renderedHintText: null, rewindPly: null }
+        { hintLevel: 0, renderedHintText: null, pendingPly: null, rewindPly: null }
       );
       expect(result).toEqual({});
     });
@@ -76,7 +89,32 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
     it("drops a hintFocus when the level coincidentally matches but the rendered text has moved on (a different pending move reached the same ladder rung)", () => {
       const result = reconcileChatFocus(
         { hintFocus },
-        { hintLevel: 3, renderedHintText: "this loses ground. nothing hangs, but the position gets worse.", rewindPly: null }
+        {
+          hintLevel: 3,
+          renderedHintText: "this loses ground. nothing hangs, but the position gets worse.",
+          pendingPly: 23,
+          rewindPly: null,
+        }
+      );
+      expect(result).toEqual({});
+    });
+
+    // Regression (Phase 3 review F1): the exact gap the old text-only
+    // comparison missed. At levels 1-2, hintCopy's text is a FIXED
+    // TEMPLATE, so a stale focus from an earlier pending move can have
+    // identical level AND text to what's rendering now, differing only in
+    // which position it was actually about. Before the fix this survived
+    // reconcile incorrectly; the ply check is what catches it.
+    it("drops a hintFocus when level AND fixed-template text BOTH coincidentally match but it's a different pending move (ply differs)", () => {
+      const staleTemplateFocus = { level: 1, text: "hold on. look at your knight.", ply: 7 };
+      const result = reconcileChatFocus(
+        { hintFocus: staleTemplateFocus },
+        {
+          hintLevel: 1,
+          renderedHintText: "hold on. look at your knight.", // identical text, new pending move
+          pendingPly: 19,
+          rewindPly: null,
+        }
       );
       expect(result).toEqual({});
     });
@@ -85,7 +123,7 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
       const turningPointFocus = { ply: 15, san: "O-O", label: "blunder" };
       const result = reconcileChatFocus(
         { turningPointFocus },
-        { hintLevel: 0, renderedHintText: null, rewindPly: 15 }
+        { hintLevel: 0, renderedHintText: null, pendingPly: null, rewindPly: 15 }
       );
       expect(result).toEqual({ turningPointFocus });
     });
@@ -94,7 +132,7 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
       const turningPointFocus = { ply: 15, san: "O-O", label: "blunder" };
       const result = reconcileChatFocus(
         { turningPointFocus },
-        { hintLevel: 0, renderedHintText: null, rewindPly: 14 }
+        { hintLevel: 0, renderedHintText: null, pendingPly: null, rewindPly: 14 }
       );
       expect(result).toEqual({});
     });
@@ -103,13 +141,16 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
       const turningPointFocus = { ply: 15, san: "O-O", label: "blunder" };
       const result = reconcileChatFocus(
         { turningPointFocus },
-        { hintLevel: 0, renderedHintText: null, rewindPly: null }
+        { hintLevel: 0, renderedHintText: null, pendingPly: null, rewindPly: null }
       );
       expect(result).toEqual({});
     });
 
     it("passes both fields through independently when neither is set (no focus active)", () => {
-      const result = reconcileChatFocus({}, { hintLevel: 0, renderedHintText: null, rewindPly: null });
+      const result = reconcileChatFocus(
+        {},
+        { hintLevel: 0, renderedHintText: null, pendingPly: null, rewindPly: null }
+      );
       expect(result).toEqual({});
     });
   });
@@ -135,6 +176,7 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
       const result = reconcileChatFocus(focus, {
         hintLevel: 0,
         renderedHintText: null,
+        pendingPly: null,
         rewindPly: point.ply,
       });
 
@@ -148,7 +190,12 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
       const line = { bestSan: "Nxd4", pvSans: ["Nxd4", "Qd7", "Nc2"] };
       const focus = { turningPointFocus: turningPointFocusContext(point, line) };
 
-      const result = reconcileChatFocus(focus, { hintLevel: 0, renderedHintText: null, rewindPly: null });
+      const result = reconcileChatFocus(focus, {
+        hintLevel: 0,
+        renderedHintText: null,
+        pendingPly: null,
+        rewindPly: null,
+      });
 
       expect(result).toEqual({});
     });
