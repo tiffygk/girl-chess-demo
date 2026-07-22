@@ -97,6 +97,11 @@ export interface ThreatFacts {
   // trade, not a clean loss. Always present; only meaningful on capture
   // motifs (false otherwise, since there's nothing to defend).
   capturedSquareDefended: boolean;
+  // Controller follow-up (issue A, 2026-07-22 truthfulness-leaks review):
+  // the piece kind HER OWN move captured, if it was a capture at all --
+  // distinct from capturedPieceKind above (what the REFUTATION captures
+  // FROM her). Undefined when her move wasn't a capture.
+  herCapturedPieceKind?: string;
 }
 
 // Increment 3a Wave 3: mirrors server/annotator/motifs.ts's

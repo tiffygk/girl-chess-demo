@@ -201,7 +201,11 @@ export async function classifyMove(
   // above: cheap (pure chess.js replay of already-computed engine output),
   // and gating it to warning/nudge tiers would just make the client redo
   // the same check for no benefit.
-  const threat = deriveThreatFacts(chess.fen(), move.to, move.color, afterEval);
+  // Controller follow-up (issue A, 2026-07-22 truthfulness-leaks review):
+  // move.captured is the literal fact for what HER OWN move captured (chess.js
+  // sets this only on a capturing move) -- read here, threaded straight
+  // through, never re-derived inside motifs.ts.
+  const threat = deriveThreatFacts(chess.fen(), move.to, move.color, afterEval, move.captured);
 
   return { tier, deltaCp, mateAgainst, latencyMs: Date.now() - start, facts, threat };
 }

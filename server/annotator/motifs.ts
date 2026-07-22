@@ -28,6 +28,16 @@ export interface ThreatFacts {
   capturedPieceKind?: string; // only on capture motifs
   capturesHerJustMovedPiece: boolean;
   forkTargets?: { square: string; pieceKind: string }[]; // only when motif === "fork", length >= 2
+  // Controller follow-up (issue A, 2026-07-22 truthfulness-leaks review):
+  // the piece kind HER OWN move captured, if it was a capture at all --
+  // distinct from capturedPieceKind above, which is what the REFUTATION
+  // captures FROM her (for capture-moved, always the same piece she just
+  // moved, since the refutation recaptures exactly there -- it carries no
+  // information about what she herself won). Caller-supplied, never
+  // re-derived here: the caller (classify.ts) already has her own chess.js
+  // Move object in hand, and `.captured` on it is the literal fact.
+  // Undefined when her move wasn't a capture.
+  herCapturedPieceKind?: string;
   // Task 1 (defender grounding): true when the player has a LEGAL recapture
   // on the actual captured square -- a defended capture is a trade, not a
   // clean loss. Deliberately NOT a geometric attackers() check: a piece that
@@ -83,11 +93,18 @@ export function resolveCaptureSquare(mv: Move, capturedColor: Color): string {
 // ALREADY-COMPUTED eval from classifyMove's afterEval — no new engine call.
 // Returns undefined on malformed/missing bestMove or replay failure (same
 // "facts is just absent" contract as classify.ts's deriveFacts).
+// herCapturedPieceKind (controller follow-up, issue A): optional, caller-
+// supplied fact about HER OWN move -- read it off her own chess.js Move
+// object's `.captured` at the call site (classify.ts) and pass it straight
+// through here. This function never re-derives it (it has no access to her
+// own move at all, only the position after it), it just threads it onto the
+// returned facts unchanged.
 export function deriveThreatFacts(
   afterFen: string,
   herToSquare: string,
   herColor: "w" | "b",
-  afterEval: Evaluation
+  afterEval: Evaluation,
+  herCapturedPieceKind?: string
 ): ThreatFacts | undefined {
   const bestUci = afterEval.bestMove;
   if (!bestUci || bestUci.length < 4) return undefined;
@@ -146,6 +163,7 @@ export function deriveThreatFacts(
       givesCheck: probe.inCheck(),
       capturesHerJustMovedPiece,
       capturedSquareDefended,
+      herCapturedPieceKind,
     };
 
     if (motif === "capture-moved" || motif === "capture-other") {
