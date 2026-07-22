@@ -48,6 +48,14 @@ export interface ChatContext {
 export interface ChatFactList {
   gameSans: string[]; // every san played, in order
   currentFen: string; // final position (review) / live position (live)
+  // Side-to-move fact (round 2026-07-22): without this, the coach once
+  // attributed the PLAYER's own pending move to mallow, because nothing in
+  // the fact list stated whose turn it is -- the model was left to infer
+  // perspective from the FEN's side-to-move field, and legalSans is an
+  // unlabeled bare list (see below). Derived from chess.turn() at the same
+  // place currentFen is derived: "w" -> "you", "b" -> "mallow" -- the same
+  // fixed "player is always white in v1" mapping occupancy already uses.
+  toMove: "you" | "mallow";
   occupancy: { square: string; pieceKind: string; color: "you" | "mallow" }[]; // from currentFen
   legalSans: string[]; // chess.js .moves() on currentFen
   turningPoints?: { ply: number; san: string; label: string; punishSan?: string }[];
@@ -97,7 +105,8 @@ export function assembleChatFactList(
   const currentFen = chess.fen();
   // Player is always white in v1 (see manager.ts's resign() comment) -- so
   // white pieces are always "you" and black is always "mallow", a fixed
-  // mapping, not a lookup.
+  // mapping, not a lookup. toMove follows the exact same fixed mapping.
+  const toMove: ChatFactList["toMove"] = chess.turn() === "w" ? "you" : "mallow";
   const occupancy: ChatFactList["occupancy"] = [];
   for (const row of chess.board()) {
     for (const cell of row) {
@@ -162,6 +171,7 @@ export function assembleChatFactList(
   return {
     gameSans,
     currentFen,
+    toMove,
     occupancy,
     legalSans,
     turningPoints: tpOut,
@@ -271,6 +281,80 @@ function checkDefenseClaims(text: string, fen: string): string[] {
   return violations;
 }
 
+// ---- side-attribution claim validation ------------------------------------
+// The coach once attributed the PLAYER's own pending move to mallow ("you
+// win her queen for free" about the player's own Qh5) -- toMove and
+// legalSansBelongTo (ChatFactList/factsForModel above) give the model the
+// fact, but nothing previously checked the model's OWN prose against it.
+// Modeled directly on checkDefenseClaims above: one narrow claim shape, chess
+// facts already in hand (no engine call), routed into the same violations
+// array. The claim shape: a SAN token explicitly attributed to a named side
+// via a fixed, small verb list, in the four fixed subject forms "mallow/she
+// /you/your <verb> <SAN>". Ownership is only adjudicated against legalSans
+// (the CURRENT toMove side's moves) -- gameSans don't carry a per-san side
+// label, so a token that isn't a legal move right now is left unflagged
+// rather than guessed at.
+//
+// Three exclusions, added after a controller review caught each one flagging
+// a truthful sentence (2026-07-22):
+//   1. Present tense only. "played"/"moved"/"took" almost always describe a
+//      move already made, which legalSans (the CURRENT side's OPTIONS) has
+//      no opinion about -- "mallow played Nf3" can be a true description of
+//      an earlier move even when Nf3 is also legal for the player right now.
+//      Only present-tense verbs are adjudicated; the observed live bug was
+//      present-tense attribution of a PENDING move, so nothing real is lost.
+//   2. Castling is never adjudicated. O-O/O-O-O is the identical token for
+//      both colors, so legalSans membership alone can never tell whose
+//      castling a mention refers to.
+//   3. Conditional/hypothetical lines are skipped. The coach reasons in
+//      lines constantly ("if you play Nf3, she takes e5") -- a conditional
+//      marker earlier in the same sentence (captured via a bounded filler
+//      group and tested with a regex, the same idiom guardClaimRe/
+//      GUARD_NEGATION_RE already use for their "between" capture, not a
+//      sentence-splitting layer) means the named side is inside a
+//      hypothetical, not a literal claim about the current position.
+// Precision over recall, same as the guard/safety checker: a verb outside
+// the fixed list, a pronoun ("her"/"him"), or a second clause naming the
+// other side is never chased -- a missed attribution costs nothing, a false
+// positive costs a real reply.
+const SIDE_ATTR_SUBJECTS = "mallow|she|you|your";
+const SIDE_ATTR_VERBS = "plays the|plays as|plays|moves|takes"; // present tense only -- exclusion 1
+const SAN_TOKEN_SRC = "(?:O-O(?:-O)?|[KQRBNkqrbn]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBNqrbn])?[+#]?)";
+const SIDE_ATTR_CONDITIONAL_RE = /\b(if|unless|suppose|say|imagine|were you to|what if)\b/i;
+
+function sideAttributionRe(): RegExp {
+  // group 1: up to 40 chars of same-sentence filler BEFORE the subject
+  // (bounded by excluding sentence-ending punctuation from the class, so a
+  // match can never reach back across a prior sentence) -- checked for a
+  // conditional marker, exclusion 3. group 2: the subject (mallow/she/you/
+  // your), group 3: the SAN token immediately following the verb -- no
+  // filler allowed between subject, verb, and token, so this never crosses
+  // into a second clause.
+  return new RegExp(
+    `([^.!?]{0,40})\\b(${SIDE_ATTR_SUBJECTS})\\b\\s+(?:${SIDE_ATTR_VERBS})\\s+(${SAN_TOKEN_SRC})\\b`,
+    "gi"
+  );
+}
+
+function checkSideAttributionClaims(text: string, facts: ChatFactList): string[] {
+  const violations: string[] = [];
+  const legalSans = new Set(facts.legalSans);
+
+  for (const m of text.matchAll(sideAttributionRe())) {
+    const [, before, subjectRaw, sanRaw] = m;
+    if (SIDE_ATTR_CONDITIONAL_RE.test(before)) continue; // hypothetical line -- exclusion 3
+    const subject = subjectRaw.toLowerCase();
+    const claimedSide: "you" | "mallow" = subject === "mallow" || subject === "she" ? "mallow" : "you";
+    if (claimedSide === facts.toMove) continue; // correctly attributed
+    const token = stripTrailingPunctuation(sanRaw);
+    if (/^O-O(-O)?$/i.test(token)) continue; // castling is ambiguous between colors -- exclusion 2
+    if (!isAllowedSanToken(token, legalSans)) continue; // not toMove's legal move right now -- can't adjudicate
+    violations.push(`side-claim: ${token} is ${facts.toMove}'s move to play, not ${claimedSide}'s`);
+  }
+
+  return violations;
+}
+
 export function validateChat(text: string, facts: ChatFactList): { ok: true } | { ok: false; violations: string[] } {
   const allowedSans = new Set(facts.allowedSans);
   const violations: string[] = [];
@@ -282,6 +366,7 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
   }
 
   violations.push(...checkDefenseClaims(text, facts.currentFen));
+  violations.push(...checkSideAttributionClaims(text, facts));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };
@@ -312,7 +397,12 @@ function factsForModel(facts: ChatFactList) {
       best: best ? { san: best.san, pieceKind: best.pieceKind, from: best.from, to: best.to } : undefined,
     };
   }
-  return { ...rest, context: strippedContext };
+  // legalSansBelongTo labels the bare legalSans list with whose moves it
+  // holds -- always equal to facts.toMove, kept as a separate key (rather
+  // than renaming legalSans itself) so the model gets the label sitting
+  // right next to the list without validateChat/allowedSans needing to
+  // change shape.
+  return { ...rest, legalSansBelongTo: facts.toMove, context: strippedContext };
 }
 
 function formatHistory(history: { role: "user" | "coach"; text: string }[]): string {

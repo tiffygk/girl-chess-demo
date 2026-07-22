@@ -252,6 +252,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     return {
       gameSans: [],
       currentFen: DEFENDER_FEN,
+      toMove: "you", // DEFENDER_FEN is a "w" fen -- white (you) to move
       occupancy: [],
       legalSans: [],
       allowedSans: [],
@@ -309,6 +310,147 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       const facts = defenderFacts();
       const result = validateChat("the knight on b1 guards d4.", facts);
       expect(result.ok).toBe(true);
+    });
+  });
+
+  // Side-to-move fact (round 2026-07-22): the coach once attributed the
+  // PLAYER's own pending move to mallow ("you win her queen for free" about
+  // the player's own Qh5) because ChatFactList had no fact stating whose
+  // turn it is -- legalSans is an unlabeled bare list, and the model was
+  // left to infer perspective from the FEN's side-to-move field alone.
+  // toMove is derived from chess.turn() at the same replay currentFen comes
+  // from: w -> "you", b -> "mallow" -- the same fixed "player is always
+  // white in v1" mapping occupancy already uses.
+  describe("assembleChatFactList — toMove fact (side-to-move grounding)", () => {
+    it("start position (no moves played) -> toMove is you (white to move)", () => {
+      const facts = assembleChatFactList([], { mode: "live" });
+      expect(facts.toMove).toBe("you");
+    });
+
+    it("after an odd number of plies (e.g. e4) -> toMove is mallow", () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      expect(facts.toMove).toBe("mallow");
+    });
+
+    it("after an even number of plies (e.g. e4, e5) -> toMove is you", () => {
+      const facts = assembleChatFactList(
+        [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }],
+        { mode: "live" }
+      );
+      expect(facts.toMove).toBe("you");
+    });
+
+    it("the prompt's fact JSON carries toMove and legalSansBelongTo, equal to each other", async () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      expect(facts.toMove).toBe("mallow");
+
+      let capturedPrompt = "";
+      const backend = fakeBackend(async (prompt) => {
+        capturedPrompt = prompt;
+        return "mallow has several replies here.";
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      await chat("whose move is it?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+      expect(capturedPrompt).toContain('"toMove": "mallow"');
+      expect(capturedPrompt).toContain('"legalSansBelongTo": "mallow"');
+    });
+  });
+
+  // Side-to-move validation (round 2026-07-22, Task 2 -- "the stronger
+  // version"): the coach once attributed the PLAYER's own move to mallow
+  // ("mallow plays Qh5" while it was actually the player's own pending
+  // move). toMove/legalSansBelongTo (above) give the model the fact;
+  // checkSideAttributionClaims checks the model's OWN prose against it,
+  // modeled directly on checkDefenseClaims's shape: a fixed, narrow set of
+  // subject+verb forms, no synonym expansion, no pronoun resolution across
+  // sentences. A hand-built literal ChatFactList is used (not
+  // assembleChatFactList, which only replays gameSans from the start
+  // position) -- same pattern defenderFacts() above uses -- since only
+  // toMove/legalSans/allowedSans matter for this check. allowedSans mirrors
+  // legalSans (as assembleChatFactList's real fold always does) so the
+  // primary SAN-shaped-token check never fires here, isolating the
+  // side-claim check in each assertion below.
+  function sideAttrFacts(overrides: Partial<ChatFactList> = {}): ChatFactList {
+    const legalSans = ["Qh5", "Nf3", "e4"];
+    return {
+      gameSans: [],
+      currentFen: DEFENDER_FEN,
+      toMove: "you",
+      occupancy: [],
+      legalSans,
+      allowedSans: [...legalSans],
+      contested: [],
+      ...overrides,
+    };
+  }
+
+  describe("validateChat — side-attribution claim validation (side-to-move grounding, Task 2)", () => {
+    it("flags 'mallow plays Qh5' when toMove is you and Qh5 is the player's own legal move", () => {
+      const facts = sideAttrFacts({ toMove: "you" });
+      const result = validateChat("mallow plays Qh5, winning material.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.includes("side-claim"))).toBe(true);
+    });
+
+    it("does not flag 'mallow plays Qh5' when toMove is mallow and Qh5 genuinely is mallow's legal move", () => {
+      const facts = sideAttrFacts({ toMove: "mallow" });
+      const result = validateChat("mallow plays Qh5, winning material.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("does not flag 'you play Qh5' in the same (toMove: you) position -- correct attribution", () => {
+      const facts = sideAttrFacts({ toMove: "you" });
+      const result = validateChat("you play Qh5 and win her queen.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("does not flag an ambiguous phrasing outside the fixed verb list (the cut)", () => {
+      const facts = sideAttrFacts({ toMove: "you" });
+      const result = validateChat("mallow could try Qh5 here.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    // FP class 1 (controller review, 2026-07-22): a past-tense verb almost
+    // always refers to a move already made, not a claim about the CURRENT
+    // toMove side's options -- Nf3 is legal for white right now, but "mallow
+    // played Nf3" truthfully describes an earlier black move. Adjudicating
+    // past tense against legalSans was wrong; only present-tense forms are
+    // adjudicated now.
+    it("does not flag a past-tense mention of an earlier move ('mallow played Nf3') even though Nf3 is also currently legal", () => {
+      const facts = sideAttrFacts({ toMove: "you", legalSans: ["Nf3", "Qh5", "e4"], allowedSans: ["Nf3", "Qh5", "e4"] });
+      const result = validateChat("mallow played Nf3 a few moves back.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    // FP class 2: O-O/O-O-O is the same token for both colors, so it can
+    // never be adjudicated by legalSans membership alone -- castling tokens
+    // are skipped outright.
+    it("does not flag a castling mention ('mallow plays O-O') even though castling is also currently legal for the player", () => {
+      const facts = sideAttrFacts({ toMove: "you", legalSans: ["O-O", "Qh5", "e4"], allowedSans: ["O-O", "Qh5", "e4"] });
+      const result = validateChat("mallow plays O-O next.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    // FP class 3: the coach reasons in hypothetical lines constantly ("if
+    // you play X, she plays Y") -- a conditional marker earlier in the same
+    // sentence means the named side is inside a hypothetical, not a literal
+    // attribution of the current position.
+    it("does not flag a conditional/hypothetical line ('if you push d4, she plays Nc6')", () => {
+      const facts = sideAttrFacts({ toMove: "you", legalSans: ["Nc6", "Qh5", "e4"], allowedSans: ["Nc6", "Qh5", "e4"] });
+      const result = validateChat("if you push d4, she plays Nc6 next.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    // Regression guard: the original observed bug must still fire after the
+    // narrowing above, or the narrowing went too far.
+    it("still flags the original bug: present-tense, non-castling, non-conditional 'mallow plays Qh5' attributed to the wrong side", () => {
+      const facts = sideAttrFacts({ toMove: "you" });
+      const result = validateChat("mallow plays Qh5, winning material.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.includes("side-claim"))).toBe(true);
     });
   });
 
