@@ -503,6 +503,95 @@ describe("hintCopy level 3: defended captures route to the honest fallback, not 
   });
 });
 
+// Task 1 (2026-07-22, truthfulness leaks): a defended capture-moved trade can
+// still be a real material loss when the piece she captured with is worth far
+// more than what she'd recapture back (live gate example: Qxe6+, f7
+// recaptures -- capturedSquareDefended is true since she could in turn take
+// the pawn, but "nothing hangs" is false, she's down a queen for a pawn).
+// Net is computed off refutationPieceKind (what she'd recapture) vs
+// herPieceKind (what she captured with) -- capturedPieceKind structurally
+// equals herPieceKind for capture-moved (the refutation recaptures exactly
+// the piece she just moved), so it carries no independent material signal;
+// it's still read as a completeness guard per the brief.
+describe("hintCopy level 3: defended capture-moved, material-aware (Task 1)", () => {
+  const honestFallback = "this loses ground. nothing hangs, but the position gets worse.";
+
+  it("queen-takes-defended-pawn: material-aware line, not 'nothing hangs'", () => {
+    const t: ThreatFacts = {
+      motif: "capture-moved",
+      refutationUci: "f7e6",
+      refutationSan: "fxe6",
+      refutationPieceKind: "p",
+      refutationFromSquare: "f7",
+      refutationToSquare: "e6",
+      givesCheck: false,
+      capturesSquare: "e6",
+      capturedPieceKind: "q",
+      capturesHerJustMovedPiece: true,
+      capturedSquareDefended: true,
+    };
+    const copy = hintCopy(3, { herPieceKind: "q", herToSquare: "e6", threat: t });
+    expect(copy).toBe(
+      "queen takes on e6, but her pawn takes back. you come out down a queen for a pawn."
+    );
+    expect(copy).not.toBe(honestFallback);
+  });
+
+  it("pawn-takes-defended-pawn: unchanged honest fallback (even trade)", () => {
+    const t: ThreatFacts = {
+      motif: "capture-moved",
+      refutationUci: "e6d5",
+      refutationSan: "exd5",
+      refutationPieceKind: "p",
+      refutationFromSquare: "e6",
+      refutationToSquare: "d5",
+      givesCheck: false,
+      capturesSquare: "d5",
+      capturedPieceKind: "p",
+      capturesHerJustMovedPiece: true,
+      capturedSquareDefended: true,
+    };
+    const copy = hintCopy(3, { herPieceKind: "p", herToSquare: "d5", threat: t });
+    expect(copy).toBe(honestFallback);
+  });
+
+  it("knight-takes-defended-bishop: unchanged honest fallback (net 0)", () => {
+    const t: ThreatFacts = {
+      motif: "capture-moved",
+      refutationUci: "c1b2",
+      refutationSan: "Bxb2",
+      refutationPieceKind: "b",
+      refutationFromSquare: "c1",
+      refutationToSquare: "b2",
+      givesCheck: false,
+      capturesSquare: "b2",
+      capturedPieceKind: "n",
+      capturesHerJustMovedPiece: true,
+      capturedSquareDefended: true,
+    };
+    const copy = hintCopy(3, { herPieceKind: "n", herToSquare: "b2", threat: t });
+    expect(copy).toBe(honestFallback);
+  });
+
+  it("missing capturedPieceKind: falls back to honest fallback rather than a partial sentence", () => {
+    const t: ThreatFacts = {
+      motif: "capture-moved",
+      refutationUci: "f7e6",
+      refutationSan: "fxe6",
+      refutationPieceKind: "p",
+      refutationFromSquare: "f7",
+      refutationToSquare: "e6",
+      givesCheck: false,
+      capturesSquare: "e6",
+      capturedPieceKind: undefined,
+      capturesHerJustMovedPiece: true,
+      capturedSquareDefended: true,
+    };
+    const copy = hintCopy(3, { herPieceKind: "q", herToSquare: "e6", threat: t });
+    expect(copy).toBe(honestFallback);
+  });
+});
+
 describe("hintCopy levels 4-5: redirect to the recommended move", () => {
   const bestFacts: HintFacts = {
     bestPieceKind: "b",
