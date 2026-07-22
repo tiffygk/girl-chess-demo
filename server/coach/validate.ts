@@ -1,4 +1,5 @@
 import type { CoachFactList } from "./index";
+import { checkDefenseClaims } from "./defenseClaims";
 
 // F18 render-only rule: any square or move the model's narration names must
 // already exist in the code-assembled fact list. This is a pure text scan
@@ -74,6 +75,15 @@ export function validateNarration(
     const san = stripTrailingPunctuation(raw);
     if (!isAllowedSanToken(san, allowedSans)) violations.push(san);
   }
+
+  // Task 3 (2026-07-22, truthfulness leaks): the shared defender-claim
+  // checker (server/coach/chat.ts's chat path already ran this) grounds a
+  // "X isn't defended" / "Y guards Z" claim against the real position
+  // instead of taking the model's word for it. Live gate example: "that
+  // pawn on d5 isn't defended, so you'd just be handing it over for free"
+  // when e4 demonstrably defends d5. chess.js-only, no engine call --
+  // narrate() must never touch the evaluator queue.
+  violations.push(...checkDefenseClaims(text, facts.currentFen));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };

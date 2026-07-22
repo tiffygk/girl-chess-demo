@@ -356,6 +356,11 @@ export function CoachChat({
               >
                 <p className="chat-bubble-text">{m.text}</p>
                 {m.cause === "backend-down" && <span className="chat-offline-chip">offline</span>}
+                {/* Task 2 (2026-07-22, truthfulness leaks): a timeout is a
+                    slow-but-healthy backend, not a down one -- reuses the
+                    offline chip's exact styling (no new visual treatment,
+                    no magenta) with different text, per the brief. */}
+                {m.cause === "timeout" && <span className="chat-offline-chip">slow</span>}
                 {m.role === "coach" && m.traceId != null && <ThumbRating traceId={m.traceId} />}
               </div>
             );

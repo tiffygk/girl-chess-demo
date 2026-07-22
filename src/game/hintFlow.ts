@@ -264,6 +264,64 @@ function motifL2(ctx: HintCopyCtx): string {
   }
 }
 
+// Task 1 (2026-07-22, truthfulness leaks): standard piece values for the
+// defended-capture-moved material check below. King never counted (it's
+// never the capturing piece here).
+const PIECE_VALUES: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+
+/**
+ * Task 1 (2026-07-22, corrected per controller review -- issue A), a
+ * defended capture-moved trade ("nothing hangs") is only honest when the
+ * exchange is roughly even. Live gate example: she plays Qxe6+, f7
+ * recaptures -- capturedSquareDefended is true (she could in turn take the
+ * pawn on e6), but calling that "nothing hangs" is false when what she
+ * captured with her own move is worth far more than what she captured.
+ *
+ * Net = value(threat.herCapturedPieceKind, defaulting to 0 when her own move
+ * wasn't a capture at all) - value(ctx.herPieceKind) [what she captured
+ * with]. The FIRST version of this fix used threat.refutationPieceKind
+ * (what she'd recapture BACK, a different piece) as a proxy for her own
+ * gain -- that produces a real false positive: QxQ recaptured by a pawn is
+ * an even trade, but the proxy formula (1 - 9 = -8) fired and printed "down
+ * a queen for a pawn," a confidently false statement. herCapturedPieceKind
+ * (server/annotator/motifs.ts, threaded from her own chess.js Move.captured
+ * at the classify.ts call site) is the real fact for what she actually won,
+ * not a proxy.
+ */
+function defendedCaptureMovedLine(
+  ctx: HintCopyCtx,
+  threat: ThreatFacts,
+  honestFallback: string
+): string {
+  const herValue = PIECE_VALUES[ctx.herPieceKind];
+  if (herValue === undefined) return honestFallback;
+  const herCapturedKind = threat.herCapturedPieceKind;
+  // Her move captured nothing (a quiet move that simply walked into the
+  // recapture) -- net gain from her own move is 0, not a missing/unknown
+  // value. A recognized-but-unmapped piece kind (shouldn't happen, king
+  // never counted) still degrades to the honest fallback rather than a
+  // wrong number.
+  const herCapturedValue = herCapturedKind === undefined ? 0 : PIECE_VALUES[herCapturedKind];
+  if (herCapturedValue === undefined) return honestFallback;
+
+  const net = herCapturedValue - herValue;
+  if (net >= -1) return honestFallback;
+
+  // herCapturedKind === undefined means her own move wasn't a capture at
+  // all -- "takes on X" would be a false claim in that case (she just moved
+  // there and got captured), so this branch reuses the undefended-loss
+  // motif's own honest framing ("to X walks into her Y") instead of
+  // asserting a capture that didn't happen.
+  if (herCapturedKind === undefined) {
+    return `${pieceName(ctx.herPieceKind)} to ${ctx.herToSquare} walks into her ${pieceName(
+      threat.refutationPieceKind
+    )}. you simply lose the ${pieceName(ctx.herPieceKind)}.`;
+  }
+  return `${pieceName(ctx.herPieceKind)} takes on ${threat.capturesSquare}, but her ${pieceName(
+    threat.refutationPieceKind
+  )} takes back. you come out down a ${pieceName(ctx.herPieceKind)} for a ${pieceName(herCapturedKind)}.`;
+}
+
 // Level 3: the concrete why, keyed off the threat's motif — every field read
 // here came from the server's literal replay of the refutation, per motif.
 function motifL3(ctx: HintCopyCtx): string {
@@ -276,10 +334,12 @@ function motifL3(ctx: HintCopyCtx): string {
       return `her ${pieceName(threat.refutationPieceKind)} to ${threat.refutationToSquare} forks your ${targets}.`;
     }
     case "capture-moved":
-      // Task 1 (defender grounding): a defended capture is a trade, not a
-      // loss -- she recaptures right back, so the "she just takes it" line
-      // would be false. Degrade to the same honest fallback positional uses.
-      if (threat.capturedSquareDefended) return honestFallback;
+      // Task 1 (defender grounding, then made material-aware 2026-07-22): a
+      // defended capture is a trade, not automatically a loss -- she
+      // recaptures right back -- but the trade itself can still be lopsided
+      // (queen for a pawn). defendedCaptureMovedLine only degrades to the
+      // honest fallback when the exchange is roughly even or better.
+      if (threat.capturedSquareDefended) return defendedCaptureMovedLine(ctx, threat, honestFallback);
       return `${pieceName(ctx.herPieceKind)} to ${ctx.herToSquare} walks into her ${pieceName(threat.refutationPieceKind)}. she just takes it.`;
     case "capture-other":
       if (threat.capturedSquareDefended) return honestFallback;

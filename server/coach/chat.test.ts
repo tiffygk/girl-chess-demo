@@ -558,6 +558,45 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
         "keep it on the board. ask me about a move from this game and i'll break it down."
       );
     });
+
+    // Task 2 (2026-07-22, truthfulness leaks): a rejection whose message
+    // indicates a timeout is a distinct cause from a genuine backend-down --
+    // the gate measured two hard 20.0s timeouts rendering the "offline" chip
+    // while other asks in the same session answered in 4-5s (backend was up
+    // the whole time). The template text stays the redirect either way.
+    it("backend rejects with a timeout-shaped error -> cause timeout, not backend-down", async () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      const backend = fakeBackend(async () => {
+        throw new Error("claude cli timed out after 20000ms");
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      const result = await chat("what's happening in this game?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+      expect(result.source).toBe("template");
+      expect(result.cause).toBe("timeout");
+      expect(result.text).toBe(
+        "keep it on the board. ask me about a move from this game and i'll break it down."
+      );
+    });
+
+    it("backend rejects with any other error -> cause stays backend-down", async () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      const backend = fakeBackend(async () => {
+        throw new Error("econnrefused");
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      const result = await chat("what's happening in this game?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+      expect(result.source).toBe("template");
+      expect(result.cause).toBe("backend-down");
+      expect(result.text).toBe(
+        "keep it on the board. ask me about a move from this game and i'll break it down."
+      );
+    });
   });
 
   // (b), (c), (f), (g), (h)

@@ -184,6 +184,29 @@ describe("deriveThreatFacts", () => {
     expect(resolveCaptureSquare(mv!, "b")).toBe("d5");
     expect(resolveCaptureSquare(mv!, "b")).not.toBe(mv!.to);
   });
+
+  // Controller follow-up (issue A, 2026-07-22 truthfulness-leaks review):
+  // ThreatFacts carried no fact for what HER OWN move captured -- only what
+  // the refutation captures FROM her (capturedPieceKind), which for
+  // capture-moved is always the same piece she moved. hintFlow.ts's L3
+  // material check needs her actual gain, not a proxy. herCapturedPieceKind
+  // is threaded straight through from the caller (classify.ts already has
+  // her own chess.js Move object in hand, whose own `.captured` is the real
+  // fact -- deriveThreatFacts here just accepts and passes it along, it
+  // never re-derives it).
+  it("herCapturedPieceKind: threaded straight through when the caller supplies it (her move was a capture)", () => {
+    const afterFen = "4k3/8/8/5n1Q/8/8/8/4K3 w - - 0 1";
+    const facts = deriveThreatFacts(afterFen, "f5", "b", mkEval("h5f5"), "p");
+    expect(facts).toBeTruthy();
+    expect(facts!.herCapturedPieceKind).toBe("p");
+  });
+
+  it("herCapturedPieceKind: absent when the caller supplies nothing (her move was quiet, not a capture)", () => {
+    const afterFen = "4k3/8/8/5n1Q/8/8/8/4K3 w - - 0 1";
+    const facts = deriveThreatFacts(afterFen, "f5", "b", mkEval("h5f5"));
+    expect(facts).toBeTruthy();
+    expect(facts!.herCapturedPieceKind).toBeUndefined();
+  });
 });
 
 describe("deriveRecommendationFacts", () => {
