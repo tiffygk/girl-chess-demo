@@ -303,7 +303,15 @@ export interface ChatContext {
   // Task 7 (increment 3.95, "ask about this"): mirrors server/coach/chat.ts's
   // ChatContext additions verbatim -- see chatFocus.ts for the pure focus ->
   // context mapping that populates these two fields.
-  hintFocus?: { level: number; text: string };
+  // Phase 3 review fix (F1): `ply` is the pending move's own ply (the
+  // position it would become once confirmed -- mirrorRef.current.history()
+  // .length + 1, since the mirror is untouched while a move is pending).
+  // Without it, two different moments at the same hint level collided --
+  // hintCopy's level-1/2 text is a fixed template (hintFlow.ts:304), so
+  // "hint:${level}:${text}" alone was not a stable per-moment identity. This
+  // field is purely a client-local identity for chatThread.ts's focusKey/
+  // shouldInjectAnchor; the server does not read it.
+  hintFocus?: { level: number; text: string; ply: number };
   turningPointFocus?: {
     ply: number;
     san: string;

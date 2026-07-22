@@ -23,9 +23,20 @@ export function moveNumberForPly(ply: number): number {
 // means no focus. GamePage only ever sets at most one of hintFocus/
 // turningPointFocus at a time (see chatFocus.ts), but turning-point wins if
 // both were somehow present.
+//
+// Phase 3 review fix (F1): the hint branch used to be
+// `hint:${level}:${text}` with no position component. hintCopy's level-1/2
+// text is a FIXED TEMPLATE (e.g. "hold on. look at your knight.",
+// hintFlow.ts:304) -- it does not vary with the position -- so two genuinely
+// different moments in the same game at the same level produced the exact
+// same key. shouldInjectAnchor then saw no transition, and the second "ask
+// about this" injected no anchor into the thread at all (acceptance item
+// 1's failure mode). hintFocus.ply (the pending move's own ply -- see
+// api.ts's ChatContext.hintFocus doc) is now folded in first so a position
+// change always changes the key regardless of what level/text happen to be.
 export function focusKey(hintFocus: HintFocus, turningPointFocus: TurningPointFocus): string | null {
   if (turningPointFocus) return `tp:${turningPointFocus.ply}`;
-  if (hintFocus) return `hint:${hintFocus.level}:${hintFocus.text}`;
+  if (hintFocus) return `hint:${hintFocus.ply}:${hintFocus.level}:${hintFocus.text}`;
   return null;
 }
 
@@ -60,6 +71,16 @@ export function anchorForFocus(hintFocus: HintFocus, turningPointFocus: TurningP
 // Data-model change (spec B4): anchors/markers are persisted thread entries
 // but must never travel to the backend as fake conversation turns -- this is
 // the one funnel any backend-bound history is required to pass through.
+//
+// Phase 3 review note (F3): this has zero callers today -- chatWithCoach
+// (api.ts) posts only {message, context, backendPref} and ChatContext
+// carries no history field at all, so acceptance item 5 currently holds by
+// payload shape, not by traffic through this funnel. It exists so that IF a
+// future change starts sending client-side history to the backend, it is
+// forced through this filter rather than serializing `entries` raw -- see
+// chatThread.test.ts's "outbound payload shape" coverage, which pins the
+// current no-history shape so a future change here is a deliberate,
+// visible diff rather than a silent regression.
 export function historyForBackend(entries: ThreadEntry[]): { role: "user" | "coach"; text: string }[] {
   return entries
     .filter((e): e is Extract<ThreadEntry, { kind: "message" }> => e.kind === "message")

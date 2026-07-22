@@ -1477,13 +1477,6 @@
   text-align: left;
 }
 .gc-app .chat-corner-open .chat-corner-panel { display: flex; }
-/* D5, small viewports: the board wins — even an expanded panel gives the
-   space back and shows the one-liner (existing 480px breakpoint). CSS only,
-   so the thread state survives and returns when the window grows. */
-@media (max-width: 480px) {
-  .gc-app .chat-corner-open .chat-corner-panel { display: none; }
-  .gc-app .chat-corner-open button.chat-corner-opener { display: block; }
-}
 
 .gc-app .chat-corner-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .gc-app .chat-corner-head-title { display: flex; align-items: center; gap: 10px; }
@@ -1505,6 +1498,20 @@
 .gc-app .chat-corner-thread {
   max-height: 320px; overflow-y: auto;
   display: flex; flex-direction: column; gap: 10px; padding: 4px 2px;
+}
+/* D5, small viewports: the board wins — but the panel must stay visible
+   whenever it's open (Phase 3 review F2: the two rules previously here hid
+   the panel AND re-showed the opener while .chat-corner-open was still set,
+   sitting at equal specificity to and later in source than the base rules
+   they meant to override, so they won and tapping the opener flipped
+   open=true with nothing visibly changing — "ask about this" then injected
+   an anchor into an invisible thread). The collapsed-by-default state
+   already gives the board the space it needs; this instead caps the
+   scrollable thread so an OPENED panel can't grow past the viewport. Placed
+   AFTER the base .chat-corner-thread rule above (equal specificity, so
+   source order decides) — confirmed by reading the cascade, not assumed. */
+@media (max-width: 480px) {
+  .gc-app .chat-corner-thread { max-height: 40vh; }
 }
 
 /* D3 RULED: provenance anchor as a distinct card — faint lavender wash on a
