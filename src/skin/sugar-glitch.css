@@ -1444,12 +1444,25 @@
 
 /* collapsed state (D2 default): the one-line opener — the lavender candy
    pill recipe (confirm-pending family), stretched to the region width.
-   copy RULED (owner, 2026-07-21): "chat with cookie". */
+   copy RULED (owner, 2026-07-21): "chat with cookie". The pixel cookie
+   glyph joins as a leading avatar (component-library.html
+   #sec-chat-opener-glyph, Variant A, owner-approved): the flex row only
+   arranges the pill's insides — same candy, same press physics. */
 .gc-app button.chat-corner-opener {
   width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
   font-size: 12.5px; padding: 10px 18px;
   color: #4A3B7E; background: #C9B8FF;
   box-shadow: 0 3px 0 #A99AE0, 0 6px 10px rgba(120,95,200,.3);
+}
+/* the avatar seat — Variant A: 21x18 (1.5x the 14x12 grid, crisp), STATIC
+   by law (no c00kie frame, no glitch — that stays on the plate inside).
+   The slip pokes above the lobes on the grid's top rows; one optical nudge
+   down so the cookie's visual mass centers against the x-height. */
+.gc-app .np-glyph-opener {
+  display: block; flex: none;
+  width: 21px; height: 18px;
+  transform: translateY(1px);
 }
 .gc-app button.chat-corner-opener:hover { transform: translateY(-1px); box-shadow: 0 5px 0 #A99AE0, 0 8px 14px rgba(120,95,200,.35); }
 .gc-app button.chat-corner-opener:active { transform: translateY(2px); box-shadow: 0 1px 0 #A99AE0, 0 4px 8px rgba(120,95,200,.25); }
