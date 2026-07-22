@@ -156,6 +156,85 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
+  // (c2) Task 2 (defender grounding): contested squares -- the coach chat
+  // once told a player "the pawn on e4 doesn't guard f5" when white's e4
+  // pawn genuinely defends f5 (Bxf5 exf5). assembleChatFactList now computes
+  // a deterministic attacker/defender map per occupied+attacked square so
+  // the model has the truth in hand instead of reasoning about defense
+  // itself. assembleChatFactList only ever replays gameSans from the start
+  // position (no raw-FEN injection seam), so this fixture is a minimal
+  // legal move sequence reconstructing the reported bug's exact relationship
+  // rather than the literal mid-game FEN from the bug report: white bishop
+  // f5, black bishop c8, white pawn e4 -- f5 is attacked by the c8 bishop
+  // AND defended by the e4 pawn (verified: Bxf5 exf5).
+  describe("assembleChatFactList — contested squares (defender/attacker grounding, Task 2)", () => {
+    function buildBugFixtureGame(): string[] {
+      const chess = new Chess();
+      // e3/Bd3/Bf5 (not the direct e4 first) so the bishop can cross e4/e2
+      // while they're still empty; e4 lands last, after the bishop is
+      // already resting on f5, giving exactly: white pawn e4, white bishop
+      // f5, black bishop untouched on c8 with an open c8-d7-e6-f5 diagonal
+      // (black's d5/e5 pawns, not d6/e6, keep d7 and e6 clear).
+      for (const san of ["e3", "d5", "Bd3", "e5", "Bf5", "Nf6", "e4"]) {
+        const res = chess.move(san);
+        if (!res) throw new Error(`fixture move ${san} was illegal`);
+      }
+      return chess.history();
+    }
+
+    it("f5 is contested: attacked by the c8 bishop, defended by the e4 pawn", () => {
+      const sans = buildBugFixtureGame();
+      const gameMoves = sans.map((san, i) => ({ ply: i + 1, san }));
+
+      const facts = assembleChatFactList(gameMoves, { mode: "live" });
+
+      const f5 = facts.contested.find((c) => c.square === "f5");
+      expect(f5).toBeDefined();
+      expect(f5?.color).toBe("you");
+      expect(f5?.pieceKind).toBe("b");
+      expect(f5?.attackedBy).toContainEqual({ square: "c8", pieceKind: "b" });
+      expect(f5?.defendedBy).toContainEqual({ square: "e4", pieceKind: "p" });
+    });
+
+    it("a piece not attacked by the opponent does not appear in contested", () => {
+      const sans = buildBugFixtureGame();
+      const gameMoves = sans.map((san, i) => ({ ply: i + 1, san }));
+
+      const facts = assembleChatFactList(gameMoves, { mode: "live" });
+
+      // White's king on e1 is not attacked by anything in this position --
+      // contested must omit it entirely rather than include it with an
+      // empty attackedBy array.
+      expect(facts.contested.find((c) => c.square === "e1")).toBeUndefined();
+    });
+
+    // buildChatPrompt/factsForModel are private (same reason Task 7's
+    // hintFocus test above asserts against the actual prompt string rather
+    // than a private helper) -- this proves contested reaches the model,
+    // not just the ChatFactList object, by inspecting what chat() actually
+    // sends the backend.
+    it("contested reaches the serialized fact JSON the model prompt is built from", async () => {
+      const sans = buildBugFixtureGame();
+      const gameMoves = sans.map((san, i) => ({ ply: i + 1, san }));
+      const facts = assembleChatFactList(gameMoves, { mode: "live" });
+
+      let capturedPrompt = "";
+      const backend = fakeBackend(async (prompt) => {
+        capturedPrompt = prompt;
+        return "your bishop on f5 is defended by the pawn on e4.";
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      await chat("is my bishop on f5 safe?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+      expect(capturedPrompt).toContain('"contested"');
+      expect(capturedPrompt).toContain('"square": "f5"');
+      expect(capturedPrompt).toContain('"square": "c8"');
+      expect(capturedPrompt).toContain('"square": "e4"');
+    });
+  });
+
   // (d)
   describe("validateChat — declared cut #2 (geography is unverifiable by design)", () => {
     it("fluent off-topic prose with no square- or san-shaped tokens passes validation — chat polices only move-shaped tokens against the fact list, never topical relevance", () => {
