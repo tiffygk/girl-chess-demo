@@ -7,6 +7,7 @@ import {
 import {
   assembleChatFactList, validateChat, chat, CHAT_HISTORY_WINDOW, CHAT_MAX_LEN,
 } from "./chat";
+import type { ChatFactList } from "./chat";
 import { GameManager } from "../game/manager";
 import type { CoachBackend } from "./backends/types";
 
@@ -232,6 +233,82 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(capturedPrompt).toContain('"square": "f5"');
       expect(capturedPrompt).toContain('"square": "c8"');
       expect(capturedPrompt).toContain('"square": "e4"');
+    });
+  });
+
+  // Task (2026-07-21, defender-claim validation): the coach once told a
+  // player "the pawn on e4 doesn't guard f5" when e4 demonstrably guards
+  // f5 (Bxf5 exf5) -- contested (above) gives the model the truth as a
+  // fact, but nothing previously checked the model's OWN prose against
+  // that truth. DEFENDER_FEN is the exact relationship from the bug
+  // report: white pawn e4 defends white bishop f5, f5 is attacked by
+  // black's c8 bishop, black's f6 knight is defended (e7 bishop + g7
+  // pawn), black's e5 pawn has no defenders at all. A minimal literal
+  // ChatFactList is used (not assembleChatFactList, which only replays
+  // gameSans from the start position and has no raw-FEN injection seam)
+  // since only currentFen matters for these checks.
+  const DEFENDER_FEN = "r1bqrnk1/pp2bppp/2p2n2/3ppB2/2P1P3/1PBP1N2/P4PPP/RN1Q1RK1 w - - 0 12";
+  function defenderFacts(): ChatFactList {
+    return {
+      gameSans: [],
+      currentFen: DEFENDER_FEN,
+      occupancy: [],
+      legalSans: [],
+      allowedSans: [],
+      contested: [],
+    };
+  }
+
+  describe("validateChat -- defender-claim validation (defense grounding)", () => {
+    it("flags a false negative guard claim: e4 DOES guard f5", () => {
+      const facts = defenderFacts();
+      const result = validateChat("the pawn on e4 doesn't guard f5.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.violations.some((v) => v.includes("defense-claim"))).toBe(true);
+      }
+    });
+
+    it("flags a false undefended/safety claim: f5 IS defended (by e4)", () => {
+      const facts = defenderFacts();
+      const result = validateChat("your bishop on f5 is undefended.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.violations.some((v) => v.includes("defense-claim"))).toBe(true);
+      }
+    });
+
+    it("does not flag a TRUE guard claim: e4 guards f5", () => {
+      const facts = defenderFacts();
+      const result = validateChat("e4 guards f5, so the bishop is safe there.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("flags a false 'hanging' claim on a piece that IS defended (f6 knight, defended by e7 bishop + g7 pawn)", () => {
+      const facts = defenderFacts();
+      const result = validateChat("your knight on f6 is hanging.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.violations.some((v) => v.includes("defense-claim"))).toBe(true);
+      }
+    });
+
+    it("does not flag a TRUE 'hanging' claim on a piece with no defenders (e5 pawn has zero black defenders)", () => {
+      const facts = defenderFacts();
+      const result = validateChat("your pawn on e5 is hanging.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("does not flag a reply with no defense/safety claim at all", () => {
+      const facts = defenderFacts();
+      const result = validateChat("nice, that develops your knight and fights for the center.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("does not flag an empty-square/unparseable claim (d4 is empty in this position)", () => {
+      const facts = defenderFacts();
+      const result = validateChat("the knight on b1 guards d4.", facts);
+      expect(result.ok).toBe(true);
     });
   });
 
