@@ -833,7 +833,28 @@ export class GameManager {
     const turningPoints = finished
       ? getTurningPoints(gameId).map((r: any) => ({ ply: r.ply, san: r.san, label: r.label, punishSan: r.punish_san ?? undefined }))
       : undefined;
-    const facts = assembleChatFactList(gameMoves, body.context, turningPoints);
+    // Task 3 (R1a, fact-gap round): moveRows already carries the judge's
+    // persisted eval_cp/eval_mate/best_move(uci)/pv(space-joined uci) per
+    // ply -- convert best_move/pv to SAN by replaying the SAME way
+    // getTurningLines does (reusing pvLine below, no new logic), from the
+    // position right after each ply (fenAfter), which is exactly what
+    // attachEval evaluated. Read-only over already-persisted rows -- no
+    // evaluator call.
+    const perPlyChess = new Chess();
+    const perPlyAnalysis = moveRows.map((r: any) => {
+      const mv = perPlyChess.move(r.san);
+      const fenAfter = perPlyChess.fen();
+      const { pvSans, bestSan } = this.pvLine(fenAfter, { bestMove: r.best_move ?? null, pv: r.pv ?? null });
+      return {
+        ply: r.ply as number,
+        san: mv.san,
+        evalCp: (r.eval_cp ?? null) as number | null,
+        evalMate: (r.eval_mate ?? null) as number | null,
+        bestSan: bestSan ?? null,
+        pvSans,
+      };
+    });
+    const facts = assembleChatFactList(gameMoves, body.context, turningPoints, perPlyAnalysis);
 
     const historyRows = getChatMessages(gameId, CHAT_HISTORY_WINDOW);
     const history = historyRows.map((r: any) => ({ role: r.role as "user" | "coach", text: r.text }));
