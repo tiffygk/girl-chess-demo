@@ -302,9 +302,12 @@ function factsForModel(facts: ChatFactList) {
   const { allowedSans, context, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
   if (context) {
-    const { best, threat, ...restCtx } = context;
+    const { best, threat, herMove, ...restCtx } = context;
     strippedContext = {
       ...restCtx,
+      // The model-facing key is yourMove (the player is always "you"), even
+      // though the internal ChatContext field stays named herMove.
+      yourMove: herMove,
       threat: threat ? stripThreatUci(threat) : undefined,
       best: best ? { san: best.san, pieceKind: best.pieceKind, from: best.from, to: best.to } : undefined,
     };

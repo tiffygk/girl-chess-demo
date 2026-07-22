@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { openDb, createSession, createGame, getAdviceTraces } from "../store/db";
-import { assembleFactList, buildTemplateNarration, narrate, type CoachFactList } from "./index";
+import { assembleFactList, buildTemplateNarration, buildPrompt, getPersona, narrate, type CoachFactList } from "./index";
 import { validateNarration } from "./validate";
 import type { CoachBackend } from "./backends/types";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
@@ -177,6 +177,19 @@ describe("narrate", () => {
     expect(rows[1].source).toBe("template");
     expect(rows[1].backend).toBe("fake");
     expect(rows[1].facts_json).toBeTruthy();
+  });
+});
+
+// The player is always "you"/"your" in the coach's output; "she"/"her" must
+// only ever mean mallow (the opponent). The internal CoachFactList field
+// stays named herMove (an established TS identifier, not model-facing), but
+// the KEY serialized into the model's fact-list JSON must read yourMove —
+// the model never sees the literal string "herMove".
+describe("buildPrompt", () => {
+  it("serializes the player's move under the key yourMove, never herMove", () => {
+    const prompt = buildPrompt(mkFacts(), getPersona());
+    expect(prompt).toContain('"yourMove"');
+    expect(prompt).not.toContain('"herMove"');
   });
 });
 
