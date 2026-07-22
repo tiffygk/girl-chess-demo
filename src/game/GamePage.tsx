@@ -56,6 +56,12 @@ import {
   guidingArrow,
   type ExploreState,
 } from "./explore";
+import {
+  COACH_BACKEND_KEY,
+  COACH_BACKEND_OPTIONS,
+  readCoachBackendPref,
+  type CoachBackendPref,
+} from "./coachBackendPref";
 
 type Captured = CapturedBySide;
 
@@ -68,21 +74,10 @@ function readEloPref(): number {
   return OPPONENT_ELOS.includes(raw) ? raw : 1100;
 }
 
-// Task 5 (F17): the coach voice picker's wire tokens are pinned verbatim by
-// the plan (panel A4) — "claude" | "ollama" | "template", default "claude".
-// UI labels map client-side only; the wire token itself never changes.
-const COACH_BACKEND_KEY = "gc-coach-backend";
-type CoachBackendPref = "claude" | "ollama" | "template";
-const COACH_BACKEND_OPTIONS: { value: CoachBackendPref; label: string }[] = [
-  { value: "claude", label: "claude" },
-  { value: "ollama", label: "local (ollama)" },
-  { value: "template", label: "templates only" },
-];
-
-function readCoachBackendPref(): CoachBackendPref {
-  const raw = localStorage.getItem(COACH_BACKEND_KEY);
-  return raw === "claude" || raw === "ollama" || raw === "template" ? raw : "claude";
-}
+// Task 4 (warm-coach-backend round): wire tokens, options, and the
+// localStorage default now live in coachBackendPref.ts (a testable seam
+// separate from this file's heavy component import graph) — "claude" |
+// "ollama" | "template" | "agent-sdk", default "agent-sdk".
 
 // Task 6 (F10 tuning): the judge-strictness dial — which ADVICE_LEVELS
 // threshold table classify.ts judges against. UI label is "judge
