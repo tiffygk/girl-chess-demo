@@ -14,6 +14,8 @@ import { TP_ALGO_VERSION } from "../annotator/turningPoints";
 // ternary in manager.ts actually runs and gets covered (pre-seeding the
 // cache made that branch a no-op — see the test's own comment).
 import { ollamaBackend } from "../coach/backends/ollama";
+import { claudeCliBackend } from "../coach/backends/claude-cli";
+import { agentSdkBackend } from "../coach/backends/agent-sdk";
 import { moveEndpoints } from "../annotator/moveEndpoints";
 
 describe("GameManager", () => {
@@ -684,6 +686,105 @@ describe("GameManager", () => {
       traces = getAdviceTraces(g3.gameId);
       expect(traces[traces.length - 1].backend).toBe("ollama");
       expect(availableSpy).toHaveBeenCalledTimes(2); // re-probed exactly once more
+    }, 20000);
+  });
+
+  // Task 3 (warm-coach-backend round): registers agentSdkBackend in
+  // pickCoachBackend's pref chain. Spies every real backend's available()
+  // in each test (never lets a real probe run) so this stays fast and
+  // never spawns the real claude CLI or reaches ollama/the model, mirroring
+  // the "ollama unavailable" test's discipline above. All four tests here
+  // share the same "agent-sdk" pref/cache key, so each one advances the
+  // injected clock (same seam Fix 2's self-heal test above uses) well past
+  // BACKEND_CACHE_TTL_MS before calling narrate() -- otherwise the second+
+  // test in this block would just read back the FIRST test's cached
+  // resolution instead of actually exercising its own spies.
+  describe('pickCoachBackend: pref "agent-sdk" (Task 3)', () => {
+    let clockOffset = 0;
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      gm.setClockForTesting(() => Date.now());
+    });
+
+    function advanceClockPastCache() {
+      clockOffset += BACKEND_CACHE_TTL_MS + 1;
+      const offset = clockOffset;
+      gm.setClockForTesting(() => Date.now() + offset);
+    }
+
+    it('resolves agentSdkBackend when its available() reports true', async () => {
+      advanceClockPastCache();
+      vi.spyOn(agentSdkBackend, "available").mockResolvedValue(true);
+      const g = await gm.newGame(sessionId, 1100);
+      const result = await gm.narrate(g.gameId, {
+        herPiece: "n",
+        from: "f6",
+        to: "g4",
+        tier: "nudge",
+        deltaCp: 80,
+        backendPref: "agent-sdk",
+      });
+      expect(result.ok).toBe(true);
+      const traces = getAdviceTraces(g.gameId);
+      expect(traces[traces.length - 1].backend).toBe("agent-sdk");
+    }, 20000);
+
+    it("falls back to claudeCliBackend when agent-sdk is unavailable but claude-cli is available", async () => {
+      advanceClockPastCache();
+      vi.spyOn(agentSdkBackend, "available").mockResolvedValue(false);
+      vi.spyOn(claudeCliBackend, "available").mockResolvedValue(true);
+      const g = await gm.newGame(sessionId, 1100);
+      const result = await gm.narrate(g.gameId, {
+        herPiece: "n",
+        from: "f6",
+        to: "g4",
+        tier: "nudge",
+        deltaCp: 80,
+        backendPref: "agent-sdk",
+      });
+      expect(result.ok).toBe(true);
+      const traces = getAdviceTraces(g.gameId);
+      expect(traces[traces.length - 1].backend).toBe("claude-cli");
+    }, 20000);
+
+    it("falls back to ollamaBackend when agent-sdk and claude-cli are both unavailable but ollama is available", async () => {
+      advanceClockPastCache();
+      vi.spyOn(agentSdkBackend, "available").mockResolvedValue(false);
+      vi.spyOn(claudeCliBackend, "available").mockResolvedValue(false);
+      vi.spyOn(ollamaBackend, "available").mockResolvedValue(true);
+      const g = await gm.newGame(sessionId, 1100);
+      const result = await gm.narrate(g.gameId, {
+        herPiece: "n",
+        from: "f6",
+        to: "g4",
+        tier: "nudge",
+        deltaCp: 80,
+        backendPref: "agent-sdk",
+      });
+      expect(result.ok).toBe(true);
+      const traces = getAdviceTraces(g.gameId);
+      expect(traces[traces.length - 1].backend).toBe("ollama");
+    }, 20000);
+
+    it("falls back to noBackend (template source) when agent-sdk, claude-cli, and ollama are all unavailable", async () => {
+      advanceClockPastCache();
+      vi.spyOn(agentSdkBackend, "available").mockResolvedValue(false);
+      vi.spyOn(claudeCliBackend, "available").mockResolvedValue(false);
+      vi.spyOn(ollamaBackend, "available").mockResolvedValue(false);
+      const g = await gm.newGame(sessionId, 1100);
+      const result = await gm.narrate(g.gameId, {
+        herPiece: "n",
+        from: "f6",
+        to: "g4",
+        tier: "nudge",
+        deltaCp: 80,
+        backendPref: "agent-sdk",
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.source).toBe("template");
+      const traces = getAdviceTraces(g.gameId);
+      expect(traces[traces.length - 1].backend).toBe("none");
     }, 20000);
   });
 
