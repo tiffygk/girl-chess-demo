@@ -14,13 +14,21 @@ import type { ChatContext, TurningLine, TurningPoint } from "./api";
  * empty text (hintCopy returns null before the deep fetch lands at levels
  * 4-5) has nothing to focus on -- returns undefined so a caller can spread
  * the result into a ChatContext unconditionally.
+ *
+ * Phase 3 review fix (F1): `ply` is the pending move's own ply (the caller's
+ * mirrorRef.current.history().length + 1 -- the mirror is untouched while a
+ * move is pending, so this is exactly the position the hint ladder is
+ * currently climbing). It exists purely so chatThread.ts's focusKey has a
+ * position identity to fold in: hintCopy's level-1/2 text is a fixed
+ * template, so level+text alone collide across two different moments.
  */
 export function hintFocusContext(
   level: number,
-  text: string | null | undefined
+  text: string | null | undefined,
+  ply: number
 ): ChatContext["hintFocus"] | undefined {
   if (level <= 0 || !text) return undefined;
-  return { level, text };
+  return { level, text, ply };
 }
 
 /**
@@ -62,11 +70,20 @@ export function turningPointFocusContext(
  * handler remembering to clear it.
  *
  * - hintFocus survives only if a hint is actually showing right now
- *   (current.hintLevel > 0) AND both the level and the exact rendered text
- *   still match -- comparing the live re-rendered hintCopy output (not a
- *   remembered position id) means a level that happens to match a stale
- *   focus's level, but on a different pending move with different threat
- *   facts, still gets caught (the text won't match).
+ *   (current.hintLevel > 0) AND the level, the exact rendered text, AND the
+ *   pending move's own ply (current.pendingPly) all still match.
+ *
+ *   Phase 3 review fix (F1): this used to compare only level + the live
+ *   re-rendered hintCopy text, on the theory that a different pending move
+ *   would render different text and so get caught even if its level
+ *   happened to match. That is FALSE at levels 1-2: hintCopy's text there is
+ *   a fixed template (hintFlow.ts:304, e.g. "hold on. look at your knight.")
+ *   that does not vary with position, threat facts, or which piece moved --
+ *   so a stale L1/L2 focus from a PREVIOUS pending move would incorrectly
+ *   survive into a new one that happened to reach the same level. The ply
+ *   check closes that gap: it is the one field in hintFocus that is always
+ *   position-derived (see hintFocusContext), so it changes on every new
+ *   pending move even when level and text do not.
  * - turningPointFocus survives only if its own ply equals the ply currently
  *   being looked at (current.rewindPly) -- rewindPly is null while no
  *   turning point is being replayed, which drops the focus too.
@@ -76,6 +93,7 @@ export function reconcileChatFocus(
   current: {
     hintLevel: number;
     renderedHintText: string | null | undefined;
+    pendingPly: number | null;
     rewindPly: number | null;
   }
 ): Pick<ChatContext, "hintFocus" | "turningPointFocus"> {
@@ -86,7 +104,8 @@ export function reconcileChatFocus(
     hf &&
     current.hintLevel > 0 &&
     hf.level === current.hintLevel &&
-    hf.text === current.renderedHintText
+    hf.text === current.renderedHintText &&
+    hf.ply === current.pendingPly
   ) {
     result.hintFocus = hf;
   }

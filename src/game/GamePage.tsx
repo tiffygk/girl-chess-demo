@@ -1347,7 +1347,19 @@ export function GamePage() {
         }
       : null;
     const currentHintText = hintLevel > 0 && liveHintCtx ? hintCopy(hintLevel, liveHintCtx) : null;
-    const focus = reconcileChatFocus(chatFocus, { hintLevel, renderedHintText: currentHintText, rewindPly });
+    // Phase 3 review fix (F1): the pending move's own ply -- mirrorRef is
+    // untouched while a move is pending, so history().length + 1 is exactly
+    // the position the hint ladder (and any hintFocus set from it) is
+    // scoped to right now. Passed alongside the text/level check so a stale
+    // focus from a DIFFERENT pending move at the same level/fixed-template
+    // text (see reconcileChatFocus's header) is correctly dropped.
+    const pendingPly = pending ? mirrorRef.current.history().length + 1 : null;
+    const focus = reconcileChatFocus(chatFocus, {
+      hintLevel,
+      renderedHintText: currentHintText,
+      pendingPly,
+      rewindPly,
+    });
 
     if (reviewGame) return { mode: "review", ...focus };
     if (pending && verdict && verdict.tier !== "silent") {
@@ -1785,7 +1797,11 @@ export function GamePage() {
   // anything (hintFocusContext returns undefined at level 0, or when
   // hintCopy itself has nothing to say yet at levels 4-5 mid-fetch).
   const handleAskAboutHint = () => {
-    const focus = hintFocusContext(hintLevel, renderedHintCopy);
+    // Phase 3 review fix (F1): thread the pending move's own ply through as
+    // the focus's position identity -- same derivation buildChatContext
+    // uses (mirrorRef is untouched while pending is set).
+    const pendingPly = pending ? mirrorRef.current.history().length + 1 : 0;
+    const focus = hintFocusContext(hintLevel, renderedHintCopy, pendingPly);
     if (!focus) return;
     setChatFocus({ hintFocus: focus });
     requestChatOpen();

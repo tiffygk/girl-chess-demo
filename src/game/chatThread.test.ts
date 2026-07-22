@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   anchorForFocus,
   focusKey,
@@ -7,6 +7,7 @@ import {
   shouldInjectAnchor,
   type ThreadEntry,
 } from "./chatThread";
+import { chatWithCoach, type ChatContext } from "./api";
 
 describe("moveNumberForPly", () => {
   it("maps 1-indexed plies to move numbers", () => {
@@ -19,7 +20,7 @@ describe("moveNumberForPly", () => {
 
 describe("focusKey", () => {
   it("builds a stable key for a hint focus", () => {
-    expect(focusKey({ level: 3, text: "watch the fork" }, undefined)).toBe("hint:3:watch the fork");
+    expect(focusKey({ level: 3, text: "watch the fork", ply: 7 }, undefined)).toBe("hint:7:3:watch the fork");
   });
 
   it("builds a stable key for a turning-point focus", () => {
@@ -30,15 +31,47 @@ describe("focusKey", () => {
   it("returns null when there is no focus", () => {
     expect(focusKey(undefined, undefined)).toBeNull();
   });
+
+  // Regression (Phase 3 review F1): hintCopy's level-1/2 text is a FIXED
+  // template (see hintFlow.ts:304's "hold on. look at your knight.") -- it
+  // does not vary with position. Every focusKey test above this used
+  // distinct fixture text, so this collision was never probed and the bug
+  // survived a full round. These two cases deliberately use IDENTICAL text
+  // at the same level, differing only by ply, to prove the fix actually
+  // folds a position identity in rather than relying on text/level alone.
+  it("gives two different moments at the same level with IDENTICAL template text DIFFERENT keys (the F1 collision)", () => {
+    const knightHintAtPly7 = { level: 1, text: "hold on. look at your knight.", ply: 7 };
+    const knightHintAtPly19 = { level: 1, text: "hold on. look at your knight.", ply: 19 };
+    const key7 = focusKey(knightHintAtPly7, undefined);
+    const key19 = focusKey(knightHintAtPly19, undefined);
+    expect(key7).not.toBe(key19);
+  });
+
+  it("the same collision at level 2 also resolves via ply", () => {
+    const a = focusKey({ level: 2, text: "same fixed template", ply: 3 }, undefined);
+    const b = focusKey({ level: 2, text: "same fixed template", ply: 5 }, undefined);
+    expect(a).not.toBe(b);
+  });
 });
 
 describe("shouldInjectAnchor", () => {
   it("injects only on transition into a new non-null focus", () => {
     expect(shouldInjectAnchor(null, "tp:28")).toBe(true);
     expect(shouldInjectAnchor("tp:28", "tp:28")).toBe(false);
-    expect(shouldInjectAnchor("tp:28", "hint:3:watch the fork")).toBe(true);
+    expect(shouldInjectAnchor("tp:28", "hint:7:3:watch the fork")).toBe(true);
     expect(shouldInjectAnchor("tp:28", null)).toBe(false);
     expect(shouldInjectAnchor(null, null)).toBe(false);
+  });
+
+  // Regression (F1): a second "ask about this" on a genuinely different
+  // moment (same level, colliding template text) must still be treated as
+  // a transition into a NEW focus -- this is acceptance item 1's exact
+  // failure mode (the second ask landed under a stale anchor because the
+  // old text-only key never changed).
+  it("treats two colliding-text hint focuses at different plies as a real transition", () => {
+    const keyAt7 = focusKey({ level: 1, text: "hold on. look at your knight.", ply: 7 }, undefined);
+    const keyAt19 = focusKey({ level: 1, text: "hold on. look at your knight.", ply: 19 }, undefined);
+    expect(shouldInjectAnchor(keyAt7, keyAt19)).toBe(true);
   });
 });
 
@@ -59,7 +92,7 @@ describe("historyForBackend", () => {
 
 describe("anchorForFocus", () => {
   it("builds a hint anchor with no move number", () => {
-    expect(anchorForFocus({ level: 3, text: "watch the fork" }, undefined)).toEqual({
+    expect(anchorForFocus({ level: 3, text: "watch the fork", ply: 7 }, undefined)).toEqual({
       kind: "context-anchor",
       source: "hint",
       moveNumber: null,
@@ -81,5 +114,48 @@ describe("anchorForFocus", () => {
 
   it("returns null when there is no focus", () => {
     expect(anchorForFocus(undefined, undefined)).toBeNull();
+  });
+});
+
+// Phase 3 review note (F3): historyForBackend has zero callers -- acceptance
+// item 5 ("anchor and intent-marker entries are NEVER sent to the backend
+// as conversation turns") currently holds by payload shape, not because
+// anything actually routes thread entries through the funnel. This test
+// pins that shape at the real send site (chatWithCoach's actual fetch
+// body) rather than trusting the type system alone, so a future change
+// that starts smuggling thread entries into the request is forced to
+// either go through historyForBackend or break this test.
+describe("outbound payload shape (F3): chatWithCoach never sends thread entries", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts only {message, context, backendPref} -- context carries no history/entries/thread field", async () => {
+    let sentBody: unknown;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        sentBody = JSON.parse(init!.body as string);
+        return { json: async () => ({ ok: true, text: "it loses the knight" }) } as Response;
+      })
+    );
+
+    const context: ChatContext = {
+      mode: "live",
+      hintFocus: { level: 3, text: "watch the fork", ply: 7 },
+    };
+    await chatWithCoach(1, { message: "why is that bad?", context, backendPref: "claude" });
+
+    expect(sentBody).toEqual({
+      message: "why is that bad?",
+      context,
+      backendPref: "claude",
+    });
+    const sentKeys = Object.keys(sentBody as object).sort();
+    expect(sentKeys).toEqual(["backendPref", "context", "message"]);
+    const contextKeys = Object.keys((sentBody as { context: object }).context).sort();
+    expect(contextKeys).not.toContain("history");
+    expect(contextKeys).not.toContain("entries");
+    expect(contextKeys).not.toContain("thread");
   });
 });
