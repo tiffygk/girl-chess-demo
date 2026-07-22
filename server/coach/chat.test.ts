@@ -388,7 +388,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(result.cause).toBe("backend-down");
       expect(calls).toBe(1);
       expect(result.text).toBe(
-        "let's keep it on the board. ask me about a move from this game and i'll break it down."
+        "keep it on the board. ask me about a move from this game and i'll break it down."
       );
     });
   });
@@ -438,7 +438,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       if (!result.ok) throw new Error("unreachable");
       expect(result.source).toBe("template");
       expect(result.text).toBe(
-        "let's keep it on the board. ask me about a move from this game and i'll break it down."
+        "keep it on the board. ask me about a move from this game and i'll break it down."
       );
 
       const traces = getAdviceTraces(gameId);
@@ -456,7 +456,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       if (!result.ok) throw new Error("unreachable");
       expect(result.source).toBe("template");
       expect(result.text).toBe(
-        "let's keep it on the board. ask me about a move from this game and i'll break it down."
+        "keep it on the board. ask me about a move from this game and i'll break it down."
       );
 
       const traces = getAdviceTraces(gameId);
