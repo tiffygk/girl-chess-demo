@@ -25,9 +25,14 @@ export const CHAT_HISTORY_WINDOW = 8; // messages (4 exchanges), owner-calibrata
 // provably does not block play (that is what moving it out of the centre
 // modal bought), so waiting longer for a real answer beats a fast
 // non-answer -- and the "slow" chip tells her which one she is getting.
+// Raised again 30000 -> 45000 the same day (R6, fact-gap round): the owner's
+// stated tolerance is ~60s, and a fast non-answer is the worst outcome of
+// all -- 45s gives real headroom under that ceiling without making 45s the
+// common wait (R1's per-ply-analysis fix is what should cut the common
+// case; this budget is a backstop for the tail, not the target latency).
 // narrate()'s own budget is deliberately NOT raised with it: that surface
 // speaks unprompted while she plays, where a late reply is worse than none.
-export const CHAT_TIMEOUT_MS = 30000;
+export const CHAT_TIMEOUT_MS = 45000;
 export const CHAT_MAX_LEN = 500;
 
 export interface ChatContext {
