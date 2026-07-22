@@ -293,19 +293,47 @@ function checkDefenseClaims(text: string, fen: string): string[] {
 // /you/your <verb> <SAN>". Ownership is only adjudicated against legalSans
 // (the CURRENT toMove side's moves) -- gameSans don't carry a per-san side
 // label, so a token that isn't a legal move right now is left unflagged
-// rather than guessed at. Precision over recall, same as the guard/safety
-// checker: a verb outside the fixed list, a pronoun ("her"/"him"), or a
-// second clause naming the other side is never chased -- a missed
-// attribution costs nothing, a false positive costs a real reply.
+// rather than guessed at.
+//
+// Three exclusions, added after a controller review caught each one flagging
+// a truthful sentence (2026-07-22):
+//   1. Present tense only. "played"/"moved"/"took" almost always describe a
+//      move already made, which legalSans (the CURRENT side's OPTIONS) has
+//      no opinion about -- "mallow played Nf3" can be a true description of
+//      an earlier move even when Nf3 is also legal for the player right now.
+//      Only present-tense verbs are adjudicated; the observed live bug was
+//      present-tense attribution of a PENDING move, so nothing real is lost.
+//   2. Castling is never adjudicated. O-O/O-O-O is the identical token for
+//      both colors, so legalSans membership alone can never tell whose
+//      castling a mention refers to.
+//   3. Conditional/hypothetical lines are skipped. The coach reasons in
+//      lines constantly ("if you play Nf3, she takes e5") -- a conditional
+//      marker earlier in the same sentence (captured via a bounded filler
+//      group and tested with a regex, the same idiom guardClaimRe/
+//      GUARD_NEGATION_RE already use for their "between" capture, not a
+//      sentence-splitting layer) means the named side is inside a
+//      hypothetical, not a literal claim about the current position.
+// Precision over recall, same as the guard/safety checker: a verb outside
+// the fixed list, a pronoun ("her"/"him"), or a second clause naming the
+// other side is never chased -- a missed attribution costs nothing, a false
+// positive costs a real reply.
 const SIDE_ATTR_SUBJECTS = "mallow|she|you|your";
-const SIDE_ATTR_VERBS = "plays the|plays as|plays|played|moves|moved|takes|took";
+const SIDE_ATTR_VERBS = "plays the|plays as|plays|moves|takes"; // present tense only -- exclusion 1
 const SAN_TOKEN_SRC = "(?:O-O(?:-O)?|[KQRBNkqrbn]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBNqrbn])?[+#]?)";
+const SIDE_ATTR_CONDITIONAL_RE = /\b(if|unless|suppose|say|imagine|were you to|what if)\b/i;
 
 function sideAttributionRe(): RegExp {
-  // group 1: the subject (mallow/she/you/your), group 2: the SAN token
-  // immediately following the verb -- no filler allowed between subject,
-  // verb, and token, so this never crosses into a second clause.
-  return new RegExp(`\\b(${SIDE_ATTR_SUBJECTS})\\s+(?:${SIDE_ATTR_VERBS})\\s+(${SAN_TOKEN_SRC})\\b`, "gi");
+  // group 1: up to 40 chars of same-sentence filler BEFORE the subject
+  // (bounded by excluding sentence-ending punctuation from the class, so a
+  // match can never reach back across a prior sentence) -- checked for a
+  // conditional marker, exclusion 3. group 2: the subject (mallow/she/you/
+  // your), group 3: the SAN token immediately following the verb -- no
+  // filler allowed between subject, verb, and token, so this never crosses
+  // into a second clause.
+  return new RegExp(
+    `([^.!?]{0,40})\\b(${SIDE_ATTR_SUBJECTS})\\b\\s+(?:${SIDE_ATTR_VERBS})\\s+(${SAN_TOKEN_SRC})\\b`,
+    "gi"
+  );
 }
 
 function checkSideAttributionClaims(text: string, facts: ChatFactList): string[] {
@@ -313,11 +341,13 @@ function checkSideAttributionClaims(text: string, facts: ChatFactList): string[]
   const legalSans = new Set(facts.legalSans);
 
   for (const m of text.matchAll(sideAttributionRe())) {
-    const [, subjectRaw, sanRaw] = m;
+    const [, before, subjectRaw, sanRaw] = m;
+    if (SIDE_ATTR_CONDITIONAL_RE.test(before)) continue; // hypothetical line -- exclusion 3
     const subject = subjectRaw.toLowerCase();
     const claimedSide: "you" | "mallow" = subject === "mallow" || subject === "she" ? "mallow" : "you";
     if (claimedSide === facts.toMove) continue; // correctly attributed
     const token = stripTrailingPunctuation(sanRaw);
+    if (/^O-O(-O)?$/i.test(token)) continue; // castling is ambiguous between colors -- exclusion 2
     if (!isAllowedSanToken(token, legalSans)) continue; // not toMove's legal move right now -- can't adjudicate
     violations.push(`side-claim: ${token} is ${facts.toMove}'s move to play, not ${claimedSide}'s`);
   }
