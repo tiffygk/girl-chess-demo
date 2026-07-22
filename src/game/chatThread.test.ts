@@ -91,14 +91,26 @@ describe("historyForBackend", () => {
 });
 
 describe("anchorForFocus", () => {
-  it("builds a hint anchor with no move number", () => {
+  it("builds a hint anchor with the move number from the pending move's ply", () => {
     expect(anchorForFocus({ level: 3, text: "watch the fork", ply: 7 }, undefined)).toEqual({
       kind: "context-anchor",
       source: "hint",
-      moveNumber: null,
+      moveNumber: 4,
       label: "hint",
       text: "watch the fork",
     });
+  });
+
+  // Sanity check for the pending-move boundary: black's very first reply
+  // (ply 2, history().length 1) is still "move 1" out loud (1...e5), the
+  // same as white's own move 1 (ply 1) -- moveNumberForPly's existing
+  // ceil(ply/2) rule already gives both plies moveNumber 1, so a hint
+  // focused on either half of move 1 must read "move 1", not drift to 2.
+  it("gives white's move 1 and black's reply to it the same move number", () => {
+    const white = anchorForFocus({ level: 1, text: "look here", ply: 1 }, undefined);
+    const black = anchorForFocus({ level: 1, text: "look here", ply: 2 }, undefined);
+    expect(white?.kind === "context-anchor" ? white.moveNumber : undefined).toBe(1);
+    expect(black?.kind === "context-anchor" ? black.moveNumber : undefined).toBe(1);
   });
 
   it("builds a turning-point anchor with the move number from ply", () => {
