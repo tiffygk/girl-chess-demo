@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { chatWithCoach, rateTrace, type ChatContext } from "./api";
+import { anchorForFocus, focusKey, shouldInjectAnchor, type ThreadEntry } from "./chatThread";
 
 // Increment 3.9, Task 4 (F19): thumbs up/down with feedback capture on any
 // traced coach output. Exported here and imported by GamePage's coach
@@ -116,19 +117,12 @@ export function ThumbRating({ traceId }: { traceId: number }) {
 
 const CHAT_MAX_LEN = 500;
 
-interface ChatBubble {
-  role: "user" | "coach";
-  text: string;
-  // Task 8 (inc 3.95, Fix 1), owner-ruled: "templates-only" is a deliberate
-  // voice choice (the player picked "templates only" in the coach voice
-  // radio group), not the coach going offline -- the muted chip below
-  // renders ONLY for cause === "backend-down", never for "templates-only".
-  cause?: "backend-down" | "templates-only";
-  // Task 4 (F19): every coach reply has a trace -- model, template, AND
-  // backend-down redirect all write one (Task 2's scope). Undefined only in
-  // the truly defensive case where the server's envelope omitted it.
-  traceId?: number;
-}
+// chat-in-corner, wave 1 (spec B4): the message state is now a ThreadEntry
+// union (see chatThread.ts) -- a "message" entry carries the same fields the
+// old local ChatBubble type did (cause is the Task 8 owner-ruled
+// "templates-only" vs "backend-down" distinction; traceId is Task 4's F19
+// thumb-rating hook), plus two new presentational kinds, "context-anchor"
+// and "intent-marker", for the provenance-anchor injection below.
 
 // Client-owned fallback for the rare case the server call itself fails
 // (network error, or the defensive ok:false envelope) — deliberately not
@@ -156,16 +150,37 @@ export interface CoachChatProps {
   // Optional/undefined is a no-op (no external opener wired), so every other
   // caller of this component is unaffected.
   openSignal?: number;
+  // chat-in-corner, wave 1 (spec B3): the focus the openSignal bump is
+  // scoped to, if any -- GamePage's own chatFocus state (see chatFocus.ts),
+  // mirrored here so the provenance-anchor injection can read it at the
+  // moment the drawer is forced open. Optional/undefined (no focus wired,
+  // or a plain opener click) injects nothing, same no-op precedent as
+  // openSignal itself.
+  hintFocus?: ChatContext["hintFocus"];
+  turningPointFocus?: ChatContext["turningPointFocus"];
 }
 
-export function CoachChat({ gameId, mode, buildContext, hidden, backendPref, openSignal }: CoachChatProps) {
+export function CoachChat({
+  gameId,
+  mode,
+  buildContext,
+  hidden,
+  backendPref,
+  openSignal,
+  hintFocus,
+  turningPointFocus,
+}: CoachChatProps) {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatBubble[]>([]);
+  const [messages, setMessages] = useState<ThreadEntry[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const requestTokenRef = useRef(0);
   const openSignalRef = useRef(openSignal);
+  // The key of the focus we most recently injected an anchor for -- distinct
+  // from "the current focus", so a focus that clears to null and comes back
+  // to the SAME key re-anchors (see shouldInjectAnchor's contract).
+  const lastInjectedKeyRef = useRef<string | null>(null);
 
   // "component chat state resets when the viewed game id changes (server
   // owns durable history)" — the visible thread is per-view only; switching
@@ -177,6 +192,7 @@ export function CoachChat({ gameId, mode, buildContext, hidden, backendPref, ope
     setDraft("");
     setPending(false);
     setOpen(false);
+    lastInjectedKeyRef.current = null;
   }, [gameId]);
 
   useEffect(() => {
@@ -188,12 +204,25 @@ export function CoachChat({ gameId, mode, buildContext, hidden, backendPref, ope
   // a genuine CHANGE (the ref, not a dependency-array staleness check, is
   // what makes the first render a no-op even though openSignal starts at a
   // real number rather than undefined).
+  // chat-in-corner, wave 1 (spec B3): the same bump that forces the drawer
+  // open also carries provenance -- inject a restating anchor ONCE on
+  // transition into a new focus, never on every bump/send (shouldInjectAnchor
+  // enforces that; a plain opener with no focus, or a re-bump within the
+  // same focus, injects nothing).
   useEffect(() => {
     if (openSignal !== undefined && openSignal !== openSignalRef.current) {
       openSignalRef.current = openSignal;
       setOpen(true);
+      const nextKey = focusKey(hintFocus, turningPointFocus);
+      if (shouldInjectAnchor(lastInjectedKeyRef.current, nextKey)) {
+        const anchor = anchorForFocus(hintFocus, turningPointFocus);
+        if (anchor) {
+          setMessages((prev) => [...prev, anchor, { kind: "intent-marker" }]);
+          lastInjectedKeyRef.current = nextKey;
+        }
+      }
     }
-  }, [openSignal]);
+  }, [openSignal, hintFocus, turningPointFocus]);
 
   // Single in-flight request (panel A11): send is disabled while pending is
   // true, and this guard is the belt to that button's suspenders — Enter
@@ -207,7 +236,7 @@ export function CoachChat({ gameId, mode, buildContext, hidden, backendPref, ope
     if (!text || pending) return;
     const token = ++requestTokenRef.current;
     setPending(true);
-    setMessages((prev) => [...prev, { role: "user", text }]);
+    setMessages((prev) => [...prev, { kind: "message", role: "user", text }]);
     setDraft("");
     chatWithCoach(gameId, { message: text, context: buildContext(), backendPref })
       .then((res) => {
@@ -216,14 +245,17 @@ export function CoachChat({ gameId, mode, buildContext, hidden, backendPref, ope
         // truthiness — an empty-string reply is a real (if odd) reply, not
         // a failure, and shouldn't fall through to the fallback copy.
         if (res.ok && res.text != null) {
-          setMessages((prev) => [...prev, { role: "coach", text: res.text!, cause: res.cause, traceId: res.traceId }]);
+          setMessages((prev) => [
+            ...prev,
+            { kind: "message", role: "coach", text: res.text!, cause: res.cause, traceId: res.traceId },
+          ]);
         } else {
-          setMessages((prev) => [...prev, { role: "coach", text: FALLBACK_TEXT }]);
+          setMessages((prev) => [...prev, { kind: "message", role: "coach", text: FALLBACK_TEXT }]);
         }
       })
       .catch(() => {
         if (requestTokenRef.current !== token) return;
-        setMessages((prev) => [...prev, { role: "coach", text: FALLBACK_TEXT }]);
+        setMessages((prev) => [...prev, { kind: "message", role: "coach", text: FALLBACK_TEXT }]);
       })
       .finally(() => {
         if (requestTokenRef.current !== token) return;
@@ -237,45 +269,100 @@ export function CoachChat({ gameId, mode, buildContext, hidden, backendPref, ope
     send();
   };
 
-  // Visibility only — never touches state. Hiding (a debrief rewind, or the
-  // end-game takedown cinematic) must leave messages/draft/open exactly as
-  // they were so un-hiding picks the conversation back up.
-  if (hidden) return null;
-
-  if (!open) {
-    return (
-      <button type="button" className="small chat-opener-btn" onClick={() => setOpen(true)}>
-        chat with the coach
-      </button>
-    );
-  }
+  // Wave 3 (chat-in-corner, B1/B5): no game yet means there is nothing to
+  // dock, and the >=1200px grid must not reserve the rail column pregame --
+  // that is the ONLY unmount condition left. Once a game exists the root
+  // stays in the DOM even while `hidden` (a debrief rewind, or the takedown
+  // cinematic) so the rail column never collapses and re-centers the board
+  // mid-game: `hidden` is a CSS visibility flag on the same mounted node,
+  // and messages/draft/open live in React state either way, so un-hiding
+  // picks the conversation back up exactly where it was.
+  if (gameId == null) return null;
 
   const emptyCopy = mode === "review" ? "ask about this game." : "ask about the position on the board.";
 
+  // B2/B5: an inline, collapsible panel in the coach region -- no overlay,
+  // no dialog role, no focus trap, no scroll lock; the board stays playable
+  // while a reply generates. Collapsed (D2 default) it is the one-line
+  // "chat with cookie" opener; both branches render and CSS swaps them on
+  // .chat-corner-open, which is also what lets the small-viewport media
+  // query (D5) hand the space back to the board without touching state.
   return (
-    <div className="chat-overlay" role="dialog" aria-label="coach chat">
-      <div className="chat-drawer pop-in">
-        <div className="chat-drawer-head">
-          <span className="chat-kicker">coach chat</span>
-          <button type="button" className="small" onClick={() => setOpen(false)}>
-            close
+    <div className={open ? "chat-corner chat-corner-open" : "chat-corner"} hidden={hidden}>
+      <button type="button" className="chat-corner-opener" onClick={() => setOpen(true)}>
+        chat with cookie
+      </button>
+      <div className="chat-corner-panel">
+        <div className="chat-corner-head">
+          <div className="chat-corner-head-title">
+            {/* cookie's registry entry -- same plate anatomy as np-you/
+                np-mallow (PlayerBar.tsx), lavender trio, role in the elo
+                seat. Glyph ported from the vault component library
+                (component-library.html #cc-glyph-candidates, pixel weight
+                (C): deep ink body #6952C4) -- owner-approved 2026-07-21,
+                reversing the earlier no-glyph ruling. D7 ruled: the c00kie
+                corruption frame, lavender shadows only. */}
+            <span className="name-plate np-cookie">
+              <span className="np-body">
+                <svg className="np-glyph" width="28" height="24" viewBox="0 0 14 12" shapeRendering="crispEdges" aria-hidden="true">
+                  <path fill="#FFFFFF" d="M11 0h2v1h-2zM10 1h2v1h-2zM9 2h2v1H9zM8 3h2v1H8z" />
+                  <path fill="#6952C4" d="M3 1h5v1H3zM1 2h8v1H1zM12 2h2v1h-2zM0 3h8v1H0zM11 3h3v1h-3zM0 4h7v1H0zM8 4h6v1H8zM0 5h6v1H0zM7 5h7v1H7zM0 6h14v1H0zM0 7h14v1H0zM1 8h12v1H1zM1 9h12v1H1zM2 10h9v1H2zM4 11h5v1H4z" />
+                  <path fill="#C9BFEF" d="M2 5h1v1H2zM2 6h1v1H2zM3 7h1v1H3z" />
+                </svg>
+                <span className="np-name">
+                  <span className="np-name-real">cookie</span>
+                  <span className="np-name-glitch" aria-hidden="true">c00kie</span>
+                </span>
+                <span className="np-div" aria-hidden="true"></span>
+                <span className="bar-elo">coach</span>
+              </span>
+            </span>
+            <span className="chat-kicker">coach chat</span>
+          </div>
+          <button type="button" className="chat-corner-collapse" aria-label="collapse chat" onClick={() => setOpen(false)}>
+            <svg width="8" height="6" viewBox="0 0 8 6" aria-hidden="true">
+              <path d="M0 0h8L4 6z" fill="#6952C4" />
+            </svg>
           </button>
         </div>
-        <div className="chat-messages" ref={listRef}>
+        <div className="chat-corner-thread" ref={listRef}>
           {messages.length === 0 && <p className="chat-empty">{emptyCopy}</p>}
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className={m.role === "user" ? "chat-bubble chat-bubble-user" : "chat-bubble chat-bubble-coach pop-in"}
-            >
-              <p className="chat-bubble-text">{m.text}</p>
-              {m.cause === "backend-down" && <span className="chat-offline-chip">offline</span>}
-              {m.role === "coach" && m.traceId != null && <ThumbRating traceId={m.traceId} />}
-            </div>
-          ))}
+          {messages.map((m, i) => {
+            // D3 ruled: the anchor is a distinct provenance card -- sharp
+            // kicker chip + the exact hint/turning-point text, a record of
+            // a moment rather than a turn of speech.
+            if (m.kind === "context-anchor") {
+              return (
+                <div key={i} className="chat-anchor">
+                  <span className="chat-anchor-kicker">
+                    {m.label}
+                    {m.moveNumber ? ` · move ${m.moveNumber}` : ""}
+                  </span>
+                  <p className="chat-anchor-body">{m.text}</p>
+                </div>
+              );
+            }
+            if (m.kind === "intent-marker") {
+              return (
+                <div key={i} className="chat-intent-marker">
+                  asking about this…
+                </div>
+              );
+            }
+            return (
+              <div
+                key={i}
+                className={m.role === "user" ? "chat-bubble chat-bubble-user" : "chat-bubble chat-bubble-coach pop-in"}
+              >
+                <p className="chat-bubble-text">{m.text}</p>
+                {m.cause === "backend-down" && <span className="chat-offline-chip">offline</span>}
+                {m.role === "coach" && m.traceId != null && <ThumbRating traceId={m.traceId} />}
+              </div>
+            );
+          })}
           {pending && (
             <div className="chat-bubble chat-bubble-coach chat-thinking pop-in">
-              <p className="chat-bubble-text">coach is thinking...</p>
+              <p className="chat-bubble-text">cookie is thinking…</p>
             </div>
           )}
         </div>
@@ -285,7 +372,7 @@ export function CoachChat({ gameId, mode, buildContext, hidden, backendPref, ope
             className="chat-input"
             value={draft}
             maxLength={CHAT_MAX_LEN}
-            placeholder="ask the coach..."
+            placeholder="ask cookie about the game…"
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onInputKeyDown}
           />
