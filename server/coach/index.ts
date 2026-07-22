@@ -149,7 +149,7 @@ function parseTemplateList(block: string): Record<string, string> {
   return out;
 }
 
-function parsePersona(md: string): Persona {
+export function parsePersona(md: string): Persona {
   const top = splitSections(md, "## ");
   const templateBlock = top["templates"] ?? "";
   const sub = splitSections(templateBlock, "### ");
@@ -159,12 +159,19 @@ function parsePersona(md: string): Persona {
   // section's own "### threat"/"### recommendation" keys parsed above.
   const chatBlock = top["chat"] ?? "";
   const chatSub = splitSections(chatBlock, "### ");
+  // Coach-voice round (2026-07-21), Option 2: the shared `## voice` block
+  // is prepended into BOTH system prompts so it actually reaches the model
+  // -- previously `voice` was parsed but never sent anywhere. `voice` stays
+  // exposed on its own for anything (tests, future surfaces) that wants the
+  // raw block without a body glued on.
+  const voice = (top["voice"] ?? "").trim();
+  const withVoice = (body: string) => (voice ? `${voice}\n\n${body}` : body);
   return {
-    voice: (top["voice"] ?? "").trim(),
-    systemPrompt: (top["system prompt"] ?? "").trim(),
+    voice,
+    systemPrompt: withVoice((top["system prompt"] ?? "").trim()),
     threatTemplates: parseTemplateList(sub["threat"] ?? ""),
     recommendationTemplates: parseTemplateList(sub["recommendation"] ?? ""),
-    chatSystemPrompt: (chatSub["system prompt"] ?? "").trim(),
+    chatSystemPrompt: withVoice((chatSub["system prompt"] ?? "").trim()),
     chatTemplates: parseTemplateList(chatSub["templates"] ?? ""),
   };
 }
