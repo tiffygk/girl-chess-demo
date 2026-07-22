@@ -60,7 +60,11 @@ export function anchorForFocus(hintFocus: HintFocus, turningPointFocus: TurningP
     return {
       kind: "context-anchor",
       source: "hint",
-      moveNumber: null, // a live hint has no ply
+      // Phase 3 F1 threaded the pending move's own ply into hintFocus (see
+      // api.ts's ChatContext.hintFocus doc) precisely so moments could be
+      // told apart -- the move number is available the same way the
+      // turning-point branch above gets it.
+      moveNumber: moveNumberForPly(hintFocus.ply),
       label: "hint",
       text: hintFocus.text,
     };
