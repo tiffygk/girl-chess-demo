@@ -27,6 +27,21 @@ export const GUARD_VERBS = "guards?|guarding|defends?|defending|protects?|protec
 export const GUARD_NEGATION_RE = /\b(does not|doesn't|do not|don't|cannot|can't|never)\b/i;
 export const SAFETY_UNDEFENDED_WORDS = ["undefended", "unprotected", "unguarded", "hanging", "hangs", "not defended", "not protected", "not guarded"];
 export const SAFETY_DEFENDED_WORDS = ["defended", "protected", "guarded", "safe", "covered"];
+// Controller follow-up (issue B, 2026-07-22 review): the safety-claim shape
+// requires a copula ("is"/"are") between the square and the predicate to
+// confirm the "<sq> is/are <predicate>" claim shape -- but the live bug's
+// exact wording ("that pawn on d5 isn't defended") uses a contraction with
+// no word boundary between the "is" and "n't", so it never matched. Same
+// idiom as GUARD_NEGATION_RE above (a fixed negation-word list, not a new
+// predicate phrase): SAFETY_COPULA_RE widens the shape check to also accept
+// the contracted forms, and SAFETY_NEGATION_RE flags when the matched
+// copula was one of them, so the predicate's base polarity (from the two
+// word lists above, unchanged) gets flipped. The spelled-out "is not
+// defended" / "are not defended" phrasing needs neither: "not" there is
+// already part of the predicate capture itself (a literal entry in
+// SAFETY_UNDEFENDED_WORDS), so this never double-negates it.
+export const SAFETY_COPULA_RE = /\b(?:is|isn't|are|aren't)\b/i;
+export const SAFETY_NEGATION_RE = /\b(isn't|aren't)\b/i;
 
 export function guardClaimRe(): RegExp {
   // group 1: sqA, group 2: text between sqA and the verb (checked for
@@ -73,7 +88,7 @@ export function checkDefenseClaims(text: string, fen: string): string[] {
 
   for (const m of text.matchAll(safetyClaimRe())) {
     const [, sqB, between, rawPredicate] = m;
-    if (!/\bis\b/i.test(between)) continue; // not the "<sq> is <predicate>" shape
+    if (!SAFETY_COPULA_RE.test(between)) continue; // not the "<sq> is/are <predicate>" shape
     const b = sqB.toLowerCase();
     const colorB = colorAt(b);
     if (!colorB) continue; // an empty square -- can't adjudicate
@@ -82,6 +97,13 @@ export function checkDefenseClaims(text: string, fen: string): string[] {
     if (SAFETY_UNDEFENDED_WORDS.includes(predicate)) claimsDefended = false;
     else if (SAFETY_DEFENDED_WORDS.includes(predicate)) claimsDefended = true;
     if (claimsDefended === null) continue;
+    // A contracted-negative copula ("isn't"/"aren't") flips the predicate's
+    // base polarity -- "isn't defended" (predicate "defended", base true)
+    // becomes a claim of "undefended" (false). The spelled-out "is not
+    // defended" case never reaches here with `between` containing a
+    // negation word at all (see SAFETY_NEGATION_RE's comment above), so
+    // this can't double-negate it.
+    if (SAFETY_NEGATION_RE.test(between)) claimsDefended = !claimsDefended;
     const truth = chess.attackers(sq(b), colorB).length > 0;
     if (claimsDefended !== truth) {
       violations.push(`defense-claim: ${b} is ${truth ? "defended" : "undefended"}`);

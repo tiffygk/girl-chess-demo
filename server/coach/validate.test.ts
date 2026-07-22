@@ -135,17 +135,15 @@ describe("buildPrompt (calibration sweep task 7d): factsForModel is stripped of 
 // narration: "that pawn on d5 isn't defended, so you'd just be handing it
 // over for free" when white's e4 pawn demonstrably defends d5.
 //
-// Wording note: the checker is extracted UNCHANGED (sub-task 1's explicit
-// requirement) and its safety-claim shape looks for a standalone word "is"
-// between the square and the predicate (`\bis\b`) -- "isn't" doesn't match
-// that (no word boundary between the contracted "is" and "n't"), same
-// class of documented gap the sibling guard-claim shape handles with its
-// own explicit GUARD_NEGATION_RE contraction list ("doesn't", "don't", ...)
-// that the safety-claim shape has no equivalent of. That's a pre-existing
-// limitation of the checker itself, out of this task's scope (wiring the
-// checker into narrate(), not extending its grammar) -- so this test uses
-// the spelled-out "is not defended", the phrasing the checker actually
-// supports, to exercise the real defense-claim-catching behavior Task 3 adds.
+// Controller follow-up (issue B): the FIRST version of this task noted the
+// safety-claim shape's `\bis\b` copula check doesn't match "isn't" (no word
+// boundary inside the contraction) and used spelled-out "is not defended" in
+// its test instead -- which meant the round didn't actually catch the exact
+// sentence that motivated it. Fixed below (see defenseClaims.ts's
+// SAFETY_COPULA_RE/SAFETY_NEGATION_RE) following the same fixed-list idiom
+// GUARD_NEGATION_RE already uses for the sibling guard-claim shape. The
+// "is not defended" test stays as a regression guard that the fix didn't
+// touch the already-working spelled-out form.
 describe("validateNarration -- defender-claim validation (Task 3)", () => {
   // White pawns on d5 and e4: e4 defends d5.
   const DEFENDED_FEN = "4k3/8/8/3P4/4P3/8/8/4K3 w - - 0 1";
@@ -175,6 +173,35 @@ describe("validateNarration -- defender-claim validation (Task 3)", () => {
       "that pawn on d5 is not defended, so you'd just be handing it over for free.",
       facts(UNDEFENDED_FEN)
     );
+    expect(result.ok).toBe(true);
+  });
+
+  // Controller follow-up (issue B): the exact live-gate wording, now caught.
+  it("flags the exact live-gate wording 'isn't defended' when e4 demonstrably defends d5", () => {
+    const result = validateNarration(
+      "that pawn on d5 isn't defended, so you'd just be handing it over for free.",
+      facts(DEFENDED_FEN)
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.violations.some((v) => v.includes("defense-claim"))).toBe(true);
+  });
+
+  it("does not flag 'isn't defended' when d5 is genuinely undefended", () => {
+    const result = validateNarration(
+      "that pawn on d5 isn't defended, so you'd just be handing it over for free.",
+      facts(UNDEFENDED_FEN)
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("flags 'aren't defended' (plural contraction) the same way", () => {
+    const result = validateNarration("your pawns on d5 aren't defended.", facts(DEFENDED_FEN));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.violations.some((v) => v.includes("defense-claim"))).toBe(true);
+  });
+
+  it("does not flag 'aren't defended' when d5 is genuinely undefended", () => {
+    const result = validateNarration("your pawns on d5 aren't defended.", facts(UNDEFENDED_FEN));
     expect(result.ok).toBe(true);
   });
 });
