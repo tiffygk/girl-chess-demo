@@ -77,6 +77,24 @@ export interface ChatFactList {
     attackedBy: { square: string; pieceKind: string }[]; // opposing-color attackers
     defendedBy: { square: string; pieceKind: string }[]; // same-color defenders (could recapture)
   }[];
+  // Round 2026-07-22: when the player asks about a specific turning point,
+  // the conversation is about a PAST moment, but every field above describes
+  // the position TODAY. The e2e gate caught the coach placing mallow's queen
+  // on a5 (true now) while discussing a pivot where it still sat on d8, and
+  // calling dxc6 "wins a pawn clean" while ignoring the bxc6 recapture that
+  // existed at that moment. focusPosition carries the position just BEFORE
+  // the focused move -- the one she was actually choosing in, and the one
+  // the card's bestSan/pvSans are legal in -- derived by the same replay
+  // discipline as currentFen, never hand-computed. Absent when no turning
+  // point is focused, so ordinary chat is untouched.
+  focusPosition?: {
+    ply: number; // the focused move's ply; this position is the one BEFORE it
+    fen: string;
+    toMove: "you" | "mallow";
+    occupancy: { square: string; pieceKind: string; color: "you" | "mallow" }[];
+    legalSans: string[];
+    contested: ChatFactList["contested"];
+  };
   // NOTE: no allowedSquares -- chat validation treats square names as free
   // geography (see validateChat below). Declared cut #2, not an oversight:
   // policing whether a named square is real/relevant would require the
@@ -85,29 +103,21 @@ export interface ChatFactList {
   // test for the honesty documentation this decision requires.
 }
 
-// Pure: replays gameSans from the start position with chess.js so
-// currentFen/occupancy/legalSans are all DERIVED, never hand-computed --
-// castling rights, en passant, and promotion are exactly whatever the
-// replay says they are, the same discipline motifs.ts's threat/recommendation
-// derivation already follows for a single move.
-export function assembleChatFactList(
-  gameMoves: { ply: number; san: string }[],
-  ctx: ChatContext,
-  turningPoints?: { ply: number; san: string; label: string; punishSan?: string | null }[]
-): ChatFactList {
-  const chess = new Chess();
-  const ordered = [...gameMoves].sort((a, b) => a.ply - b.ply);
-  const gameSans: string[] = [];
-  for (const m of ordered) {
-    const mv = chess.move(m.san);
-    gameSans.push(mv.san);
-  }
-
-  const currentFen = chess.fen();
+// Every position-shaped fact the coach gets, derived from one chess.js
+// instance. Extracted 2026-07-22 so the focused turning point's position can
+// be described by the SAME code as the current one -- two call sites, one
+// derivation, no chance of the two drifting apart.
+function derivePositionFacts(chess: Chess): {
+  fen: string;
+  toMove: "you" | "mallow";
+  occupancy: ChatFactList["occupancy"];
+  legalSans: string[];
+  contested: ChatFactList["contested"];
+} {
   // Player is always white in v1 (see manager.ts's resign() comment) -- so
   // white pieces are always "you" and black is always "mallow", a fixed
   // mapping, not a lookup. toMove follows the exact same fixed mapping.
-  const toMove: ChatFactList["toMove"] = chess.turn() === "w" ? "you" : "mallow";
+  const toMove: "you" | "mallow" = chess.turn() === "w" ? "you" : "mallow";
   const occupancy: ChatFactList["occupancy"] = [];
   for (const row of chess.board()) {
     for (const cell of row) {
@@ -115,7 +125,6 @@ export function assembleChatFactList(
       occupancy.push({ square: cell.square, pieceKind: cell.type, color: cell.color === "w" ? "you" : "mallow" });
     }
   }
-  const legalSans = chess.moves();
 
   const contested: ChatFactList["contested"] = [];
   for (const entry of occupancy) {
@@ -140,6 +149,44 @@ export function assembleChatFactList(
       attackedBy: attackerSquares.map(toPiece),
       defendedBy: defenderSquares.map(toPiece),
     });
+  }
+
+  return { fen: chess.fen(), toMove, occupancy, legalSans: chess.moves(), contested };
+}
+
+// Pure: replays gameSans from the start position with chess.js so
+// currentFen/occupancy/legalSans are all DERIVED, never hand-computed --
+// castling rights, en passant, and promotion are exactly whatever the
+// replay says they are, the same discipline motifs.ts's threat/recommendation
+// derivation already follows for a single move.
+export function assembleChatFactList(
+  gameMoves: { ply: number; san: string }[],
+  ctx: ChatContext,
+  turningPoints?: { ply: number; san: string; label: string; punishSan?: string | null }[]
+): ChatFactList {
+  const chess = new Chess();
+  const ordered = [...gameMoves].sort((a, b) => a.ply - b.ply);
+  const gameSans: string[] = [];
+  for (const m of ordered) {
+    const mv = chess.move(m.san);
+    gameSans.push(mv.san);
+  }
+
+  const { fen: currentFen, toMove, occupancy, legalSans, contested } = derivePositionFacts(chess);
+
+  // Round 2026-07-22: the focused turning point's own moment. Replayed from
+  // the same ordered move list, stopping BEFORE the focused ply, so it is
+  // derived by exactly the discipline currentFen is (never hand-computed,
+  // never patched up from the current position).
+  const focusPly = ctx.turningPointFocus?.ply;
+  let focusPosition: ChatFactList["focusPosition"];
+  if (focusPly !== undefined) {
+    const focusChess = new Chess();
+    for (const m of ordered) {
+      if (m.ply >= focusPly) break;
+      focusChess.move(m.san);
+    }
+    focusPosition = { ply: focusPly, ...derivePositionFacts(focusChess) };
   }
 
   const tpOut = turningPoints?.map((t) => ({
@@ -168,6 +215,11 @@ export function assembleChatFactList(
   // validation in validateChat below is untouched by this fold.
   if (ctx.turningPointFocus?.bestSan) sans.add(ctx.turningPointFocus.bestSan);
   for (const s of ctx.turningPointFocus?.pvSans ?? []) sans.add(s);
+  // Round 2026-07-22: moves that were legal AT the focused moment. Without
+  // these, a coach correctly discussing what she could have played back
+  // then gets its own true sentence rejected, because those moves are not
+  // legal today. Same fold, same reason, as the bestSan/pvSans fold above.
+  for (const s of focusPosition?.legalSans ?? []) sans.add(s);
 
   return {
     gameSans,
@@ -175,6 +227,7 @@ export function assembleChatFactList(
     toMove,
     occupancy,
     legalSans,
+    focusPosition,
     turningPoints: tpOut,
     context: ctx,
     allowedSans: [...sans],
@@ -288,7 +341,21 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
     if (!isAllowedSanToken(token, allowedSans)) violations.push(token);
   }
 
-  violations.push(...checkDefenseClaims(text, facts.currentFen));
+  // Round 2026-07-22: a focused turn is ABOUT a past moment, so a defense
+  // claim true back then is not a lie now. Judge against both positions and
+  // keep only what is false in BOTH -- a claim the checker flags in one
+  // position but not the other is one the conversation's own moment
+  // vindicates, and flagging it would cost a truthful reply a regen (and
+  // possibly a template). The two runs produce identical strings when both
+  // flag, because the message states the truth the claim contradicts and
+  // the claim is fixed, so a plain intersection is exact here.
+  const currentDefense = checkDefenseClaims(text, facts.currentFen);
+  if (facts.focusPosition) {
+    const focusDefense = new Set(checkDefenseClaims(text, facts.focusPosition.fen));
+    violations.push(...currentDefense.filter((v) => focusDefense.has(v)));
+  } else {
+    violations.push(...currentDefense);
+  }
   violations.push(...checkSideAttributionClaims(text, facts));
 
   if (violations.length > 0) return { ok: false, violations };
