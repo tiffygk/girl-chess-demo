@@ -55,7 +55,23 @@ export function normalizeSan(token: string): string {
 export function isAllowedSanToken(token: string, allowed: Set<string>): boolean {
   if (allowed.has(token)) return true;
   const normalized = normalizeSan(token);
-  return normalized !== token && allowed.has(normalized);
+  if (normalized !== token && allowed.has(normalized)) return true;
+  // A check/mate suffix annotates a move; it does not make it a different
+  // move. Measured 2026-07-22: a game ended with Qh4#, the coach truthfully
+  // wrote "Qh4", validation called that fabricated, and the regeneration it
+  // triggered cost 29s and still ended in a template. So a BARE token
+  // matches its suffixed form.
+  //
+  // Deliberately one-directional. Letting "Qh4#" match an allowed "Qh4"
+  // would let the coach assert a check or mate the position does not
+  // contain -- exactly the confident falsehood this validator exists to
+  // catch. Adding a suffix is a claim about the position; dropping one is
+  // not.
+  for (const suffix of ["+", "#"]) {
+    if (allowed.has(token + suffix)) return true;
+    if (normalized !== token && allowed.has(normalized + suffix)) return true;
+  }
+  return false;
 }
 
 export function validateNarration(
