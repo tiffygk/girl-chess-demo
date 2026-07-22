@@ -370,6 +370,31 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
+  // The player is always "you"/"your"; "she"/"her" must only ever mean
+  // mallow (the opponent). ChatContext.herMove stays named herMove as a TS
+  // field (internal identifier, not model-facing), but the key serialized
+  // into the model's fact-list JSON must read yourMove.
+  describe("chat() — the player's move reaches the model as yourMove, not herMove (Task pronoun sweep)", () => {
+    it("a live-context herMove serializes into the prompt fact JSON under the key yourMove", async () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], {
+        mode: "live",
+        herMove: { pieceKind: "n", from: "f6", to: "g4" },
+      });
+      let capturedPrompt = "";
+      const backend = fakeBackend(async (prompt) => {
+        capturedPrompt = prompt;
+        return "e4 is a fine start for you.";
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      await chat("what's going on here?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+      expect(capturedPrompt).toContain('"yourMove"');
+      expect(capturedPrompt).not.toContain('"herMove"');
+    });
+  });
+
   // (e)
   describe("chat() — low-level surface", () => {
     it("backend down -> redirect text with cause backend-down, no second attempt", async () => {

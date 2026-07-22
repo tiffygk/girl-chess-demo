@@ -291,7 +291,7 @@ function stripThreatUci(t: ThreatFacts): Omit<ThreatFacts, "refutationUci"> {
 
 export function buildPrompt(facts: CoachFactList, persona: Persona): string {
   const factsForModel = {
-    herMove: facts.herMove,
+    yourMove: facts.herMove,
     tier: facts.tier,
     deltaCp: facts.deltaCp,
     threat: facts.threat ? stripThreatUci(facts.threat) : undefined,
