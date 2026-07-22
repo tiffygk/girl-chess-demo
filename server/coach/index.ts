@@ -22,6 +22,14 @@ export interface CoachFactList {
   threat?: ThreatFacts;
   best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
   recommendation?: RecommendationFacts;
+  // Task 3 (2026-07-22, truthfulness leaks): the live position, so
+  // validateNarration can ground a defense claim ("X isn't defended")
+  // against the actual board instead of taking the model's word for it --
+  // see that function and ./defenseClaims.ts. Caller-supplied (see
+  // assembleFactList's input below), never re-derived here: narrate() must
+  // never touch the evaluator queue, and this file must never invent a
+  // position that isn't already in the caller's hand.
+  currentFen: string;
   // Derived below: every square/SAN token a narration is allowed to name.
   allowedSquares: string[];
   allowedSans: string[];
@@ -49,6 +57,10 @@ export function assembleFactList(input: {
   herMove: { pieceKind: string; from: string; to: string };
   tier: "nudge" | "warning";
   deltaCp: number | null;
+  // Task 3 (2026-07-22, truthfulness leaks): required, not optional -- see
+  // CoachFactList.currentFen above. Every real caller (manager.ts's
+  // narrate()) already has the live position in hand.
+  currentFen: string;
   threat?: ThreatFacts;
   best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
   recommendation?: RecommendationFacts;

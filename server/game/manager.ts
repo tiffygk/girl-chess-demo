@@ -775,6 +775,11 @@ export class GameManager {
       herMove: { pieceKind: body.herPiece, from: body.from, to: body.to },
       tier: body.tier,
       deltaCp: body.deltaCp,
+      // Task 3 (2026-07-22, truthfulness leaks): DERIVED from the live game
+      // state already in hand here (same source computeHint/exploreReply
+      // use), never recomputed or hand-invented -- lets validateNarration
+      // ground a defense claim against the real position.
+      currentFen: live.chess.fen(),
       threat: body.threat,
       best: body.best,
       recommendation: body.recommendation,
