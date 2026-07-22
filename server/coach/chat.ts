@@ -47,7 +47,25 @@ export interface ChatContext {
   // the player opened chat from the open hint ladder, turningPointFocus when
   // they opened it from a debrief turning-point card -- so the coach's reply
   // can ground itself in THAT moment instead of the whole game/position.
-  hintFocus?: { level: number; text: string };
+  // Task 4 (R1b, fact-gap round): before this, hintFocus carried only the
+  // ladder's level + rendered text -- none of the already-computed
+  // HintFacts the player is actually looking at ever reached the coach, so
+  // a hint follow-up couldn't legally name the best move, and had no engine
+  // facts to expand on. bestSan/pvSans are already SAN (client-converted,
+  // same "convert once, at the source" rule Task 3 follows); threat is the
+  // ThreatFacts that prompted the hint (level-3's own highlight, from the
+  // judge's verdict, not a HintFacts field); recommendation/trade are
+  // HintFacts' own fields verbatim. All optional -- a hint at level 1-2
+  // renders before any of this is computed.
+  hintFocus?: {
+    level: number;
+    text: string;
+    bestSan?: string;
+    pvSans?: string[];
+    threat?: ThreatFacts;
+    recommendation?: RecommendationFacts;
+    trade?: boolean;
+  };
   turningPointFocus?: {
     ply: number;
     san: string;
@@ -294,6 +312,11 @@ export function assembleChatFactList(
   // validation in validateChat below is untouched by this fold.
   if (ctx.turningPointFocus?.bestSan) sans.add(ctx.turningPointFocus.bestSan);
   for (const s of ctx.turningPointFocus?.pvSans ?? []) sans.add(s);
+  // Task 4 fold (R1b): identical reasoning, for the hint ladder's own focus
+  // -- without this, a hint follow-up asking "why is that the move?" could
+  // never legally name the move the hint itself is about.
+  if (ctx.hintFocus?.bestSan) sans.add(ctx.hintFocus.bestSan);
+  for (const s of ctx.hintFocus?.pvSans ?? []) sans.add(s);
   // Round 2026-07-22: moves that were legal AT the focused moment. Without
   // these, a coach correctly discussing what she could have played back
   // then gets its own true sentence rejected, because those moves are not
@@ -457,8 +480,9 @@ function stripThreatUci(t: ThreatFacts): Omit<ThreatFacts, "refutationUci"> {
 
 // The fact JSON serialized into the chat prompt carries NO uci fields --
 // san is all a model (or a player) ever needs; uci is an internal engine
-// detail. context.best.uci and context.threat.refutationUci are the only
-// two places one could leak in, so those are the only fields stripped here.
+// detail. context.best.uci, context.threat.refutationUci, and (as of Task
+// 4, R1b) context.hintFocus.threat.refutationUci are the three places one
+// could leak in, so those are the only fields stripped here.
 // Owner playtest 2026-07-22: the focused fact list added ~2.2k characters
 // to exactly the turns that were already the slowest, and her next two
 // focused asks both hit the hard 20s timeout (traces 57/58, prompts 9.7k
@@ -507,11 +531,21 @@ function perPlyForModel(perPlyAnalysis: ChatFactList["perPlyAnalysis"]) {
   }));
 }
 
+// Task 4 (R1b): hintFocus's own threat carries the same refutationUci field
+// context.threat does -- stripped the same way, so "no uci fields reach the
+// model" stays true for this third place one could leak in (the other two
+// are context.best.uci and context.threat.refutationUci, noted below).
+function hintFocusForModel(hintFocus: ChatContext["hintFocus"]) {
+  if (!hintFocus) return undefined;
+  const { threat, ...rest } = hintFocus;
+  return { ...rest, threat: threat ? stripThreatUci(threat) : undefined };
+}
+
 function factsForModel(facts: ChatFactList) {
   const { allowedSans, context, focusPosition, perPlyAnalysis, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
   if (context) {
-    const { best, threat, herMove, ...restCtx } = context;
+    const { best, threat, herMove, hintFocus, ...restCtx } = context;
     strippedContext = {
       ...restCtx,
       // The model-facing key is yourMove (the player is always "you"), even
@@ -519,6 +553,7 @@ function factsForModel(facts: ChatFactList) {
       yourMove: herMove,
       threat: threat ? stripThreatUci(threat) : undefined,
       best: best ? { san: best.san, pieceKind: best.pieceKind, from: best.from, to: best.to } : undefined,
+      hintFocus: hintFocusForModel(hintFocus),
     };
   }
   // legalSansBelongTo labels the bare legalSans list with whose moves it
