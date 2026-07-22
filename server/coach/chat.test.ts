@@ -252,6 +252,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     return {
       gameSans: [],
       currentFen: DEFENDER_FEN,
+      toMove: "you", // DEFENDER_FEN is a "w" fen -- white (you) to move
       occupancy: [],
       legalSans: [],
       allowedSans: [],
@@ -309,6 +310,52 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       const facts = defenderFacts();
       const result = validateChat("the knight on b1 guards d4.", facts);
       expect(result.ok).toBe(true);
+    });
+  });
+
+  // Side-to-move fact (round 2026-07-22): the coach once attributed the
+  // PLAYER's own pending move to mallow ("you win her queen for free" about
+  // the player's own Qh5) because ChatFactList had no fact stating whose
+  // turn it is -- legalSans is an unlabeled bare list, and the model was
+  // left to infer perspective from the FEN's side-to-move field alone.
+  // toMove is derived from chess.turn() at the same replay currentFen comes
+  // from: w -> "you", b -> "mallow" -- the same fixed "player is always
+  // white in v1" mapping occupancy already uses.
+  describe("assembleChatFactList — toMove fact (side-to-move grounding)", () => {
+    it("start position (no moves played) -> toMove is you (white to move)", () => {
+      const facts = assembleChatFactList([], { mode: "live" });
+      expect(facts.toMove).toBe("you");
+    });
+
+    it("after an odd number of plies (e.g. e4) -> toMove is mallow", () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      expect(facts.toMove).toBe("mallow");
+    });
+
+    it("after an even number of plies (e.g. e4, e5) -> toMove is you", () => {
+      const facts = assembleChatFactList(
+        [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }],
+        { mode: "live" }
+      );
+      expect(facts.toMove).toBe("you");
+    });
+
+    it("the prompt's fact JSON carries toMove and legalSansBelongTo, equal to each other", async () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      expect(facts.toMove).toBe("mallow");
+
+      let capturedPrompt = "";
+      const backend = fakeBackend(async (prompt) => {
+        capturedPrompt = prompt;
+        return "mallow has several replies here.";
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      await chat("whose move is it?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+      expect(capturedPrompt).toContain('"toMove": "mallow"');
+      expect(capturedPrompt).toContain('"legalSansBelongTo": "mallow"');
     });
   });
 

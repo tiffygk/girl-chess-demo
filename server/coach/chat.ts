@@ -48,6 +48,14 @@ export interface ChatContext {
 export interface ChatFactList {
   gameSans: string[]; // every san played, in order
   currentFen: string; // final position (review) / live position (live)
+  // Side-to-move fact (round 2026-07-22): without this, the coach once
+  // attributed the PLAYER's own pending move to mallow, because nothing in
+  // the fact list stated whose turn it is -- the model was left to infer
+  // perspective from the FEN's side-to-move field, and legalSans is an
+  // unlabeled bare list (see below). Derived from chess.turn() at the same
+  // place currentFen is derived: "w" -> "you", "b" -> "mallow" -- the same
+  // fixed "player is always white in v1" mapping occupancy already uses.
+  toMove: "you" | "mallow";
   occupancy: { square: string; pieceKind: string; color: "you" | "mallow" }[]; // from currentFen
   legalSans: string[]; // chess.js .moves() on currentFen
   turningPoints?: { ply: number; san: string; label: string; punishSan?: string }[];
@@ -97,7 +105,8 @@ export function assembleChatFactList(
   const currentFen = chess.fen();
   // Player is always white in v1 (see manager.ts's resign() comment) -- so
   // white pieces are always "you" and black is always "mallow", a fixed
-  // mapping, not a lookup.
+  // mapping, not a lookup. toMove follows the exact same fixed mapping.
+  const toMove: ChatFactList["toMove"] = chess.turn() === "w" ? "you" : "mallow";
   const occupancy: ChatFactList["occupancy"] = [];
   for (const row of chess.board()) {
     for (const cell of row) {
@@ -162,6 +171,7 @@ export function assembleChatFactList(
   return {
     gameSans,
     currentFen,
+    toMove,
     occupancy,
     legalSans,
     turningPoints: tpOut,
@@ -312,7 +322,12 @@ function factsForModel(facts: ChatFactList) {
       best: best ? { san: best.san, pieceKind: best.pieceKind, from: best.from, to: best.to } : undefined,
     };
   }
-  return { ...rest, context: strippedContext };
+  // legalSansBelongTo labels the bare legalSans list with whose moves it
+  // holds -- always equal to facts.toMove, kept as a separate key (rather
+  // than renaming legalSans itself) so the model gets the label sitting
+  // right next to the list without validateChat/allowedSans needing to
+  // change shape.
+  return { ...rest, legalSansBelongTo: facts.toMove, context: strippedContext };
 }
 
 function formatHistory(history: { role: "user" | "coach"; text: string }[]): string {
