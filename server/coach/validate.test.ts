@@ -4,11 +4,16 @@ import { validateNarration } from "./validate";
 
 // A small, realistic fact list: her rook hangs on d8, the opponent's
 // refutation Rxd8 takes it, and the recommended move Nxe4 wins a pawn.
+// currentFen is a plain, unrelated start-position placeholder here -- these
+// tests exercise SAN/square allow-listing, not defense-claim checking (see
+// the Task 3 describe block below for that).
+const PLACEHOLDER_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 function mkFacts() {
   return assembleFactList({
     herMove: { pieceKind: "n", from: "f6", to: "g4" },
     tier: "warning",
     deltaCp: 300,
+    currentFen: PLACEHOLDER_FEN,
     threat: {
       motif: "capture-other",
       refutationUci: "d1d8",
@@ -121,5 +126,55 @@ describe("buildPrompt (calibration sweep task 7d): factsForModel is stripped of 
     const facts = mkFacts();
     const echo = "your rook hangs on d8, and Rxd8 just takes it. Nxe4 wins a pawn back instead.";
     expect(validateNarration(echo, facts)).toEqual({ ok: true });
+  });
+});
+
+// Task 3 (2026-07-22, truthfulness leaks): the narrate() path had nothing
+// checking its own defense claims -- server/coach/chat.ts's checkDefenseClaims
+// ran only on the chat path. Live gate example, from coach's-corner
+// narration: "that pawn on d5 isn't defended, so you'd just be handing it
+// over for free" when white's e4 pawn demonstrably defends d5.
+//
+// Wording note: the checker is extracted UNCHANGED (sub-task 1's explicit
+// requirement) and its safety-claim shape looks for a standalone word "is"
+// between the square and the predicate (`\bis\b`) -- "isn't" doesn't match
+// that (no word boundary between the contracted "is" and "n't"), same
+// class of documented gap the sibling guard-claim shape handles with its
+// own explicit GUARD_NEGATION_RE contraction list ("doesn't", "don't", ...)
+// that the safety-claim shape has no equivalent of. That's a pre-existing
+// limitation of the checker itself, out of this task's scope (wiring the
+// checker into narrate(), not extending its grammar) -- so this test uses
+// the spelled-out "is not defended", the phrasing the checker actually
+// supports, to exercise the real defense-claim-catching behavior Task 3 adds.
+describe("validateNarration -- defender-claim validation (Task 3)", () => {
+  // White pawns on d5 and e4: e4 defends d5.
+  const DEFENDED_FEN = "4k3/8/8/3P4/4P3/8/8/4K3 w - - 0 1";
+  // Same position minus the e4 pawn: d5 has no defender at all.
+  const UNDEFENDED_FEN = "4k3/8/8/3P4/8/8/8/4K3 w - - 0 1";
+
+  function facts(fen: string) {
+    return assembleFactList({
+      herMove: { pieceKind: "p", from: "d7", to: "d5" },
+      tier: "nudge",
+      deltaCp: 40,
+      currentFen: fen,
+    });
+  }
+
+  it("flags a false 'is not defended' claim when e4 demonstrably defends d5", () => {
+    const result = validateNarration(
+      "that pawn on d5 is not defended, so you'd just be handing it over for free.",
+      facts(DEFENDED_FEN)
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.violations.some((v) => v.includes("defense-claim"))).toBe(true);
+  });
+
+  it("does not flag the same claim when d5 is genuinely undefended", () => {
+    const result = validateNarration(
+      "that pawn on d5 is not defended, so you'd just be handing it over for free.",
+      facts(UNDEFENDED_FEN)
+    );
+    expect(result.ok).toBe(true);
   });
 });

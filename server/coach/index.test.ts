@@ -22,11 +22,18 @@ function fakeBackend(impl: {
   };
 }
 
+// Task 3 (2026-07-22, truthfulness leaks): currentFen is required on
+// assembleFactList's input now -- this is a plain, unrelated start-position
+// placeholder, since none of this file's tests exercise defense-claim
+// checking (that's server/coach/validate.test.ts's job).
+const PLACEHOLDER_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
 function mkFacts(): CoachFactList {
   return assembleFactList({
     herMove: { pieceKind: "n", from: "f6", to: "g4" },
     tier: "warning",
     deltaCp: 300,
+    currentFen: PLACEHOLDER_FEN,
     threat: {
       motif: "capture-other",
       refutationUci: "d1d8",
@@ -335,6 +342,7 @@ describe("assembleFactList — recommendation.san allow-listing (F4)", () => {
       herMove: { pieceKind: "n", from: "f6", to: "g4" },
       tier: "nudge",
       deltaCp: 80,
+      currentFen: PLACEHOLDER_FEN,
       recommendation: {
         accomplishment: "attacks",
         pieceKind: "b",
