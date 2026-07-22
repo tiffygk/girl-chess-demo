@@ -1408,29 +1408,21 @@
    stretched longer, driven by Board's storm({ big: true }). */
 .gc-storm-overlay.big { animation-duration: 3.2s; }
 
-/* Increment 3.9, Task 3 (F16): coach chat drawer. Introduces the third color
+/* Increment 3.9, Task 3 (F16): coach chat. Introduces the third color
    voice — lavender for the coach, alongside your own cyan and mallow's
    magenta (panel B10, binding): not your color, not hers, the third seat at
    the table. No new hex values below — everything is lifted from an
    existing family (bark-bubble, bar-chip.you, coach-pill/chp-kicker,
-   past-games-overlay/-drawer, button.small.confirm-pending). */
-
-/* opener: the app's existing lavender candy pill (confirm-pending's exact
-   recipe) rather than the plain white past-games-btn, so the coach's own
-   color announces itself before the drawer even opens. Fredoka 600 comes
-   free from the shared button font stack. */
-.gc-app button.small.chat-opener-btn {
-  background: #C9B8FF; color: #4A3B7E;
-  box-shadow: 0 3px 0 #A99AE0, 0 6px 10px rgba(120,95,200,.3);
-}
-.gc-app button.small.chat-opener-btn:hover { box-shadow: 0 5px 0 #A99AE0, 0 8px 14px rgba(120,95,200,.35); }
-.gc-app button.small.chat-opener-btn:active { box-shadow: 0 1px 0 #A99AE0, 0 4px 8px rgba(120,95,200,.25); }
+   button.small.confirm-pending). Rebuilt by chat-in-corner wave 3: the
+   center-modal drawer (.chat-overlay/.chat-drawer) is gone; the chat is
+   now the inline .chat-corner panel in the coach region below. */
 
 /* Increment 3.95, Task 7 ("ask about this"): the two per-moment chat entry
    points — a turning-point card's own button, and the open hint ladder's —
-   reuse .chat-opener-btn's exact lavender recipe verbatim rather than
-   auditioning a new tint, since both are the same "open the coach chat"
-   action as that button, just pre-scoped to a moment. No new hex. */
+   reuse the chat opener's exact lavender recipe verbatim (see
+   .chat-corner-opener below) rather than auditioning a new tint, since both
+   are the same "open the coach chat" action as that button, just
+   pre-scoped to a moment. No new hex. */
 .gc-app button.small.debrief-ask-btn,
 .gc-app button.small.hint-ask-btn {
   align-self: flex-start;
@@ -1442,37 +1434,170 @@
 .gc-app button.small.debrief-ask-btn:active,
 .gc-app button.small.hint-ask-btn:active { box-shadow: 0 1px 0 #A99AE0, 0 4px 8px rgba(120,95,200,.25); }
 
-/* drawer: same centered-overlay anatomy as .past-games-overlay/-drawer —
-   the app's one "drawer" pattern, reused rather than a second one invented
-   for this surface. New class names since it's a distinct feature. */
-.gc-app .chat-overlay {
-  position: fixed; inset: 0; z-index: 500;
-  background: rgba(74,59,126,.28);
+/* ---- chat-in-corner, wave 3: the inline coach-corner chat panel, ported
+   from component-library.html §13 (owner-approved). The chat docks in the
+   coach's region under the board; at >=1200px (D1, revised) CSS grid moves
+   the SAME mounted node to a right rail — one mount site, never two, so
+   the thread and its anchors survive a mid-game resize. No overlay, no
+   dialog role, no focus trap: the board stays playable while a reply
+   generates. All hexes below pre-exist in this file. ---- */
+.gc-app .chat-corner {
+  width: min(92vw, var(--board-size));   /* follows .coach-hint-band */
+  display: flex; flex-direction: column;
+  margin-top: var(--space-2);
+}
+/* `hidden` (rewind, takedown cinematic) is visibility only — the node stays
+   mounted so state AND the >=1200px rail column both survive. The explicit
+   rule is needed because the display:flex above outranks the UA's [hidden]. */
+.gc-app .chat-corner[hidden] { display: none; }
+
+/* collapsed state (D2 default): the one-line opener — the lavender candy
+   pill recipe (confirm-pending family), stretched to the region width.
+   copy RULED (owner, 2026-07-21): "chat with cookie". */
+.gc-app button.chat-corner-opener {
+  width: 100%;
+  font-size: 12.5px; padding: 10px 18px;
+  color: #4A3B7E; background: #C9B8FF;
+  box-shadow: 0 3px 0 #A99AE0, 0 6px 10px rgba(120,95,200,.3);
+}
+.gc-app button.chat-corner-opener:hover { transform: translateY(-1px); box-shadow: 0 5px 0 #A99AE0, 0 8px 14px rgba(120,95,200,.35); }
+.gc-app button.chat-corner-opener:active { transform: translateY(2px); box-shadow: 0 1px 0 #A99AE0, 0 4px 8px rgba(120,95,200,.25); }
+.gc-app .chat-corner-open button.chat-corner-opener { display: none; }
+
+/* expanded panel: popover-family tray (16px radius, squishy — it holds
+   pressables), inline in the coach region, never a fixed overlay. Both
+   branches are always in the DOM; .chat-corner-open swaps which shows. */
+.gc-app .chat-corner-panel {
+  display: none;
+  width: 100%;
+  background: #fff; border-radius: 16px;
+  box-shadow: 0 4px 0 #C9BFEF, 0 12px 22px rgba(90,70,180,.28);
+  padding: 14px 16px;
+  flex-direction: column; gap: 10px;
+  text-align: left;
+}
+.gc-app .chat-corner-open .chat-corner-panel { display: flex; }
+/* D5, small viewports: the board wins — even an expanded panel gives the
+   space back and shows the one-liner (existing 480px breakpoint). CSS only,
+   so the thread state survives and returns when the window grows. */
+@media (max-width: 480px) {
+  .gc-app .chat-corner-open .chat-corner-panel { display: none; }
+  .gc-app .chat-corner-open button.chat-corner-opener { display: block; }
+}
+
+.gc-app .chat-corner-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.gc-app .chat-corner-head-title { display: flex; align-items: center; gap: 10px; }
+/* collapse control: a machine control — sharp, chamfered, hard shadow. the
+   panel's one sanctioned non-candy touchable, so the global squishy button
+   recipe is explicitly zeroed out. */
+.gc-app button.chat-corner-collapse {
+  width: 22px; height: 22px; padding: 0; cursor: pointer;
+  background: #E7DFFF; border: 1.5px solid #A99AE0; border-radius: 0;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+  filter: drop-shadow(1px 1px 0 rgba(105,82,196,.4));
   display: flex; align-items: center; justify-content: center;
-  padding: var(--space-3);
+  box-shadow: none; transition: none;
 }
-.gc-app .chat-drawer {
-  width: min(92vw, 420px);
-  max-height: 78vh;
-  background: #fff;
-  border-radius: 18px;
-  box-shadow: 0 12px 0 #C9BFEF, 0 22px 40px rgba(90,70,180,.3);
-  padding: var(--space-3);
-  display: flex; flex-direction: column; gap: 10px;
+.gc-app button.chat-corner-collapse:hover { transform: none; box-shadow: none; background: #F4F0FF; }
+.gc-app button.chat-corner-collapse:active { transform: none; box-shadow: none; }
+
+/* thread area: internal scroll — the page never grows with the conversation */
+.gc-app .chat-corner-thread {
+  max-height: 320px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px; padding: 4px 2px;
 }
-.gc-app .chat-drawer-head { display: flex; align-items: center; justify-content: space-between; }
+
+/* D3 RULED: provenance anchor as a distinct card — faint lavender wash on a
+   whisper shadow (you cannot press a record), stamped with a sharp
+   machine-register kicker chip. Full width: a moment, never speech. */
+.gc-app .chat-anchor {
+  align-self: stretch;
+  background: #F4F0FF; border-radius: 14px;
+  box-shadow: 0 2px 0 rgba(201,191,239,.45), 0 6px 10px rgba(90,70,180,.15);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+}
+.gc-app .chat-anchor-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; color: #6952C4;
+  background: #E7DFFF; border: 1.5px solid #A99AE0; padding: 2px 8px;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+  filter: drop-shadow(1px 1px 0 rgba(105,82,196,.4));
+}
+.gc-app .chat-anchor-body {
+  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13px;
+  color: #7A6BB5; line-height: 1.4; margin: 0;
+}
+
+/* intent marker: thin dashed-motif meta line — the pivot into asking.
+   not a bubble, not a whisper. */
+.gc-app .chat-intent-marker {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px; font-weight: 700; color: #9C8FC7;
+  margin: 2px 0; white-space: nowrap;
+}
+.gc-app .chat-intent-marker::before,
+.gc-app .chat-intent-marker::after { content: ""; flex: 1 1 auto; border-top: 1.5px dashed #C9BFEF; }
+
+/* ---- np-cookie: the third registry entry (panel header only — the board's
+   bars stay mallow + you). Same anatomy as np-you/np-mallow, lavender trio
+   mirroring their bg/border/ink/shadow structure; the role sits in the elo
+   seat, written in the plate's edge color. NO glyph (owner ruling
+   2026-07-21: the fortune-cookie icon is on its own track). ---- */
+.gc-app .np-cookie .np-body {
+  position: relative; z-index: 1;
+  background: #E7DFFF; border-color: #A99AE0; color: #6952C4;
+  filter: drop-shadow(2px 2px 0 rgba(105,82,196,.45));
+}
+.gc-app .np-cookie .np-div { background: rgba(169,154,224,.35); }
+.gc-app .np-cookie .bar-elo { color: #A99AE0; }
+/* the wrong detail: a paper fortune slip, slightly crooked, mid-dispense
+   through the plate's top edge — cookie's counterpart to np-you's dead
+   pixel and np-mallow's melt. Lives on the unclipped wrapper. */
+.gc-app .np-cookie::after {
+  content: ""; position: absolute; width: 8px; height: 14px;
+  left: 21px; top: -6px; z-index: 0;
+  background: #FFFFFF; border: 1px solid #E3D9F5;
+  transform: rotate(14deg);
+}
+/* D7 RULED: the c00kie corruption frame — one frame every 9s (m4llow's own
+   keyframes), lavender-family text-shadows ONLY, never magenta. */
+.gc-app .np-cookie .np-name-glitch { text-shadow: -2px 0 0 #C9BFEF, 2px 0 0 #6952C4; }
+.gc-app .np-cookie .np-name-real { animation: m4llowHide 9s steps(1) infinite; }
+
+/* D1 RULED (revised): >=1200px the chat docks as a 300px right rail beside
+   the board column; below, it stays under the board. The reflow is CSS
+   placement ONLY on the same mounted .chat-corner — never two render
+   sites. :has() keeps the pregame page (no .chat-corner in the DOM) on the
+   plain centered flex column; once a game exists the node stays mounted
+   even while [hidden], so the rail never collapses mid-game. */
+@media (min-width: 1200px) {
+  .gc-app .game-page:has(> .chat-corner) {
+    display: grid;
+    grid-template-columns: max-content 300px;
+    column-gap: var(--space-4);
+    justify-content: center;
+    justify-items: center;
+    align-items: start;
+  }
+  .gc-app .game-page:has(> .chat-corner) > * { grid-column: 1; }
+  .gc-app .game-page:has(> .chat-corner) > .chat-corner {
+    grid-column: 2;
+    grid-row: 2 / span 40;   /* rail top aligns with the board stack, spans the column */
+    justify-self: stretch; align-self: start;
+    width: auto;
+    margin-top: 0;
+  }
+  /* the conditional lc0 fallback banner adds a row above the header — keep
+     the rail's top pinned to the board stack when it's present. */
+  .gc-app .game-page:has(> .fallback-banner) > .chat-corner { grid-row: 3 / span 40; }
+}
 /* kicker: signal register, same anatomy as .chp-kicker/.debrief-review-
    kicker, in the purple-ink variant already used for the coach pill's "on"
    state and the review banner's own kicker — the third voice's ink. */
 .gc-app .chat-kicker {
   font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
   letter-spacing: .14em; text-transform: lowercase; color: #6952C4;
-}
-.gc-app .chat-messages {
-  flex: 1 1 auto; min-height: 120px; max-height: 46vh;
-  overflow-y: auto;
-  display: flex; flex-direction: column; gap: 10px;
-  padding: 4px 2px;
 }
 .gc-app .chat-empty {
   font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13px;
