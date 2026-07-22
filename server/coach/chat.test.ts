@@ -555,7 +555,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(result.cause).toBe("backend-down");
       expect(calls).toBe(1);
       expect(result.text).toBe(
-        "keep it on the board. ask me about a move from this game and i'll break it down."
+        "i can't reach my thinking right now. try me again in a moment."
       );
     });
 
@@ -577,7 +577,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(result.source).toBe("template");
       expect(result.cause).toBe("timeout");
       expect(result.text).toBe(
-        "keep it on the board. ask me about a move from this game and i'll break it down."
+        "that one took me longer than i had. ask me again and i'll get you an answer."
       );
     });
 
@@ -594,7 +594,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(result.source).toBe("template");
       expect(result.cause).toBe("backend-down");
       expect(result.text).toBe(
-        "keep it on the board. ask me about a move from this game and i'll break it down."
+        "i can't reach my thinking right now. try me again in a moment."
       );
     });
   });

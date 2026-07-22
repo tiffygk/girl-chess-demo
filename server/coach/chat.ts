@@ -16,7 +16,17 @@ import { insertAdviceTrace } from "../store/db";
 // untouched; chat gets its own ChatFactList so a change to one surface's
 // shape can never silently break the other.
 export const CHAT_HISTORY_WINDOW = 8; // messages (4 exchanges), owner-calibratable
-export const CHAT_TIMEOUT_MS = 20000; // owner-calibratable
+// Owner-calibratable. Raised 20000 -> 30000 on 2026-07-22 from her own
+// advice_traces, not a guess: plain asks answer in 4.6-5.1s, but the
+// focused "ask about this" turns carry a much larger prompt and her two
+// hardest questions (traces 57/58) burned the full 20s and served a
+// template instead of an answer. Chat lives in the coach's corner and
+// provably does not block play (that is what moving it out of the centre
+// modal bought), so waiting longer for a real answer beats a fast
+// non-answer -- and the "slow" chip tells her which one she is getting.
+// narrate()'s own budget is deliberately NOT raised with it: that surface
+// speaks unprompted while she plays, where a late reply is worse than none.
+export const CHAT_TIMEOUT_MS = 30000;
 export const CHAT_MAX_LEN = 500;
 
 export interface ChatContext {
@@ -373,8 +383,36 @@ function stripThreatUci(t: ThreatFacts): Omit<ThreatFacts, "refutationUci"> {
 // san is all a model (or a player) ever needs; uci is an internal engine
 // detail. context.best.uci and context.threat.refutationUci are the only
 // two places one could leak in, so those are the only fields stripped here.
+// Owner playtest 2026-07-22: the focused fact list added ~2.2k characters
+// to exactly the turns that were already the slowest, and her next two
+// focused asks both hit the hard 20s timeout (traces 57/58, prompts 9.7k
+// and 9.9k, against 4.6-5.1s answers at 7.5k). occupancy was 1521 of the
+// 1976 added characters, and almost all of it is redundant: most pieces
+// stood on the same squares then as now, and the model already has the
+// current occupancy. So the model is sent only the squares that DIFFER,
+// which is precisely the error this round fixed (mallow's queen described
+// on a5 when it stood on d8). The full focus position stays on the fact
+// list for validation, which needs the exact position, not a summary.
+function focusForModel(facts: ChatFactList) {
+  const focus = facts.focusPosition;
+  if (!focus) return undefined;
+  const key = (o: { square: string; pieceKind: string; color: string }) =>
+    `${o.square}:${o.pieceKind}:${o.color}`;
+  const nowKeys = new Set(facts.occupancy.map(key));
+  const thenKeys = new Set(focus.occupancy.map(key));
+  return {
+    ply: focus.ply,
+    fen: focus.fen,
+    toMove: focus.toMove,
+    contested: focus.contested,
+    // Everything not listed here stood where it stands now.
+    stoodHereThenButNotNow: focus.occupancy.filter((o) => !nowKeys.has(key(o))),
+    standHereNowButNotThen: facts.occupancy.filter((o) => !thenKeys.has(key(o))),
+  };
+}
+
 function factsForModel(facts: ChatFactList) {
-  const { allowedSans, context, ...rest } = facts;
+  const { allowedSans, context, focusPosition, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
   if (context) {
     const { best, threat, herMove, ...restCtx } = context;
@@ -392,7 +430,12 @@ function factsForModel(facts: ChatFactList) {
   // than renaming legalSans itself) so the model gets the label sitting
   // right next to the list without validateChat/allowedSans needing to
   // change shape.
-  return { ...rest, legalSansBelongTo: facts.toMove, context: strippedContext };
+  return {
+    ...rest,
+    legalSansBelongTo: facts.toMove,
+    focusPosition: focusForModel(facts),
+    context: strippedContext,
+  };
 }
 
 function formatHistory(history: { role: "user" | "coach"; text: string }[]): string {
@@ -503,10 +546,24 @@ export async function chat(
   }
 
   const source: "model" | "template" = modelText !== null ? "model" : "template";
-  const text =
-    modelText ??
-    persona.chatTemplates.redirect ??
-    "let's keep it on the board. ask me about a move from this game and i'll break it down.";
+  // Owner playtest 2026-07-22: a timed-out reply was served the REDIRECT
+  // template ("keep it on the board. ask me about a move from this game"),
+  // which tells the player her perfectly on-topic question was off topic.
+  // The three failure modes are different apologies: a slow answer is ours
+  // to own, a down backend is a capability statement, and only a genuine
+  // off-topic ask deserves the redirect. Persona-overridable (add `slow:`
+  // / `down:` under the chat templates in coach.md) with an honest default
+  // here so the fallback never lies about why it fired.
+  const failureTemplate =
+    failureCause === "timeout"
+      ? persona.chatTemplates.slow ??
+        "that one took me longer than i had. ask me again and i'll get you an answer."
+      : failureCause === "backend-down"
+        ? persona.chatTemplates.down ??
+          "i can't reach my thinking right now. try me again in a moment."
+        : persona.chatTemplates.redirect ??
+          "keep it on the board. ask me about a move from this game and i'll break it down.";
+  const text = modelText ?? failureTemplate;
   const latencyMs = Date.now() - start;
 
   // kind is always literally "chat" for this surface -- not caller
