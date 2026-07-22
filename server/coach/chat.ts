@@ -114,6 +114,10 @@ export function assembleChatFactList(
     const oppColor = cell.color === "w" ? "b" : "w";
     const attackerSquares = chess.attackers(entry.square as Parameters<typeof chess.get>[0], oppColor);
     if (attackerSquares.length === 0) continue;
+    // Geometric only (same-color attackers()), NOT a legal-recapture
+    // guarantee -- a piece pinned to its own king can appear here even
+    // though it cannot actually recapture (see motifs.ts's
+    // capturedSquareDefended for the legal-recapture-checked version).
     const defenderSquares = chess.attackers(entry.square as Parameters<typeof chess.get>[0], cell.color);
     const toPiece = (sq: string) => {
       const p = chess.get(sq as Parameters<typeof chess.get>[0]);
