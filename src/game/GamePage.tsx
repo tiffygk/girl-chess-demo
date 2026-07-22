@@ -2139,11 +2139,10 @@ export function GamePage() {
         )}
       </div>
       <div className="coach-hint-band">
-        {coachHints && (
+        {coachHints && (coachText != null || coachLoading) && (
           <div className="coach-hint-slot">
-            <span className="coach-seat" aria-hidden="true"></span>
             <span className="coach-slot-copy">
-              {coachText ?? (coachLoading ? "coach is looking..." : "coach's corner, coming with the coach")}
+              {coachText ?? "cookie is looking…"}
             </span>
             {coachText != null && coachTraceId != null && <ThumbRating traceId={coachTraceId} />}
           </div>

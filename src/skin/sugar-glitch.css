@@ -302,25 +302,16 @@
 }
 .gc-app .action-slot-judge { min-height: 20px; }
 
-/* V4: reserved coach-hint band, sibling to action-slot in the column
+/* Cookie's live narration line, sibling to action-slot in the column
    (between action-slot and .status-line). Fixed-footprint reservation —
    the band always occupies 60px so the board never reflows whether or not
-   coachHints is on; only its contents render conditionally. The stub
-   recipe mirrors .game-end-stub (dashed lavender border, muted ink, no
-   shadow — a placeholder, not a live control). The populated panel
-   (.coach-hint-panel and friends, below) is dormant CSS only until
-   increment 3 renders it. */
+   cookie is speaking; the slot only renders when she has something to say
+   (narration or the loading whisper), otherwise the band is clean negative
+   space. No box chrome: whisper-tier lavender text, never press-shadowed. */
 .gc-app .coach-hint-band { width: min(92vw, var(--board-size)); min-height: 60px; display: flex; align-items: stretch; }
 .gc-app .coach-hint-slot {
   flex: 1 1 auto; display: flex; align-items: center; gap: 10px;
-  border: 1.5px dashed #C9BFEF; border-radius: 14px;
-  background: rgba(255,255,255,.4); color: #9C8FC7;
-  font-size: 12px; padding: 8px 14px; box-shadow: none;
-}
-.gc-app .coach-seat {
-  width: 24px; height: 24px; flex: 0 0 auto;
-  border: 1.5px dashed #C9BFEF; border-radius: 50%;
-  background: rgba(255,255,255,.4);
+  color: #9C8FC7; font-size: 13px; padding: 8px 4px; box-shadow: none;
 }
 /* Task 4 (F19): the narration copy grows to fill the slot so the thumb pair
    (appended as a third flex child, only once real coachText has arrived)
