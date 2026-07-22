@@ -53,6 +53,21 @@ export interface ChatFactList {
   turningPoints?: { ply: number; san: string; label: string; punishSan?: string }[];
   context?: ChatContext; // live coach facts when present
   allowedSans: string[]; // gameSans + legalSans + context sans + turning-point sans/punishSans
+  // Task 2 (defender grounding): every occupied square currently attacked
+  // by the OPPOSING side, with who attacks it and who could recapture --
+  // computed from currentFen via chess.js's own attackers(), no engine
+  // call. Lets the coach answer "is my piece safe / is X defended" from a
+  // fact instead of reasoning about defense itself, which is how it once
+  // told a player white's e4 pawn "doesn't guard f5" when it demonstrably
+  // does (Bxf5 exf5). A piece not attacked by the opponent is omitted --
+  // keeps the list small and focused on what's actually under fire.
+  contested: {
+    square: string;
+    pieceKind: string;
+    color: "you" | "mallow"; // same mapping as occupancy: w -> "you", b -> "mallow"
+    attackedBy: { square: string; pieceKind: string }[]; // opposing-color attackers
+    defendedBy: { square: string; pieceKind: string }[]; // same-color defenders (could recapture)
+  }[];
   // NOTE: no allowedSquares -- chat validation treats square names as free
   // geography (see validateChat below). Declared cut #2, not an oversight:
   // policing whether a named square is real/relevant would require the
@@ -92,6 +107,27 @@ export function assembleChatFactList(
   }
   const legalSans = chess.moves();
 
+  const contested: ChatFactList["contested"] = [];
+  for (const entry of occupancy) {
+    const cell = chess.get(entry.square as Parameters<typeof chess.get>[0]);
+    if (!cell) continue;
+    const oppColor = cell.color === "w" ? "b" : "w";
+    const attackerSquares = chess.attackers(entry.square as Parameters<typeof chess.get>[0], oppColor);
+    if (attackerSquares.length === 0) continue;
+    const defenderSquares = chess.attackers(entry.square as Parameters<typeof chess.get>[0], cell.color);
+    const toPiece = (sq: string) => {
+      const p = chess.get(sq as Parameters<typeof chess.get>[0]);
+      return { square: sq, pieceKind: p ? p.type : "" };
+    };
+    contested.push({
+      square: entry.square,
+      pieceKind: entry.pieceKind,
+      color: entry.color,
+      attackedBy: attackerSquares.map(toPiece),
+      defendedBy: defenderSquares.map(toPiece),
+    });
+  }
+
   const tpOut = turningPoints?.map((t) => ({
     ply: t.ply,
     san: t.san,
@@ -127,6 +163,7 @@ export function assembleChatFactList(
     turningPoints: tpOut,
     context: ctx,
     allowedSans: [...sans],
+    contested,
   };
 }
 
