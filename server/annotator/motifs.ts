@@ -28,10 +28,13 @@ export interface ThreatFacts {
   capturedPieceKind?: string; // only on capture motifs
   capturesHerJustMovedPiece: boolean;
   forkTargets?: { square: string; pieceKind: string }[]; // only when motif === "fork", length >= 2
-  // Task 1 (defender grounding): true when the player has a piece that
-  // recaptures on the actual captured square -- a defended capture is a
-  // trade, not a clean loss. Always present; only meaningful on capture
-  // motifs (false otherwise, since there's nothing to defend).
+  // Task 1 (defender grounding): true when the player has a LEGAL recapture
+  // on the actual captured square -- a defended capture is a trade, not a
+  // clean loss. Deliberately NOT a geometric attackers() check: a piece that
+  // only geometrically guards the square but is pinned to its own king
+  // cannot legally recapture, so it must not count as a defender. Always
+  // present; only meaningful on capture motifs (false otherwise, since
+  // there's nothing to defend).
   capturedSquareDefended: boolean;
 }
 
@@ -104,10 +107,16 @@ export function deriveThreatFacts(
     const isCapture = Boolean(mv.captured);
     const capturesHerJustMovedPiece = isCapture && actualCaptureSquare === herToSquare;
     // probe is now the position AFTER the opponent's refutation capture, with
-    // herColor (the player) to move -- so attackers() on the captured square
-    // answers "can she recapture right now," the literal test for a trade.
+    // herColor (the player) to move -- so a LEGAL move landing on the
+    // captured square (a real recapture) answers "can she recapture right
+    // now," the literal test for a trade. chess.js's attackers() is purely
+    // geometric and would count a piece that is pinned to its own king (and
+    // therefore cannot legally recapture) as a defender -- moves({verbose})
+    // only returns legal moves, so a pinned "defender" correctly drops out.
     const capturedSquareDefended = isCapture
-      ? probe.attackers(actualCaptureSquare as Square, herColor).length > 0
+      ? probe
+          .moves({ verbose: true })
+          .some((m) => m.to === actualCaptureSquare && (m.flags.includes("c") || m.flags.includes("e")))
       : false;
 
     let motif: ThreatMotif;

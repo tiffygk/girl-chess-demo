@@ -151,6 +151,22 @@ describe("deriveThreatFacts", () => {
     expect(facts!.capturedSquareDefended).toBe(false);
   });
 
+  it("capture-other, pinned defender: geometric attacker exists but cannot legally recapture, so it's a clean loss", () => {
+    // Black to move plays Bxd3 (bishop f5 takes white's bishop on d3). White's
+    // pawn on e2 sits on the d3 square's geometric attack line, but e2 is
+    // PINNED to the white king on e1 by the black rook on e8 -- moving it
+    // (e2xd3) would expose the king to Re8-e1, so it is not a legal
+    // recapture. chess.js's attackers() is purely geometric and does not
+    // know about pins, so it would wrongly report the pawn as a defender;
+    // capturedSquareDefended must reflect the LEGAL-recapture truth (false).
+    const afterFen = "4r1k1/8/8/5b2/8/3B4/4P3/4K3 b - - 0 1";
+    const facts = deriveThreatFacts(afterFen, "a1", "w", mkEval("f5d3"));
+    expect(facts).toBeTruthy();
+    expect(facts!.motif).toBe("capture-other");
+    expect(facts!.capturesSquare).toBe("d3");
+    expect(facts!.capturedSquareDefended).toBe(false);
+  });
+
   it("non-capture threat: capturedSquareDefended is false (no capture to defend)", () => {
     const afterFen = "4k3/8/1n6/8/8/8/8/R3K3 w - - 0 1";
     const facts = deriveThreatFacts(afterFen, "b6", "b", mkEval("a1a2"));
