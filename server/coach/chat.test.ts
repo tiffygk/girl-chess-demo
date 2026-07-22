@@ -249,11 +249,23 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
   // since only currentFen matters for these checks.
   const DEFENDER_FEN = "r1bqrnk1/pp2bppp/2p2n2/3ppB2/2P1P3/1PBP1N2/P4PPP/RN1Q1RK1 w - - 0 12";
   function defenderFacts(): ChatFactList {
+    // occupancy is derived from DEFENDER_FEN (Task 1, R3 fact-gap round: the
+    // new placement-claim check reads occupancy, so it can no longer be a
+    // placeholder empty list the way it was when only defense/safety claims
+    // were checked here -- same derivation derivePositionFacts uses).
+    const chess = new Chess(DEFENDER_FEN);
+    const occupancy: ChatFactList["occupancy"] = [];
+    for (const row of chess.board()) {
+      for (const cell of row) {
+        if (!cell) continue;
+        occupancy.push({ square: cell.square, pieceKind: cell.type, color: cell.color === "w" ? "you" : "mallow" });
+      }
+    }
     return {
       gameSans: [],
       currentFen: DEFENDER_FEN,
       toMove: "you", // DEFENDER_FEN is a "w" fen -- white (you) to move
-      occupancy: [],
+      occupancy,
       legalSans: [],
       allowedSans: [],
       contested: [],
@@ -296,7 +308,11 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
 
     it("does not flag a TRUE 'hanging' claim on a piece with no defenders (e5 pawn has zero black defenders)", () => {
       const facts = defenderFacts();
-      const result = validateChat("your pawn on e5 is hanging.", facts);
+      // "the" not "your" -- e5 holds mallow's pawn in DEFENDER_FEN (Task 1,
+      // R3: the new placement-claim check would correctly flag "your pawn
+      // on e5" as a false ownership claim, since this test is only about
+      // the safety/hanging predicate, not ownership).
+      const result = validateChat("the pawn on e5 is hanging.", facts);
       expect(result.ok).toBe(true);
     });
 
