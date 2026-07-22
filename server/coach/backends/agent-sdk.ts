@@ -1,4 +1,6 @@
+import { spawn } from "child_process";
 import fs from "fs";
+import { createRequire } from "module";
 import os from "os";
 import path from "path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -22,16 +24,88 @@ import type { CoachBackend } from "./types";
 // comment -- no alias mapping needed").
 const AGENT_SDK_MODEL = "claude-sonnet-5";
 
-// Task 8 (inc 3.95, Fix 3)'s OLLAMA_PROBE_MS / claude-cli's
-// VERSION_PROBE_MS precedent: available() must never hang
-// pickCoachBackend. There is no cheaper "--version"-style check for the
-// SDK (Task 1 risk log), so the probe is a real one-shot query with a
-// trivial prompt, bounded the same two ways ollama's fetch probe is --
-// AbortController for good citizenship, Promise.race as the actual
-// guarantee (a hung/misbehaving mock or subprocess can ignore the abort
-// signal entirely and still can't keep this from resolving).
-export const AGENT_SDK_PROBE_MS = 3000;
-const AGENT_SDK_PROBE_PROMPT = "ping";
+// Controller review (follow-up commit, 2026-07-21): the first pass here
+// probed with a real one-shot query("ping") call. Two findings killed
+// that design. FINDING 1 (correctness): AGENT_SDK_PROBE_MS=3000 sat right
+// on top of the SDK's real one-shot latency distribution (controller-
+// measured on this machine, quiet, same options buildOptions builds:
+// 4527ms / 3081ms / 3422ms) -- a probe this close to its own budget
+// intermittently times out and silently demotes the coach to claude-cli,
+// the exact slow path this backend exists to remove. FINDING 2 (cost):
+// even a trivial prompt burns a full Sonnet round trip, and
+// pickCoachBackend's per-pref cache re-probes every BACKEND_CACHE_TTL_MS
+// of activity -- an extra model call roughly every 30s of play, purely to
+// ask "are you there" (~$0.0028/call notional).
+//
+// The fix: there IS a cheaper "--version"-style check after all (this
+// superseded the original Task 1 risk-log note that none existed) -- the
+// SDK ships its own CLI as a platform-specific optional dependency (e.g.
+// @anthropic-ai/claude-agent-sdk-darwin-arm64), and spawning THAT binary
+// with `--version` is a real, no-model-call probe: controller-measured at
+// 44ms. Same shape as claude-cli.ts's VERSION_PROBE_MS /
+// `runCli(["--version"])`, and the same bounded discipline as ollama's
+// fetch probe -- AbortController for good citizenship (kills the
+// subprocess), Promise.race as the actual guarantee (a hung/misbehaving
+// mock or subprocess can ignore the abort signal entirely and still can't
+// keep this from resolving). Raised to 5000ms to match claude-cli's
+// VERSION_PROBE_MS -- a local binary spawn has no reason to need less
+// headroom than the sibling backend's own version check.
+export const AGENT_SDK_PROBE_MS = 5000;
+
+// The platform package does NOT resolve by module name -- it has no
+// `exports` field, so `require.resolve("@anthropic-ai/claude-agent-sdk-
+// darwin-arm64")` throws MODULE_NOT_FOUND. Resolve it on the filesystem
+// instead, next to the main package's resolved entry point, rather than
+// hardcoding a single platform/arch pair. Computed once at module load
+// (mirrors claude-cli.ts's COACH_CWD discipline); undefined here (require
+// itself failing) is a genuine "the SDK isn't installed at all" case --
+// runVersionProbe below rejects immediately rather than calling spawn
+// with a garbage path.
+function resolveClaudeBinaryPath(): string | undefined {
+  try {
+    const require = createRequire(import.meta.url);
+    const sdkEntry = require.resolve("@anthropic-ai/claude-agent-sdk");
+    const scopeDir = path.dirname(path.dirname(sdkEntry));
+    return path.join(scopeDir, `claude-agent-sdk-${process.platform}-${process.arch}`, "claude");
+  } catch {
+    return undefined;
+  }
+}
+
+const AGENT_SDK_BINARY_PATH = resolveClaudeBinaryPath();
+
+// Bounding is the caller's job (available() below), same split as
+// runQuery/generate() -- this just spawns, listens for the abort signal
+// (good-citizen cleanup only; the caller's Promise.race is the real
+// guarantee), and resolves/rejects on the process's own outcome. Missing
+// binary, non-zero exit, and spawn errors (e.g. ENOENT if the optional
+// platform dependency didn't install) all reject -- available() below
+// turns every rejection into `false`, which is correct: without a working
+// binary the SDK genuinely cannot run, and falling through to claude-cli
+// is the right behavior.
+function runVersionProbe(controller: AbortController): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!AGENT_SDK_BINARY_PATH) {
+      reject(new Error("agent-sdk binary path could not be resolved"));
+      return;
+    }
+    let settled = false;
+    const proc = spawn(AGENT_SDK_BINARY_PATH, ["--version"], { signal: controller.signal });
+
+    proc.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err instanceof Error ? err : new Error(String(err)));
+    });
+
+    proc.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      if (code === 0) resolve();
+      else reject(new Error(`agent-sdk version probe exited ${code}`));
+    });
+  });
+}
 
 // Neutral cwd outside the repo (A0 security constraint + sdk-api-notes.md
 // Q5): created once at module load, same discipline as claude-cli.ts's
@@ -113,7 +187,7 @@ export const agentSdkBackend: CoachBackend = {
       }, AGENT_SDK_PROBE_MS);
     });
     try {
-      await Promise.race([runQuery(AGENT_SDK_PROBE_PROMPT, controller), timeout]);
+      await Promise.race([runVersionProbe(controller), timeout]);
       return true;
     } catch {
       return false;
