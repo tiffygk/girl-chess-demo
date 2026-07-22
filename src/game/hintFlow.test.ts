@@ -231,6 +231,13 @@ const captureMovedThreat: ThreatFacts = {
   capturedPieceKind: "n",
   capturesHerJustMovedPiece: true,
   capturedSquareDefended: false,
+  // Task 1 follow-up (issue A): every use of this fixture pairs it with
+  // herPieceKind "n" (a knight moved to h5) -- herCapturedPieceKind "n"
+  // keeps the defended case an even trade (net 0), preserving this
+  // fixture's original pre-Task-1 intent (defended -> honest fallback,
+  // never the naive loss line) now that the material check reads this
+  // field instead of defaulting to "captured nothing".
+  herCapturedPieceKind: "n",
 };
 
 const captureOtherThreat: ThreatFacts = {
@@ -500,6 +507,83 @@ describe("hintCopy level 3: defended captures route to the honest fallback, not 
     const undefended: ThreatFacts = { ...captureOtherThreat, capturedSquareDefended: false };
     const copy = hintCopy(3, { herPieceKind: "b", herToSquare: "g5", threat: undefended });
     expect(copy).toBe("bishop to g5 opens the door. her queen takes your pawn on f7.");
+  });
+});
+
+// Task 1 (2026-07-22, truthfulness leaks), corrected per controller review
+// (issue A): the FIRST version of this fix used refutationPieceKind (what
+// she'd recapture BACK) as a proxy for her own gain, which is a different
+// piece and produces a real false positive -- QxQ recaptured by a pawn is an
+// even trade, but the proxy formula (1 - 9 = -8) fired and printed "down a
+// queen for a pawn," a confidently false statement about the position. The
+// fix supplies the missing fact instead of proxying it:
+// threat.herCapturedPieceKind (motifs.ts, threaded from her own chess.js
+// Move.captured at the classify.ts call site) is what her move actually
+// won. Net = value(herCapturedPieceKind, defaulting to 0/nothing when her
+// move wasn't a capture at all) - value(herPieceKind).
+describe("hintCopy level 3: defended capture-moved, material-aware (Task 1, corrected)", () => {
+  const honestFallback = "this loses ground. nothing hangs, but the position gets worse.";
+
+  function capturedMovedThreat(overrides: Partial<ThreatFacts>): ThreatFacts {
+    return {
+      motif: "capture-moved",
+      refutationUci: "f7e6",
+      refutationSan: "fxe6",
+      refutationPieceKind: "p",
+      refutationFromSquare: "f7",
+      refutationToSquare: "e6",
+      givesCheck: false,
+      capturesSquare: "e6",
+      capturedPieceKind: "q", // what the refutation captures FROM her -- always her own piece
+      capturesHerJustMovedPiece: true,
+      capturedSquareDefended: true,
+      ...overrides,
+    };
+  }
+
+  it("regression guard: queen takes a QUEEN defended by a pawn -> honest fallback, NOT a false 'down a queen for a pawn' claim", () => {
+    const t = capturedMovedThreat({ herCapturedPieceKind: "q" });
+    const copy = hintCopy(3, { herPieceKind: "q", herToSquare: "e6", threat: t });
+    expect(copy).toBe(honestFallback);
+    expect(copy).not.toContain("for a pawn");
+  });
+
+  it("queen takes a PAWN defended by a pawn -> loss line naming 'down a queen for a pawn'", () => {
+    const t = capturedMovedThreat({ herCapturedPieceKind: "p" });
+    const copy = hintCopy(3, { herPieceKind: "q", herToSquare: "e6", threat: t });
+    expect(copy).toBe(
+      "queen takes on e6, but her pawn takes back. you come out down a queen for a pawn."
+    );
+  });
+
+  it("queen takes a KNIGHT defended by a pawn -> loss line naming 'down a queen for a knight' (proves the copy names HER gain, not the recapturer)", () => {
+    const t = capturedMovedThreat({ herCapturedPieceKind: "n" });
+    const copy = hintCopy(3, { herPieceKind: "q", herToSquare: "e6", threat: t });
+    expect(copy).toBe(
+      "queen takes on e6, but her pawn takes back. you come out down a queen for a knight."
+    );
+  });
+
+  it("non-capturing move that walks into a capture (no herCapturedPieceKind) -> loss line in the 'simply lost' form, no false 'takes on' claim", () => {
+    const t = capturedMovedThreat({ herCapturedPieceKind: undefined });
+    const copy = hintCopy(3, { herPieceKind: "q", herToSquare: "e6", threat: t });
+    expect(copy).toBe("queen to e6 walks into her pawn. you simply lose the queen.");
+    expect(copy).not.toContain("for a");
+    expect(copy).not.toContain("takes on");
+  });
+
+  it("pawn takes a defended pawn -> honest fallback, unchanged (even trade)", () => {
+    const t = capturedMovedThreat({
+      refutationUci: "e6d5",
+      refutationSan: "exd5",
+      refutationFromSquare: "e6",
+      refutationToSquare: "d5",
+      capturesSquare: "d5",
+      capturedPieceKind: "p",
+      herCapturedPieceKind: "p",
+    });
+    const copy = hintCopy(3, { herPieceKind: "p", herToSquare: "d5", threat: t });
+    expect(copy).toBe(honestFallback);
   });
 });
 

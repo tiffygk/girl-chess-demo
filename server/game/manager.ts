@@ -775,6 +775,11 @@ export class GameManager {
       herMove: { pieceKind: body.herPiece, from: body.from, to: body.to },
       tier: body.tier,
       deltaCp: body.deltaCp,
+      // Task 3 (2026-07-22, truthfulness leaks): DERIVED from the live game
+      // state already in hand here (same source computeHint/exploreReply
+      // use), never recomputed or hand-invented -- lets validateNarration
+      // ground a defense claim against the real position.
+      currentFen: live.chess.fen(),
       threat: body.threat,
       best: body.best,
       recommendation: body.recommendation,
@@ -812,7 +817,7 @@ export class GameManager {
         ok: true;
         text: string;
         source: "model" | "template";
-        cause?: "backend-down" | "templates-only";
+        cause?: "backend-down" | "templates-only" | "timeout";
         traceId: number;
       }
   > {
@@ -857,7 +862,12 @@ export class GameManager {
     // and its own "backend-down" meaning stays unchanged for every other
     // caller (including chat.test.ts's own backend-down test, which asks
     // for the default "claude" pref and gets a real failure).
-    const cause: "backend-down" | "templates-only" | undefined =
+    // Task 2 (2026-07-22, truthfulness leaks): "timeout" passes through
+    // untouched -- the templates-only override above only ever applies when
+    // chat.ts's cause is "backend-down" (a synchronous no-probe throw from
+    // noBackend.generate() is never a timeout), so a real timeout is never
+    // misreported as a deliberate voice pick either.
+    const cause: "backend-down" | "templates-only" | "timeout" | undefined =
       result.cause === "backend-down" && body.backendPref === "template" ? "templates-only" : result.cause;
 
     return cause

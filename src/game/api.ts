@@ -97,6 +97,11 @@ export interface ThreatFacts {
   // trade, not a clean loss. Always present; only meaningful on capture
   // motifs (false otherwise, since there's nothing to defend).
   capturedSquareDefended: boolean;
+  // Controller follow-up (issue A, 2026-07-22 truthfulness-leaks review):
+  // the piece kind HER OWN move captured, if it was a capture at all --
+  // distinct from capturedPieceKind above (what the REFUTATION captures
+  // FROM her). Undefined when her move wasn't a capture.
+  herCapturedPieceKind?: string;
 }
 
 // Increment 3a Wave 3: mirrors server/annotator/motifs.ts's
@@ -331,8 +336,10 @@ export interface ChatResponse {
   // Task 8 (inc 3.95, Fix 1): "templates-only" (a deliberate voice choice)
   // vs "backend-down" (a genuine failure) -- see manager.ts's chat() and
   // CoachChat.tsx's offline-chip predicate, which renders only for the
-  // latter.
-  cause?: "backend-down" | "templates-only";
+  // latter. Task 2 (2026-07-22, truthfulness leaks): "timeout" is a third,
+  // distinct cause -- a slow-but-healthy backend, not a down one -- rendered
+  // as its own "slow" chip, never the offline chip.
+  cause?: "backend-down" | "templates-only" | "timeout";
   traceId?: number;
   error?: string;
 }
