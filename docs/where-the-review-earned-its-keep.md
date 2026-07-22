@@ -16,13 +16,13 @@ Every build round at Girl Chess runs a build agent, then a separate reviewer tha
 
 **Caught:** the live-coach feature spawns a `claude` subprocess to generate chat replies and in-game narration. The first working version used `--dangerously-skip-permissions` to stop the subprocess from hanging on an interactive trust prompt.
 
-**Why it mattered:** the coach reads player-typed chat text straight into the model's context, since that's the point of a chat feature, it answers questions about your game. A flag that disarms every permission check on that subprocess means a prompt-injection attempt hidden in a chat message wouldn't just be able to *ask* for something dangerous. It could *execute* it.
+**Why it mattered:** the coach reads player-typed chat text straight into the model's context. That's the point: it answers questions about your game. A flag that disarms every permission check on that subprocess means a prompt-injection attempt hidden in a chat message wouldn't just be able to *ask* for something dangerous. It could *execute* it.
 
-**What shipped instead:** `--strict-mcp-config --tools ""`, no MCP servers, no tools at all. Same fix for the original problem (the subprocess stops hanging), but now there's nothing for an injected instruction to run even if the model got fooled by one. Verified directly: asked the CLI, under the new flags, to ignore its instructions and write a file. It refused, and no file appeared.
+**What shipped instead:** `--strict-mcp-config --tools ""`, no MCP (Claude's plug-in protocol for external tools) and no tools at all. Same fix for the hang, but now an injected instruction has nothing left to run even if the model falls for it. Verified directly: asked the CLI, under the new flags, to ignore its instructions and write a file. It refused, and no file appeared.
 
 ## 3. A fix for one bug shipped a second one
 
-**Caught:** the "ask about this" feature lets you click a turning point or an open hint and ask the coach about that specific moment. A fix earlier in the same round made the chat drop a stale focus, so asking about move 14 didn't accidentally answer as if you'd asked about move 30 instead. On re-review, that fix turned out to break the feature it was protecting: clicking "ask about this" straight from the debrief (the main way anyone would use it) silently lost its own focus before the message ever sent, because the fix's own state check expected a board position that hadn't been set yet.
+**Caught:** the "ask about this" feature lets you click a turning point or an open hint and ask the coach about that specific moment. A fix earlier in the same round made the chat drop a stale focus, so asking about move 14 didn't accidentally answer as if you'd asked about move 30 instead. On re-review, that fix broke the feature it was protecting. Clicking "ask about this" straight from the debrief (the main use case) silently lost its own focus before the message sent. The fix's own state check expected a board position that hadn't been set yet.
 
 **Why it mattered:** the bug was invisible from the outside. The chat still responded, just with generic, ungrounded answers instead of naming the actual best move for the moment you clicked on. That's the kind of regression that survives a demo and only shows up once someone's actually relying on it.
 

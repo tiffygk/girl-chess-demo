@@ -28,3 +28,6 @@ dist-ssr
 weights/
 data/*
 !data/girlchess-demo.db
+
+# playwright-cli tool scratch
+.playwright-cli/
