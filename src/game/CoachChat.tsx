@@ -269,40 +269,70 @@ export function CoachChat({
     send();
   };
 
-  // Visibility only — never touches state. Hiding (a debrief rewind, or the
-  // end-game takedown cinematic) must leave messages/draft/open exactly as
-  // they were so un-hiding picks the conversation back up.
-  if (hidden) return null;
-
-  if (!open) {
-    return (
-      <button type="button" className="small chat-opener-btn" onClick={() => setOpen(true)}>
-        chat with the coach
-      </button>
-    );
-  }
+  // Wave 3 (chat-in-corner, B1/B5): no game yet means there is nothing to
+  // dock, and the >=1200px grid must not reserve the rail column pregame --
+  // that is the ONLY unmount condition left. Once a game exists the root
+  // stays in the DOM even while `hidden` (a debrief rewind, or the takedown
+  // cinematic) so the rail column never collapses and re-centers the board
+  // mid-game: `hidden` is a CSS visibility flag on the same mounted node,
+  // and messages/draft/open live in React state either way, so un-hiding
+  // picks the conversation back up exactly where it was.
+  if (gameId == null) return null;
 
   const emptyCopy = mode === "review" ? "ask about this game." : "ask about the position on the board.";
 
+  // B2/B5: an inline, collapsible panel in the coach region -- no overlay,
+  // no dialog role, no focus trap, no scroll lock; the board stays playable
+  // while a reply generates. Collapsed (D2 default) it is the one-line
+  // "chat with cookie" opener; both branches render and CSS swaps them on
+  // .chat-corner-open, which is also what lets the small-viewport media
+  // query (D5) hand the space back to the board without touching state.
   return (
-    <div className="chat-overlay" role="dialog" aria-label="coach chat">
-      <div className="chat-drawer pop-in">
-        <div className="chat-drawer-head">
-          <span className="chat-kicker">coach chat</span>
-          <button type="button" className="small" onClick={() => setOpen(false)}>
-            close
+    <div className={open ? "chat-corner chat-corner-open" : "chat-corner"} hidden={hidden}>
+      <button type="button" className="chat-corner-opener" onClick={() => setOpen(true)}>
+        chat with cookie
+      </button>
+      <div className="chat-corner-panel">
+        <div className="chat-corner-head">
+          <div className="chat-corner-head-title">
+            {/* cookie's registry entry -- same plate anatomy as np-you/
+                np-mallow (PlayerBar.tsx), lavender trio, role in the elo
+                seat. NO glyph: the fortune-cookie icon is on its own track
+                (owner ruling 2026-07-21), so the plate ships as name +
+                divider + role only. D7 ruled: the c00kie corruption frame,
+                lavender shadows only. */}
+            <span className="name-plate np-cookie">
+              <span className="np-body">
+                <span className="np-name">
+                  <span className="np-name-real">cookie</span>
+                  <span className="np-name-glitch" aria-hidden="true">c00kie</span>
+                </span>
+                <span className="np-div" aria-hidden="true"></span>
+                <span className="bar-elo">coach</span>
+              </span>
+            </span>
+            <span className="chat-kicker">coach chat</span>
+          </div>
+          <button type="button" className="chat-corner-collapse" aria-label="collapse chat" onClick={() => setOpen(false)}>
+            <svg width="8" height="6" viewBox="0 0 8 6" aria-hidden="true">
+              <path d="M0 0h8L4 6z" fill="#6952C4" />
+            </svg>
           </button>
         </div>
-        <div className="chat-messages" ref={listRef}>
+        <div className="chat-corner-thread" ref={listRef}>
           {messages.length === 0 && <p className="chat-empty">{emptyCopy}</p>}
           {messages.map((m, i) => {
-            // chat-in-corner, wave 1: placeholder rendering only for the two
-            // new kinds -- wave 3 owns the real visual treatment.
+            // D3 ruled: the anchor is a distinct provenance card -- sharp
+            // kicker chip + the exact hint/turning-point text, a record of
+            // a moment rather than a turn of speech.
             if (m.kind === "context-anchor") {
               return (
                 <div key={i} className="chat-anchor">
-                  {m.label}
-                  {m.moveNumber ? ` · move ${m.moveNumber}` : ""}: {m.text}
+                  <span className="chat-anchor-kicker">
+                    {m.label}
+                    {m.moveNumber ? ` · move ${m.moveNumber}` : ""}
+                  </span>
+                  <p className="chat-anchor-body">{m.text}</p>
                 </div>
               );
             }
@@ -326,7 +356,7 @@ export function CoachChat({
           })}
           {pending && (
             <div className="chat-bubble chat-bubble-coach chat-thinking pop-in">
-              <p className="chat-bubble-text">coach is thinking...</p>
+              <p className="chat-bubble-text">cookie is thinking…</p>
             </div>
           )}
         </div>
@@ -336,7 +366,7 @@ export function CoachChat({
             className="chat-input"
             value={draft}
             maxLength={CHAT_MAX_LEN}
-            placeholder="ask the coach..."
+            placeholder="ask cookie about the game…"
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onInputKeyDown}
           />

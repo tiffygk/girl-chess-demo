@@ -2138,6 +2138,25 @@ export function GamePage() {
           </div>
         )}
       </div>
+      {/* chat-in-corner, wave 3 (B1/B6): the chat lives in the coach's own
+          region, directly under the hint band -- in BOTH live and review
+          modes, independent of the coachHints toggle (the band above stays
+          mounted either way; only its slot is gated). Still always mounted
+          with `hidden` as the visibility flag (same precedent as
+          PastGamesDrawer's `open` prop), so its conversation survives a
+          rewind or the takedown cinematic instead of being wiped and
+          remounted blank. At >=1200px CSS grid placement moves this same
+          node to the right rail (D1) -- one mount site, never two. */}
+      <CoachChat
+        gameId={chatGameId}
+        mode={reviewGame ? "review" : "live"}
+        buildContext={buildChatContext}
+        hidden={chatHidden}
+        backendPref={coachBackend}
+        openSignal={chatOpenSignal}
+        hintFocus={chatFocus.hintFocus}
+        turningPointFocus={chatFocus.turningPointFocus}
+      />
       <p className="status-line">{inputHint ?? status}</p>
       {gameOver && (
         <GameEndPanel
@@ -2193,19 +2212,6 @@ export function GamePage() {
         />
       )}
       <PastGamesDrawer open={pastGamesOpen} games={pastGames} onSelect={selectPastGame} onClose={closePastGames} />
-      {/* Fix (task-reviewer, post task-3 approval): always mounted (same
-          precedent as PastGamesDrawer's `open` prop above) — `hidden` is a
-          visibility flag, not a mount gate, so its conversation survives a
-          rewind or the takedown cinematic instead of being wiped and
-          remounted blank. */}
-      <CoachChat
-        gameId={chatGameId}
-        mode={reviewGame ? "review" : "live"}
-        buildContext={buildChatContext}
-        hidden={chatHidden}
-        backendPref={coachBackend}
-        openSignal={chatOpenSignal}
-      />
     </div>
   );
 }
