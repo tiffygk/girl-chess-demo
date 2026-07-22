@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { EventEmitter } from "events";
 
 // Task 2 (warm-coach-backend round): the SDK invocation is injected via
 // vi.mock of the SDK module itself (brief: "mirror how ollama.test.ts
@@ -8,12 +9,54 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 // file's own top-level statements (hoisted above imports) -- a bare
 // module-scope const referenced inside the factory would throw
 // "cannot access before initialization" without it.
-const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
+//
+// Controller review (follow-up commit): available() no longer calls
+// query() at all -- it spawns the SDK's own bundled CLI binary with
+// `--version` (same seam discipline, now mocking "child_process"'s spawn
+// instead of the SDK's query). queryMock stays mocked/asserted-unused
+// below as the regression guard for the query("ping") probe this
+// replaced.
+const { queryMock, spawnMock } = vi.hoisted(() => ({
+  queryMock: vi.fn(),
+  spawnMock: vi.fn(),
+}));
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: queryMock,
 }));
+vi.mock("child_process", () => ({
+  spawn: spawnMock,
+}));
 
 import { agentSdkBackend, AGENT_SDK_PROBE_MS } from "./agent-sdk";
+
+// A fake ChildProcess (plain EventEmitter -- available() only ever calls
+// .on("error", ...) / .on("close", ...) on it). Emission is deferred a
+// tick so runVersionProbe's synchronous `.on(...)` listener setup always
+// wins the race against the mock "finishing" -- emitting synchronously
+// inside spawn() would fire before any listener is attached and be lost.
+function spawnEmittingClose(code: number) {
+  return vi.fn(() => {
+    const proc = new EventEmitter();
+    setTimeout(() => proc.emit("close", code), 0);
+    return proc;
+  });
+}
+
+function spawnEmittingError(err: Error) {
+  return vi.fn(() => {
+    const proc = new EventEmitter();
+    setTimeout(() => proc.emit("error", err), 0);
+    return proc;
+  });
+}
+
+// Deliberately never emits AND never inspects the `signal` option --
+// same "the mock can ignore abort entirely" shape used throughout this
+// file to prove the Promise.race timeout arm (not AbortController alone)
+// is the real safety net.
+function spawnHanging() {
+  return vi.fn(() => new EventEmitter());
+}
 
 // A successful call: the SDK's async generator yields an init message then
 // a terminal `result`/`success` message carrying the final text -- per
@@ -54,25 +97,42 @@ function hangingIterable() {
 describe("agentSdkBackend.available()", () => {
   afterEach(() => {
     vi.useRealTimers();
+    spawnMock.mockReset();
     queryMock.mockReset();
   });
 
-  it("returns true when the injected probe resolves ok", async () => {
-    queryMock.mockReturnValue(successIterable("pong"));
+  it("returns true when the binary is present and exits 0", async () => {
+    spawnMock.mockImplementation(spawnEmittingClose(0));
     await expect(agentSdkBackend.available()).resolves.toBe(true);
   });
 
-  it("returns false when the injected probe throws (a result/error message)", async () => {
-    queryMock.mockReturnValue(errorIterable());
+  it("returns false when the binary is missing (spawn emits an ENOENT-style error)", async () => {
+    spawnMock.mockImplementation(spawnEmittingError(Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" })));
+    await expect(agentSdkBackend.available()).resolves.toBe(false);
+  });
+
+  it("returns false on a non-zero exit code", async () => {
+    spawnMock.mockImplementation(spawnEmittingClose(1));
     await expect(agentSdkBackend.available()).resolves.toBe(false);
   });
 
   it("resolves false within AGENT_SDK_PROBE_MS even when the probe never settles", async () => {
     vi.useFakeTimers();
-    queryMock.mockReturnValue(hangingIterable());
+    spawnMock.mockImplementation(spawnHanging());
     const pending = agentSdkBackend.available();
     await vi.advanceTimersByTimeAsync(AGENT_SDK_PROBE_MS);
     await expect(pending).resolves.toBe(false);
+  });
+
+  // Regression guard for FINDING 1/2 (controller review): available() used
+  // to run a real one-shot query("ping") call -- too close to the SDK's
+  // own one-shot latency budget (intermittent false negatives, FINDING 1)
+  // and a paid model round trip purely to check reachability (FINDING 2).
+  // It must never touch the query() seam at all now.
+  it("performs no model call", async () => {
+    spawnMock.mockImplementation(spawnEmittingClose(0));
+    await agentSdkBackend.available();
+    expect(queryMock).not.toHaveBeenCalled();
   });
 });
 
@@ -87,6 +147,11 @@ describe("agentSdkBackend.generate()", () => {
     await expect(agentSdkBackend.generate("what happened?", 5000)).resolves.toBe(
       "her knight lands badly."
     );
+  });
+
+  it("rejects when the SDK returns a result/error message", async () => {
+    queryMock.mockReturnValue(errorIterable());
+    await expect(agentSdkBackend.generate("what happened?", 5000)).rejects.toThrow();
   });
 
   it("rejects when the injected SDK hangs past timeoutMs (aborts + rejects)", async () => {
