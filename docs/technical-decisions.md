@@ -2,7 +2,7 @@
 
 *Why this matters: the obvious fix was the wrong one. The coach's live narration was timing out and quietly serving canned templates instead of real answers. The fast fix was a metered API, a monthly bill for a tool only I use. I diagnosed it from my own telemetry and kept it free. The fix also proved the architecture was built to absorb it.*
 
-*Status: decided 2026-07-21, in build. Post-3.95, not part of the shipped increment below. Update this line to "shipped" once the agent-sdk backend merges, before this repo goes to anyone.*
+*Status: shipped 2026-07-22. The warm agent-sdk backend is the default coach transport on main. Live narration lands in about 3.6 seconds and chat in about 7, real model replies instead of the template fallback the traces caught.*
 
 ## The problem, from the traces, not a hunch
 
@@ -32,7 +32,7 @@ When the requirement showed up, the architecture had already made room for it.
 
 ## The other half: it felt fast because I stopped blocking myself
 
-The chat popped up as a window in the middle of the screen, over the board. Even a fast reply made me stop and wait on it. The fix moves the chat into the coach's corner under the board, where the coach already lives, and makes it non-blocking. I can keep playing while a reply generates.
+The chat popped up as a window in the middle of the screen, over the board. Even a fast reply made me stop and wait on it. The fix moves the chat into the coach's corner, where the coach already lives, beside the board on a wide screen and under it on a laptop, and makes it non-blocking. I can keep playing while a reply generates.
 
 That split is the point. The warm backend fixes how long the reply takes. The corner fixes how long it feels. Different problems. A fast reply behind a blocking modal still stops you. A slow reply you can play through mostly doesn't. I needed both, and the fixes are independent.
 
@@ -44,7 +44,7 @@ One detail I insisted on. When I ask about a specific hint, the chat records tha
 
 *Why this matters: the coach told me something false about my own position, confidently. The reflex is to throw a stronger model or an engine check at it. Both are the wrong tool. The bug was that the coach couldn't see defenders, and whether one piece guards another is not something an engine tells you. I fixed it by computing the fact and checking the answer against it, which was cheaper and more certain than either.*
 
-*Status: built 2026-07-21, on the defender-grounding branch, pending merge. Update this line to "shipped" once it merges.*
+*Status: shipped 2026-07-22. Merged to main. The coach checks its own defender claims against the position before sending, and the deterministic warning calls a recapturable trade a trade instead of a loss.*
 
 ## What it got wrong
 
