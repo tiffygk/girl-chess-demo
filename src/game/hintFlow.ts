@@ -276,8 +276,13 @@ function motifL3(ctx: HintCopyCtx): string {
       return `her ${pieceName(threat.refutationPieceKind)} to ${threat.refutationToSquare} forks your ${targets}.`;
     }
     case "capture-moved":
+      // Task 1 (defender grounding): a defended capture is a trade, not a
+      // loss -- she recaptures right back, so the "she just takes it" line
+      // would be false. Degrade to the same honest fallback positional uses.
+      if (threat.capturedSquareDefended) return honestFallback;
       return `${pieceName(ctx.herPieceKind)} to ${ctx.herToSquare} walks into her ${pieceName(threat.refutationPieceKind)}. she just takes it.`;
     case "capture-other":
+      if (threat.capturedSquareDefended) return honestFallback;
       return `${pieceName(ctx.herPieceKind)} to ${ctx.herToSquare} opens the door. her ${pieceName(threat.refutationPieceKind)} takes your ${pieceName(threat.capturedPieceKind ?? "")} on ${threat.capturesSquare}.`;
     case "mate-threat":
       return `her ${threat.refutationSan} starts a forced mate.`;

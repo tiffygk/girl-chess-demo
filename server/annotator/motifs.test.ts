@@ -129,6 +129,36 @@ describe("deriveThreatFacts", () => {
     expect(deriveThreatFacts(afterFen, "a6", "w", mkEval("e2e5"))).toBeUndefined();
   });
 
+  it("capture-other, defended: the captured square is defended, so the player can recapture (a trade, not a loss)", () => {
+    // Black to move, plays Bxf5 (bishop c8 takes white's bishop on f5).
+    // White's pawn on e4 defends f5, so after the capture the player (white)
+    // can recapture exf5 -- attackers("f5", "w") must be non-empty.
+    const afterFen = "2b3k1/8/8/5B2/4P3/8/8/6K1 b - - 0 1";
+    const facts = deriveThreatFacts(afterFen, "a1", "w", mkEval("c8f5"));
+    expect(facts).toBeTruthy();
+    expect(facts!.motif).toBe("capture-other");
+    expect(facts!.capturesSquare).toBe("f5");
+    expect(facts!.capturedSquareDefended).toBe(true);
+  });
+
+  it("capture-other, undefended: no recapture available, so it's a clean loss", () => {
+    // Same shape, minus the e4 pawn: nothing recaptures on f5.
+    const afterFen = "2b3k1/8/8/5B2/8/8/8/6K1 b - - 0 1";
+    const facts = deriveThreatFacts(afterFen, "a1", "w", mkEval("c8f5"));
+    expect(facts).toBeTruthy();
+    expect(facts!.motif).toBe("capture-other");
+    expect(facts!.capturesSquare).toBe("f5");
+    expect(facts!.capturedSquareDefended).toBe(false);
+  });
+
+  it("non-capture threat: capturedSquareDefended is false (no capture to defend)", () => {
+    const afterFen = "4k3/8/1n6/8/8/8/8/R3K3 w - - 0 1";
+    const facts = deriveThreatFacts(afterFen, "b6", "b", mkEval("a1a2"));
+    expect(facts).toBeTruthy();
+    expect(facts!.motif).toBe("positional");
+    expect(facts!.capturedSquareDefended).toBe(false);
+  });
+
   it("resolveCaptureSquare: shared ep helper resolves the real captured-pawn square, exported for reuse by both derivations", () => {
     const probe = new Chess("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1");
     const mv = probe.move({ from: "e5", to: "d6" });
