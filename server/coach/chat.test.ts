@@ -412,6 +412,46 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       const result = validateChat("mallow could try Qh5 here.", facts);
       expect(result.ok).toBe(true);
     });
+
+    // FP class 1 (controller review, 2026-07-22): a past-tense verb almost
+    // always refers to a move already made, not a claim about the CURRENT
+    // toMove side's options -- Nf3 is legal for white right now, but "mallow
+    // played Nf3" truthfully describes an earlier black move. Adjudicating
+    // past tense against legalSans was wrong; only present-tense forms are
+    // adjudicated now.
+    it("does not flag a past-tense mention of an earlier move ('mallow played Nf3') even though Nf3 is also currently legal", () => {
+      const facts = sideAttrFacts({ toMove: "you", legalSans: ["Nf3", "Qh5", "e4"], allowedSans: ["Nf3", "Qh5", "e4"] });
+      const result = validateChat("mallow played Nf3 a few moves back.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    // FP class 2: O-O/O-O-O is the same token for both colors, so it can
+    // never be adjudicated by legalSans membership alone -- castling tokens
+    // are skipped outright.
+    it("does not flag a castling mention ('mallow plays O-O') even though castling is also currently legal for the player", () => {
+      const facts = sideAttrFacts({ toMove: "you", legalSans: ["O-O", "Qh5", "e4"], allowedSans: ["O-O", "Qh5", "e4"] });
+      const result = validateChat("mallow plays O-O next.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    // FP class 3: the coach reasons in hypothetical lines constantly ("if
+    // you play X, she plays Y") -- a conditional marker earlier in the same
+    // sentence means the named side is inside a hypothetical, not a literal
+    // attribution of the current position.
+    it("does not flag a conditional/hypothetical line ('if you push d4, she plays Nc6')", () => {
+      const facts = sideAttrFacts({ toMove: "you", legalSans: ["Nc6", "Qh5", "e4"], allowedSans: ["Nc6", "Qh5", "e4"] });
+      const result = validateChat("if you push d4, she plays Nc6 next.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    // Regression guard: the original observed bug must still fire after the
+    // narrowing above, or the narrowing went too far.
+    it("still flags the original bug: present-tense, non-castling, non-conditional 'mallow plays Qh5' attributed to the wrong side", () => {
+      const facts = sideAttrFacts({ toMove: "you" });
+      const result = validateChat("mallow plays Qh5, winning material.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.includes("side-claim"))).toBe(true);
+    });
   });
 
   // (d)
