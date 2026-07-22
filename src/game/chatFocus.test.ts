@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { hintFocusContext, turningPointFocusContext, reconcileChatFocus } from "./chatFocus";
+import { Chess } from "chess.js";
+import { hintFocusContext, turningPointFocusContext, reconcileChatFocus, pvUciToSan } from "./chatFocus";
 
 describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", () => {
   describe("hintFocusContext", () => {
@@ -34,6 +35,90 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
       expect(first?.ply).toBe(7);
       expect(second?.ply).toBe(19);
       expect(first).not.toEqual(second);
+    });
+
+    // Task 4 (R1b, fact-gap round): the on-screen HintFacts (bestSan, the
+    // engine's own pv converted to SAN, whether the hint move trades) plus
+    // the level-3 threat highlight, folded into the focus so a hint
+    // follow-up can ground itself in real engine facts instead of just the
+    // rendered ladder text.
+    it("carries bestSan/pvSans/trade/recommendation/threat through when passed", () => {
+      const recommendation = {
+        accomplishment: "develops" as const,
+        pieceKind: "b",
+        fromSquare: "f1",
+        toSquare: "b5",
+        san: "Bb5",
+      };
+      const threat = {
+        motif: "fork" as const,
+        refutationUci: "d8h4",
+        refutationSan: "Qh4+",
+        refutationPieceKind: "q",
+        refutationFromSquare: "d8",
+        refutationToSquare: "h4",
+        givesCheck: true,
+        capturesHerJustMovedPiece: false,
+        capturedSquareDefended: false,
+      };
+      const result = hintFocusContext(3, "hold on.", 9, {
+        bestSan: "Bb5",
+        pvSans: ["Bb5", "a6", "Ba4"],
+        trade: false,
+        recommendation,
+        threat,
+      });
+      expect(result).toEqual({
+        level: 3,
+        text: "hold on.",
+        ply: 9,
+        bestSan: "Bb5",
+        pvSans: ["Bb5", "a6", "Ba4"],
+        trade: false,
+        recommendation,
+        threat,
+      });
+    });
+
+    it("omits the extra fields when no HintFacts are passed (levels 1-2, before any deep fetch)", () => {
+      expect(hintFocusContext(1, "hold on. look at your knight.", 7)).toEqual({
+        level: 1,
+        text: "hold on. look at your knight.",
+        ply: 7,
+      });
+    });
+  });
+
+  // Task 4 (R1b): HintFacts.pv (server/annotator/hint.ts) is UCI -- the
+  // engine's own reported line -- never SAN. GamePage's "ask about this"
+  // call site needs SAN for the hintFocus fold (chat.ts's allowedSans fold
+  // is SAN-only), so this converts by REPLAYING from the hint's own fen,
+  // the same "derived, never string-parsed" discipline server/game/
+  // manager.ts's pvLine (and moveEndpoints.ts) already follow -- not a
+  // reimplementation of that logic, a client-side mirror of the same rule.
+  describe("pvUciToSan", () => {
+    const START_FEN = new Chess().fen();
+
+    it("converts a legal uci pv to SAN, replayed from the given fen", () => {
+      expect(pvUciToSan(START_FEN, ["e2e4", "e7e5", "g1f3"])).toEqual(["e4", "e5", "Nf3"]);
+    });
+
+    it("returns an empty array for an empty pv", () => {
+      expect(pvUciToSan(START_FEN, [])).toEqual([]);
+    });
+
+    it("stops at the first illegal move rather than throwing, keeping the true prefix", () => {
+      // e2e4 is legal; e2e5 is not (not a legal pawn move for the resulting
+      // position) -- the line degrades to the true prefix instead of
+      // failing the whole focus payload.
+      expect(pvUciToSan(START_FEN, ["e2e4", "e2e5", "g1f3"])).toEqual(["e4"]);
+    });
+
+    it("handles a promotion move (5-char uci)", () => {
+      // A position one move from a legal promotion: white pawn on g7,
+      // nothing on h8 -- g7g8=q (uci with promotion suffix "q").
+      const fen = "7k/6P1/8/8/8/8/8/7K w - - 0 1";
+      expect(pvUciToSan(fen, ["g7g8q"])).toEqual(["g8=Q+"]);
     });
   });
 
