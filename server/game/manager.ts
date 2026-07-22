@@ -29,6 +29,7 @@ import {
 } from "../coach/chat";
 import { claudeCliBackend } from "../coach/backends/claude-cli";
 import { ollamaBackend } from "../coach/backends/ollama";
+import { agentSdkBackend } from "../coach/backends/agent-sdk";
 import { noBackend, type CoachBackend } from "../coach/backends/types";
 
 interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number; finished: boolean }
@@ -103,9 +104,12 @@ export class GameManager {
   // pref semantics (panel A4/A5): "template" is a first-class choice with NO
   // probe (always noBackend); "ollama" is ollama-if-available else
   // noBackend (no claude-cli fallback — an explicit "local only" request
-  // shouldn't quietly upgrade to the cloud backend); "claude", undefined, or
-  // any unrecognized value gets the pre-existing claude -> ollama -> none
-  // chain (today's default behavior, unchanged).
+  // shouldn't quietly upgrade to the cloud backend); "agent-sdk" (warm-
+  // coach-backend round, Task 3) is agent-sdk -> claude-cli -> ollama ->
+  // none, so an unavailable warm SDK client still degrades to the existing
+  // chain rather than straight to templates; "claude", undefined, or any
+  // unrecognized value gets the pre-existing claude -> ollama -> none chain
+  // (today's default behavior, unchanged).
   private async pickCoachBackend(pref?: string): Promise<CoachBackend> {
     const key = pref ?? "claude";
     const now = this.clock();
@@ -117,6 +121,11 @@ export class GameManager {
       backend = noBackend;
     } else if (key === "ollama") {
       backend = (await ollamaBackend.available()) ? ollamaBackend : noBackend;
+    } else if (key === "agent-sdk") {
+      if (await agentSdkBackend.available()) backend = agentSdkBackend;
+      else if (await claudeCliBackend.available()) backend = claudeCliBackend;
+      else if (await ollamaBackend.available()) backend = ollamaBackend;
+      else backend = noBackend;
     } else {
       if (await claudeCliBackend.available()) backend = claudeCliBackend;
       else if (await ollamaBackend.available()) backend = ollamaBackend;
