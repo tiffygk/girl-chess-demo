@@ -1111,4 +1111,52 @@ describe("GameManager", () => {
     const line = result.lines.find((l) => l.ply === 2);
     expect(line?.threat).toEqual({ from: "h5", to: "e8" });
   });
+
+  // Task 3 (R1a, fact-gap round): chat()'s call site used to map
+  // getGameMoves' rows down to bare {ply, san}, throwing away eval_cp/
+  // eval_mate/best_move/pv entirely. This proves the wiring end to end --
+  // the fake backend below captures the actual prompt chat() sends, so a
+  // pass here means the persisted UCI best_move/pv genuinely reached the
+  // model as SAN, not just that assembleChatFactList's own unit tests pass.
+  describe("chat: perPlyAnalysis reaches the model prompt (Task 3, R1a)", () => {
+    it("converts stored UCI best_move/pv to SAN and includes it in the fact JSON sent to the backend", async () => {
+      const gameId = createGame(sessionId, "maia-1100");
+      recordMove({ gameId, ply: 1, san: "e4", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      // Realistic shape (see the turning-lines block's own comment above):
+      // attachEval(ply) persists the eval of fenAfter(ply) -- here, the
+      // position right after white's e4, black to move. Black's best reply
+      // e7e5 followed by white's g1f3 is a legal continuation from there.
+      attachEval(gameId, 1, { cp: 20, mate: null, bestMove: "e7e5", pv: ["e7e5", "g1f3"] });
+
+      let capturedPrompt = "";
+      gm.setCoachBackendForTesting(
+        {
+          name: "capture-fake",
+          async available() {
+            return true;
+          },
+          async generate(prompt: string) {
+            capturedPrompt = prompt;
+            return "you played a solid opening move.";
+          },
+        },
+        "claude"
+      );
+
+      const result = await gm.chat(gameId, {
+        message: "was my opening okay?",
+        context: { mode: "live" },
+        backendPref: "claude",
+      });
+      expect(result.ok).toBe(true);
+
+      expect(capturedPrompt).toContain('"perPlyAnalysis"');
+      expect(capturedPrompt).toContain('"bestSan": "e5"');
+      expect(capturedPrompt).toContain('"phase": "opening"');
+      // pv converted from UCI (e7e5, g1f3) to SAN (e5, Nf3) via the same
+      // replay discipline pvLine/getTurningLines already use.
+      expect(capturedPrompt).toContain('"e5"');
+      expect(capturedPrompt).toContain('"Nf3"');
+    }, 20000);
+  });
 });

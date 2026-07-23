@@ -4,7 +4,45 @@
 // unit tests per this round's constraint) so the mapping has direct test
 // coverage, same reasoning as hintFlow.ts/moveFlow.ts being their own
 // modules rather than inlined React state logic.
+import { Chess } from "chess.js";
 import type { ChatContext, TurningLine, TurningPoint } from "./api";
+
+// Task 4 (R1b): HintFacts.pv is UCI (the engine's own reported line);
+// chat.ts's hintFocus fold needs SAN. Converts by REPLAYING from fen, the
+// same "derived, never string-parsed" discipline server/game/manager.ts's
+// pvLine (and moveEndpoints.ts) already follow -- a client-side mirror of
+// that rule, not a new one. Stops at the first illegal/malformed step
+// rather than throwing, so a corrupted pv degrades to a shorter true line
+// instead of breaking the whole focus payload.
+export function pvUciToSan(fen: string, pv: string[]): string[] {
+  const replay = new Chess(fen);
+  const sans: string[] = [];
+  for (const uci of pv) {
+    if (uci.length < 4) break;
+    let mv;
+    try {
+      // Mirrors manager.ts's pvLine exactly, including the unconditional
+      // "q" default -- chess.js ignores the promotion field on a move that
+      // doesn't need one, so this is safe for ordinary moves too.
+      mv = replay.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] ?? "q" });
+    } catch {
+      mv = null;
+    }
+    if (!mv) break;
+    sans.push(mv.san);
+  }
+  return sans;
+}
+
+// Task 4 (R1b, fact-gap round): the on-screen HintFacts fields the caller
+// (GamePage) already has in hand at "ask about this" time -- bestSan/
+// pvSans/trade come straight off the fetched HintFacts (pvSans already
+// converted to SAN by the caller, mirroring Task 3's "convert once, at the
+// source" rule -- hintFacts.pv itself is UCI), threat is the level-3
+// highlight's own ThreatFacts (from the judge's verdict, not a HintFacts
+// field -- see GamePage's threatReveal), recommendation is HintFacts'
+// recommendation verbatim.
+type HintFocusExtra = Omit<NonNullable<ChatContext["hintFocus"]>, "level" | "text" | "ply">;
 
 /**
  * The open hint ladder's focus: the level the player is looking at plus the
@@ -21,14 +59,19 @@ import type { ChatContext, TurningLine, TurningPoint } from "./api";
  * currently climbing). It exists purely so chatThread.ts's focusKey has a
  * position identity to fold in: hintCopy's level-1/2 text is a fixed
  * template, so level+text alone collide across two different moments.
+ *
+ * Task 4 (R1b): `extra` carries the on-screen HintFacts (see HintFocusExtra
+ * above) when the caller has them -- optional because levels 1-2 render
+ * before the deep fetch lands, so there is nothing to pass yet.
  */
 export function hintFocusContext(
   level: number,
   text: string | null | undefined,
-  ply: number
+  ply: number,
+  extra?: HintFocusExtra
 ): ChatContext["hintFocus"] | undefined {
   if (level <= 0 || !text) return undefined;
-  return { level, text, ply };
+  return { level, text, ply, ...extra };
 }
 
 /**

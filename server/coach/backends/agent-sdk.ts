@@ -22,7 +22,11 @@ import type { CoachBackend } from "./types";
 // Model pinned per the brief (A0): claude-sonnet-5, verbatim per
 // sdk-api-notes.md Q3 ("used verbatim as an example in the type's own doc
 // comment -- no alias mapping needed").
-const AGENT_SDK_MODEL = "claude-sonnet-5";
+// Env-overridable so the coach model can be pinned without a code change
+// (the Sonnet-vs-Opus A/B harness sets GC_COACH_MODEL=claude-opus-4-8 for its
+// Opus stack; this is also the seam a future model-switcher would use).
+// Defaults to Sonnet, so unset behavior is unchanged.
+const AGENT_SDK_MODEL = process.env.GC_COACH_MODEL || "claude-sonnet-5";
 
 // Controller review (follow-up commit, 2026-07-21): the first pass here
 // probed with a real one-shot query("ping") call. Two findings killed
