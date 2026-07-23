@@ -15,8 +15,17 @@
 // past-games drawer's separate server-computed `lesson` tag, are unaffected
 // by this file).
 
-import type { TurningPoint, MoveClassification } from "../game/api";
+import type { TurningPoint, MoveClassification, SummaryMove } from "../game/api";
 import { moveNumberForPly } from "./debriefLesson";
+// Debrief Plain-English Notation round (Task 3): the two spots this module
+// prints raw SAN directly (a could-be-better mistake/blunder/inaccuracy
+// bullet's played move, and a done-well strong-move bullet) now route
+// through the shared plain-English renderer whenever gameSans is available
+// to reconstruct the fen the move was played from (fenAtPly, same seam
+// turningPointNote.ts/Rewind.tsx already share). No gameSans (every
+// pre-existing call site) falls back to the raw SAN string unchanged.
+import { fenAtPly } from "./Rewind";
+import { describeSanMove } from "../game/describeSanMove";
 
 export type BulletSection = "done well" | "could be better" | "watch next time";
 export type ChessCategory =
@@ -43,6 +52,19 @@ interface DebriefBulletsInput {
   classifications: MoveClassification[];
   result: string | null; // "1-0" | "0-1" | "1/2-1/2" | null
   totalPlies: number;
+  // Debrief Plain-English Notation round (Task 3): the full game's SAN move
+  // list, threaded straight through from the same source DebriefPage/
+  // buildTurningPointNote already use. Absent simply means the two raw-SAN
+  // bullet spots below fall back to SAN, never a guess at the fen.
+  gameSans?: SummaryMove[];
+}
+
+// Renders `san` (played at 1-indexed `ply`) in plain English when gameSans
+// is available, else falls back to the raw SAN string.
+function describedOrRaw(san: string, ply: number, gameSans: SummaryMove[] | undefined): string {
+  if (!gameSans || ply < 1) return san;
+  const fenBefore = fenAtPly(gameSans, ply - 1);
+  return describeSanMove(san, fenBefore) ?? san;
 }
 
 // Her own negative move labels — the only labels a HER move can carry when
@@ -204,13 +226,19 @@ function missedPunishText(missPoint: TurningPoint, turningPoints: TurningPoint[]
   return `move ${n}: she hung her ${piece} and ${gerund} let her off. take the piece first, ${action} after.`;
 }
 
-function couldBeBetterText(ply: number, label: string, san: string | undefined, crossedAdvantage?: boolean): string {
+function couldBeBetterText(
+  ply: number,
+  label: string,
+  san: string | undefined,
+  crossedAdvantage?: boolean,
+  gameSans?: SummaryMove[]
+): string {
   const n = moveNumberForPly(ply);
   const nudge =
     crossedAdvantage && CROSSING_GRADED_LABELS.has(label)
       ? CROSSED_LEAD_NUDGE
       : NUDGES[label] ?? "look for a cleaner follow-up next time.";
-  if (san) return `move ${n}: ${san} was a ${label}. ${nudge}`;
+  if (san) return `move ${n}: ${describedOrRaw(san, ply, gameSans)} was a ${label}. ${nudge}`;
   return `move ${n}: a ${label} here. ${nudge}`;
 }
 
@@ -218,7 +246,8 @@ function buildDoneWell(
   turningPoints: TurningPoint[],
   episode: TurningPoint | null,
   result: string | null,
-  totalPlies: number
+  totalPlies: number,
+  gameSans?: SummaryMove[]
 ): DebriefBullet {
   const punishPoints = turningPoints.filter((t) => t.label.startsWith("opponent") && !!t.punishSan);
   if (punishPoints.length > 0) {
@@ -239,7 +268,7 @@ function buildDoneWell(
     const n = moveNumberForPly(best.ply);
     return {
       section: "done well",
-      text: `move ${n}: ${best.san} was the right idea and it paid off.`,
+      text: `move ${n}: ${describedOrRaw(best.san, best.ply, gameSans)} was the right idea and it paid off.`,
       phase: phaseForPly(best.ply, totalPlies),
       category: "tactics",
       ply: best.ply,
@@ -277,7 +306,8 @@ function buildCouldBeBetter(
   turningPoints: TurningPoint[],
   classifications: MoveClassification[],
   episode: TurningPoint | null,
-  totalPlies: number
+  totalPlies: number,
+  gameSans?: SummaryMove[]
 ): DebriefBullet[] {
   const used = new Set<number>();
   const out: DebriefBullet[] = [];
@@ -308,7 +338,7 @@ function buildCouldBeBetter(
       const episodeCtx = episode ? { ply: episode.ply, plyEnd: episode.plyEnd } : null;
       out.push({
         section: "could be better",
-        text: couldBeBetterText(c.ply, c.label, c.san, c.crossedAdvantage),
+        text: couldBeBetterText(c.ply, c.label, c.san, c.crossedAdvantage, gameSans),
         phase: phaseForPly(c.ply, totalPlies),
         category: categorize(c, phaseForPly(c.ply, totalPlies), episodeCtx),
         ply: c.ply,
@@ -325,7 +355,7 @@ function buildCouldBeBetter(
     const episodeCtx = episode ? { ply: episode.ply, plyEnd: episode.plyEnd } : null;
     out.push({
       section: "could be better",
-      text: couldBeBetterText(c.ply, c.classification, undefined),
+      text: couldBeBetterText(c.ply, c.classification, undefined, undefined, gameSans),
       phase: phaseForPly(c.ply, totalPlies),
       category: categorize({ ply: c.ply, label: c.classification }, phaseForPly(c.ply, totalPlies), episodeCtx),
       ply: c.ply,
@@ -407,11 +437,11 @@ function buildWatchNextTime(
 }
 
 export function debriefBullets(input: DebriefBulletsInput): DebriefBullet[] {
-  const { turningPoints, classifications, result, totalPlies } = input;
+  const { turningPoints, classifications, result, totalPlies, gameSans } = input;
   const episode = turningPoints.find((t) => t.kind === "episode") ?? null;
 
-  const doneWell = buildDoneWell(turningPoints, episode, result, totalPlies);
-  const couldBeBetter = buildCouldBeBetter(turningPoints, classifications, episode, totalPlies).slice(0, 2);
+  const doneWell = buildDoneWell(turningPoints, episode, result, totalPlies, gameSans);
+  const couldBeBetter = buildCouldBeBetter(turningPoints, classifications, episode, totalPlies, gameSans).slice(0, 2);
   const watchNext = buildWatchNextTime(turningPoints, classifications, episode, totalPlies).slice(0, 2);
 
   return [doneWell, ...couldBeBetter, ...watchNext].slice(0, 5);

@@ -501,3 +501,56 @@ describe("bullet count bounds (3 to 5)", () => {
     expect(bullets.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+// Debrief Plain-English Notation round (Task 3): a beginner-readable pass
+// over the two spots this module ever prints raw SAN directly (a
+// could-be-better mistake/blunder/inaccuracy bullet, and a done-well
+// strong-move bullet). Real, independently checkable game — same fixture
+// convention turningPointNote.test.ts uses (1.e4 e5 2.Qh5 Nc6 3.Bc4 Nf6??) —
+// so the fenAtPly replay lands on an actual position, not a synthetic one.
+describe("plain English via gameSans (Task 3)", () => {
+  const SCHOLARS_MATE_SANS = [
+    { ply: 1, san: "e4" },
+    { ply: 2, san: "e5" },
+    { ply: 3, san: "Qh5" },
+    { ply: 4, san: "Nc6" },
+    { ply: 5, san: "Bc4" },
+    { ply: 6, san: "Nf6" },
+  ];
+
+  it("could-be-better: routes the played SAN through the renderer when gameSans is given", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 6, san: "Nf6", label: "mistake", deltaP: -0.2 })],
+      classifications: [],
+      result: null,
+      totalPlies: 6,
+      gameSans: SCHOLARS_MATE_SANS,
+    });
+    const cbb = bullets.find((b) => b.section === "could be better")!;
+    expect(cbb.text).toContain("knight to f6");
+    expect(cbb.text).not.toMatch(/\bNf6\b/);
+  });
+
+  it("could-be-better: falls back to raw SAN when gameSans is omitted (backward compatible)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 6, san: "Nf6", label: "mistake", deltaP: -0.2 })],
+      classifications: [],
+      result: null,
+      totalPlies: 6,
+    });
+    const cbb = bullets.find((b) => b.section === "could be better")!;
+    expect(cbb.text).toContain("Nf6");
+  });
+
+  it("done well: routes a strong move's SAN through the renderer when gameSans is given", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 3, san: "Qh5", label: "strong move", deltaP: 0.2 })],
+      classifications: [],
+      result: null,
+      totalPlies: 6,
+      gameSans: SCHOLARS_MATE_SANS,
+    });
+    expect(bullets[0].text).toContain("queen to h5");
+    expect(bullets[0].text).not.toContain("Qh5");
+  });
+});

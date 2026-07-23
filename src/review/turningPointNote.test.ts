@@ -187,6 +187,20 @@ describe("didWell (part i)", () => {
     const note = buildTurningPointNote(tp({ label: "blunder" }), undefined, undefined);
     expect(note.didWell).toBeUndefined();
   });
+
+  // Debrief Plain-English Notation round (Task 2): with gameSans supplied,
+  // the strong-move mention renders in plain English from the position
+  // before its own ply, not raw SAN.
+  it("renders the strong move in plain English when gameSans is given", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "strong move", san: "Qh5", ply: 3 }),
+      undefined,
+      undefined,
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.didWell).toContain("queen to h5");
+    expect(note.didWell).not.toContain("Qh5");
+  });
 });
 
 describe("couldImprove (part ii)", () => {
@@ -252,6 +266,23 @@ describe("couldImprove (part ii)", () => {
     const note = buildTurningPointNote(tp({ label: "the clincher", kind: "backfill" }), undefined, undefined);
     expect(note.couldImprove).toBeUndefined();
   });
+
+  // Debrief Plain-English Notation round (Task 2): with gameSans supplied,
+  // both the played move (tp.san, from the position before its own ply) and
+  // the stronger idea (line.bestSan, from the same seed position
+  // whatMayHaveHappened uses) render in plain English, not raw SAN.
+  it("renders both the played move and the stronger idea in plain English when gameSans is given", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Nf6", ply: 6 }),
+      undefined,
+      line({ ply: 6, pvSans: ["Qxf7#"], bestSan: "Qxf7#" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.couldImprove).toContain("knight to f6");
+    expect(note.couldImprove).toContain("queen takes on f7, checkmate");
+    expect(note.couldImprove).not.toContain("Nf6");
+    expect(note.couldImprove).not.toMatch(/\bQxf7#\b/);
+  });
 });
 
 describe("whatMayHaveHappened (part iv)", () => {
@@ -271,11 +302,30 @@ describe("whatMayHaveHappened (part iv)", () => {
     expect(note.whatMayHaveHappened).toContain("Qxb5");
   });
 
-  it("renders the full pv plainly, SAN preserved, when pvSans has multiple moves", () => {
+  // Debrief Plain-English Notation round (Task 2): the old behavior dumped
+  // the WHOLE pv ("if instead Bxb5, then a6 Ba4.") — a beginner-unreadable
+  // 18-move wall in the worst real case. The outcome is already carried by
+  // the separate "this opens up" clause, so only the first move survives.
+  it("drops the pv dump, keeping only the first move (no gameSans: raw-SAN fallback)", () => {
     const note = buildTurningPointNote(tp({}), undefined, line({ pvSans: ["Bxb5", "a6", "Ba4"] }));
     expect(note.whatMayHaveHappened).toContain("Bxb5");
-    expect(note.whatMayHaveHappened).toContain("a6");
-    expect(note.whatMayHaveHappened).toContain("Ba4");
+    expect(note.whatMayHaveHappened).not.toContain("a6");
+    expect(note.whatMayHaveHappened).not.toContain("Ba4");
+  });
+
+  // Real game, real fen: 1.e4 e5 2.Qh5 Nc6 3.Bc4 Nf6?? — a turning point at
+  // ply 6 (her blunder Nf6) with a line whose seed position (player-to-move
+  // after ply 6, per getTurningLines' seedPly = ply - ply%2) is the exact
+  // fen Qxf7# is legal from. With gameSans in hand, whatMayHaveHappened
+  // renders the pv's first move in plain English, not raw SAN.
+  it("renders the first move in plain English when gameSans supplies the seed fen", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Nf6", ply: 6 }),
+      undefined,
+      line({ ply: 6, pvSans: ["Qxf7#"], bestSan: "Qxf7#" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.whatMayHaveHappened).toBe("if instead your queen takes on f7, checkmate.");
   });
 
   it("never adds an interpretive claim beyond the SAN moves themselves", () => {

@@ -24,6 +24,12 @@ import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from 
 // already share (seedPly = ply - (ply % 2)).
 import { fenAtPly } from "./Rewind";
 import { deriveOpportunity } from "./opportunity";
+// Debrief Plain-English Notation round (Task 2): every raw-SAN mention in
+// the note (the played move, the punish, the stronger idea, the pv's first
+// move) now routes through the shared plain-English renderer whenever a fen
+// to replay it from is available. Falls back to the raw SAN string when
+// gameSans is absent or the fen can't be reconstructed — never nothing.
+import { describeSanMove } from "../game/describeSanMove";
 
 export interface TurningPointNote {
   didWell?: string; // (i)   present when the point is a good moment / good defense
@@ -47,6 +53,36 @@ export type Motif = "king-safety" | "missed-punish" | "good-moment" | "eval-drop
 
 function moveNumberForPly(ply: number): number {
   return Math.ceil(ply / 2);
+}
+
+// Debrief Plain-English Notation round (Task 2): fen BEFORE the move played
+// at 1-indexed `ply` (gameSans[ply-1].san), via the same fenAtPly replay
+// seam every other rewind/seed derivation in this codebase shares. Absent
+// gameSans, or a ply with nothing before it, yields no fen — callers fall
+// back to raw SAN rather than fabricate a position.
+function fenBeforePly(gameSans: SummaryMove[] | undefined, ply: number): string | undefined {
+  if (!gameSans || ply < 1) return undefined;
+  return fenAtPly(gameSans, ply - 1);
+}
+
+// The seed fen a TurningLine's pvSans/bestSan were replayed from server-side
+// (getTurningLines' fenSeed) — same seedPly = ply - (ply % 2) formula
+// server/game/manager.ts and src/game/explore.ts's exploreSeedPly both
+// already share. Reconstructing it here (rather than shipping it to the
+// client) keeps it in lockstep with whichever position the server actually
+// computed the pv against.
+function seedFenForLine(line: TurningLine | undefined, gameSans: SummaryMove[] | undefined): string | undefined {
+  if (!line || !gameSans) return undefined;
+  const seedPly = line.ply - (line.ply % 2);
+  if (seedPly < 1) return undefined;
+  return fenAtPly(gameSans, seedPly);
+}
+
+// Renders `san` in plain English from `fen` when both are available, else
+// falls back to the raw SAN string — never emits nothing.
+function describedOrRaw(san: string, fen: string | undefined): string {
+  if (!fen) return san;
+  return describeSanMove(san, fen) ?? san;
 }
 
 export const NEXT_TIME_TIPS: Record<Motif, string> = {
@@ -81,18 +117,23 @@ function inferMotif(tp: TurningPoint): Motif | undefined {
   return undefined;
 }
 
-function buildDidWell(tp: TurningPoint): string | undefined {
+function buildDidWell(tp: TurningPoint, gameSans?: SummaryMove[]): string | undefined {
   if (tp.kind === "episode") {
     const n = moveNumberForPly(tp.ply);
     return `you held up under real pressure starting around move ${n}. that composure is a skill.`;
   }
   if (tp.label === "strong move") {
     const n = moveNumberForPly(tp.ply);
-    return `${tp.san} on move ${n} was the right idea and it worked.`;
+    const played = describedOrRaw(tp.san, fenBeforePly(gameSans, tp.ply));
+    return `${played} on move ${n} was the right idea and it worked.`;
   }
   if (tp.label.startsWith("opponent") && tp.punishSan) {
     const n = moveNumberForPly(tp.ply);
-    return `you punished her slip on move ${n} with ${tp.punishSan}.`;
+    // punishSan is her reply at ply+1 (attachPunishSuffix, turningPoints.ts) —
+    // the fen it's played from is the position AFTER tp.ply, i.e. before
+    // ply+1.
+    const punish = describedOrRaw(tp.punishSan, fenBeforePly(gameSans, tp.ply + 1));
+    return `you punished her slip on move ${n} with ${punish}.`;
   }
   return undefined;
 }
@@ -114,32 +155,41 @@ const IMPROVE_NUDGE: Record<string, string> = {
 function buildCouldImprove(
   tp: TurningPoint,
   cls: MoveClassification | undefined,
-  line: TurningLine | undefined
+  line: TurningLine | undefined,
+  gameSans: SummaryMove[] | undefined,
+  seedFen: string | undefined
 ): string | undefined {
+  const played = describedOrRaw(tp.san, fenBeforePly(gameSans, tp.ply));
   if (tp.missedPunish) {
-    const bestClause = line?.bestSan ? ` ${line.bestSan} was on the board.` : "";
-    return `${tp.san} let the punish slip.${bestClause}`;
+    const bestClause = line?.bestSan ? ` ${describedOrRaw(line.bestSan, seedFen)} was on the board.` : "";
+    return `${played} let the punish slip.${bestClause}`;
   }
   const label = cls?.classification ?? tp.label;
   const nudge = IMPROVE_NUDGE[label];
   if (!nudge) return undefined;
-  const bestClause = line?.bestSan && line.bestSan !== tp.san ? ` ${line.bestSan} was the stronger idea.` : "";
+  const bestClause =
+    line?.bestSan && line.bestSan !== tp.san ? ` ${describedOrRaw(line.bestSan, seedFen)} was the stronger idea.` : "";
   // "an inaccuracy" vs "a blunder/mistake" — pure article grammar, not a
   // copy retune (2026-07-19 visual gate).
   const article = /^[aeiou]/.test(label) ? "an" : "a";
-  return `${tp.san} was ${article} ${label}, ${nudge}.${bestClause}`;
+  return `${played} was ${article} ${label}, ${nudge}.${bestClause}`;
 }
 
-// Phrased straight off the replay-derived SAN list — never an added
-// evaluative clause (no "you win the pawn back" style claim), per the hard
-// rule that a derived claim must come from replay, never be invented.
-function buildWhatMayHaveHappened(line: TurningLine | undefined): string | undefined {
+// Debrief Plain-English Notation round (Task 2): only the pv's FIRST move
+// survives, in plain English when a seed fen is available — the rest of the
+// line (what used to be a raw, sometimes 18-move SAN dump) is dropped
+// entirely. The outcome it leads to is already carried by the separate
+// "this opens up" clause (opportunity, below), so nothing is lost by
+// dropping it here. No fen available degrades to the existing single-move
+// raw-SAN fallback text, never to nothing.
+function buildWhatMayHaveHappened(line: TurningLine | undefined, seedFen: string | undefined): string | undefined {
   if (!line) return undefined;
   const pv = line.pvSans.length > 0 ? line.pvSans : line.bestSan ? [line.bestSan] : [];
   if (pv.length === 0) return undefined;
-  const [first, ...rest] = pv;
-  if (rest.length === 0) return `if instead ${first} had been played here.`;
-  return `if instead ${first}, then ${rest.join(" ")}.`;
+  const [first] = pv;
+  const described = seedFen ? describeSanMove(first, seedFen) : null;
+  if (described) return `if instead your ${described}.`;
+  return `if instead ${first} had been played here.`;
 }
 
 // Increment 3.95 (Task 4, Part 1): the seed fen a line's pvSans was replayed
@@ -158,9 +208,8 @@ export function opportunityForLine(
   gameSans: SummaryMove[] | undefined
 ): string | undefined {
   if (!line || !gameSans || line.pvSans.length === 0) return undefined;
-  const seedPly = line.ply - (line.ply % 2);
-  if (seedPly < 1) return undefined;
-  const fenSeed = fenAtPly(gameSans, seedPly);
+  const fenSeed = seedFenForLine(line, gameSans);
+  if (!fenSeed) return undefined;
   return deriveOpportunity(fenSeed, line.pvSans);
 }
 
@@ -171,14 +220,15 @@ export function buildTurningPointNote(
   gameSans?: SummaryMove[]
 ): TurningPointNote {
   const motif = inferMotif(tp);
+  const seedFen = seedFenForLine(line, gameSans);
   const note: TurningPointNote = {
     nextTime: motif ? NEXT_TIME_TIPS[motif] : GENERIC_TIP,
   };
-  const didWell = buildDidWell(tp);
+  const didWell = buildDidWell(tp, gameSans);
   if (didWell) note.didWell = didWell;
-  const couldImprove = buildCouldImprove(tp, cls, line);
+  const couldImprove = buildCouldImprove(tp, cls, line, gameSans, seedFen);
   if (couldImprove) note.couldImprove = couldImprove;
-  const whatMayHaveHappened = buildWhatMayHaveHappened(line);
+  const whatMayHaveHappened = buildWhatMayHaveHappened(line, seedFen);
   if (whatMayHaveHappened) note.whatMayHaveHappened = whatMayHaveHappened;
   const opportunity = opportunityForLine(line, gameSans);
   if (opportunity) note.opportunity = opportunity;
