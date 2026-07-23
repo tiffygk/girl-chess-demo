@@ -330,6 +330,14 @@ export const insertAdviceTrace = (t: {
   );
 export const getAdviceTraces = (gameId: number) =>
   db.prepare("SELECT * FROM advice_traces WHERE game_id = ? ORDER BY id").all(gameId) as any[];
+// Coach-eval harness (tools/coach-eval): chat()'s return value carries only
+// traceId, not the regenCount/latencyMs the eval's regen/template-pressure
+// axis needs -- those live in the row itself. A single-row-by-id accessor,
+// same shape as getGame's own `WHERE id = ?` convention, so the harness
+// doesn't need a second db connection or a full getAdviceTraces(gameId)
+// scan just to look up the one row its own chat() call produced.
+export const getAdviceTraceById = (id: number) =>
+  db.prepare("SELECT * FROM advice_traces WHERE id = ?").get(id) as any;
 // Increment 3.9 Task 4 (F19): thumbs up/down with optional feedback on a
 // traced coach output. "Re-rating overwrites, latest wins" (the route
 // contract) means the WHOLE row reflects only the most recent call -- both
