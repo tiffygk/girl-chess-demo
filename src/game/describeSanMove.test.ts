@@ -15,7 +15,7 @@
 // own file instead — same directory, distinct name.
 
 import { describe, it, expect } from "vitest";
-import { describeSanMove } from "./describeSanMove";
+import { describeSanMove, stripRedundantCheckSuffix } from "./describeSanMove";
 
 describe("describeSanMove", () => {
   it("quiet move: 'knight to d5'", () => {
@@ -75,5 +75,31 @@ describe("describeSanMove", () => {
 
   it("returns null for a garbage fen", () => {
     expect(describeSanMove("Nf3", "not-a-real-fen")).toBeNull();
+  });
+});
+
+// Visual-gate catch (2026-07-22): a turning-point card title appends
+// " · {label}" after the rendered move, so a "checkmate"/"check" label
+// duplicates describeSanMove's own trailing suffix ("queen takes on c8,
+// checkmate · checkmate"). This strips ONLY that title-context duplicate —
+// describeSanMove itself is untouched, since the suffix is still wanted
+// wherever the move stands alone in a sentence (e.g. coach hints).
+describe("stripRedundantCheckSuffix", () => {
+  it("strips a trailing ', checkmate' when the label is 'checkmate'", () => {
+    expect(stripRedundantCheckSuffix("queen takes on c8, checkmate", "checkmate")).toBe("queen takes on c8");
+  });
+
+  it("strips a trailing ', check' when the label is 'check'", () => {
+    expect(stripRedundantCheckSuffix("queen to h4, check", "check")).toBe("queen to h4");
+  });
+
+  it("leaves the phrase untouched for any other label", () => {
+    expect(stripRedundantCheckSuffix("queen takes on c8, checkmate", "blunder")).toBe(
+      "queen takes on c8, checkmate"
+    );
+  });
+
+  it("is a no-op when the phrase has no trailing suffix to strip", () => {
+    expect(stripRedundantCheckSuffix("queen to h4", "checkmate")).toBe("queen to h4");
   });
 });

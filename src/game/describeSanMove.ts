@@ -53,3 +53,18 @@ export function describeSanMove(san: string, fenBefore: string): string | null {
   if (mv.flags.includes("p") && mv.promotion) phrase += `, becoming a ${pieceName(mv.promotion)}`;
   return `${phrase}${suffix}`;
 }
+
+/**
+ * Visual-gate catch (2026-07-22): when a caller is about to append its own
+ * "· {label}" context and that label already conveys check/mate
+ * ("checkmate"/"check"), describeSanMove's own trailing suffix on the same
+ * phrase reads as a dupe ("queen takes on c8, checkmate · checkmate"). This
+ * strips ONLY that redundant suffix for that display context — it never
+ * touches describeSanMove's own output, which still wants the suffix
+ * wherever the move stands alone in a sentence (coach hints, debrief prose).
+ * A no-op when the label doesn't match, or the phrase has no such suffix.
+ */
+export function stripRedundantCheckSuffix(described: string, label: string): string {
+  if (label !== "checkmate" && label !== "check") return described;
+  return described.replace(/, (checkmate|check)$/, "");
+}
