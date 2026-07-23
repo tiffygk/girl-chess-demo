@@ -140,9 +140,92 @@ describe("chat system prompt retune (Task 5, R2 + R5)", () => {
     expect(persona.chatSystemPrompt).toContain("'opening' means the early plies");
   });
 
-  it("R5: instructs the coach to state missing engine data plainly, not hedge", () => {
+  it("R5: instructs the coach to state missing analysis data plainly, not hedge", () => {
     const persona = parseRealCoachMd();
-    expect(persona.chatSystemPrompt).toContain("i don't have the engine's line for that moment");
+    // R2 Task 2 voice rewrite: the canonical no-data line no longer says
+    // "engine" -- the tool's in-cast name is "our chess brain".
+    expect(persona.chatSystemPrompt).toContain("our chess brain hasn't worked that moment out yet");
     expect(persona.chatSystemPrompt).toContain("never a hedge about chess itself");
+  });
+});
+
+// R2 Task 2 (2026-07-22, coach voice rewrite): the owner read real coach
+// answers and ruled on voice -- no "engine"/"eval"/centipawn numbers (the
+// tool's in-cast name is "our chess brain"), no raw notation as a move name,
+// one to three sentences, "that's fine." as the canonical short affirmation,
+// consequences explained concretely. These tests pin the persona file to
+// those rulings; the mechanical output guard is Task 3, not here.
+describe("persona voice rewrite (R2 Task 2)", () => {
+  function parseRealCoachMd() {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const md = fs.readFileSync(path.join(here, "personas/coach.md"), "utf-8");
+    return parsePersona(md);
+  }
+
+  it("names the tool 'our chess brain' in the chat prompt", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain("our chess brain");
+  });
+
+  it("carries the canonical short affirmation \"that's fine.\"", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain('"that\'s fine."');
+  });
+
+  it("bans raw notation as a move name", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain("never name a move as raw notation");
+  });
+
+  it("sets the one-to-three-sentence length rule", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.voice).toContain("one to three short sentences");
+    expect(persona.chatSystemPrompt).toContain("one to three short sentences");
+  });
+
+  it("directs the coach to explain the consequence concretely", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain("explain the consequence");
+  });
+
+  it("carries the owner calibration pair (sharper/reply bad, consequence good)", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.voice).toContain("e5 was the sharper reply");
+    expect(persona.voice).toContain("pushing your pawn to e5 was stronger");
+  });
+
+  it("chat prompt never contains 'engine' or 'eval' as standalone words", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).not.toMatch(/\bengine\b/i);
+    expect(persona.chatSystemPrompt).not.toMatch(/\beval(s|uation)?\b/i);
+  });
+
+  it("narrate prompt never contains 'engine' or 'eval' as standalone words", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.systemPrompt).not.toMatch(/\bengine\b/i);
+    expect(persona.systemPrompt).not.toMatch(/\beval(s|uation)?\b/i);
+  });
+
+  it("fallback templates use no raw-SAN variables and no 'engine'", () => {
+    const persona = parseRealCoachMd();
+    const all = [
+      ...Object.values(persona.threatTemplates),
+      ...Object.values(persona.recommendationTemplates),
+      ...Object.values(persona.chatTemplates),
+    ];
+    expect(all.length).toBeGreaterThan(0);
+    for (const t of all) {
+      expect(t).not.toMatch(/\{refutationSan\}|\{bestSan\}/);
+      expect(t).not.toMatch(/\bengine\b/i);
+      expect(t).not.toMatch(/\beval(s|uation)?\b/i);
+    }
+  });
+
+  it("re-voiced pendingMove paragraph keeps its meaning", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain("pendingMove");
+    expect(persona.chatSystemPrompt).toContain("'what if i go here'");
+    expect(persona.chatSystemPrompt).toContain("'silent'");
+    expect(persona.chatSystemPrompt).toContain("judged is false");
   });
 });

@@ -130,8 +130,15 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(facts.allowedSans).toContain("Nc6");
       expect(facts.allowedSans).toContain("Bb5");
 
+      // Task 3a (R2, voice-enforcement round): raw notation is now ALWAYS a
+      // voice violation regardless of legality, so this reply's overall
+      // verdict is (correctly) false -- but the fold itself is proven by
+      // the absence of the bare "nf3" illegal-SAN violation that would fire
+      // if the fold hadn't run.
       const reply = "nf3 would have been stronger here, developing toward the center first.";
-      expect(validateChat(reply, facts)).toEqual({ ok: true });
+      const result = validateChat(reply, facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations).not.toContain("nf3");
     });
 
     it("a reply naming an UNfocused/illegal san still redirects (the fold doesn't open the gate wide)", () => {
@@ -411,22 +418,32 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       if (!result.ok) expect(result.violations.some((v) => v.includes("side-claim"))).toBe(true);
     });
 
-    it("does not flag 'mallow plays Qh5' when toMove is mallow and Qh5 genuinely is mallow's legal move", () => {
+    // Task 3a (R2, voice-enforcement round): these three cases still test
+    // that checkSideAttributionClaims itself does NOT flag a correct/
+    // ambiguous attribution -- but the fixture text names a move in raw
+    // notation ("Qh5"), which the voice guard now separately and always
+    // bans, so the overall verdict is (correctly) false. The assertion
+    // narrows to "no side-claim violation" rather than "ok: true" so it
+    // keeps proving the property it was written for.
+    it("does not flag a side-claim violation for 'mallow plays Qh5' when toMove is mallow and Qh5 genuinely is mallow's legal move", () => {
       const facts = sideAttrFacts({ toMove: "mallow" });
       const result = validateChat("mallow plays Qh5, winning material.", facts);
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false); // voice bans the raw notation regardless
+      if (!result.ok) expect(result.violations.some((v) => v.includes("side-claim"))).toBe(false);
     });
 
-    it("does not flag 'you play Qh5' in the same (toMove: you) position -- correct attribution", () => {
+    it("does not flag a side-claim violation for 'you play Qh5' in the same (toMove: you) position -- correct attribution", () => {
       const facts = sideAttrFacts({ toMove: "you" });
       const result = validateChat("you play Qh5 and win her queen.", facts);
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false); // voice bans the raw notation regardless
+      if (!result.ok) expect(result.violations.some((v) => v.includes("side-claim"))).toBe(false);
     });
 
-    it("does not flag an ambiguous phrasing outside the fixed verb list (the cut)", () => {
+    it("does not flag a side-claim violation for an ambiguous phrasing outside the fixed verb list (the cut)", () => {
       const facts = sideAttrFacts({ toMove: "you" });
       const result = validateChat("mallow could try Qh5 here.", facts);
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false); // voice bans the raw notation regardless
+      if (!result.ok) expect(result.violations.some((v) => v.includes("side-claim"))).toBe(false);
     });
 
     // FP class 1 (controller review, 2026-07-22): a past-tense verb almost
@@ -435,29 +452,36 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     // played Nf3" truthfully describes an earlier black move. Adjudicating
     // past tense against legalSans was wrong; only present-tense forms are
     // adjudicated now.
-    it("does not flag a past-tense mention of an earlier move ('mallow played Nf3') even though Nf3 is also currently legal", () => {
+    // Task 3a note applies to the three FP-class tests below too: the
+    // fixture text names a move in raw notation, which voice now always
+    // bans, so the overall verdict is (correctly) false; the assertion
+    // narrows to "no side-claim violation" to keep proving each FP class.
+    it("does not flag a side-claim violation for a past-tense mention of an earlier move ('mallow played Nf3') even though Nf3 is also currently legal", () => {
       const facts = sideAttrFacts({ toMove: "you", legalSans: ["Nf3", "Qh5", "e4"], allowedSans: ["Nf3", "Qh5", "e4"] });
       const result = validateChat("mallow played Nf3 a few moves back.", facts);
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false); // voice bans the raw notation regardless
+      if (!result.ok) expect(result.violations.some((v) => v.includes("side-claim"))).toBe(false);
     });
 
     // FP class 2: O-O/O-O-O is the same token for both colors, so it can
     // never be adjudicated by legalSans membership alone -- castling tokens
     // are skipped outright.
-    it("does not flag a castling mention ('mallow plays O-O') even though castling is also currently legal for the player", () => {
+    it("does not flag a side-claim violation for a castling mention ('mallow plays O-O') even though castling is also currently legal for the player", () => {
       const facts = sideAttrFacts({ toMove: "you", legalSans: ["O-O", "Qh5", "e4"], allowedSans: ["O-O", "Qh5", "e4"] });
       const result = validateChat("mallow plays O-O next.", facts);
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false); // voice bans the raw notation regardless
+      if (!result.ok) expect(result.violations.some((v) => v.includes("side-claim"))).toBe(false);
     });
 
     // FP class 3: the coach reasons in hypothetical lines constantly ("if
     // you play X, she plays Y") -- a conditional marker earlier in the same
     // sentence means the named side is inside a hypothetical, not a literal
     // attribution of the current position.
-    it("does not flag a conditional/hypothetical line ('if you push d4, she plays Nc6')", () => {
+    it("does not flag a side-claim violation for a conditional/hypothetical line ('if you push d4, she plays Nc6')", () => {
       const facts = sideAttrFacts({ toMove: "you", legalSans: ["Nc6", "Qh5", "e4"], allowedSans: ["Nc6", "Qh5", "e4"] });
       const result = validateChat("if you push d4, she plays Nc6 next.", facts);
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false); // voice bans the raw notation regardless
+      if (!result.ok) expect(result.violations.some((v) => v.includes("side-claim"))).toBe(false);
     });
 
     // Regression guard: the original observed bug must still fire after the
@@ -493,11 +517,15 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       if (!result.ok) expect(result.violations).toContain("qxh7");
     });
 
-    it("passes a lowercase echo of a legal move once piece-letter case is normalized (Nc6 is legal for black to reply to e4)", () => {
+    it("normalizes a lowercase legal SAN so the strict-SAN legality check does not flag it (Task 3a's voice guard separately and always bans the raw notation itself)", () => {
       const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
       expect(facts.legalSans).toContain("Nc6");
       const result = validateChat("nc6 develops your knight nicely.", facts);
-      expect(result).toEqual({ ok: true });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.violations).not.toContain("nc6"); // legality check recognizes it via normalization
+        expect(result.violations.some((v) => v.startsWith("voice-notation"))).toBe(true); // voice still bans it
+      }
     });
   });
 
@@ -737,6 +765,125 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(result).toEqual({ ok: false, error: "too-long" });
       expect(getAllChatMessages(gameId)).toHaveLength(0);
       expect(getAdviceTraces(gameId)).toHaveLength(0);
+    });
+  });
+
+  // Task 3a (R2, voice-enforcement round, 2026-07-22): the coach's own
+  // voice rules (personas/coach.md's "## voice" block, Task 2 this round)
+  // ban raw notation as a move's name, the infra words "engine"/
+  // "eval(uation)"/"centipawn(s)"/"cp", and any stated number for the
+  // position -- but nothing previously checked a reply's OWN prose against
+  // those rules. Modeled on checkDefenseClaims/checkPlacementClaims/
+  // checkSideAttributionClaims: precision over recall, no engine call,
+  // routed into the same violations array validateChat already returns.
+  describe("validateChat — voice guard (Task 3a)", () => {
+    function voiceFacts(): ChatFactList {
+      return assembleChatFactList([{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }], { mode: "live" });
+    }
+
+    it("flags raw notation naming a move (Nf3) even when it's a legal move", () => {
+      const facts = voiceFacts();
+      expect(facts.legalSans).toContain("Nf3");
+      const result = validateChat("she takes with Nf3, developing a piece.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-notation"))).toBe(true);
+    });
+
+    it("flags raw notation for a capture (Bxe4)", () => {
+      const facts = voiceFacts();
+      const result = validateChat("Bxe4 wins a piece right now.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-notation"))).toBe(true);
+    });
+
+    it("flags raw castling notation (O-O)", () => {
+      const facts = voiceFacts();
+      const result = validateChat("mallow plays O-O next.", facts);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-notation"))).toBe(true);
+      expect(result.ok).toBe(false);
+    });
+
+    it("does not flag a bare square named on its own (geography, cut #2)", () => {
+      const facts = voiceFacts();
+      const result = validateChat("push to e4 and you're fine.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("flags the standalone word 'engine'", () => {
+      const facts = voiceFacts();
+      const result = validateChat("the engine says you're fine here.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v === "voice-word: engine")).toBe(true);
+    });
+
+    it("flags the standalone word 'eval'", () => {
+      const facts = voiceFacts();
+      const result = validateChat("your eval here is good.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-word"))).toBe(true);
+    });
+
+    it("flags the standalone word 'evaluation'", () => {
+      const facts = voiceFacts();
+      const result = validateChat("the evaluation likes this for you.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-word"))).toBe(true);
+    });
+
+    it("flags the standalone word 'centipawns'", () => {
+      const facts = voiceFacts();
+      const result = validateChat("you're up a few centipawns here.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-word"))).toBe(true);
+    });
+
+    it("flags the standalone word 'cp'", () => {
+      const facts = voiceFacts();
+      const result = validateChat("you're up 50 cp here.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice"))).toBe(true);
+    });
+
+    it("flags a signed positive number for the position", () => {
+      const facts = voiceFacts();
+      const result = validateChat("you're at +50 here.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-number"))).toBe(true);
+    });
+
+    it("flags a signed negative number for the position", () => {
+      const facts = voiceFacts();
+      const result = validateChat("you're at -30 here.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-number"))).toBe(true);
+    });
+
+    it("flags an unspaced cp number ('50cp')", () => {
+      const facts = voiceFacts();
+      const result = validateChat("you're up 50cp here.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-number"))).toBe(true);
+    });
+
+    // Deliberately narrow (the plan's must-pass cases): a plain, unsigned
+    // integer with no cp suffix is a ply/mate count, not a stated position
+    // eval, and must never be flagged.
+    it("does NOT flag 'mate in 3' (an unsigned mate count)", () => {
+      const facts = voiceFacts();
+      const result = validateChat("there's mate in 3 for you here.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("does NOT flag 'move 12' (an unsigned move number)", () => {
+      const facts = voiceFacts();
+      const result = validateChat("back on move 12 you had a good chance.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("does NOT flag 'move 8' (an unsigned move number)", () => {
+      const facts = voiceFacts();
+      const result = validateChat("move 8 was the moment things turned.", facts);
+      expect(result.ok).toBe(true);
     });
   });
 });

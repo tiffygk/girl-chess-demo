@@ -60,12 +60,16 @@ describe("assembleChatFactList: hintFocus carries real HintFacts (Task 4, R1b)",
     expect(facts.allowedSans).not.toContain("Qh5");
   });
 
-  it("a hint move validated by the model is accepted once folded", () => {
+  it("a hint move validated by the model is accepted once folded (Task 3a's voice guard separately and always bans this fixture's raw notation)", () => {
     const facts = assembleChatFactList(moves(GAME), {
       hintFocus: { level: 3, text: "hold on.", bestSan: "Qh5", pvSans: ["Qh5", "g6", "Qxg6"] },
     });
     const result = validateChat("play Qh5, going straight for the attack.", facts);
-    expect(result.ok).toBe(true);
+    // The fold is proven by the absence of the bare "Qh5" illegal-SAN
+    // violation that would fire if it hadn't run -- overall ok is still
+    // false because voice always bans raw notation, regardless of legality.
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.violations).not.toContain("Qh5");
   });
 });
 
