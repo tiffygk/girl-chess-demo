@@ -61,6 +61,57 @@ smoke test only (e.g. `--limit 1`). A real baseline/post-fix run must
 always cover all 65 questions or it is not comparable against the other
 model's run; never pass `--limit` for a run you intend to render/report.
 
+### Multi-rep runs: `--warmup`, `--rep`, and the ABBA convention (v3)
+
+The cold-start confound — one model per process, the first model always
+running cold — is controlled two ways:
+
+- `--warmup N` fires N throwaway calls through the identical `chat()` path
+  before the scored loop, to burn off in-process cold start. They are logged
+  to `warmup-<model>[-rep<K>].json`, printed as `DISCARDED`, and NEVER merged
+  into the scored raw file. Overnight runs use `--warmup 3`.
+- `--rep K` tags a rep of a multi-rep run: the raw file becomes
+  `raw-<model>-rep<K>.json` (omit `--rep` and it stays the old
+  `raw-<model>.json`). `render.ts` auto-discovers every rep and aggregates.
+
+**ABBA block counterbalancing** (orchestration level — `run.ts` keeps its
+one-model-per-process design): run the two models back-to-back per rep with
+the order flipped each block, so time-of-night drift lands on both models
+rather than systematically on one:
+
+```bash
+OUT=tools/coach-eval/runs/2026-07-23-v3
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --warmup 3 --rep 1 --out $OUT
+npx tsx tools/coach-eval/run.ts --model opus   --wiring threaded --warmup 3 --rep 1 --out $OUT
+npx tsx tools/coach-eval/run.ts --model opus   --wiring threaded --warmup 3 --rep 2 --out $OUT
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --warmup 3 --rep 2 --out $OUT
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --warmup 3 --rep 3 --out $OUT
+npx tsx tools/coach-eval/run.ts --model opus   --wiring threaded --warmup 3 --rep 3 --out $OUT
+npx tsx tools/coach-eval/render.ts --dir $OUT   # writes summary.json + the blinded trio
+```
+
+`render.ts` requires the two models to share an identical rep set and an
+identical row-id list; it errors on a mismatch. It writes `summary.json`
+(UNBLINDED, model-named, `median/min/max` across reps — consumed by
+`decide.ts` and the dashboard) plus the blinded trio (`report-blinded.md`
+from rep 1, `metrics-blinded.md` showing `median% (min–max)` across reps,
+`unblinding.json`).
+
+`decide.ts` turns `summary.json` into a mechanical recommendation:
+
+```bash
+npx tsx tools/coach-eval/decide.ts --summary $OUT/summary.json
+# after the instrument-audit loop signs off the pending checker:
+npx tsx tools/coach-eval/decide.ts --summary $OUT/summary.json --pending-audited true
+```
+
+`audit-sample.ts` emits deterministic, full-text hand-audit sheets for the
+instrument-audit loop:
+
+```bash
+npx tsx tools/coach-eval/audit-sample.ts --dir $OUT --iter 1 --out audit/sample-iter1.md
+```
+
 Post-fix run (after R2 tasks 1-3 merge — pendingMove threading, the coach
 voice/notation fixes, and `checkVoice` wired into `validateChat`), same
 fixtures, same questions, `--wiring threaded`:
@@ -118,13 +169,15 @@ hand — they are never scored. The deterministic banned-word/phrase list in
 ## Files
 
 ```
-fixtures.ts    pinned contexts C1-C5, the 65-question set, PD/AF pending fixtures (frozen after baseline)
-run.ts         cli entry: executes one model over all fixtures, writes runs/<ts>/raw-<model>.json incrementally
-score.ts       mechanical checks (axes 1-6), imports server/coach/voiceRules.ts
-render.ts      blinded side-by-side + aggregate scorecard + unblinding key
-util.ts        arg parsing / sha256 / timestamp helpers shared by run.ts and render.ts
-score.test.ts  unit tests for every mechanical check
-.gitignore     .scratch/ (db copies) and runs/ (raw output + reports) -- neither is committed
+fixtures.ts     pinned contexts C1-C5, the 65-question set, PD/AF pending fixtures (frozen after baseline)
+run.ts          cli entry: executes one model over all fixtures; --warmup/--rep; writes raw-<model>[-rep<K>].json incrementally
+score.ts        mechanical checks (axes 1-6), imports server/coach/voiceRules.ts
+render.ts       multi-rep discovery + aggregation; summary.json (unblinded) + blinded trio; exports medianOf/aggregateAxis
+decide.ts       mechanical model recommendation (D4 rule) from summary.json -> decision.json; exports decideModel
+audit-sample.ts deterministic (LCG-seeded) full-text hand-audit sample sheets for the instrument-audit loop
+util.ts         arg parsing / sha256 / timestamp helpers shared by run.ts and render.ts
+score.test.ts   unit tests for every mechanical check + aggregation (medianOf/aggregateAxis) + decideModel
+.gitignore      .scratch/ (db copies) and runs/ (raw output + reports) -- neither is committed
 ```
 
 `server/coach/voiceRules.ts` (+ `voiceRules.test.ts`) lives outside this
