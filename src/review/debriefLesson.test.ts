@@ -107,6 +107,28 @@ describe("debriefLesson", () => {
     expect(debriefLesson([], null)).toBe("a draw. solid, careful, nothing hung.");
   });
 
+  it("2026-07-22 recalibration: a mistake that crossed from advantage to non-advantage gets firmer copy, not the flat label nudge", () => {
+    const points = [tp({ rank: 1, ply: 15, san: "Bxe4", label: "mistake", deltaP: -0.1405, crossedAdvantage: true })];
+    const lesson = debriefLesson(points, null);
+    expect(lesson).toContain("today's lesson: mistake on move 8.");
+    expect(lesson).not.toContain("the idea was right, the follow-up wasn't");
+    expect(lesson).toContain("lead");
+  });
+
+  it("2026-07-22 recalibration: an inaccuracy that crossed from advantage to non-advantage gets firmer copy, not 'small slip'", () => {
+    const points = [tp({ rank: 1, ply: 15, san: "Bb4", label: "inaccuracy", deltaP: -0.1489, crossedAdvantage: true })];
+    const lesson = debriefLesson(points, null);
+    expect(lesson).not.toContain("small slip");
+    expect(lesson).toContain("lead");
+  });
+
+  it("an inaccuracy that did NOT cross keeps the existing gentle 'small slip' copy", () => {
+    const points = [tp({ rank: 1, ply: 15, san: "Bb4", label: "inaccuracy", deltaP: -0.14, crossedAdvantage: false })];
+    expect(debriefLesson(points, "0-1")).toBe(
+      "today's lesson: inaccuracy on move 8. small slip, still your game to lose from here."
+    );
+  });
+
   it("her own-move mistake still wins priority even when an opponent point was also punished", () => {
     const points = [
       tp({ rank: 1, ply: 18, label: "opponent blunder", deltaP: 0.3, punishSan: "Bxc6" }),

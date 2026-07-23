@@ -136,6 +136,9 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     { name: "ply_end", addSql: "ply_end INTEGER" },
     { name: "missed_punish", addSql: "missed_punish INTEGER" },
     { name: "algo_version", addSql: "algo_version INTEGER" },
+    // 2026-07-22 (debrief copy grading): mirrors TurningPoint.crossedAdvantage
+    // — see turningPoints.ts's comment. Additive/nullable, same convention.
+    { name: "crossed_advantage", addSql: "crossed_advantage INTEGER" },
   ],
   // Increment 3.9 (F16, this-game grounding chat): one row per chat message,
   // player and coach both. Brand-new table (CREATE TABLE IF NOT EXISTS below
@@ -205,7 +208,7 @@ export function openDb(path = "data/girlchess.db") {
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), rank INTEGER,
       ply INTEGER, san TEXT, label TEXT, punish_san TEXT, delta_p REAL,
       low_confidence INTEGER, kind TEXT, created_at TEXT DEFAULT (datetime('now')),
-      ply_end INTEGER, missed_punish INTEGER, algo_version INTEGER);
+      ply_end INTEGER, missed_punish INTEGER, algo_version INTEGER, crossed_advantage INTEGER);
     CREATE TABLE IF NOT EXISTS chat_messages(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id),
       role TEXT, text TEXT, trace_id INTEGER,
@@ -369,6 +372,7 @@ export const insertTurningPoints = (
     kind: string;
     plyEnd?: number | null;
     missedPunish?: boolean;
+    crossedAdvantage?: boolean;
   }[],
   algoVersion: number
 ) => {
@@ -377,13 +381,14 @@ export const insertTurningPoints = (
     .get(gameId, algoVersion) as { n: number };
   if (existing.n > 0) return;
   const stmt = db.prepare(
-    `INSERT INTO turning_points(game_id, rank, ply, san, label, punish_san, delta_p, low_confidence, kind, ply_end, missed_punish, algo_version)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO turning_points(game_id, rank, ply, san, label, punish_san, delta_p, low_confidence, kind, ply_end, missed_punish, algo_version, crossed_advantage)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
   );
   for (const p of points) {
     stmt.run(
       gameId, p.rank, p.ply, p.san, p.label, p.punishSan ?? null, p.deltaP,
-      p.lowConfidence ? 1 : 0, p.kind, p.plyEnd ?? null, p.missedPunish ? 1 : 0, algoVersion
+      p.lowConfidence ? 1 : 0, p.kind, p.plyEnd ?? null, p.missedPunish ? 1 : 0, algoVersion,
+      p.crossedAdvantage ? 1 : 0
     );
   }
 };
