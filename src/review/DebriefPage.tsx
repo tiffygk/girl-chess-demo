@@ -40,6 +40,13 @@ import { buildTurningPointNote, opportunityForLine } from "./turningPointNote";
 // trips up TS module resolution (tried and reverted; see task-10 report).
 // The exported component itself is still named MoveList.
 import { MoveList } from "./MoveListNav";
+// Debrief Plain-English Notation round (Task 3): the turning-point card
+// title's SAN ("Nd5 · opponent inaccuracy") reads as raw notation to a
+// beginner — rendered in plain English via the same describeSanMove/fenAtPly
+// seam turningPointNote.ts/debriefBullets.ts now share, falling back to raw
+// SAN when the renderer can't place the move.
+import { fenAtPly } from "./Rewind";
+import { describeSanMove } from "../game/describeSanMove";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -113,6 +120,8 @@ function TurningPointCard({
   const startMove = moveNumberForPly(point.ply);
   const endMove = point.plyEnd != null ? moveNumberForPly(point.plyEnd) : startMove;
   const note = active ? buildTurningPointNote(point, classification, line, gameSans) : null;
+  const fenBeforePoint = gameSans && point.ply >= 1 ? fenAtPly(gameSans, point.ply - 1) : undefined;
+  const describedSan = fenBeforePoint ? describeSanMove(point.san, fenBeforePoint) : null;
   return (
     <div className={"debrief-card" + (negative ? " debrief-card-negative" : "")}>
       <div className="debrief-card-head">
@@ -122,7 +131,7 @@ function TurningPointCard({
       <p className="debrief-card-prose">
         {isEpisode
           ? "king pressure · her pieces camped on your king"
-          : `${point.missedPunish ? "the miss · " : ""}${point.san} · ${point.label}`}
+          : `${point.missedPunish ? "the miss · " : ""}${describedSan ?? point.san} · ${point.label}`}
       </p>
       {point.punishSan && <p className="debrief-card-punish">you punished with {point.punishSan}</p>}
       <button className="small debrief-replay-btn" disabled={exploring} onClick={() => onRewind(point.ply)}>
@@ -287,6 +296,11 @@ export function DebriefPage({
     classifications,
     result: result === "1-0" || result === "0-1" || result === "1/2-1/2" ? result : null,
     totalPlies,
+    // Debrief Plain-English Notation round (Task 3): lets the two raw-SAN
+    // bullet spots (a could-be-better mistake, a done-well strong move)
+    // render in plain English via fenAtPly, same seam every other debrief
+    // module already shares.
+    gameSans,
   });
   // Increment 3.95 (Task 4, Part 1): the try-the-line banner has no
   // TurningPoint/classification to hand buildTurningPointNote — just the
