@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { openDb, createSession, createGame, getAdviceTraces } from "../store/db";
-import { assembleFactList, buildTemplateNarration, buildPrompt, getPersona, narrate, type CoachFactList } from "./index";
+import { assembleFactList, buildTemplateNarration, buildPrompt, getPersona, narrate, parsePersona, type CoachFactList } from "./index";
 import { validateNarration } from "./validate";
 import type { CoachBackend } from "./backends/types";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
@@ -364,5 +364,79 @@ describe("assembleFactList — recommendation.san allow-listing (F4)", () => {
     const text = buildTemplateNarration(facts);
     expect(text).toContain("d8");
     expect(validateNarration(text, facts)).toEqual({ ok: true });
+  });
+});
+
+// Task 3c (R2, voice-enforcement round, 2026-07-22): the persona rewrite's
+// plain-language templates need to name WHICH piece refutes/recommends a
+// move, not just the square -- e.g. "her rook takes back on d8" instead of
+// "she takes back on d8". The facts already carry the piece kind
+// (ThreatFacts.refutationPieceKind, RecommendationFacts.pieceKind/toSquare)
+// -- this threads them into threatVars/recommendationVars so a template
+// using {refutationPieceKind}/{bestPieceKind}/{bestToSquare} renders. A
+// custom persona built via parsePersona (not the real coach.md) isolates
+// the vars-threading from whatever the real templates currently say.
+describe("threatVars/recommendationVars — plain-language piece-kind/square placeholders (Task 3c)", () => {
+  const CUSTOM_PERSONA_MD = [
+    "## templates",
+    "",
+    "### threat",
+    "",
+    "- capture-other: her {refutationPieceKind} takes back on {capturesSquare}.",
+    "",
+    "### recommendation",
+    "",
+    "- captures: grab it with your {bestPieceKind} to {bestToSquare}.",
+    "",
+  ].join("\n");
+
+  it("a threat template using {refutationPieceKind} renders the piece kind as a word", () => {
+    const persona = parsePersona(CUSTOM_PERSONA_MD);
+    const facts: CoachFactList = {
+      herMove: { pieceKind: "n", from: "f6", to: "g4" },
+      tier: "warning",
+      deltaCp: 300,
+      threat: {
+        motif: "capture-other",
+        refutationUci: "d1d8",
+        refutationSan: "Rxd8",
+        refutationPieceKind: "r",
+        refutationFromSquare: "d1",
+        refutationToSquare: "d8",
+        givesCheck: false,
+        capturesSquare: "d8",
+        capturedPieceKind: "r",
+        capturesHerJustMovedPiece: false,
+      },
+      allowedSquares: [],
+      allowedSans: [],
+    };
+    const text = buildTemplateNarration(facts, persona);
+    expect(text).toContain("rook");
+    expect(text).not.toMatch(/[{}]/);
+  });
+
+  it("a recommendation template using {bestPieceKind} and {bestToSquare} renders the piece kind and destination square", () => {
+    const persona = parsePersona(CUSTOM_PERSONA_MD);
+    const facts: CoachFactList = {
+      herMove: { pieceKind: "n", from: "f6", to: "g4" },
+      tier: "nudge",
+      deltaCp: 80,
+      recommendation: {
+        accomplishment: "captures",
+        pieceKind: "n",
+        fromSquare: "f6",
+        toSquare: "e4",
+        san: "Nxe4",
+        capturesSquare: "e4",
+        capturedPieceKind: "p",
+      },
+      allowedSquares: [],
+      allowedSans: [],
+    };
+    const text = buildTemplateNarration(facts, persona);
+    expect(text).toContain("knight");
+    expect(text).toContain("e4");
+    expect(text).not.toMatch(/[{}]/);
   });
 });
