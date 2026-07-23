@@ -251,7 +251,7 @@
     <div>
       <div class="kicker">Girl Chess · Coach model evaluation</div>
       <h1>Coach Eval v3: Sonnet vs Opus</h1>
-      <p class="dek">Two AI models competed for the same job: powering an in-game coaching assistant. This report shows which one won, why, and the controls that make the result trustworthy. The second tab covers how the evaluation process itself was built, challenged, and hardened.</p>
+      <p class="dek">Two AI models competed for one job: powering an in-game coaching assistant. The call is to keep the shipped model; this shows why, and the controls that make it trustworthy. The second tab covers how the evaluation was built, challenged, and hardened.</p>
     </div>
     <button class="theme-toggle" id="themeToggle" aria-label="Toggle light and dark theme">
       <span id="themeIcon">◐</span><span id="themeLabel">Theme</span>
@@ -307,12 +307,12 @@
 
       <div class="annotation" style="margin-top:20px">
         <span class="an-label">Cost to adopt</span>
-        The winner is the current default (<code>AGENT_SDK_MODEL = claude-sonnet-5</code>), so adopting it changes nothing.
+        The winner is the current default (<code>AGENT_SDK_MODEL = claude-sonnet-5</code>), so it confirms the shipped model at no cost.
       </div>
 
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Keep sonnet: both models tied at 100% on plain language, so answer length decided it. Sonnet stays inside the word budget 55% of the time against opus's 22%, with no overlap across repeats.</div>
+        <div><span class="tk-label">Takeaway</span>Keep sonnet, the shipped default: plain language tied, so length decided it: 55% inside budget vs opus's 22%, no overlap. The cost is reliability (section 5); the pick holds until that flips.</div>
       </div>
     </div>
   </section>
