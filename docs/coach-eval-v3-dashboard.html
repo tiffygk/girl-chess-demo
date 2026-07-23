@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Coach Eval v3 — Model Comparison</title>
+<title>Coach Eval v3: Sonnet vs Opus</title>
 <style>
   :root {
     color-scheme: light;
@@ -205,8 +205,8 @@
   <div class="masthead">
     <div>
       <div class="kicker">Girl Chess · Coach model evaluation</div>
-      <h1>Coach Eval v3 — Sonnet vs Opus</h1>
-      <p class="dek">A controlled rerun comparing two model backends for the in-game coach, and the measurement discipline behind the pick: a cold-start control, an audited instrument, and honest exclusions.</p>
+      <h1>Coach Eval v3: Sonnet vs Opus</h1>
+      <p class="dek">A controlled rerun comparing two model backends for the in-game coach, and what makes the pick defensible: a cold-start control, an audited instrument, honest exclusions.</p>
     </div>
     <button class="theme-toggle" id="themeToggle" aria-label="Toggle light and dark theme">
       <span id="themeIcon">◐</span><span id="themeLabel">Theme</span>
@@ -230,7 +230,7 @@
     <div class="card">
       <div class="verdict-top">
         <div>
-          <div class="verdict-kicker">Recommendation — decided by <b id="decidedBy"></b></div>
+          <div class="verdict-kicker">Recommendation · decided by <b id="decidedBy"></b></div>
           <div class="verdict-winner" id="verdictWinner"></div>
         </div>
         <div class="verdict-decidedby" id="verdictReasoning"></div>
@@ -242,7 +242,7 @@
         <div class="an-label" style="font-size:11px;letter-spacing:0.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:6px">Decision rule (D4), evaluated in order</div>
         <ol class="rule-steps">
           <li><b>Jargon-clean.</b> Take it if the median gap &gt; 3 points and the rep ranges are disjoint. <span style="color:var(--muted)">Tied at 100%, falls through.</span></li>
-          <li class="fired"><b>Length compliance.</b> Take it if the median gap &gt; 5 points and disjoint. <span class="fired-tag">— this step fired: gap 33 pts, disjoint → sonnet</span></li>
+          <li class="fired"><b>Length compliance.</b> Take it if the median gap &gt; 5 points and disjoint. <span class="fired-tag">this step fired: gap 33 pts, disjoint → sonnet</span></li>
           <li><b>Audited pending-awareness.</b> Take it if the gap &gt; 15 points and disjoint, only if the checker passed the 95% audit. <span style="color:var(--muted)">Never reached.</span></li>
           <li><b>Tie.</b> Keep the current default, sonnet. <span style="color:var(--muted)">Not needed.</span></li>
         </ol>
@@ -250,12 +250,12 @@
 
       <div class="annotation" style="margin-top:20px">
         <span class="an-label">Cost to adopt</span>
-        The winner equals the current default (<code>AGENT_SDK_MODEL = claude-sonnet-5</code>), so adopting the recommendation means changing nothing.
+        The winner is the current default (<code>AGENT_SDK_MODEL = claude-sonnet-5</code>), so adopting it changes nothing.
       </div>
 
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Keep sonnet: jargon tied at 100% for both models, so length compliance decided it, sonnet 55% vs opus 22% with no overlap across reps.</div>
+        <div><span class="tk-label">Takeaway</span>Keep sonnet: jargon tied at 100%, so length compliance decided it, sonnet 55% vs opus 22% with no rep overlap.</div>
       </div>
     </div>
   </section>
@@ -269,7 +269,7 @@
       <div class="chart-holder" id="chart-jargon"></div>
       <div class="annotation">
         <span class="an-label">Why the baseline gap vanished</span>
-        Measured under the corrected persona. The baseline's 85% vs 38% "engine" gap traced to the persona at commit <code>ef8aa98</code>, which literally said "the engine's read". Current main's persona (commit <code>10619ce</code>) contains zero "engine" language, one un-branched prompt path, plus a runtime voice guard.
+        The baseline's 85% vs 38% "engine" gap traced to the persona at commit <code>ef8aa98</code>, which said "the engine's read". The current persona (commit <code>10619ce</code>) contains zero "engine" language, one un-branched prompt path, plus a runtime voice guard.
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
@@ -287,11 +287,11 @@
       <div class="chart-holder" id="chart-length"></div>
       <div class="verbatim">
         "template/timeout/error rows are pipeline failures and are excluded from this denominator — verified in harness code and in baseline denominators 55/65".
-        <span class="vb-src">Exclusion rule, quoted verbatim from plan.md. Per-rep n values (57/62/60 and 64/65/65) equal 65 minus each rep's pipeline failures, making the exclusion visible on inspection.</span>
+        <span class="vb-src">Exclusion rule, quoted verbatim from plan.md. Per-rep n values (57/62/60 and 64/65/65) equal 65 minus each rep's pipeline failures, so the exclusion is visible on inspection.</span>
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Sonnet lands inside the 45-word budget 55% of the time (47 to 56 across reps) against opus at 22% (19 to 28); the ranges do not overlap and this axis decided the pick.</div>
+        <div><span class="tk-label">Takeaway</span>Sonnet lands inside the 45-word budget 55% of the time (47 to 56 across reps) against opus at 22% (19 to 28); the ranges never overlap, and that decided the pick.</div>
       </div>
     </div>
   </section>
@@ -299,17 +299,17 @@
   <!-- SECTION 4 -->
   <section id="s4">
     <div class="sec-head"><span class="sec-num">04</span><h2>Pending-awareness (audited)</h2></div>
-    <p class="sec-sub">Share of pending-move replies that genuinely engage her held move, judged by reading, not by substring match. n = 14 pending rows per rep, so one row moves this axis 7 points.</p>
+    <p class="sec-sub">Share of pending-move replies that engage her held move, judged by reading rather than substring match. n = 14 pending rows per rep, so one row moves this axis 7 points.</p>
     <div class="card">
       <div class="chart-title">Pending-awareness rate (0–100%)</div>
       <div class="chart-holder" id="chart-pending"></div>
       <div class="annotation">
         <span class="an-label">This is the audited number</span>
-        Genuine engagement judged by reading, at 28/28 checker agreement at audit iteration 2. The earlier substring proxy both false-passed on coincidental square mentions and false-failed on described-but-not-named moves; it was fixed and re-audited before this number was accepted.
+        Engagement judged by reading: 28/28 checker agreement at audit iteration 2. The earlier substring proxy false-passed on coincidental square mentions and false-failed on described-but-not-named moves; it was fixed and re-audited before this number was accepted.
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Both models engage her pending move essentially every time (medians 100%, sonnet's one miss is a single reply in rep 3), so this axis was audited, eligible, and never needed.</div>
+        <div><span class="tk-label">Takeaway</span>Both models engage her pending move nearly every time (medians 100%, sonnet missed once in rep 3), so the audited axis never had to decide the pick.</div>
       </div>
     </div>
   </section>
@@ -317,7 +317,7 @@
   <!-- SECTION 5 -->
   <section id="s5">
     <div class="sec-head"><span class="sec-num">05</span><h2>Pipeline health</h2><span class="chip" style="background:color-mix(in srgb, var(--series-opus) 16%, transparent);color:var(--series-opus)">opus's ledger</span></div>
-    <p class="sec-sub">Template fallbacks, latency, and the cold-start control. This is the strongest argument on opus's side, and the failure gap survived the control.</p>
+    <p class="sec-sub">Template fallbacks, latency, and the cold-start control. Opus's strongest argument, and the failure gap survived the control.</p>
     <div class="card">
       <div class="panels">
         <div class="panel">
@@ -338,7 +338,7 @@
       </div>
       <div class="annotation">
         <span class="an-label">The failure gap survived the control</span>
-        The sonnet-vs-opus failure gap survived the cold-start control (warmup 3 + ABBA) and is a real, controlled finding this time. open-07 and open-11 fail in all three sonnet reps; all failures are template fallbacks at the 45s cap, with zero hard errors. In product terms, sonnet serves the canned template on roughly 1 turn in 12.
+        Sonnet's failure rate is real: it survived the cold-start control (warmup 3 + ABBA). open-07 and open-11 fail in all three sonnet reps; every failure is a template fallback at the 45s cap, zero hard errors. In product terms, sonnet serves the canned template on roughly 1 turn in 12.
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
@@ -356,7 +356,7 @@
       <div class="chart-holder" id="chart-instrument"></div>
       <div class="annotation">
         <span class="an-label">Two audit iterations</span>
-        Two iterations of hand-labeling (473 then 466 rows) against the checker. Iteration 1 found two false-negative bugs: an AI-ism regex matching the verb "lets" instead of only the contraction "let's", and a pending checker missing described-but-not-named moves. Both were patched with regression tests (commits <code>e2d56b8</code>, <code>0b58498</code>) and confirmed fixed on fresh samples in iteration 2. The length axis's single disagreement is a known, accepted em-dash token-count artifact (1/285).
+        Two iterations of hand-labeling (473 then 466 rows) against the checker. Iteration 1 found two false-negative bugs: an AI-ism regex matching the verb "lets" instead of only the contraction "let's", and a pending checker missing described-but-not-named moves. Both were patched with regression tests (commits <code>e2d56b8</code>, <code>0b58498</code>) and confirmed fixed on fresh samples in iteration 2. The length axis's single disagreement is an accepted em-dash token-count artifact (1/285).
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
@@ -370,7 +370,7 @@
     <div class="sec-head"><span class="sec-num">07</span><h2>Methodology integrity</h2></div>
     <p class="sec-sub">The controls that make the pick defensible, and the limitations stated in the same breath.</p>
     <div class="card">
-      <div class="chart-title">Run order — six runs in ABBA blocks</div>
+      <div class="chart-title">Run order: six runs in ABBA blocks</div>
       <div class="chart-holder" id="chart-runorder"></div>
       <ul id="method-list" style="list-style:none;margin:20px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:10px 22px"></ul>
       <div class="annotation">
