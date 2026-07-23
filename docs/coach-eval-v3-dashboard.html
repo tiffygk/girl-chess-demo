@@ -457,7 +457,7 @@
     <p class="sec-sub">The Results tab says which model won. This tab is about whether the process behind that answer deserves trust.</p>
     <div class="card">
       <p style="font-size:14px;color:var(--text-2);line-height:1.65;max-width:74ch">
-        This evaluation did not start out trustworthy. The first attempt had measurement gaps, and the second produced a result the project's stakeholder explicitly did not believe — she named three specific concerns. What follows is the record of what happened next: each concern investigated on its merits rather than defended against, the measuring stick itself audited before any number was reported, and one finding that argues against the winning model promoted to the headline instead of buried. The domain here is a game-coaching assistant, but nothing below is specific to it. This is how any comparison of two AI systems should earn a stakeholder's trust.
+        This evaluation did not start out trustworthy. The first attempt had measurement gaps, and the second produced a result the project's stakeholder explicitly did not believe. She named three specific concerns. What follows is the record of what happened next: each concern investigated on its merits rather than defended against, the measuring stick itself audited before any number was reported, and one finding that argues against the winning model promoted to the headline instead of buried. The domain here is a game-coaching assistant, but nothing below is specific to it. This is how any comparison of two AI systems should earn a stakeholder's trust.
       </p>
     </div>
   </section>
@@ -505,7 +505,7 @@
         <div class="concern">
           <div class="cn-head"><span class="cn-title">2. "The test looks biased against one system."</span><span class="otag artifact">stale-data artifact, verified not a bias</span></div>
           <p>One system appeared to leak internal engineering terms far more often (85% vs 38% clean), which read as either a test bias or a damning model trait.</p>
-          <p><b>What was done:</b> traced, not assumed. The gap came from a stale snapshot: the earlier test had run against an old version of the assistant's instruction text that itself mentioned the engine — the models were quoting their instructions back. The instruction fix already existed in the product; the rerun against current instructions showed both systems at 100%. The test was not biased, and neither model "talks like an engine."</p>
+          <p><b>What was done:</b> traced, not assumed. The gap came from a stale snapshot: the earlier test had run against an old version of the assistant's instruction text that itself mentioned the engine. The models were quoting their instructions back. The instruction fix already existed in the product; the rerun against current instructions showed both systems at 100%. The test was not biased, and neither model "talks like an engine."</p>
         </div>
         <div class="concern">
           <div class="cn-head"><span class="cn-title">3. "The scoring rule punishes one side unfairly."</span><span class="otag cleared">checked, does not reproduce</span></div>
@@ -529,7 +529,7 @@
       <div class="chart-holder" id="chart-audit"></div>
       <div class="annotation">
         <span class="an-label">The audit found real bugs, not noise</span>
-        Round 1 failed two of five measures, and both failures were genuine scoring bugs — cases where the grader failed replies a human would pass. One: a text rule meant to catch the banned casual phrase "let's" also flagged the ordinary verb "lets", as in "this lets you take the bishop." Two: the on-topic grader only gave credit when a reply named an exact board square, so a reply that clearly described the player's move in words was scored as off-topic. Both fixes were exact, describable rules with regression tests: require the apostrophe, accept a described move. Neither was "adjust until the numbers agree." Round 2 re-checked on fresh samples: every measure at or above 95%, no new failure modes, and one known 1-in-285 word-counting quirk documented and accepted rather than patched.
+        Round 1 failed two of five measures, and both failures were genuine scoring bugs: cases where the grader failed replies a human would pass. One: a text rule meant to catch the banned casual phrase "let's" also flagged the ordinary verb "lets", as in "this lets you take the bishop." Two: the on-topic grader only gave credit when a reply named an exact board square, so a reply that clearly described the player's move in words was scored as off-topic. Both fixes were exact, describable rules with regression tests: require the apostrophe, accept a described move. Neither was "adjust until the numbers agree." Round 2 re-checked on fresh samples: every measure at or above 95%, no new failure modes, and one known 1-in-285 word-counting quirk documented and accepted rather than patched.
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
@@ -540,7 +540,7 @@
 
   <!-- P5 -->
   <section id="p5">
-    <div class="sec-head"><span class="sec-num">05</span><h2>What the timing controls changed — and what they didn't</h2></div>
+    <div class="sec-head"><span class="sec-num">05</span><h2>What the timing controls changed, and what they didn't</h2></div>
     <p class="sec-sub">The same reliability measure, before and after the warm-up and alternated-ordering controls. Failure here means the player saw a canned fallback message instead of live coaching.</p>
     <div class="card">
       <div class="chart-title">Canned-fallback rate, uncontrolled baseline vs controlled rerun</div>
@@ -572,7 +572,7 @@
   <!-- P7 -->
   <section id="p7">
     <div class="sec-head"><span class="sec-num">07</span><h2>Retrospective: what didn't go well</h2></div>
-    <p class="sec-sub">The honest half of the ledger — what a stronger process would have prevented.</p>
+    <p class="sec-sub">The honest half of the ledger: what a stronger process would have prevented.</p>
     <div class="card">
       <ul class="retro-list went-wrong">
         <li><b>The first round wasted time on basic execution bugs.</b> Replies were being truncated by the display before they were scored, among other mechanical errors a simple smoke test would have caught before any full run.</li>
