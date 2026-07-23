@@ -1,32 +1,20 @@
-# React + TypeScript + Vite
+# Girl Chess
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A personal AI chess tutor: play a human-feeling opponent at any strength, get warned before a bad move lands, and get a debrief after every game showing the moments that decided it.
 
-Currently, two official plugins are available:
+I designed and built this 0-to-1 as a product person directing Claude Code, not as an engineer writing the code by hand. I wrote the spec first, ran a structured build process (plan, execute, adversarial review, gate), and shipped in increments with a live playtest driving each one.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+**Why it's interesting:** the coach kept giving confidently wrong chess advice, and the easy story was "the model isn't smart enough, try a bigger one." I measured before I believed it. The real cause was a fact gap: the coach was reasoning about chess from facts it was never given, instead of reading the engine analysis the app had already computed. Fixing the facts, not the model, dropped placement errors from 7.5% to 0 and explanation latency from 13-15 seconds to about 4, for a smaller and a larger model at once. That's the point of the exercise: measure the AI's output instead of trusting it.
 
-## React Compiler
+## Start here
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+**[docs/README.md](docs/README.md)** is the portfolio front door: the product spec, one increment plan-to-gate, three real review catches, the build-plan red team, and the coach-transport decision, plus the Chrome-tab list for a live walkthrough.
 
-## Expanding the Oxlint configuration
+`CLAUDE.md` is the architecture map and runbook a future Claude session reads first.
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## Running it
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
 ```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+./setup.sh   # once: installs Stockfish + lc0, downloads Maia weights
+npm run dev  # starts the server (3001) and the web client (5173)
+```
