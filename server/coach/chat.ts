@@ -486,6 +486,52 @@ function checkSideAttributionClaims(text: string, facts: ChatFactList): string[]
   return violations;
 }
 
+// ---- voice-guard validation ------------------------------------------------
+// Task 3a (R2, voice-enforcement round, 2026-07-22): the coach's own voice
+// rules (personas/coach.md's "## voice" block, Task 2 this round) ban raw
+// notation as a move's name, the infra words "engine"/"eval(uation)"/
+// "centipawn(s)"/"cp", and any stated number for the position -- but
+// nothing previously checked a reply's OWN prose against those rules, the
+// same gap checkDefenseClaims/checkPlacementClaims/checkSideAttributionClaims
+// close for chess-fact claims. Modeled on those checkers: precision over
+// recall, no engine call, three narrow claim shapes routed into the same
+// violations array validateChat already returns.
+const VOICE_BANNED_WORDS_RE = /\b(engine|evals?|evaluations?|centipawns?|cp)\b/gi;
+// A signed integer/decimal ("+50", "-3.4") -- a stated eval number for the
+// position. Deliberately requires the leading sign: an unsigned integer
+// ("mate in 3", "move 12") is a ply/mate count, not a position eval, and
+// the plan's must-pass cases exist precisely to keep this from overreaching
+// into them.
+const VOICE_SIGNED_NUMBER_RE = /[+-]\d+(?:\.\d+)?/g;
+// Any integer (signed or not) directly followed by "cp"/"centipawns", with
+// or without a space ("50cp", "50 centipawns") -- catches the unspaced form
+// VOICE_BANNED_WORDS_RE's \b can't (no word boundary between a digit and
+// the letters immediately following it).
+const VOICE_CP_NUMBER_RE = /\b\d+(?:\.\d+)?\s*(?:cp|centipawns?)\b/gi;
+
+function checkVoice(text: string): string[] {
+  const violations: string[] = [];
+
+  for (const raw of text.match(SAN_RE) ?? []) {
+    const token = stripTrailingPunctuation(raw);
+    if (isBareSquare(token)) continue; // geography, not notation -- cut #2 carve-out
+    violations.push(`voice-notation: ${token}`);
+  }
+
+  for (const m of text.matchAll(VOICE_BANNED_WORDS_RE)) {
+    violations.push(`voice-word: ${m[0].toLowerCase()}`);
+  }
+
+  for (const m of text.matchAll(VOICE_CP_NUMBER_RE)) {
+    violations.push(`voice-number: ${m[0]}`);
+  }
+  for (const m of text.matchAll(VOICE_SIGNED_NUMBER_RE)) {
+    violations.push(`voice-number: ${m[0]}`);
+  }
+
+  return violations;
+}
+
 export function validateChat(text: string, facts: ChatFactList): { ok: true } | { ok: false; violations: string[] } {
   const allowedSans = new Set(facts.allowedSans);
   const violations: string[] = [];
@@ -518,6 +564,10 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
   // unlike checkDefenseClaims above, there's no separate current/focus call
   // + filter needed here.
   violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
+  // Task 3a (R2, voice-enforcement round): no facts needed -- this checker
+  // is about the SHAPE of the prose (notation/banned words/numbers), not
+  // whether a claim matches the position.
+  violations.push(...checkVoice(text));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };
@@ -662,13 +712,36 @@ function buildChatPrompt(
   ].join("\n");
 }
 
+// Task 3a (R2, voice-enforcement round): one corrective line per voice
+// violation KIND actually present, appended after the base "mentioned X, Y"
+// line -- so a regen attempt gets told exactly what to fix, not just that
+// something was wrong. Keyed on the prefix checkVoice pushes onto each of
+// its violation strings (see that function).
+const VOICE_KIND_GUIDANCE: Record<string, string> = {
+  "voice-notation": "say the piece and where it goes in plain words, not notation.",
+  "voice-word": "never say engine -- say \"our chess brain\".",
+  "voice-number": "never state a number for the position.",
+};
+
 function correctiveSuffix(violations: string[]): string {
-  return [
+  const lines = [
     "",
     "",
     `your previous answer mentioned ${violations.join(", ")}, which isn't a move from this game.`,
-    "rewrite it using only moves from this game's fact list, 2-4 short lowercase sentences, no lists, no em-dashes, no emojis.",
-  ].join("\n");
+  ];
+  const seenKinds = new Set<string>();
+  for (const v of violations) {
+    const kind = v.split(":")[0];
+    const guidance = VOICE_KIND_GUIDANCE[kind];
+    if (guidance && !seenKinds.has(kind)) {
+      seenKinds.add(kind);
+      lines.push(guidance);
+    }
+  }
+  lines.push(
+    "rewrite it using only moves from this game's fact list, 2-4 short lowercase sentences, no lists, no em-dashes, no emojis."
+  );
+  return lines.join("\n");
 }
 
 // ---- chat loop (F16) -------------------------------------------------------
