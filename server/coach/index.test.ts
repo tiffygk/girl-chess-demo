@@ -356,8 +356,13 @@ describe("assembleFactList — recommendation.san allow-listing (F4)", () => {
     expect(facts.best).toBeUndefined();
     expect(facts.allowedSans).toContain("Bg5");
 
+    // R2 Task 2 (2026-07-22 voice rewrite): templates no longer print raw
+    // SAN (owner ruling -- plain language only), so the old
+    // `expect(text).toContain("Bg5")` proof is gone by design. The F4
+    // property itself is the allowedSans fold asserted above; the template
+    // output must still validate against its own fact list.
     const text = buildTemplateNarration(facts);
-    expect(text).toContain("Bg5");
+    expect(text).toContain("d8");
     expect(validateNarration(text, facts)).toEqual({ ok: true });
   });
 });
