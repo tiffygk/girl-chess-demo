@@ -78,6 +78,31 @@ export interface ChatContext {
     bestSan?: string;
     pvSans?: string[];
   };
+  // Task 1 (R2, pending-move context threading): the move she's picked up
+  // and placed on the board but has NOT confirmed -- src/game/GamePage.tsx's
+  // buildChatContext sends this whenever `pending` is truthy, regardless of
+  // verdict/tier state (silent/in-flight/coach-off all included). Before
+  // this, the pending move reached chat only once a verdict had landed AND
+  // its tier was nudge/warning, so a move judged "silent" (a fine move --
+  // exactly when she asks "why should i NOT put it here?") reached the
+  // coach as bare `{mode:"live"}`, and it truthfully answered "not sure
+  // which piece you mean." `tier`/`judged` describe the JUDGE's state, not
+  // confirmation: judged:false means no verdict has landed yet (still
+  // judging, or a confirm-only pending move that was never sent to judge at
+  // all). `san` is a CLIENT CLAIM, never trusted as-is -- assembleChatFactList
+  // below distrust-verifies it is actually legal from the position it just
+  // replayed before folding it into allowedSans or letting it reach the
+  // model; an illegal/stale claim (the player retracted the move, or the
+  // request raced a retarget) is dropped entirely. Deliberately no deltaCp
+  // or any other number here -- see factsForModel's own comment for why.
+  pendingMove?: {
+    pieceKind: string;
+    from: string;
+    to: string;
+    san?: string;
+    tier?: "silent" | "nudge" | "warning";
+    judged: boolean;
+  };
 }
 
 export interface ChatFactList {
@@ -271,6 +296,27 @@ export function assembleChatFactList(
 
   const { fen: currentFen, toMove, occupancy, legalSans, contested } = derivePositionFacts(chess);
 
+  // Task 1 (R2, pending-move context threading): ctx.pendingMove is a
+  // CLIENT CLAIM (GamePage's own local judgment of what's sitting on the
+  // board, unconfirmed), not fact -- distrust-verify it is actually a legal
+  // move from the position just replayed above (the same `chess` instance
+  // currentFen came from, so it can never disagree with it) before it is
+  // allowed to influence allowedSans or reach the model. An illegal/stale
+  // claim (the player retracted the move, or this request raced a retarget)
+  // is dropped entirely, never partially trusted -- same discipline as
+  // every other fact in this list, which is derived, never taken on faith.
+  let verifiedPendingMove = ctx.pendingMove;
+  if (verifiedPendingMove) {
+    const probe = new Chess(chess.fen());
+    let legal = false;
+    try {
+      legal = probe.move({ from: verifiedPendingMove.from, to: verifiedPendingMove.to, promotion: "q" }) != null;
+    } catch {
+      legal = false;
+    }
+    if (!legal) verifiedPendingMove = undefined;
+  }
+
   // Round 2026-07-22: the focused turning point's own moment. Replayed from
   // the same ordered move list, stopping BEFORE the focused ply, so it is
   // derived by exactly the discipline currentFen is (never hand-computed,
@@ -322,6 +368,9 @@ export function assembleChatFactList(
   // then gets its own true sentence rejected, because those moves are not
   // legal today. Same fold, same reason, as the bestSan/pvSans fold above.
   for (const s of focusPosition?.legalSans ?? []) sans.add(s);
+  // Task 1 fold (R2): the verified pending move's own san -- see the
+  // legality check above. Only ever a real legal move by the time it's here.
+  if (verifiedPendingMove?.san) sans.add(verifiedPendingMove.san);
 
   return {
     gameSans,
@@ -331,7 +380,10 @@ export function assembleChatFactList(
     legalSans,
     focusPosition,
     turningPoints: tpOut,
-    context: ctx,
+    // Task 1 (R2): context carries the VERIFIED pendingMove, never the raw
+    // client claim -- an illegal/dropped claim must not reach validateChat,
+    // factsForModel, or the advice_traces record either.
+    context: { ...ctx, pendingMove: verifiedPendingMove },
     allowedSans: [...sans],
     contested,
     perPlyAnalysis,
@@ -541,11 +593,27 @@ function hintFocusForModel(hintFocus: ChatContext["hintFocus"]) {
   return { ...rest, threat: threat ? stripThreatUci(threat) : undefined };
 }
 
+// Task 1 (R2): the pending move's model-facing projection. `confirmed:false`
+// and `note` are both explicit -- currentFen/occupancy in the surrounding
+// fact list describe the position BEFORE this move (it is not on the
+// board yet), and without an explicit statement of that a model reasoning
+// over "current" facts could easily treat a pending move as already played.
+// No deltaCp or any other number here -- pendingMove never carried one to
+// begin with (see ChatContext.pendingMove's own comment).
+function pendingMoveForModel(pendingMove: ChatContext["pendingMove"]) {
+  if (!pendingMove) return undefined;
+  return {
+    ...pendingMove,
+    confirmed: false,
+    note: "currentFen and occupancy above show the position BEFORE this move -- it has not been played yet.",
+  };
+}
+
 function factsForModel(facts: ChatFactList) {
   const { allowedSans, context, focusPosition, perPlyAnalysis, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
   if (context) {
-    const { best, threat, herMove, hintFocus, ...restCtx } = context;
+    const { best, threat, herMove, hintFocus, pendingMove, ...restCtx } = context;
     strippedContext = {
       ...restCtx,
       // The model-facing key is yourMove (the player is always "you"), even
@@ -554,6 +622,7 @@ function factsForModel(facts: ChatFactList) {
       threat: threat ? stripThreatUci(threat) : undefined,
       best: best ? { san: best.san, pieceKind: best.pieceKind, from: best.from, to: best.to } : undefined,
       hintFocus: hintFocusForModel(hintFocus),
+      pendingMove: pendingMoveForModel(pendingMove),
     };
   }
   // legalSansBelongTo labels the bare legalSans list with whose moves it
