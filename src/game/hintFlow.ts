@@ -23,6 +23,14 @@
 import { Chess } from "chess.js";
 import type { ThreatFacts, RecommendationFacts } from "./api";
 import { deriveOpportunity } from "../review/opportunity";
+// Debrief Plain-English Notation round, Task 1: pieceName and the SAN-based
+// renderer both moved to describeSanMove.ts (a shared module with no
+// dependency on this file, so this file can safely depend on it) —
+// re-exporting pieceName here keeps every existing import of it from
+// hintFlow.ts working unchanged.
+import { pieceName, describeSanMove } from "./describeSanMove";
+
+export { pieceName };
 
 export type HintLevel = 0 | 1 | 2 | 3 | 4 | 5;
 
@@ -31,20 +39,6 @@ const MAX_HINT_LEVEL: HintLevel = 5;
 /** Advances the ladder by one step, capped at the top (level 5). */
 export function nextHintLevel(level: HintLevel): HintLevel {
   return level >= MAX_HINT_LEVEL ? MAX_HINT_LEVEL : ((level + 1) as HintLevel);
-}
-
-const PIECE_NAMES: Record<string, string> = {
-  p: "pawn",
-  n: "knight",
-  b: "bishop",
-  r: "rook",
-  q: "queen",
-  k: "king",
-};
-
-/** Spells out a chess.js piece-kind letter ("n") as a word ("knight"). */
-export function pieceName(kind: string): string {
-  return PIECE_NAMES[kind] ?? "piece";
 }
 
 export interface HintFacts {
@@ -115,6 +109,10 @@ export function recommendationClause(
  * false claim). Returns null when the replay fails; callers then show SAN alone.
  */
 export function describeBestMove(facts: HintFacts, fen: string): string | null {
+  // Replay bestUci (never parse SAN here — a parse miss could render a
+  // false claim) purely to recover its SAN, then hand off to the shared
+  // renderer (describeSanMove.ts) for the actual plain-English text — same
+  // capture/check/castle/promotion handling, now with one implementation.
   let probe: Chess;
   try {
     probe = new Chess(fen);
@@ -132,13 +130,7 @@ export function describeBestMove(facts: HintFacts, fen: string): string | null {
     return null;
   }
   if (!mv) return null;
-  const suffix = probe.isCheckmate() ? ", checkmate" : probe.isCheck() ? ", check" : "";
-  if (mv.flags.includes("k")) return `castle short${suffix}`;
-  if (mv.flags.includes("q")) return `castle long${suffix}`;
-  const isCapture = mv.flags.includes("c") || mv.flags.includes("e");
-  let phrase = `${pieceName(facts.bestPieceKind)} ${isCapture ? "takes on" : "to"} ${mv.to}`;
-  if (mv.flags.includes("p") && mv.promotion) phrase += `, becoming a ${pieceName(mv.promotion)}`;
-  return `${phrase}${suffix}`;
+  return describeSanMove(mv.san, fen);
 }
 
 /**
