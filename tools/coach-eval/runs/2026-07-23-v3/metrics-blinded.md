@@ -13,8 +13,8 @@ failures and are excluded from every voice/length/pending denominator.
 | completeness | 100% (100%–100%) | 100% (100%–100%) |
 | length | 22% (19%–28%) | 55% (47%–56%) |
 | jargon (zero-tolerance) | 100% (100%–100%) | 100% (100%–100%) |
-| ai-ism / casing (zero-tolerance) | 98% (97%–100%) | 97% (93%–98%) |
-| pending-awareness | 79% (71%–93%) | 79% (79%–86%) |
+| ai-ism / casing (zero-tolerance) | 100% (98%–100%) | 98% (98%–100%) |
+| pending-awareness | 100% (100%–100%) | 100% (93%–100%) |
 
 ## pipeline health (pooled across reps)
 

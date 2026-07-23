@@ -894,7 +894,7 @@ right now that bishop is only attacked once and defended twice, so taking it yet
 
 **scorecard A:** completeness pass (ends cleanly) | length FAIL (77 words, 3 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing pass (clean)
 
-**scorecard B:** completeness pass (ends cleanly) | length FAIL (84 words, 3 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing FAIL (ai-ism:\blet'?s\b)
+**scorecard B:** completeness pass (ends cleanly) | length FAIL (84 words, 3 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing pass (clean)
 
 **owner: preference (A/B/tie):** 
 
@@ -1160,7 +1160,7 @@ that's fine. it steps your knight away from the bishop's attack while keeping it
 
 **scorecard A:** completeness pass (ends cleanly) | length pass (16 words, 2 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness pass (mentions the pending move)
 
-**scorecard B:** completeness pass (ends cleanly) | length pass (21 words, 2 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness FAIL (misses it -- see full answer above)
+**scorecard B:** completeness pass (ends cleanly) | length pass (21 words, 2 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness pass (mentions the pending move)
 
 **owner: preference (A/B/tie):** 
 
@@ -1248,7 +1248,7 @@ if you want a trade instead, your light-square bishop takes on c8 and her queen 
 
 taking on e5 opens the door for her knight on f6 to recapture toward the center, but here it also lines you up for her bishop on c8 to grab your bishop on f5 right back, since your own bishop on f5 has no defender. you'd trade a pawn for a pawn, but your bishop on f5 stays hanging after.
 
-**scorecard A:** completeness pass (ends cleanly) | length pass (42 words, 2 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness FAIL (misses it -- see full answer above)
+**scorecard A:** completeness pass (ends cleanly) | length pass (42 words, 2 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness pass (mentions the pending move)
 
 **scorecard B:** completeness pass (ends cleanly) | length FAIL (60 words, 2 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness pass (mentions the pending move)
 
@@ -1292,7 +1292,7 @@ your bishop on f5 is being attacked by her bishop on c8, and nothing of yours de
 
 pushing to h3 is a nudge, not a problem, but it skips the free trade sitting right there: your bishop on f5 can take the bishop on c8, and if the queen recaptures, you've traded off her good bishop for a pawn move's worth of time. taking on c8 is stronger since it settles the tension immediately instead of leaving your bishop on f5 to be dealt with later.
 
-**scorecard A:** completeness pass (ends cleanly) | length FAIL (46 words, 2 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness FAIL (misses it -- see full answer above)
+**scorecard A:** completeness pass (ends cleanly) | length FAIL (46 words, 2 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness pass (mentions the pending move)
 
 **scorecard B:** completeness pass (ends cleanly) | length FAIL (69 words, 2 sentences (limit 45w/3s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness pass (mentions the pending move)
 
@@ -1358,9 +1358,9 @@ that's fine. your knight steps out of her bishop's attack and keeps your pawn on
 
 that's fine. it pulls your knight out of the pin and off the fork on d4, keeping your pieces working together.
 
-**scorecard A:** completeness pass (ends cleanly) | length pass (17 words, 2 sentences (limit 20w/2s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness FAIL (misses it -- see full answer above)
+**scorecard A:** completeness pass (ends cleanly) | length pass (17 words, 2 sentences (limit 20w/2s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness pass (mentions the pending move)
 
-**scorecard B:** completeness pass (ends cleanly) | length FAIL (21 words, 2 sentences (limit 20w/2s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness FAIL (misses it -- see full answer above)
+**scorecard B:** completeness pass (ends cleanly) | length FAIL (21 words, 2 sentences (limit 20w/2s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness pass (mentions the pending move)
 
 **owner: preference (A/B/tie):** 
 
@@ -1446,9 +1446,9 @@ that's fine. your knight comes out and leans on her pawn on d4.
 
 that's fine. it develops your knight and adds a defender to your pawn on e4.
 
-**scorecard A:** completeness pass (ends cleanly) | length pass (13 words, 2 sentences (limit 20w/2s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness FAIL (misses it -- see full answer above)
+**scorecard A:** completeness pass (ends cleanly) | length pass (13 words, 2 sentences (limit 20w/2s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness pass (mentions the pending move)
 
-**scorecard B:** completeness pass (ends cleanly) | length pass (15 words, 2 sentences (limit 20w/2s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness FAIL (misses it -- see full answer above)
+**scorecard B:** completeness pass (ends cleanly) | length pass (15 words, 2 sentences (limit 20w/2s)) | jargon pass (clean) | ai-ism/casing pass (clean) | pending-awareness pass (mentions the pending move)
 
 **owner: preference (A/B/tie):** 
 
