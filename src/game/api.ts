@@ -413,6 +413,10 @@ export interface TurningPoint {
   kind: "swing" | "backfill" | "episode";
   missedPunish?: boolean;
   plyEnd?: number;
+  // 2026-07-22: mirrors server TurningPoint's crossedAdvantage — see that
+  // file's comment. Used by debrief copy (debriefBullets.ts/
+  // debriefLesson.ts) to grade a mistake/inaccuracy's severity.
+  crossedAdvantage?: boolean;
 }
 
 export interface MoveClassification {

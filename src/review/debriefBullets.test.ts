@@ -427,6 +427,43 @@ describe("watch next time: episode wins over the repeated-category fallback, cap
   });
 });
 
+describe("crossing-aware copy (2026-07-22 recalibration: firmer copy for a lead-losing mistake/inaccuracy)", () => {
+  it("a mistake that crossed from advantage to non-advantage gets firmer copy, not 'small slip'", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 15, san: "Bxe4", label: "mistake", deltaP: -0.1405, crossedAdvantage: true })],
+      classifications: [],
+      result: null,
+      totalPlies: 40,
+    });
+    const mistakeBullet = bullets.find((b) => b.ply === 15)!;
+    expect(mistakeBullet.text).not.toContain("small slip");
+    expect(mistakeBullet.text).toContain("lead");
+  });
+
+  it("an ordinary inaccuracy that did NOT cross keeps the existing gentle 'small slip' copy", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 20, san: "Nb6", label: "inaccuracy", deltaP: -0.09, crossedAdvantage: false })],
+      classifications: [],
+      result: null,
+      totalPlies: 40,
+    });
+    const inaccuracyBullet = bullets.find((b) => b.ply === 20)!;
+    expect(inaccuracyBullet.text).toContain("small slip");
+  });
+
+  it("an inaccuracy that DID cross also gets the firmer copy (not just mistake-labeled points)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 20, san: "Nb6", label: "inaccuracy", deltaP: -0.09, crossedAdvantage: true })],
+      classifications: [],
+      result: null,
+      totalPlies: 40,
+    });
+    const inaccuracyBullet = bullets.find((b) => b.ply === 20)!;
+    expect(inaccuracyBullet.text).not.toContain("small slip");
+    expect(inaccuracyBullet.text).toContain("lead");
+  });
+});
+
 describe("bullet count bounds (3 to 5)", () => {
   it("never drops below 3 even with completely empty input", () => {
     const bullets = debriefBullets({ turningPoints: [], classifications: [], result: null, totalPlies: 0 });
