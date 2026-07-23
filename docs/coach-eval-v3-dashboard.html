@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coach Eval v3 — Model Comparison</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:        #f4f3ef;
+    --surface:     #fcfcfb;
+    --surface-2:   #f7f6f2;
+    --text:        #14140f;
+    --text-2:      #52514e;
+    --muted:       #898781;
+    --hair:        #e1e0d9;
+    --hair-strong: #c7c6bd;
+    --series-sonnet: #2a78d6;
+    --series-opus:   #eb6834;
+    --good:        #0ca30c;
+    --critical:    #d03b3b;
+    --gap-fill:    rgba(42,120,214,0.10);
+    --chip-bg:     #eef4fc;
+    --chip-fg:     #1c5cab;
+    --shadow:      0 1px 2px rgba(20,20,15,0.06), 0 1px 12px rgba(20,20,15,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page:        #0c0c0b;
+      --surface:     #1a1a19;
+      --surface-2:   #201f1d;
+      --text:        #f4f3ee;
+      --text-2:      #c3c2b7;
+      --muted:       #918f88;
+      --hair:        #2c2c2a;
+      --hair-strong: #3b3a37;
+      --series-sonnet: #3987e5;
+      --series-opus:   #d95926;
+      --good:        #0ca30c;
+      --critical:    #e06767;
+      --gap-fill:    rgba(57,135,229,0.14);
+      --chip-bg:     #16283f;
+      --chip-fg:     #86b6ef;
+      --shadow:      0 1px 2px rgba(0,0,0,0.4), 0 1px 14px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:        #0c0c0b;
+    --surface:     #1a1a19;
+    --surface-2:   #201f1d;
+    --text:        #f4f3ee;
+    --text-2:      #c3c2b7;
+    --muted:       #918f88;
+    --hair:        #2c2c2a;
+    --hair-strong: #3b3a37;
+    --series-sonnet: #3987e5;
+    --series-opus:   #d95926;
+    --good:        #0ca30c;
+    --critical:    #e06767;
+    --gap-fill:    rgba(57,135,229,0.14);
+    --chip-bg:     #16283f;
+    --chip-fg:     #86b6ef;
+    --shadow:      0 1px 2px rgba(0,0,0,0.4), 0 1px 14px rgba(0,0,0,0.35);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--page);
+    color: var(--text);
+    line-height: 1.55;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 32px 24px 80px; }
+
+  /* Header */
+  .masthead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+  .kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  h1 { font-size: 28px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; margin: 6px 0 4px; }
+  .dek { color: var(--text-2); font-size: 15px; max-width: 60ch; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .meta-row b { color: var(--text-2); font-weight: 600; }
+  .theme-toggle {
+    border: 1px solid var(--hair-strong); background: var(--surface); color: var(--text-2);
+    border-radius: 999px; padding: 7px 14px; font-size: 12.5px; cursor: pointer; font-family: inherit;
+    display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  }
+  .theme-toggle:hover { border-color: var(--muted); color: var(--text); }
+
+  .legend-key { display: flex; gap: 18px; align-items: center; margin: 20px 0 4px; font-size: 13px; color: var(--text-2); flex-wrap: wrap; }
+  .legend-key .lk { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .swatch.sonnet { background: var(--series-sonnet); }
+  .swatch.opus { background: var(--series-opus); }
+
+  hr.rule { border: 0; border-top: 1px solid var(--hair); margin: 28px 0; }
+
+  /* Section */
+  section { margin-top: 34px; }
+  .sec-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  .sec-num { font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+  h2 { font-size: 19px; font-weight: 700; letter-spacing: -0.005em; }
+  .sec-sub { color: var(--text-2); font-size: 14px; margin: 2px 0 16px; max-width: 66ch; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--hair);
+    border-radius: 12px; padding: 22px 24px; box-shadow: var(--shadow);
+  }
+  .chart-holder { width: 100%; overflow-x: auto; }
+  .chart-holder svg { display: block; width: 100%; height: auto; max-width: 100%; }
+  .chart-title { font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: 10px; }
+
+  /* takeaway + annotation */
+  .takeaway {
+    display: flex; gap: 12px; align-items: flex-start; margin-top: 18px;
+    padding: 14px 16px; background: var(--surface-2); border-radius: 10px;
+    border: 1px solid var(--hair); font-size: 14px; color: var(--text);
+  }
+  .takeaway .tk-mark { flex: none; width: 3px; align-self: stretch; border-radius: 2px; background: var(--series-sonnet); }
+  .takeaway .tk-label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 700; display: block; margin-bottom: 3px; }
+  .annotation { margin-top: 16px; font-size: 13px; color: var(--text-2); line-height: 1.6; }
+  .annotation .an-label { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); font-weight: 700; display: block; margin-bottom: 4px; }
+  .verbatim {
+    margin-top: 14px; padding: 12px 16px; border-left: 3px solid var(--hair-strong);
+    background: var(--surface-2); border-radius: 0 8px 8px 0; font-size: 13.5px; color: var(--text);
+  }
+  .verbatim .vb-src { display: block; font-size: 11px; color: var(--muted); margin-top: 6px; font-style: normal; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+
+  /* Verdict card (section 1) */
+  .verdict { display: grid; grid-template-columns: 1fr; gap: 0; }
+  .verdict-top { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .verdict-winner { font-size: 46px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+  .verdict-kicker { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .verdict-decidedby { font-size: 15px; color: var(--text-2); }
+  .verdict-decidedby b { color: var(--text); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--chip-bg); color: var(--chip-fg); border-radius: 999px; padding: 4px 11px; font-size: 12px; font-weight: 600; }
+  .chip.pass { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good); }
+
+  .evidence { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 22px 0 6px; }
+  .ev-cell { border: 1px solid var(--hair); border-radius: 10px; padding: 13px 15px; background: var(--surface-2); }
+  .ev-axis { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
+  .ev-pair { display: flex; justify-content: space-between; align-items: baseline; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  .ev-pair .who { font-size: 12px; color: var(--text-2); }
+  .ev-pair .val { font-size: 16px; font-weight: 700; }
+  .ev-pair .rng { font-size: 11px; color: var(--muted); margin-left: 6px; font-weight: 500; }
+  .ev-cell.decides { border-color: color-mix(in srgb, var(--series-sonnet) 55%, var(--hair)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--series-sonnet) 40%, transparent) inset; }
+  .ev-tag { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--series-sonnet); margin-top: 9px; }
+
+  ol.rule-steps { list-style: none; counter-reset: step; margin: 6px 0 0; }
+  ol.rule-steps li { counter-increment: step; position: relative; padding: 9px 12px 9px 42px; font-size: 13.5px; color: var(--text-2); border-radius: 8px; }
+  ol.rule-steps li::before {
+    content: counter(step); position: absolute; left: 10px; top: 8px; width: 22px; height: 22px;
+    border-radius: 50%; background: var(--surface-2); border: 1px solid var(--hair-strong);
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--muted);
+  }
+  ol.rule-steps li.fired { background: color-mix(in srgb, var(--series-sonnet) 8%, transparent); color: var(--text); font-weight: 500; }
+  ol.rule-steps li.fired::before { background: var(--series-sonnet); border-color: var(--series-sonnet); color: #fff; }
+  ol.rule-steps li.fired .fired-tag { color: var(--series-sonnet); font-weight: 700; font-size: 11px; letter-spacing: 0.04em; }
+
+  /* panels grid (section 5) */
+  .panels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .panel { background: var(--surface-2); border: 1px solid var(--hair); border-radius: 10px; padding: 16px 18px; }
+  .panel.full { grid-column: 1 / -1; }
+  .panel-sub { font-size: 12px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  @media (max-width: 620px) { .panels { grid-template-columns: 1fr; } .evidence { grid-template-columns: 1fr; } }
+
+  /* svg text classes (theme-reactive) */
+  .ax-text { fill: var(--muted); font-size: 11px; font-family: inherit; font-variant-numeric: tabular-nums; }
+  .row-label { fill: var(--text); font-size: 13px; font-weight: 600; font-family: inherit; }
+  .row-sub { fill: var(--muted); font-size: 10.5px; font-family: inherit; font-variant-numeric: tabular-nums; }
+  .val-label { fill: var(--text); font-size: 12.5px; font-weight: 700; font-family: inherit; font-variant-numeric: tabular-nums; }
+  .note-label { fill: var(--text-2); font-size: 10.5px; font-family: inherit; }
+  .grid-line { stroke: var(--hair); stroke-width: 1; }
+  .baseline { stroke: var(--hair-strong); stroke-width: 1; }
+  .cap-line { stroke: var(--critical); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .cap-text { fill: var(--critical); font-size: 10.5px; font-weight: 600; font-family: inherit; }
+  .thresh-line { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .gap-band { fill: var(--gap-fill); }
+  .gap-text { fill: var(--series-sonnet); font-size: 10.5px; font-weight: 700; font-family: inherit; }
+
+  .whisker-sonnet { stroke: var(--series-sonnet); stroke-width: 3; stroke-linecap: round; }
+  .whisker-opus   { stroke: var(--series-opus);   stroke-width: 3; stroke-linecap: round; }
+  .conn-sonnet { stroke: var(--series-sonnet); stroke-width: 2; opacity: 0.5; }
+  .conn-opus   { stroke: var(--series-opus);   stroke-width: 2; opacity: 0.5; }
+  .dot-sonnet { fill: var(--series-sonnet); stroke: var(--surface); stroke-width: 2; }
+  .dot-opus   { fill: var(--series-opus);   stroke: var(--surface); stroke-width: 2; }
+  .hollow-sonnet { fill: var(--surface); stroke: var(--series-sonnet); stroke-width: 2.5; }
+  .hollow-opus   { fill: var(--surface); stroke: var(--series-opus);   stroke-width: 2.5; }
+  .bar-sonnet { fill: var(--series-sonnet); }
+  .bar-opus   { fill: var(--series-opus); }
+  .bar-neutral { fill: var(--series-sonnet); }
+
+  footer { margin-top: 46px; padding-top: 20px; border-top: 1px solid var(--hair); font-size: 12px; color: var(--muted); line-height: 1.7; }
+  footer .mono { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div>
+      <div class="kicker">Girl Chess · Coach model evaluation</div>
+      <h1>Coach Eval v3 — Sonnet vs Opus</h1>
+      <p class="dek">A controlled rerun comparing two model backends for the in-game coach, and the measurement discipline behind the pick: a cold-start control, an audited instrument, and honest exclusions.</p>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle light and dark theme">
+      <span id="themeIcon">◐</span><span id="themeLabel">Theme</span>
+    </button>
+  </div>
+
+  <div class="meta-row" id="metaRow"></div>
+
+  <div class="legend-key">
+    <span class="lk"><span class="swatch sonnet"></span> <b>Sonnet</b>&nbsp;(claude-sonnet-5, current default)</span>
+    <span class="lk"><span class="swatch opus"></span> <b>Opus</b>&nbsp;(claude-opus, challenger)</span>
+    <span class="lk" style="color:var(--muted)">Median dot · whisker = min–max across 3 reps</span>
+  </div>
+
+  <hr class="rule">
+
+  <!-- SECTION 1 -->
+  <section id="s1">
+    <div class="sec-head"><span class="sec-num">01</span><h2>Headline recommendation</h2></div>
+    <p class="sec-sub">A pre-registered rule (D4) picks the winner from the axes in priority order, so the choice is a rule outcome, not taste.</p>
+    <div class="card">
+      <div class="verdict-top">
+        <div>
+          <div class="verdict-kicker">Recommendation — decided by <b id="decidedBy"></b></div>
+          <div class="verdict-winner" id="verdictWinner"></div>
+        </div>
+        <div class="verdict-decidedby" id="verdictReasoning"></div>
+      </div>
+
+      <div class="evidence" id="evidenceRow"></div>
+
+      <div style="margin-top:22px">
+        <div class="an-label" style="font-size:11px;letter-spacing:0.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:6px">Decision rule (D4), evaluated in order</div>
+        <ol class="rule-steps">
+          <li><b>Jargon-clean.</b> Take it if the median gap &gt; 3 points and the rep ranges are disjoint. <span style="color:var(--muted)">Tied at 100%, falls through.</span></li>
+          <li class="fired"><b>Length compliance.</b> Take it if the median gap &gt; 5 points and disjoint. <span class="fired-tag">— this step fired: gap 33 pts, disjoint → sonnet</span></li>
+          <li><b>Audited pending-awareness.</b> Take it if the gap &gt; 15 points and disjoint, only if the checker passed the 95% audit. <span style="color:var(--muted)">Never reached.</span></li>
+          <li><b>Tie.</b> Keep the current default, sonnet. <span style="color:var(--muted)">Not needed.</span></li>
+        </ol>
+      </div>
+
+      <div class="annotation" style="margin-top:20px">
+        <span class="an-label">Cost to adopt</span>
+        The winner equals the current default (<code>AGENT_SDK_MODEL = claude-sonnet-5</code>), so adopting the recommendation means changing nothing.
+      </div>
+
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>Keep sonnet: jargon tied at 100% for both models, so length compliance decided it, sonnet 55% vs opus 22% with no overlap across reps.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 2 -->
+  <section id="s2">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Jargon-clean rate by model</h2></div>
+    <p class="sec-sub">Share of eligible replies with no chess-engine jargon, under the corrected persona.</p>
+    <div class="card">
+      <div class="chart-title">Jargon-clean rate (0–100%)</div>
+      <div class="chart-holder" id="chart-jargon"></div>
+      <div class="annotation">
+        <span class="an-label">Why the baseline gap vanished</span>
+        Measured under the corrected persona. The baseline's 85% vs 38% "engine" gap traced to the persona at commit <code>ef8aa98</code>, which literally said "the engine's read". Current main's persona (commit <code>10619ce</code>) contains zero "engine" language, one un-branched prompt path, plus a runtime voice guard.
+      </div>
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>Both models are 100% jargon-clean in all six runs; the baseline's 85% vs 38% gap was the old persona telling the coach about the engine, not a model difference.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 3 -->
+  <section id="s3">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Length-budget compliance</h2><span class="chip" style="background:color-mix(in srgb, var(--series-sonnet) 14%, transparent);color:var(--chip-fg)">deciding axis</span></div>
+    <p class="sec-sub">Share of replies inside the persona's length budget (45 words / 3 sentences; 20 words for affirmations). The rep ranges are disjoint, which is the decision criterion.</p>
+    <div class="card">
+      <div class="chart-title">Length-budget compliance (0–100%)</div>
+      <div class="chart-holder" id="chart-length"></div>
+      <div class="verbatim">
+        "template/timeout/error rows are pipeline failures and are excluded from this denominator — verified in harness code and in baseline denominators 55/65".
+        <span class="vb-src">Exclusion rule, quoted verbatim from plan.md. Per-rep n values (57/62/60 and 64/65/65) equal 65 minus each rep's pipeline failures, making the exclusion visible on inspection.</span>
+      </div>
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>Sonnet lands inside the 45-word budget 55% of the time (47 to 56 across reps) against opus at 22% (19 to 28); the ranges do not overlap and this axis decided the pick.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 4 -->
+  <section id="s4">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Pending-awareness (audited)</h2></div>
+    <p class="sec-sub">Share of pending-move replies that genuinely engage her held move, judged by reading, not by substring match. n = 14 pending rows per rep, so one row moves this axis 7 points.</p>
+    <div class="card">
+      <div class="chart-title">Pending-awareness rate (0–100%)</div>
+      <div class="chart-holder" id="chart-pending"></div>
+      <div class="annotation">
+        <span class="an-label">This is the audited number</span>
+        Genuine engagement judged by reading, at 28/28 checker agreement at audit iteration 2. The earlier substring proxy both false-passed on coincidental square mentions and false-failed on described-but-not-named moves; it was fixed and re-audited before this number was accepted.
+      </div>
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>Both models engage her pending move essentially every time (medians 100%, sonnet's one miss is a single reply in rep 3), so this axis was audited, eligible, and never needed.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 5 -->
+  <section id="s5">
+    <div class="sec-head"><span class="sec-num">05</span><h2>Pipeline health</h2><span class="chip" style="background:color-mix(in srgb, var(--series-opus) 16%, transparent);color:var(--series-opus)">opus's ledger</span></div>
+    <p class="sec-sub">Template fallbacks, latency, and the cold-start control. This is the strongest argument on opus's side, and the failure gap survived the control.</p>
+    <div class="card">
+      <div class="panels">
+        <div class="panel">
+          <div class="chart-title">Template-fallback rate per rep (0–15%)</div>
+          <div class="chart-holder" id="chart-template"></div>
+          <div class="panel-sub" id="template-pooled"></div>
+        </div>
+        <div class="panel">
+          <div class="chart-title">Cold-start control: sonnet fallback rate</div>
+          <div class="chart-holder" id="chart-coldstart"></div>
+          <div class="panel-sub">Warmup = 3 discarded calls per process, plus ABBA block order. Baseline (uncontrolled): sonnet 10/65 front-loaded, opus 0/65.</div>
+        </div>
+        <div class="panel full">
+          <div class="chart-title">Latency per rep: median and p90 (seconds), against the 45s cap</div>
+          <div class="chart-holder" id="chart-latency"></div>
+          <div class="panel-sub" id="latency-pooled"></div>
+        </div>
+      </div>
+      <div class="annotation">
+        <span class="an-label">The failure gap survived the control</span>
+        The sonnet-vs-opus failure gap survived the cold-start control (warmup 3 + ABBA) and is a real, controlled finding this time. open-07 and open-11 fail in all three sonnet reps; all failures are template fallbacks at the 45s cap, with zero hard errors. In product terms, sonnet serves the canned template on roughly 1 turn in 12.
+      </div>
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>Even warm and counterbalanced, sonnet falls back to template on 8, 3, and 5 of 65 turns across reps while opus does once in 195, because sonnet's p90 latency (29 to 45s) rides the 45s cap on the same hard questions.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 6 -->
+  <section id="s6">
+    <div class="sec-head"><span class="sec-num">06</span><h2>Instrument integrity</h2><span class="chip pass" id="instrument-chip"></span></div>
+    <p class="sec-sub">Every axis number on this page is measured by a checker whose agreement with hand labels was itself audited. Bars show final checker-vs-hand-label agreement against a 95% threshold.</p>
+    <div class="card">
+      <div class="chart-title">Checker vs hand-label agreement, per axis (0–100%)</div>
+      <div class="chart-holder" id="chart-instrument"></div>
+      <div class="annotation">
+        <span class="an-label">Two audit iterations</span>
+        Two iterations of hand-labeling (473 then 466 rows) against the checker. Iteration 1 found two false-negative bugs: an AI-ism regex matching the verb "lets" instead of only the contraction "let's", and a pending checker missing described-but-not-named moves. Both were patched with regression tests (commits <code>e2d56b8</code>, <code>0b58498</code>) and confirmed fixed on fresh samples in iteration 2. The length axis's single disagreement is a known, accepted em-dash token-count artifact (1/285).
+      </div>
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>Every axis's checker agrees with hand labels at 99.6% or better after two audit iterations, so the numbers on this page are measured by a verified instrument, not a trusted script.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 7 -->
+  <section id="s7">
+    <div class="sec-head"><span class="sec-num">07</span><h2>Methodology integrity</h2></div>
+    <p class="sec-sub">The controls that make the pick defensible, and the limitations stated in the same breath.</p>
+    <div class="card">
+      <div class="chart-title">Run order — six runs in ABBA blocks</div>
+      <div class="chart-holder" id="chart-runorder"></div>
+      <ul id="method-list" style="list-style:none;margin:20px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:10px 22px"></ul>
+      <div class="annotation">
+        <span class="an-label">Stated honestly</span>
+        ABBA residual imbalance: sonnet ran first in 2 of 3 blocks, so warmup is the primary control and ordering is the belt-and-suspenders. Limitations: 3 reps on one night; subscription-backend latency variance (the same prompt ranged 20s to 80s); the mechanical pick stands in for the owner's blinded read until her morning review.
+      </div>
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>Three reps per model in counterbalanced blocks, warmed processes, a sha256-guarded database, a pre-registered decision rule, and a blinded artifact waiting for a human read.</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div>Source data embedded inline in this file, verbatim from
+      <span class="mono">tools/coach-eval/runs/2026-07-23-v3/summary.json</span> and
+      <span class="mono">decision.json</span>. Instrument agreement, cold-start baseline, and provenance constants are from the audit ledger (<span class="mono">audit/iter-2.md</span>) and <span class="mono">progress.md</span>.</div>
+    <div id="footer-gen" style="margin-top:6px"></div>
+    <div style="margin-top:6px">All axis numbers are post-audit-loop. Self-contained: no external requests, works offline from a local file.</div>
+  </footer>
+
+</div>
+
+<script>
+"use strict";
+
+/* ============ EMBEDDED DATA (verbatim from summary.json / decision.json) ============ */
+const SUMMARY = {"generatedAt":"2026-07-23T12:06:11.663Z","questionCount":65,"wiring":"threaded","repOrder":["sonnet-rep1","opus-rep1","opus-rep2","sonnet-rep2","sonnet-rep3","opus-rep3"],"sonnet":{"reps":3,"axes":{"completeness":{"median":1,"min":1,"max":1,"perRep":[{"rep":1,"rate":1,"n":57},{"rep":2,"rate":1,"n":62},{"rep":3,"rate":1,"n":60}]},"length":{"median":0.5483870967741935,"min":0.4666666666666667,"max":0.5614035087719298,"perRep":[{"rep":1,"rate":0.5614035087719298,"n":57},{"rep":2,"rate":0.5483870967741935,"n":62},{"rep":3,"rate":0.4666666666666667,"n":60}]},"jargon":{"median":1,"min":1,"max":1,"perRep":[{"rep":1,"rate":1,"n":57},{"rep":2,"rate":1,"n":62},{"rep":3,"rate":1,"n":60}]},"aiIsmCasing":{"median":0.9838709677419355,"min":0.9833333333333333,"max":1,"perRep":[{"rep":1,"rate":1,"n":57},{"rep":2,"rate":0.9838709677419355,"n":62},{"rep":3,"rate":0.9833333333333333,"n":60}]},"pendingAwareness":{"median":1,"min":0.9285714285714286,"max":1,"perRep":[{"rep":1,"rate":1,"n":14},{"rep":2,"rate":1,"n":14},{"rep":3,"rate":0.9285714285714286,"n":14}]}},"pipeline":{"perRep":[{"rep":1,"templateRate":0.12307692307692308,"timeoutCount":0,"errorCount":0,"medianLatencyMs":7006,"p90LatencyMs":44500.4},{"rep":2,"templateRate":0.046153846153846156,"timeoutCount":0,"errorCount":0,"medianLatencyMs":9786,"p90LatencyMs":37100.4},{"rep":3,"templateRate":0.07692307692307693,"timeoutCount":0,"errorCount":0,"medianLatencyMs":9305,"p90LatencyMs":29450.4}],"pooled":{"templateRate":0.08205128205128205,"medianLatencyMs":8929,"p90LatencyMs":37100.4,"totalRows":195,"failureRows":16}}},"opus":{"reps":3,"axes":{"completeness":{"median":1,"min":1,"max":1,"perRep":[{"rep":1,"rate":1,"n":64},{"rep":2,"rate":1,"n":65},{"rep":3,"rate":1,"n":65}]},"length":{"median":0.2153846153846154,"min":0.1875,"max":0.27692307692307694,"perRep":[{"rep":1,"rate":0.1875,"n":64},{"rep":2,"rate":0.2153846153846154,"n":65},{"rep":3,"rate":0.27692307692307694,"n":65}]},"jargon":{"median":1,"min":1,"max":1,"perRep":[{"rep":1,"rate":1,"n":64},{"rep":2,"rate":1,"n":65},{"rep":3,"rate":1,"n":65}]},"aiIsmCasing":{"median":1,"min":0.984375,"max":1,"perRep":[{"rep":1,"rate":0.984375,"n":64},{"rep":2,"rate":1,"n":65},{"rep":3,"rate":1,"n":65}]},"pendingAwareness":{"median":1,"min":1,"max":1,"perRep":[{"rep":1,"rate":1,"n":14},{"rep":2,"rate":1,"n":14},{"rep":3,"rate":1,"n":14}]}},"pipeline":{"perRep":[{"rep":1,"templateRate":0.015384615384615385,"timeoutCount":0,"errorCount":0,"medianLatencyMs":9315,"p90LatencyMs":13779.6},{"rep":2,"templateRate":0,"timeoutCount":0,"errorCount":0,"medianLatencyMs":8534,"p90LatencyMs":13537.4},{"rep":3,"templateRate":0,"timeoutCount":0,"errorCount":0,"medianLatencyMs":8262,"p90LatencyMs":13800.2}],"pooled":{"templateRate":0.005128205128205128,"medianLatencyMs":8707,"p90LatencyMs":13779.6,"totalRows":195,"failureRows":1}}}};
+
+const DECISION = {"winner":"sonnet","decidedBy":"length","reasoning":"jargon a wash; length-budget compliance decides: sonnet 55% [47–56%] vs opus 22% [19–28%]; median gap > 0.05 and rep ranges disjoint -> sonnet wins.","inputs":{"jargon":{"sonnet":{"median":1,"min":1,"max":1},"opus":{"median":1,"min":1,"max":1}},"length":{"sonnet":{"median":0.5483870967741935,"min":0.4666666666666667,"max":0.5614035087719298},"opus":{"median":0.2153846153846154,"min":0.1875,"max":0.27692307692307694}},"pending":{"sonnet":{"median":1,"min":0.9285714285714286,"max":1},"opus":{"median":1,"min":1,"max":1}},"pendingAudited":true}};
+
+/* ============ LEDGER CONSTANTS (from audit/iter-2.md + progress.md) ============ */
+const LEDGER = {
+  instrument: {
+    axes: [
+      {axis:"jargon", num:50, den:50},
+      {axis:"length", num:284, den:285},
+      {axis:"completeness", num:50, den:50},
+      {axis:"ai-ism / casing", num:53, den:53},
+      {axis:"pending-awareness", num:28, den:28}
+    ],
+    threshold: 0.95, iterationsUsed: 2, iterationCap: 10, verdict: "PASS"
+  },
+  coldStart: { baselinePct: 0.154, tonightPct: 0.082 },
+  dbSha: "9fea51c08381…",
+  warmupPerProcess: 3
+};
+
+/* ============ FORMAT HELPERS ============ */
+const pct = f => Math.round(f * 100) + "%";
+const pctNum = f => Math.round(f * 100);
+const sec = ms => (ms / 1000).toFixed(1);
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+/* ============ GENERIC DOT-WITH-RANGE (horizontal, 0-100%) ============ */
+function dotRange(rows, opts) {
+  opts = opts || {};
+  const W = 760, ML = 120, MR = 66;
+  const PL = ML, PR = W - MR, PW = PR - PL;
+  const topPad = 22, rowH = 78, axisH = 40;
+  const H = topPad + rows.length * rowH + axisH;
+  const xF = f => PL + f * PW;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.aria||"dot with range chart")}">`;
+
+  // gridlines + axis labels
+  const ticks = [0, .25, .5, .75, 1];
+  for (const t of ticks) {
+    const x = xF(t);
+    s += `<line class="grid-line" x1="${x}" y1="${topPad}" x2="${x}" y2="${topPad + rows.length*rowH}"/>`;
+    s += `<text class="ax-text" x="${x}" y="${H - 16}" text-anchor="middle">${pctNum(t)}%</text>`;
+  }
+  s += `<line class="baseline" x1="${PL}" y1="${topPad + rows.length*rowH}" x2="${PR}" y2="${topPad + rows.length*rowH}"/>`;
+
+  // optional gap band (between two ranges)
+  if (opts.gapBand) {
+    const gx1 = xF(opts.gapBand[0]), gx2 = xF(opts.gapBand[1]);
+    s += `<rect class="gap-band" x="${gx1}" y="${topPad+4}" width="${gx2-gx1}" height="${rows.length*rowH-8}" rx="4"/>`;
+    const gmid = (gx1 + gx2) / 2;
+    s += `<text class="gap-text" x="${gmid}" y="${topPad + rows.length*rowH/2}" text-anchor="middle">${esc(opts.gapLabel||"")}</text>`;
+  }
+
+  rows.forEach((r, i) => {
+    const cy = topPad + i * rowH + rowH/2 - 4;
+    const suf = r.model; // 'sonnet' | 'opus'
+    // labels
+    s += `<text class="row-label" x="8" y="${cy - 2}">${esc(r.label)}</text>`;
+    if (r.sub) s += `<text class="row-sub" x="8" y="${cy + 15}">${esc(r.sub)}</text>`;
+
+    if (r.min === r.max) {
+      // collapsed: vertical tick
+      const x = xF(r.median);
+      s += `<line class="whisker-${suf}" x1="${x}" y1="${cy-9}" x2="${x}" y2="${cy+9}"/>`;
+    } else {
+      s += `<line class="whisker-${suf}" x1="${xF(r.min)}" y1="${cy}" x2="${xF(r.max)}" y2="${cy}"/>`;
+    }
+    // per-rep dots (smaller)
+    (r.perRep||[]).forEach(pr => {
+      s += `<circle class="dot-${suf}" cx="${xF(pr)}" cy="${cy}" r="4.5"/>`;
+    });
+    // median dot (larger, on top)
+    s += `<circle class="dot-${suf}" cx="${xF(r.median)}" cy="${cy}" r="7.5"/>`;
+    // median value above
+    const mv = xF(r.median);
+    const anchor = r.median > 0.9 ? "end" : "middle";
+    const mvx = r.median > 0.9 ? mv - 2 : mv;
+    s += `<text class="val-label" x="${mvx}" y="${cy - 15}" text-anchor="${anchor}">${pct(r.median)}</text>`;
+    // range / caption below
+    if (r.rangeLabel) s += `<text class="note-label" x="${mv}" y="${cy + 20}" text-anchor="middle">${esc(r.rangeLabel)}</text>`;
+    // dot notes (targeted callouts)
+    (r.dotNotes||[]).forEach(dn => {
+      s += `<text class="note-label" x="${xF(dn.value)}" y="${cy + (dn.dy||34)}" text-anchor="middle">${esc(dn.text)}</text>`;
+    });
+  });
+  s += `</svg>`;
+  return s;
+}
+
+/* ============ GROUPED COLUMNS (template rate per rep) ============ */
+function groupedColumns(el) {
+  const groups = [1,2,3].map(rep => ({
+    label: "Rep " + rep,
+    bars: [
+      { model:"sonnet", value: SUMMARY.sonnet.pipeline.perRep[rep-1].templateRate },
+      { model:"opus",   value: SUMMARY.opus.pipeline.perRep[rep-1].templateRate }
+    ]
+  }));
+  const yMax = 0.15;
+  const W = 360, H = 220, ML = 34, MR = 10, top = 22, bot = 40;
+  const PT = top, PB = H - bot, PH = PB - PT;
+  const plotW = W - ML - MR;
+  const gw = plotW / groups.length;
+  const bw = 22, bgap = 8;
+  const yF = v => PB - (v / yMax) * PH;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="template fallback rate per rep">`;
+  // y gridlines
+  [0, .05, .10, .15].forEach(t => {
+    const y = yF(t);
+    s += `<line class="grid-line" x1="${ML}" y1="${y}" x2="${W-MR}" y2="${y}"/>`;
+    s += `<text class="ax-text" x="${ML-6}" y="${y+3}" text-anchor="end">${pctNum(t)}%</text>`;
+  });
+  groups.forEach((g, gi) => {
+    const gx = ML + gi * gw;
+    const clusterW = bw*2 + bgap;
+    const startX = gx + (gw - clusterW)/2;
+    g.bars.forEach((b, bi) => {
+      const x = startX + bi * (bw + bgap);
+      const y = yF(b.value);
+      const h = PB - y;
+      s += `<rect class="bar-${b.model}" x="${x}" y="${y}" width="${bw}" height="${Math.max(h,0.5)}" rx="4"/>`;
+      s += `<text class="val-label" x="${x + bw/2}" y="${y - 6}" text-anchor="middle" style="font-size:11px">${pct(b.value)}</text>`;
+    });
+    s += `<text class="ax-text" x="${gx + gw/2}" y="${H - 16}" text-anchor="middle">${esc(g.label)}</text>`;
+  });
+  s += `</svg>`;
+  el.innerHTML = s;
+}
+
+/* ============ COLD-START BEFORE/AFTER (two horizontal bars) ============ */
+function coldStart(el) {
+  const rows = [
+    { label:"Baseline (uncontrolled)", value: LEDGER.coldStart.baselinePct, sub:"cold start" },
+    { label:"Tonight (warmed)", value: LEDGER.coldStart.tonightPct, sub:"warmup 3 + ABBA" }
+  ];
+  const xMax = 0.20;
+  const W = 360, ML = 12, MR = 54, top = 14, rowH = 56;
+  const H = top + rows.length * rowH + 24;
+  const PL = ML, PR = W - MR, PW = PR - PL;
+  const xF = v => PL + (v / xMax) * PW;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="cold-start before after">`;
+  [0, .05, .10, .15, .20].forEach(t => {
+    const x = xF(t);
+    s += `<line class="grid-line" x1="${x}" y1="${top}" x2="${x}" y2="${top + rows.length*rowH}"/>`;
+    s += `<text class="ax-text" x="${x}" y="${H-8}" text-anchor="middle">${pctNum(t)}%</text>`;
+  });
+  rows.forEach((r, i) => {
+    const y = top + i * rowH + 12;
+    const bh = 18;
+    s += `<text class="row-sub" x="${PL}" y="${y - 4}" style="font-size:11.5px;fill:var(--text-2);font-weight:600">${esc(r.label)}</text>`;
+    s += `<rect class="bar-sonnet" x="${PL}" y="${y}" width="${Math.max(xF(r.value)-PL,1)}" height="${bh}" rx="4"/>`;
+    s += `<text class="val-label" x="${xF(r.value)+6}" y="${y + bh - 4}" style="font-size:12px">${pct(r.value)}</text>`;
+  });
+  s += `</svg>`;
+  el.innerHTML = s;
+}
+
+/* ============ LATENCY DUMBBELL (median + p90 per rep, 0-48s) ============ */
+function latencyDumbbell(el) {
+  const rows = [];
+  ["sonnet","opus"].forEach(m => {
+    SUMMARY[m].pipeline.perRep.forEach(pr => {
+      rows.push({ model:m, label:(m[0].toUpperCase()+m.slice(1))+" rep "+pr.rep, median:pr.medianLatencyMs, p90:pr.p90LatencyMs });
+    });
+  });
+  const xMaxS = 48;
+  const W = 760, ML = 118, MR = 58, top = 30, rowH = 34;
+  const H = top + rows.length * rowH + 34;
+  const PL = ML, PR = W - MR, PW = PR - PL;
+  const xF = s => PL + (s / xMaxS) * PW;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="latency median and p90 per rep">`;
+  // x gridlines
+  [0,10,20,30,40].forEach(t => {
+    const x = xF(t);
+    s += `<line class="grid-line" x1="${x}" y1="${top-6}" x2="${x}" y2="${top + rows.length*rowH}"/>`;
+    s += `<text class="ax-text" x="${x}" y="${H-14}" text-anchor="middle">${t}s</text>`;
+  });
+  // cap line at 45s
+  const capX = xF(45);
+  s += `<line class="cap-line" x1="${capX}" y1="${top-6}" x2="${capX}" y2="${top + rows.length*rowH}"/>`;
+  s += `<text class="cap-text" x="${capX}" y="${top-12}" text-anchor="middle">45s timeout cap</text>`;
+  s += `<text class="ax-text" x="${W-14}" y="${H-14}" text-anchor="end">seconds</text>`;
+
+  rows.forEach((r, i) => {
+    const cy = top + i * rowH + rowH/2;
+    const suf = r.model;
+    s += `<text class="row-label" x="8" y="${cy+4}" style="font-size:12px">${esc(r.label)}</text>`;
+    const mx = xF(r.median/1000), px = xF(r.p90/1000);
+    s += `<line class="conn-${suf}" x1="${mx}" y1="${cy}" x2="${px}" y2="${cy}"/>`;
+    // median filled, p90 hollow
+    s += `<circle class="dot-${suf}" cx="${mx}" cy="${cy}" r="5.5"/>`;
+    s += `<circle class="hollow-${suf}" cx="${px}" cy="${cy}" r="5.5"/>`;
+    // labels: median left, p90 right
+    s += `<text class="note-label" x="${mx - 9}" y="${cy+4}" text-anchor="end">${sec(r.median)}</text>`;
+    s += `<text class="note-label" x="${px + 9}" y="${cy+4}" text-anchor="start">${sec(r.p90)}</text>`;
+  });
+  s += `</svg>`;
+  // legend
+  el.innerHTML = s +
+    `<div style="display:flex;gap:20px;margin-top:8px;font-size:11.5px;color:var(--text-2);flex-wrap:wrap">
+      <span style="display:inline-flex;align-items:center;gap:6px"><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="var(--muted)"/></svg> median</span>
+      <span style="display:inline-flex;align-items:center;gap:6px"><svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="var(--surface)" stroke="var(--muted)" stroke-width="2"/></svg> p90</span>
+    </div>`;
+}
+
+/* ============ HORIZONTAL BARS (instrument agreement, 0-100%) ============ */
+function instrumentBars(el) {
+  const axes = LEDGER.instrument.axes;
+  const W = 720, ML = 150, MR = 96, top = 26, rowH = 40, bot = 20;
+  const H = top + axes.length * rowH + bot;
+  const PL = ML, PR = W - MR, PW = PR - PL;
+  const xF = f => PL + f * PW;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="checker vs hand-label agreement per axis">`;
+  // gridlines
+  [0,.25,.5,.75,1].forEach(t => {
+    const x = xF(t);
+    s += `<line class="grid-line" x1="${x}" y1="${top-6}" x2="${x}" y2="${top + axes.length*rowH}"/>`;
+    s += `<text class="ax-text" x="${x}" y="${H-4}" text-anchor="middle">${pctNum(t)}%</text>`;
+  });
+  // 95% threshold
+  const tx = xF(LEDGER.instrument.threshold);
+  s += `<line class="thresh-line" x1="${tx}" y1="${top-6}" x2="${tx}" y2="${top + axes.length*rowH}"/>`;
+  s += `<text class="cap-text" x="${tx}" y="${top-12}" text-anchor="middle" style="fill:var(--muted)">95% audit threshold</text>`;
+  axes.forEach((a, i) => {
+    const rate = a.num / a.den;
+    const cy = top + i * rowH + rowH/2;
+    const bh = 18;
+    s += `<text class="row-label" x="8" y="${cy+4}" style="font-size:12.5px">${esc(a.axis)}</text>`;
+    s += `<rect class="bar-neutral" x="${PL}" y="${cy-bh/2}" width="${Math.max(xF(rate)-PL,1)}" height="${bh}" rx="4"/>`;
+    s += `<text class="val-label" x="${xF(rate)+8}" y="${cy+4}" text-anchor="start" style="font-size:11.5px">${a.num}/${a.den} (${pct(rate)})</text>`;
+  });
+  s += `</svg>`;
+  el.innerHTML = s;
+}
+
+/* ============ RUN-ORDER TIMELINE (ABBA blocks) ============ */
+function runOrder(el) {
+  const order = SUMMARY.repOrder;
+  const blocks = [[order[0],order[1]],[order[2],order[3]],[order[4],order[5]]];
+  const W = 760, H = 96, pad = 8;
+  const blockGap = 20;
+  const blockW = (W - blockGap*2 - pad*2) / 3;
+  const cellGap = 8;
+  const cellW = (blockW - cellGap) / 2;
+  const cellH = 40, cellY = 30;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="six runs in three ABBA blocks">`;
+  blocks.forEach((blk, bi) => {
+    const bx = pad + bi * (blockW + blockGap);
+    s += `<text class="ax-text" x="${bx + blockW/2}" y="18" text-anchor="middle" style="font-weight:600;fill:var(--text-2)">Block ${bi+1}</text>`;
+    blk.forEach((run, ci) => {
+      const model = run.startsWith("sonnet") ? "sonnet" : "opus";
+      const x = bx + ci * (cellW + cellGap);
+      const letter = model === "sonnet" ? "A" : "B";
+      s += `<rect class="bar-${model}" x="${x}" y="${cellY}" width="${cellW}" height="${cellH}" rx="7" opacity="0.92"/>`;
+      s += `<text x="${x + cellW/2}" y="${cellY + 18}" text-anchor="middle" style="fill:#fff;font-size:12px;font-weight:700;font-family:inherit">${letter}</text>`;
+      s += `<text x="${x + cellW/2}" y="${cellY + 33}" text-anchor="middle" style="fill:#fff;font-size:10.5px;font-family:inherit;opacity:0.92">${esc(run.replace("-rep"," r"))}</text>`;
+    });
+  });
+  s += `<text class="ax-text" x="${pad}" y="${H-6}" text-anchor="start">A = sonnet · B = opus · sonnet ran first in 2 of 3 blocks</text>`;
+  s += `</svg>`;
+  el.innerHTML = s;
+}
+
+/* ============ SECTION 1 wiring ============ */
+function renderVerdict() {
+  document.getElementById("verdictWinner").textContent = DECISION.winner;
+  document.getElementById("decidedBy").textContent = DECISION.decidedBy;
+  document.getElementById("verdictReasoning").innerHTML =
+    `<b>Reasoning.</b> ${esc(DECISION.reasoning)}`;
+
+  const inp = DECISION.inputs;
+  const cells = [
+    { key:"jargon", name:"Jargon-clean", d:inp.jargon, decides:false, note:"tied · falls through" },
+    { key:"length", name:"Length compliance", d:inp.length, decides:true, note:"decides → sonnet" },
+    { key:"pending", name:"Pending (audited)", d:inp.pending, decides:false, note:"never reached" }
+  ];
+  let h = "";
+  cells.forEach(c => {
+    h += `<div class="ev-cell${c.decides?' decides':''}">
+      <div class="ev-axis">${c.name}</div>
+      <div class="ev-pair"><span class="who">sonnet</span><span><span class="val">${pct(c.d.sonnet.median)}</span><span class="rng">[${pct(c.d.sonnet.min)}–${pct(c.d.sonnet.max)}]</span></span></div>
+      <div class="ev-pair"><span class="who">opus</span><span><span class="val">${pct(c.d.opus.median)}</span><span class="rng">[${pct(c.d.opus.min)}–${pct(c.d.opus.max)}]</span></span></div>
+      <div class="ev-tag"${c.decides?'':' style="color:var(--muted)"'}>${c.note}</div>
+    </div>`;
+  });
+  document.getElementById("evidenceRow").innerHTML = h;
+}
+
+/* ============ Charts wiring ============ */
+function repRates(ax) { return ax.perRep.map(p => p.rate); }
+function repNs(ax) { return ax.perRep.map(p => p.n); }
+
+function renderCharts() {
+  // S2 jargon
+  const jS = SUMMARY.sonnet.axes.jargon, jO = SUMMARY.opus.axes.jargon;
+  document.getElementById("chart-jargon").innerHTML = dotRange([
+    { model:"sonnet", label:"Sonnet", median:jS.median, min:jS.min, max:jS.max, perRep:repRates(jS), rangeLabel:"3/3 reps at 100%", sub:"n = "+repNs(jS).join("/") },
+    { model:"opus", label:"Opus", median:jO.median, min:jO.min, max:jO.max, perRep:repRates(jO), rangeLabel:"3/3 reps at 100%", sub:"n = "+repNs(jO).join("/") }
+  ], { aria:"jargon-clean rate by model, both at 100 percent" });
+
+  // S3 length
+  const lS = SUMMARY.sonnet.axes.length, lO = SUMMARY.opus.axes.length;
+  document.getElementById("chart-length").innerHTML = dotRange([
+    { model:"sonnet", label:"Sonnet", median:lS.median, min:lS.min, max:lS.max, perRep:repRates(lS),
+      rangeLabel:"["+pct(lS.min)+"–"+pct(lS.max)+"]", sub:"n = "+repNs(lS).join(" / ")+" (reps 1·2·3)" },
+    { model:"opus", label:"Opus", median:lO.median, min:lO.min, max:lO.max, perRep:repRates(lO),
+      rangeLabel:"["+pct(lO.min)+"–"+pct(lO.max)+"]", sub:"n = "+repNs(lO).join(" / ")+" (reps 1·2·3)" }
+  ], { aria:"length compliance by model", gapBand:[lO.max, lS.min], gapLabel:"gap 33 pts · disjoint" });
+
+  // S4 pending
+  const pS = SUMMARY.sonnet.axes.pendingAwareness, pO = SUMMARY.opus.axes.pendingAwareness;
+  document.getElementById("chart-pending").innerHTML = dotRange([
+    { model:"sonnet", label:"Sonnet", median:pS.median, min:pS.min, max:pS.max, perRep:repRates(pS),
+      rangeLabel:"["+pct(pS.min)+"–"+pct(pS.max)+"]", sub:"n = 14 per rep",
+      dotNotes:[{ value:0.9285714285714286, text:"13/14 · one reply, rep 3", dy:40 }] },
+    { model:"opus", label:"Opus", median:pO.median, min:pO.min, max:pO.max, perRep:repRates(pO),
+      rangeLabel:"3/3 reps at 100%", sub:"n = 14 per rep" }
+  ], { aria:"pending awareness by model" });
+
+  // S5 template columns
+  groupedColumns(document.getElementById("chart-template"));
+  const sp = SUMMARY.sonnet.pipeline.pooled, op = SUMMARY.opus.pipeline.pooled;
+  document.getElementById("template-pooled").textContent =
+    "Pooled: sonnet " + pct(sp.templateRate) + " (" + sp.failureRows + "/" + sp.totalRows + "), opus " + pct(op.templateRate) + " (" + op.failureRows + "/" + op.totalRows + ").";
+
+  // S5 cold-start
+  coldStart(document.getElementById("chart-coldstart"));
+
+  // S5 latency
+  latencyDumbbell(document.getElementById("chart-latency"));
+  document.getElementById("latency-pooled").textContent =
+    "Pooled median: sonnet " + sec(sp.medianLatencyMs) + "s vs opus " + sec(op.medianLatencyMs) + "s (a wash). Pooled p90: sonnet " + sec(sp.p90LatencyMs) + "s vs opus " + sec(op.p90LatencyMs) + "s (not a wash).";
+
+  // S6 instrument
+  instrumentBars(document.getElementById("chart-instrument"));
+  document.getElementById("instrument-chip").textContent = LEDGER.instrument.verdict + " at iteration " + LEDGER.instrument.iterationsUsed;
+
+  // S7 run order
+  runOrder(document.getElementById("chart-runorder"));
+}
+
+/* ============ meta + method list ============ */
+function renderMeta() {
+  const gen = new Date(SUMMARY.generatedAt);
+  document.getElementById("metaRow").innerHTML =
+    `<span><b>${SUMMARY.questionCount}</b> questions</span>` +
+    `<span><b>6</b> scored runs (3 reps × 2 models)</span>` +
+    `<span>wiring <b>${esc(SUMMARY.wiring)}</b></span>` +
+    `<span>warmup <b>${LEDGER.warmupPerProcess}</b> per process</span>` +
+    `<span>instrument <b>${LEDGER.instrument.verdict}</b> · ${LEDGER.instrument.iterationsUsed}/${LEDGER.instrument.iterationCap} iterations</span>` +
+    `<span>generated <b>${gen.toISOString().slice(0,10)}</b></span>`;
+
+  document.getElementById("footer-gen").textContent =
+    "Run generated " + SUMMARY.generatedAt + ". Real database verified unchanged (sha256 " + LEDGER.dbSha + ") after every run.";
+
+  const items = [
+    ["Reps per model", "3, run strictly sequentially"],
+    ["Wiring", SUMMARY.wiring + " (chat path, not the judge queue)"],
+    ["Counterbalancing", "ABBA blocks (see strip above)"],
+    ["Cold-start control", "warmup " + LEDGER.warmupPerProcess + " discarded calls per process"],
+    ["Database", "real db, sha256-verified unchanged (" + LEDGER.dbSha + ")"],
+    ["Blinded read", "report-blinded.md, metrics-blinded.md, unblinding.json (from rep 1)"],
+    ["Honest-stop policy", LEDGER.instrument.iterationCap + "-iteration audit cap; a capped result would be reported, not hidden"],
+    ["Decision rule", "D4 pre-registered in plan.md before any data existed"]
+  ];
+  document.getElementById("method-list").innerHTML = items.map(it =>
+    `<li style="font-size:13px;color:var(--text-2)"><b style="color:var(--text);display:block;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted)">${esc(it[0])}</b>${esc(it[1])}</li>`
+  ).join("");
+}
+
+/* ============ theme toggle ============ */
+(function () {
+  const btn = document.getElementById("themeToggle");
+  const label = document.getElementById("themeLabel");
+  function current() {
+    const attr = document.documentElement.getAttribute("data-theme");
+    if (attr) return attr;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  function apply(mode) {
+    document.documentElement.setAttribute("data-theme", mode);
+    label.textContent = mode === "dark" ? "Dark" : "Light";
+  }
+  btn.addEventListener("click", () => apply(current() === "dark" ? "light" : "dark"));
+  label.textContent = current() === "dark" ? "Dark" : "Light";
+})();
+
+/* ============ init ============ */
+renderMeta();
+renderVerdict();
+renderCharts();
+</script>
+</body>
+</html>
