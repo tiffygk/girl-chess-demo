@@ -84,11 +84,42 @@ describe("checkPendingAwareness", () => {
   it("fails when the answer names neither the destination nor piece+origin", () => {
     expect(checkPendingAwareness("develop a piece toward the center first.", pending)).toBe(false);
   });
-  it("fails when only the piece word is present without the origin square", () => {
-    expect(checkPendingAwareness("your knight has better options.", pending)).toBe(false);
+  it("fails when a bare piece word appears without 'your', the origin, or the destination", () => {
+    // "the knight" is not "your knight" -> mentionsYourPiece stays false.
+    expect(checkPendingAwareness("the knight has better options.", pending)).toBe(false);
   });
   it("is case-insensitive", () => {
     expect(checkPendingAwareness("Once it lands on F3 that's fine.", pending)).toBe(true);
+  });
+
+  // Audit iter 1: the coach's natural register describes retreats /
+  // developments / refutations without printing either square. The
+  // square-substring formula false-negatived on these (7 disagreements).
+  // Third disjunct: pass when the pending piece is possessed by the player
+  // ("your knight") or, for a pawn move, described as "the pawn push".
+  it("passes a described-not-named retreat via 'your <piece>' (audit iter 1: PD2)", () => {
+    const p = { pieceKind: "n", from: "f3", to: "e1" };
+    expect(
+      checkPendingAwareness(
+        "that's fine. it steps your knight away from the bishop's attack while keeping it ready to hop back into the game.",
+        p,
+      ),
+    ).toBe(true);
+  });
+  it("matches a compound-adjective piece name after 'your' (e.g. 'your light-square bishop')", () => {
+    const p = { pieceKind: "b", from: "c3", to: "e5" };
+    expect(
+      checkPendingAwareness("your light-square bishop takes on c8 and her queen recaptures.", p),
+    ).toBe(true);
+  });
+  it("passes a pending pawn move described as 'the pawn push' (audit iter 1: PD8)", () => {
+    const p = { pieceKind: "p", from: "h2", to: "h3" };
+    expect(
+      checkPendingAwareness(
+        "your bishop on f5 is attacked by her bishop on c8 and nothing defends it, so the pawn push leaves it hanging.",
+        p,
+      ),
+    ).toBe(true);
   });
 });
 
