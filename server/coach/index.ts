@@ -242,6 +242,11 @@ function pieceKindWord(kind: string | undefined): string {
 function threatVars(t: ThreatFacts): Record<string, string> {
   return {
     refutationSan: t.refutationSan,
+    // Task 3c (R2, voice-enforcement round): the plain-language rewrite
+    // needs to name WHICH piece refutes ("her rook takes back"), not just
+    // the square -- the fact was already on ThreatFacts, just never
+    // threaded into the template vars.
+    refutationPieceKind: pieceKindWord(t.refutationPieceKind),
     capturesSquare: t.capturesSquare ?? "",
     capturedPieceKind: pieceKindWord(t.capturedPieceKind),
     forkSquares: (t.forkTargets ?? []).map((x) => x.square).join(" and "),
@@ -251,6 +256,11 @@ function threatVars(t: ThreatFacts): Record<string, string> {
 function recommendationVars(r: RecommendationFacts): Record<string, string> {
   return {
     bestSan: r.san,
+    // Task 3c: same reasoning as refutationPieceKind above, for the
+    // recommended move -- "your knight to e4" needs both the piece and its
+    // destination, both already on RecommendationFacts (pieceKind/toSquare).
+    bestPieceKind: pieceKindWord(r.pieceKind),
+    bestToSquare: r.toSquare,
     capturesSquare: r.capturesSquare ?? "",
     capturedPieceKind: pieceKindWord(r.capturedPieceKind),
     forkSquares: (r.forkTargets ?? []).map((x) => x.square).join(" and "),

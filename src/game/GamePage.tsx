@@ -27,7 +27,13 @@ import {
   type TurningPoint,
 } from "./api";
 import { CoachChat, ThumbRating } from "./CoachChat";
-import { hintFocusContext, turningPointFocusContext, reconcileChatFocus, pvUciToSan } from "./chatFocus";
+import {
+  hintFocusContext,
+  turningPointFocusContext,
+  reconcileChatFocus,
+  pvUciToSan,
+  pendingMoveContext,
+} from "./chatFocus";
 import { describeMove, type MoveRender } from "./describeMove";
 import { victimKind, materialDiff, rollbackCapture, capturesAtPly, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
@@ -1355,8 +1361,15 @@ export function GamePage() {
       pendingPly,
       rewindPly,
     });
+    // Task 1 (R2, pending-move context threading): called UNCONDITIONALLY
+    // whenever `pending` is truthy -- unlike the herMove/tier fields below,
+    // which only populate once verdict.tier is nudge/warning, this covers
+    // silent/in-flight/coach-off too (pendingMoveContext returns undefined
+    // when nothing is pending, so it's always safe to spread).
+    const pendingMove = pendingMoveContext(pending, fen, verdict);
+    const extra = pendingMove ? { ...focus, pendingMove } : focus;
 
-    if (reviewGame) return { mode: "review", ...focus };
+    if (reviewGame) return { mode: "review", ...extra };
     if (pending && verdict && verdict.tier !== "silent") {
       const herPieceKind = mirrorRef.current.get(pending.from as Square)?.type ?? "piece";
       return {
@@ -1374,10 +1387,10 @@ export function GamePage() {
             }
           : undefined,
         recommendation: hintFacts?.recommendation,
-        ...focus,
+        ...extra,
       };
     }
-    return { mode: "live", ...focus };
+    return { mode: "live", ...extra };
   }, [reviewGame, pending, verdict, hintFacts, chatFocus, hintLevel, fen, rewindPly]);
 
   // Increment 3.95, Task 7: a debrief turning-point card's own "ask about

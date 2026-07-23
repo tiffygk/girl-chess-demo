@@ -1,5 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { assembleChatFactList } from "./chat";
+import { describe, it, expect, beforeEach } from "vitest";
+import { assembleChatFactList, chat } from "./chat";
+import type { ChatPerPlyInput } from "./chat";
+import type { CoachBackend } from "./backends/types";
+import { openDb, createSession, createGame } from "../store/db";
 
 // Task 3 (R1a, fact-gap round): the chat surface previously never saw the
 // judge's already-persisted per-ply engine analysis (moves.eval_cp/
@@ -78,5 +81,109 @@ describe("assembleChatFactList: perPlyAnalysis (Task 3, R1a)", () => {
     const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
     expect(facts.perPlyAnalysis![0].bestSan).toBeNull();
     expect(facts.perPlyAnalysis![0].pvSans).toEqual([]);
+  });
+});
+
+// Task 3b (R2, voice-enforcement round, 2026-07-22): factsForModel is
+// private, so this asserts against the actual prompt string chat() sends
+// the backend, the same pattern chat.hintFocus.test.ts/chat.test.ts's own
+// prompt-inspection tests already use. evalCp/evalMate are SIDE-TO-MOVE
+// signed as of the position AFTER the ply (same convention
+// turningPoints.ts's buildDeltaSeries documents) -- an ODD ply's stored
+// value is black-perspective and must be negated to reach the fixed
+// "player is always white" read; an EVEN ply's is already white-perspective.
+function fakeBackend(generate: (prompt: string, timeoutMs: number) => Promise<string>): CoachBackend {
+  return {
+    name: "fake",
+    async available() {
+      return true;
+    },
+    generate,
+  };
+}
+
+const GAME = ["e4", "e5"];
+const gameMoves = (sans: string[]) => sans.map((san, i) => ({ ply: i + 1, san }));
+
+async function capturePerPlyPrompt(perPly: ChatPerPlyInput[]): Promise<string> {
+  const facts = assembleChatFactList(gameMoves(GAME), { mode: "review" }, undefined, perPly);
+  let capturedPrompt = "";
+  const backend = fakeBackend(async (prompt) => {
+    capturedPrompt = prompt;
+    return "e4 is a fine start for you.";
+  });
+  const sessionId = createSession();
+  const gameId = createGame(sessionId, "maia-1100");
+  await chat("how did this go?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+  return capturedPrompt;
+}
+
+describe("factsForModel — perPlyAnalysis's evalCp/evalMate sanitize into a qualitative 'read' bucket (Task 3b)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  it("drops evalCp/evalMate (and any eval-named key) from the model projection, while the raw ChatFactList still carries the numbers", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 1, san: "e4", evalCp: 20, evalMate: null, bestSan: "e4", pvSans: [] },
+    ];
+    const facts = assembleChatFactList(gameMoves(GAME), { mode: "review" }, undefined, perPly);
+    expect(facts.perPlyAnalysis?.[0].evalCp).toBe(20); // raw facts: numbers stay, for validation + F40 trace
+
+    const prompt = await capturePerPlyPrompt(perPly);
+    expect(prompt).toContain('"read"');
+    expect(prompt).not.toContain('"evalCp"');
+    expect(prompt).not.toContain('"evalMate"');
+  });
+
+  it("a small even-ply cp edge reads as 'even'", async () => {
+    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 20, evalMate: null, bestSan: null, pvSans: [] }]);
+    expect(prompt).toContain('"read": "even"');
+  });
+
+  it("a moderate even-ply positive cp reads as 'you're a bit better'", async () => {
+    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 150, evalMate: null, bestSan: null, pvSans: [] }]);
+    expect(prompt).toContain(`"read": "you're a bit better"`);
+  });
+
+  it("a large even-ply positive cp reads as 'you're much better'", async () => {
+    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 500, evalMate: null, bestSan: null, pvSans: [] }]);
+    expect(prompt).toContain(`"read": "you're much better"`);
+  });
+
+  it("a large even-ply negative cp reads as 'she's much better'", async () => {
+    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: -500, evalMate: null, bestSan: null, pvSans: [] }]);
+    expect(prompt).toContain(`"read": "she's much better"`);
+  });
+
+  it("an ODD-ply negative cp (black's own stored perspective) negates to a white-favorable read", async () => {
+    // Ply 1 is white's own move -- the stored eval afterward is from BLACK's
+    // (side-to-move) perspective, so a stored -150 means white (the player)
+    // is actually up 150: negation must run before bucketing.
+    const prompt = await capturePerPlyPrompt([{ ply: 1, san: "e4", evalCp: -150, evalMate: null, bestSan: null, pvSans: [] }]);
+    expect(prompt).toContain(`"read": "you're a bit better"`);
+  });
+
+  it("an even-ply positive evalMate reads as 'mate for you in N'", async () => {
+    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: 3, bestSan: null, pvSans: [] }]);
+    expect(prompt).toContain(`"read": "mate for you in 3"`);
+  });
+
+  it("an even-ply negative evalMate reads as 'mate against you in N'", async () => {
+    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: -2, bestSan: null, pvSans: [] }]);
+    expect(prompt).toContain(`"read": "mate against you in 2"`);
+  });
+
+  it("an odd-ply evalMate is negated the same way evalCp is", async () => {
+    // Ply 1: stored -4 is black's own perspective (black about to be mated
+    // in 4 is wrong framing -- stored is black delivers in -4, i.e. black is
+    // BEING mated) -- negating gives white (the player) mates in 4.
+    const prompt = await capturePerPlyPrompt([{ ply: 1, san: "e4", evalCp: null, evalMate: -4, bestSan: null, pvSans: [] }]);
+    expect(prompt).toContain(`"read": "mate for you in 4"`);
+  });
+
+  it("no persisted eval yet for that ply (both null) reads as a plain no-data statement, never a number", async () => {
+    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: null, bestSan: null, pvSans: [] }]);
+    expect(prompt).toContain('"read": "no read yet"');
   });
 });

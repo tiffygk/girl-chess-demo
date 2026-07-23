@@ -78,6 +78,31 @@ export interface ChatContext {
     bestSan?: string;
     pvSans?: string[];
   };
+  // Task 1 (R2, pending-move context threading): the move she's picked up
+  // and placed on the board but has NOT confirmed -- src/game/GamePage.tsx's
+  // buildChatContext sends this whenever `pending` is truthy, regardless of
+  // verdict/tier state (silent/in-flight/coach-off all included). Before
+  // this, the pending move reached chat only once a verdict had landed AND
+  // its tier was nudge/warning, so a move judged "silent" (a fine move --
+  // exactly when she asks "why should i NOT put it here?") reached the
+  // coach as bare `{mode:"live"}`, and it truthfully answered "not sure
+  // which piece you mean." `tier`/`judged` describe the JUDGE's state, not
+  // confirmation: judged:false means no verdict has landed yet (still
+  // judging, or a confirm-only pending move that was never sent to judge at
+  // all). `san` is a CLIENT CLAIM, never trusted as-is -- assembleChatFactList
+  // below distrust-verifies it is actually legal from the position it just
+  // replayed before folding it into allowedSans or letting it reach the
+  // model; an illegal/stale claim (the player retracted the move, or the
+  // request raced a retarget) is dropped entirely. Deliberately no deltaCp
+  // or any other number here -- see factsForModel's own comment for why.
+  pendingMove?: {
+    pieceKind: string;
+    from: string;
+    to: string;
+    san?: string;
+    tier?: "silent" | "nudge" | "warning";
+    judged: boolean;
+  };
 }
 
 export interface ChatFactList {
@@ -235,6 +260,39 @@ function derivePhase(ply: number, pieceCount: number): "opening" | "middlegame" 
   return "middlegame";
 }
 
+// Owner-calibratable starting values (Task 3b, R2 voice-enforcement round):
+// the cp thresholds bucketing perPlyAnalysis's per-ply eval into a plain-
+// language "read" for the MODEL-FACING projection only -- the voice rules
+// ban stating a number for the position outright (checkVoice above), so
+// factsForModel must never leak evalCp/evalMate as numbers. The raw
+// ChatFactList keeps the numbers untouched (validation + the F40 trace
+// still need them); only this bucketing is new.
+const READ_EVEN_CP = 60; // |cp| below this reads as "even" (nudge-sized edge)
+const READ_MUCH_BETTER_CP = 300; // |cp| at/above this reads as "much better" (roughly a minor piece)
+
+// evalCp/evalMate on ChatFactList are SIDE-TO-MOVE signed as of the
+// position AFTER the ply was played (same convention turningPoints.ts's
+// buildDeltaSeries documents and re-derives against real data): after an
+// ODD ply it's black's turn, so the stored value is black-perspective and
+// must be negated to reach the fixed "player is always white" read; after
+// an EVEN ply it's white's turn, so the stored value is already
+// white-perspective, used as-is.
+function toWhitePerspective(ply: number, signed: number): number {
+  return ply % 2 === 1 ? -signed : signed;
+}
+
+function readForPly(ply: number, evalCp: number | null, evalMate: number | null): string {
+  if (evalMate !== null) {
+    const whiteMate = toWhitePerspective(ply, evalMate);
+    return whiteMate > 0 ? `mate for you in ${whiteMate}` : `mate against you in ${Math.abs(whiteMate)}`;
+  }
+  if (evalCp === null) return "no read yet"; // honest "no data", not a guessed number
+  const whiteCp = toWhitePerspective(ply, evalCp);
+  if (Math.abs(whiteCp) < READ_EVEN_CP) return "even";
+  if (whiteCp > 0) return whiteCp >= READ_MUCH_BETTER_CP ? "you're much better" : "you're a bit better";
+  return whiteCp <= -READ_MUCH_BETTER_CP ? "she's much better" : "she's a bit better";
+}
+
 // Pure: replays gameSans from the start position with chess.js so
 // currentFen/occupancy/legalSans are all DERIVED, never hand-computed --
 // castling rights, en passant, and promotion are exactly whatever the
@@ -270,6 +328,27 @@ export function assembleChatFactList(
   }));
 
   const { fen: currentFen, toMove, occupancy, legalSans, contested } = derivePositionFacts(chess);
+
+  // Task 1 (R2, pending-move context threading): ctx.pendingMove is a
+  // CLIENT CLAIM (GamePage's own local judgment of what's sitting on the
+  // board, unconfirmed), not fact -- distrust-verify it is actually a legal
+  // move from the position just replayed above (the same `chess` instance
+  // currentFen came from, so it can never disagree with it) before it is
+  // allowed to influence allowedSans or reach the model. An illegal/stale
+  // claim (the player retracted the move, or this request raced a retarget)
+  // is dropped entirely, never partially trusted -- same discipline as
+  // every other fact in this list, which is derived, never taken on faith.
+  let verifiedPendingMove = ctx.pendingMove;
+  if (verifiedPendingMove) {
+    const probe = new Chess(chess.fen());
+    let legal = false;
+    try {
+      legal = probe.move({ from: verifiedPendingMove.from, to: verifiedPendingMove.to, promotion: "q" }) != null;
+    } catch {
+      legal = false;
+    }
+    if (!legal) verifiedPendingMove = undefined;
+  }
 
   // Round 2026-07-22: the focused turning point's own moment. Replayed from
   // the same ordered move list, stopping BEFORE the focused ply, so it is
@@ -322,6 +401,9 @@ export function assembleChatFactList(
   // then gets its own true sentence rejected, because those moves are not
   // legal today. Same fold, same reason, as the bestSan/pvSans fold above.
   for (const s of focusPosition?.legalSans ?? []) sans.add(s);
+  // Task 1 fold (R2): the verified pending move's own san -- see the
+  // legality check above. Only ever a real legal move by the time it's here.
+  if (verifiedPendingMove?.san) sans.add(verifiedPendingMove.san);
 
   return {
     gameSans,
@@ -331,7 +413,10 @@ export function assembleChatFactList(
     legalSans,
     focusPosition,
     turningPoints: tpOut,
-    context: ctx,
+    // Task 1 (R2): context carries the VERIFIED pendingMove, never the raw
+    // client claim -- an illegal/dropped claim must not reach validateChat,
+    // factsForModel, or the advice_traces record either.
+    context: { ...ctx, pendingMove: verifiedPendingMove },
     allowedSans: [...sans],
     contested,
     perPlyAnalysis,
@@ -434,6 +519,52 @@ function checkSideAttributionClaims(text: string, facts: ChatFactList): string[]
   return violations;
 }
 
+// ---- voice-guard validation ------------------------------------------------
+// Task 3a (R2, voice-enforcement round, 2026-07-22): the coach's own voice
+// rules (personas/coach.md's "## voice" block, Task 2 this round) ban raw
+// notation as a move's name, the infra words "engine"/"eval(uation)"/
+// "centipawn(s)"/"cp", and any stated number for the position -- but
+// nothing previously checked a reply's OWN prose against those rules, the
+// same gap checkDefenseClaims/checkPlacementClaims/checkSideAttributionClaims
+// close for chess-fact claims. Modeled on those checkers: precision over
+// recall, no engine call, three narrow claim shapes routed into the same
+// violations array validateChat already returns.
+const VOICE_BANNED_WORDS_RE = /\b(engine|evals?|evaluations?|centipawns?|cp)\b/gi;
+// A signed integer/decimal ("+50", "-3.4") -- a stated eval number for the
+// position. Deliberately requires the leading sign: an unsigned integer
+// ("mate in 3", "move 12") is a ply/mate count, not a position eval, and
+// the plan's must-pass cases exist precisely to keep this from overreaching
+// into them.
+const VOICE_SIGNED_NUMBER_RE = /[+-]\d+(?:\.\d+)?/g;
+// Any integer (signed or not) directly followed by "cp"/"centipawns", with
+// or without a space ("50cp", "50 centipawns") -- catches the unspaced form
+// VOICE_BANNED_WORDS_RE's \b can't (no word boundary between a digit and
+// the letters immediately following it).
+const VOICE_CP_NUMBER_RE = /\b\d+(?:\.\d+)?\s*(?:cp|centipawns?)\b/gi;
+
+function checkVoice(text: string): string[] {
+  const violations: string[] = [];
+
+  for (const raw of text.match(SAN_RE) ?? []) {
+    const token = stripTrailingPunctuation(raw);
+    if (isBareSquare(token)) continue; // geography, not notation -- cut #2 carve-out
+    violations.push(`voice-notation: ${token}`);
+  }
+
+  for (const m of text.matchAll(VOICE_BANNED_WORDS_RE)) {
+    violations.push(`voice-word: ${m[0].toLowerCase()}`);
+  }
+
+  for (const m of text.matchAll(VOICE_CP_NUMBER_RE)) {
+    violations.push(`voice-number: ${m[0]}`);
+  }
+  for (const m of text.matchAll(VOICE_SIGNED_NUMBER_RE)) {
+    violations.push(`voice-number: ${m[0]}`);
+  }
+
+  return violations;
+}
+
 export function validateChat(text: string, facts: ChatFactList): { ok: true } | { ok: false; violations: string[] } {
   const allowedSans = new Set(facts.allowedSans);
   const violations: string[] = [];
@@ -466,6 +597,10 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
   // unlike checkDefenseClaims above, there's no separate current/focus call
   // + filter needed here.
   violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
+  // Task 3a (R2, voice-enforcement round): no facts needed -- this checker
+  // is about the SHAPE of the prose (notation/banned words/numbers), not
+  // whether a claim matches the position.
+  violations.push(...checkVoice(text));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };
@@ -512,22 +647,25 @@ function focusForModel(facts: ChatFactList) {
 }
 
 // Task 3 (R1a): the compact projection of perPlyAnalysis sent to the model
-// -- ply/san/evalCp/evalMate/bestSan/phase plus only the first 2 pvSans
-// (dropping the rest keeps the whole-game list readable; the full pv is
-// never what "what should you have played" needs beyond a move or two of
-// follow-up, and the focused hint/turning-point folds already carry a
-// complete line when one is in view).
+// -- ply/san/bestSan/phase plus only the first 2 pvSans (dropping the rest
+// keeps the whole-game list readable; the full pv is never what "what
+// should you have played" needs beyond a move or two of follow-up, and the
+// focused hint/turning-point folds already carry a complete line when one
+// is in view).
+// Task 3b (R2, voice-enforcement round): evalCp/evalMate no longer reach
+// this projection at all -- readForPly (above) replaces both with a single
+// qualitative `read` string, and no key here contains the literal substring
+// "eval". The raw numbers stay on the ChatFactList itself.
 const PER_PLY_PV_MODEL_LIMIT = 2;
 
 function perPlyForModel(perPlyAnalysis: ChatFactList["perPlyAnalysis"]) {
   return perPlyAnalysis?.map((p) => ({
     ply: p.ply,
     san: p.san,
-    evalCp: p.evalCp,
-    evalMate: p.evalMate,
     bestSan: p.bestSan,
     phase: p.phase,
     pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
+    read: readForPly(p.ply, p.evalCp, p.evalMate),
   }));
 }
 
@@ -541,11 +679,36 @@ function hintFocusForModel(hintFocus: ChatContext["hintFocus"]) {
   return { ...rest, threat: threat ? stripThreatUci(threat) : undefined };
 }
 
+// Task 1 (R2): the pending move's model-facing projection. `confirmed:false`
+// and `note` are both explicit -- currentFen/occupancy in the surrounding
+// fact list describe the position BEFORE this move (it is not on the
+// board yet), and without an explicit statement of that a model reasoning
+// over "current" facts could easily treat a pending move as already played.
+// No deltaCp or any other number here -- pendingMove never carried one to
+// begin with (see ChatContext.pendingMove's own comment).
+function pendingMoveForModel(pendingMove: ChatContext["pendingMove"]) {
+  if (!pendingMove) return undefined;
+  return {
+    ...pendingMove,
+    confirmed: false,
+    note: "currentFen and occupancy above show the position BEFORE this move -- it has not been played yet.",
+  };
+}
+
+// Task 3b (R2, voice-enforcement round): audited every other numeric field
+// this function projects for the model -- context.best (san/pieceKind/from/
+// to), context.threat (motif/squares/pieceKind, uci already stripped by
+// stripThreatUci), context.hintFocus (same shape via hintFocusForModel),
+// context.pendingMove (pieceKind/from/to/san/tier, deliberately never
+// carried a number to begin with -- see pendingMoveForModel's own comment).
+// None of them carry a cp/mate number today, so there is nothing else to
+// sanitize; perPlyAnalysis (via readForPly above) is the one real leak this
+// task closes.
 function factsForModel(facts: ChatFactList) {
   const { allowedSans, context, focusPosition, perPlyAnalysis, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
   if (context) {
-    const { best, threat, herMove, hintFocus, ...restCtx } = context;
+    const { best, threat, herMove, hintFocus, pendingMove, ...restCtx } = context;
     strippedContext = {
       ...restCtx,
       // The model-facing key is yourMove (the player is always "you"), even
@@ -554,6 +717,7 @@ function factsForModel(facts: ChatFactList) {
       threat: threat ? stripThreatUci(threat) : undefined,
       best: best ? { san: best.san, pieceKind: best.pieceKind, from: best.from, to: best.to } : undefined,
       hintFocus: hintFocusForModel(hintFocus),
+      pendingMove: pendingMoveForModel(pendingMove),
     };
   }
   // legalSansBelongTo labels the bare legalSans list with whose moves it
@@ -593,13 +757,36 @@ function buildChatPrompt(
   ].join("\n");
 }
 
+// Task 3a (R2, voice-enforcement round): one corrective line per voice
+// violation KIND actually present, appended after the base "mentioned X, Y"
+// line -- so a regen attempt gets told exactly what to fix, not just that
+// something was wrong. Keyed on the prefix checkVoice pushes onto each of
+// its violation strings (see that function).
+const VOICE_KIND_GUIDANCE: Record<string, string> = {
+  "voice-notation": "say the piece and where it goes in plain words, not notation.",
+  "voice-word": "never say engine -- say \"our chess brain\".",
+  "voice-number": "never state a number for the position.",
+};
+
 function correctiveSuffix(violations: string[]): string {
-  return [
+  const lines = [
     "",
     "",
     `your previous answer mentioned ${violations.join(", ")}, which isn't a move from this game.`,
-    "rewrite it using only moves from this game's fact list, 2-4 short lowercase sentences, no lists, no em-dashes, no emojis.",
-  ].join("\n");
+  ];
+  const seenKinds = new Set<string>();
+  for (const v of violations) {
+    const kind = v.split(":")[0];
+    const guidance = VOICE_KIND_GUIDANCE[kind];
+    if (guidance && !seenKinds.has(kind)) {
+      seenKinds.add(kind);
+      lines.push(guidance);
+    }
+  }
+  lines.push(
+    "rewrite it using only moves from this game's fact list, 2-4 short lowercase sentences, no lists, no em-dashes, no emojis."
+  );
+  return lines.join("\n");
 }
 
 // ---- chat loop (F16) -------------------------------------------------------

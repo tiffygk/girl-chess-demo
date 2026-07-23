@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { Chess } from "chess.js";
-import { hintFocusContext, turningPointFocusContext, reconcileChatFocus, pvUciToSan } from "./chatFocus";
+import {
+  hintFocusContext,
+  turningPointFocusContext,
+  reconcileChatFocus,
+  pvUciToSan,
+  pendingMoveContext,
+} from "./chatFocus";
 
 describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", () => {
   describe("hintFocusContext", () => {
@@ -119,6 +125,74 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
       // nothing on h8 -- g7g8=q (uci with promotion suffix "q").
       const fen = "7k/6P1/8/8/8/8/8/7K w - - 0 1";
       expect(pvUciToSan(fen, ["g7g8q"])).toEqual(["g8=Q+"]);
+    });
+  });
+
+  // Task 1 (R2, pending-move context threading): buildChatContext used to
+  // send the pending move only once a verdict had landed AND its tier was
+  // nudge/warning (GamePage.tsx's old `pending && verdict && verdict.tier
+  // !== "silent"` gate) -- so a move judged "silent" (a fine move, exactly
+  // when she asks "why should i NOT put it here?"), a still-judging move, or
+  // a confirm-only move that was never sent to judge at all, reached the
+  // coach as bare `{mode:"live"}`. This mapper is called UNCONDITIONALLY
+  // whenever a move is pending, regardless of verdict/tier state.
+  describe("pendingMoveContext", () => {
+    const START_FEN = new Chess().fen();
+
+    it("returns undefined when nothing is pending", () => {
+      expect(pendingMoveContext(null, START_FEN, null)).toBeUndefined();
+    });
+
+    it("carries pieceKind/from/to/san and judged:true/tier:'silent' for a fine (silent) pending move", () => {
+      const result = pendingMoveContext({ from: "e2", to: "e4" }, START_FEN, { tier: "silent" });
+      expect(result).toEqual({
+        pieceKind: "p",
+        from: "e2",
+        to: "e4",
+        san: "e4",
+        tier: "silent",
+        judged: true,
+      });
+    });
+
+    it("carries tier 'nudge'/'warning' through the same way", () => {
+      const nudge = pendingMoveContext({ from: "g1", to: "f3" }, START_FEN, { tier: "nudge" });
+      expect(nudge?.tier).toBe("nudge");
+      expect(nudge?.judged).toBe(true);
+      const warning = pendingMoveContext({ from: "g1", to: "f3" }, START_FEN, { tier: "warning" });
+      expect(warning?.tier).toBe("warning");
+    });
+
+    it("judge-in-flight/unjudged: verdict is null (still judging) -- no tier, judged:false", () => {
+      const result = pendingMoveContext({ from: "e2", to: "e4" }, START_FEN, null);
+      expect(result).toEqual({
+        pieceKind: "p",
+        from: "e2",
+        to: "e4",
+        san: "e4",
+        tier: undefined,
+        judged: false,
+      });
+    });
+
+    it("coach-off / confirm-only pending move: never sent to judge, so verdict stays null the same as in-flight", () => {
+      const result = pendingMoveContext({ from: "d2", to: "d4" }, START_FEN, null);
+      expect(result?.judged).toBe(false);
+      expect(result?.tier).toBeUndefined();
+      expect(result?.san).toBe("d4");
+    });
+
+    it("reads pieceKind from the from-square of the pre-move position", () => {
+      const result = pendingMoveContext({ from: "g1", to: "f3" }, START_FEN, { tier: "silent" });
+      expect(result?.pieceKind).toBe("n");
+    });
+
+    it("san is undefined (never guessed) when the claimed from/to isn't actually legal here", () => {
+      // g1 to g3 is not a legal knight move from the start position.
+      const result = pendingMoveContext({ from: "g1", to: "g3" }, START_FEN, { tier: "silent" });
+      expect(result?.san).toBeUndefined();
+      expect(result?.from).toBe("g1");
+      expect(result?.to).toBe("g3");
     });
   });
 

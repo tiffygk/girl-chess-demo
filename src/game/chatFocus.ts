@@ -99,6 +99,63 @@ export function turningPointFocusContext(
 }
 
 /**
+ * Task 1 (R2, pending-move context threading): the pending-move half of a
+ * chat message's context -- the move she's picked up and placed on the
+ * board but hasn't confirmed yet. Before this, buildChatContext only sent
+ * it once a verdict had landed AND its tier was nudge/warning (the old
+ * `pending && verdict && verdict.tier !== "silent"` gate), so a move judged
+ * "silent" (a fine move -- exactly when she asks "why should i NOT put it
+ * here?"), a still-judging move, or a confirm-only move that was never sent
+ * to judge at all, reached the coach as bare `{mode:"live"}` and got "not
+ * sure which piece you mean." This mapper is called UNCONDITIONALLY
+ * whenever `pending` is truthy, regardless of verdict/tier state.
+ *
+ * `fen` is the position BEFORE the pending move (mirrorRef/GamePage's own
+ * `fen` state, untouched while a move is pending) -- pieceKind is read from
+ * the from-square there, and san is derived by replaying the claimed
+ * from/to/promotion on a throwaway probe, the same "derived, never
+ * string-parsed" discipline pvUciToSan above follows. An illegal from/to
+ * (should never happen -- handlePendingStart only sets `pending` after its
+ * own local chess.move() succeeds) degrades to san:undefined rather than
+ * throwing or guessing; the server independently re-verifies legality
+ * against the real current position before trusting anything about this
+ * (assembleChatFactList, server/coach/chat.ts) -- this mapper is a client
+ * convenience, not the source of truth.
+ *
+ * `judged`/`tier` describe the JUDGE's state, not confirmation: `judged` is
+ * true only once a verdict has actually landed (verdict !== null, which in
+ * GamePage happens exactly when judgePhase becomes "judged") -- a
+ * still-judging move and a confirm-only move that was never sent to judge
+ * at all (withJudge:false, C3) both read judged:false/tier:undefined, since
+ * neither has a verdict to report.
+ */
+export function pendingMoveContext(
+  pending: { from: string; to: string; promotion?: string } | null,
+  fen: string,
+  verdict: { tier: "silent" | "nudge" | "warning" } | null
+): NonNullable<ChatContext["pendingMove"]> | undefined {
+  if (!pending) return undefined;
+  const board = new Chess(fen);
+  const pieceKind = board.get(pending.from as Parameters<typeof board.get>[0])?.type ?? "piece";
+  let san: string | undefined;
+  try {
+    const probe = new Chess(fen);
+    const mv = probe.move({ from: pending.from, to: pending.to, promotion: pending.promotion ?? "q" });
+    san = mv?.san;
+  } catch {
+    san = undefined;
+  }
+  return {
+    pieceKind,
+    from: pending.from,
+    to: pending.to,
+    san,
+    tier: verdict?.tier,
+    judged: verdict != null,
+  };
+}
+
+/**
  * Reviewer fix (increment 3.95, Task 7 follow-up): `chatFocus` state in
  * GamePage is only cleared at full game/review-switch boundaries, not at the
  * finer ones where the on-screen MOMENT itself changes (a new pending move
