@@ -6,6 +6,27 @@
 //   npx tsx tools/coach-eval/run.ts --model sonnet --wiring legacy
 //   npx tsx tools/coach-eval/run.ts --model opus   --wiring legacy --out tools/coach-eval/runs/<ts>
 //
+// Flags:
+//   --model sonnet|opus       required
+//   --wiring legacy|threaded  required
+//   --out <dir>               output dir (default: runs/<timestamp>)
+//   --limit N                 smoke-test only: run the first N questions
+//   --warmup N                N throwaway calls through the identical chat()
+//                             path before the scored loop, to burn off
+//                             in-process cold start. Logged to
+//                             warmup-<model>[-rep<K>].json, printed DISCARDED,
+//                             NEVER merged into raw. Default 0.
+//   --rep K                   rep index for a multi-rep run. When present the
+//                             raw file becomes raw-<model>-rep<K>.json (absent
+//                             = the unchanged raw-<model>.json).
+//
+// ABBA convention (cold-start counterbalancing at the orchestration level):
+// run the two models back-to-back per rep with the order flipped each block
+// -- rep 1 = sonnet->opus, rep 2 = opus->sonnet, rep 3 = sonnet->opus -- so
+// time-of-night drift lands on both models rather than systematically on one.
+// Combined with --warmup, this removes the cold-start confound (see the v3
+// plan's design decision D1).
+//
 // See README.md for the full baseline/post-fix invocation pair and the
 // isolation rules this file enforces. This file NEVER opens
 // data/girlchess.db -- it only ever copies it to a scratch path this tool
@@ -222,6 +243,9 @@ async function main() {
   if (wiring !== "legacy" && wiring !== "threaded") {
     throw new Error(`--wiring must be "legacy" or "threaded" (got ${JSON.stringify(args.wiring)})`);
   }
+  const rep = args.rep ? Number.parseInt(args.rep, 10) : undefined;
+  const repSuffix = rep ? `-rep${rep}` : "";
+  const warmup = args.warmup ? Number.parseInt(args.warmup, 10) : 0;
   const outDir = args.out ? path.resolve(args.out) : path.join(TOOL_DIR, "runs", timestamp());
 
   // ---- DB isolation (hard rule) -----------------------------------------
@@ -289,7 +313,37 @@ async function main() {
   const questions = limit && limit > 0 ? allQuestions.slice(0, limit) : allQuestions;
   if (limit) console.log(`[coach-eval] --limit ${limit}: running ${questions.length}/${allQuestions.length} questions (smoke-test mode, not a full run)`);
   fs.mkdirSync(outDir, { recursive: true });
-  const rawPath = path.join(outDir, `raw-${model}.json`);
+
+  // ---- warmup pre-pass (cold-start control, design decision D1a) ---------
+  // N throwaway calls through the identical chat() path, logged separately
+  // and NEVER merged into the scored raw file. Removes in-process cold start
+  // directly; the discarded rows still land in the scratch db's
+  // advice_traces (scratch only -- harmless).
+  if (warmup > 0) {
+    const warmupPath = path.join(outDir, `warmup-${model}${repSuffix}.json`);
+    const wq = allQuestions[0];
+    const wFixture = FIXTURES[wq.ctx];
+    const wRows = rowsByGame.get(wFixture.gameId)!;
+    const wMoves = truncatedMoves(wRows, wFixture.ply);
+    const wPerPly = buildPerPlyAnalysis(wRows, wFixture.ply);
+    const wCtx = buildContext(wq, undefined, wiring);
+    const warmupLog: { i: number; source: string; latencyMs: number }[] = [];
+    for (let i = 1; i <= warmup; i++) {
+      const facts = assembleChatFactList(wMoves, wCtx, undefined, wPerPly);
+      const start = Date.now();
+      let source = "model";
+      try {
+        source = (await chat(wq.q, [], facts, agentSdkBackend, { gameId: wFixture.gameId, ply: wFixture.ply, kind: "chat" })).source;
+      } catch {
+        source = "error";
+      }
+      warmupLog.push({ i, source, latencyMs: Date.now() - start });
+      fs.writeFileSync(warmupPath, JSON.stringify(warmupLog, null, 2));
+      console.log(`[coach-eval] warmup ${i}/${warmup} -> ${source} ${warmupLog[i - 1].latencyMs}ms (DISCARDED, not scored)`);
+    }
+  }
+
+  const rawPath = path.join(outDir, `raw-${model}${repSuffix}.json`);
   const results: (AnswerRow & { model: Model; wiring: Wiring; measuredLatencyMs: number })[] = [];
 
   for (const question of questions) {
