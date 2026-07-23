@@ -178,6 +178,36 @@ describe("computeTurningPoints — acceptance fixtures", () => {
   });
 });
 
+describe("computeTurningPoints — crossedAdvantage (2026-07-22 debrief copy grading)", () => {
+  // Same Bxe4 case as classifications.test.ts's recalibration fixture:
+  // p14 (after Bg4) ≈ 0.6295 (she was ahead), p15 (after Bxe4) ≈ 0.4890
+  // (she isn't anymore) — a genuine advantage-to-non-advantage crossing.
+  it("flags a mistake that crosses from advantage to non-advantage", () => {
+    const moves: MoveEval[] = [
+      { ply: 13, san: "O-O", evalCp: -86, evalMate: null },
+      { ply: 14, san: "Bg4", evalCp: 144, evalMate: null },
+      { ply: 15, san: "Bxe4", evalCp: 12, evalMate: null },
+    ];
+    const tps = computeTurningPoints(moves, "*");
+    expect(tps).toHaveLength(1);
+    expect(tps[0]).toMatchObject({ ply: 15, label: "mistake", crossedAdvantage: true });
+  });
+
+  it("does not flag a mistake that was already behind before the move (no crossing)", () => {
+    // ply1 is under the floor on its own (quiet, p≈.45, not itself a
+    // candidate — avoids clustering with ply3), so ply3's Δp is measured
+    // cleanly against a p that was already under .5: she was behind before
+    // the move and stays behind after it, so there is no crossing even
+    // though the swing itself clears the mistake band.
+    const moves: MoveEval[] = [mv(1, "e4", cpForP(0.45)), mv(3, "Nc6", cpForP(0.28))];
+    const tps = computeTurningPoints(moves, "*");
+    const her = tps.find((t) => t.ply === 3);
+    expect(her).toBeTruthy();
+    expect(her!.label).toBe("mistake");
+    expect(her!.crossedAdvantage).toBeFalsy();
+  });
+});
+
 describe("computeTurningPoints — edge cases", () => {
   it("returns [] for an empty game", () => {
     expect(computeTurningPoints([], "1-0")).toEqual([]);

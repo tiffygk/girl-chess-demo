@@ -35,6 +35,15 @@ const LABEL_NUDGES: Record<string, string> = {
   inaccuracy: "small slip, still your game to lose from here.",
 };
 
+// 2026-07-22 recalibration (owner ruling), same reasoning as
+// debriefBullets.ts's CROSSED_LEAD_NUDGE: the flat LABEL_NUDGES text above
+// says "small slip" for a mistake/inaccuracy even when it crossed from a
+// real advantage to non-advantage (TurningPoint.crossedAdvantage — see
+// turningPoints.ts). Firmer copy fires for those two labels only when the
+// crossing actually happened; blunder's copy is already firm.
+const CROSSED_LEAD_NUDGE = "that handed your lead back. not fatal, but you were better and now it's even.";
+const CROSSING_GRADED_LABELS = new Set(["mistake", "inaccuracy"]);
+
 const PUNISHED_LESSON_ONCE = "today's lesson: when she blunders, take it. you did.";
 const PUNISHED_LESSON_TWICE = "today's lesson: when she blunders, take it. you did, twice.";
 const CLEAN_WIN_LESSON = "clean game. today was execution, not drama.";
@@ -57,7 +66,10 @@ export function debriefLesson(turningPoints: TurningPoint[], result: GameResult)
   if (ownMistakes.length > 0) {
     const worst = ownMistakes.reduce((a, b) => (b.deltaP < a.deltaP ? b : a));
     const n = moveNumberForPly(worst.ply);
-    const nudge = LABEL_NUDGES[worst.label] ?? "";
+    const nudge =
+      worst.crossedAdvantage && CROSSING_GRADED_LABELS.has(worst.label)
+        ? CROSSED_LEAD_NUDGE
+        : LABEL_NUDGES[worst.label] ?? "";
     return `today's lesson: ${worst.label} on move ${n}. ${nudge}`;
   }
 
