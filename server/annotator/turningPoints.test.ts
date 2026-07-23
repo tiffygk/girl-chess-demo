@@ -158,10 +158,17 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     expect(tps[0].punishSan).toBeUndefined();
 
     // The point of the exercise (panel-ruling.md): this is HER move, and
-    // this label + magnitude matches the ruling exactly (both the tier AND
-    // the value, to 3 decimals) — the strongest evidence this file's
-    // normalization/Δp pipeline is correct.
-    expect(tps[1]).toMatchObject({ rank: 2, ply: 15, san: "Bb4", label: "inaccuracy", kind: "swing" });
+    // the magnitude matches the ruling exactly, to 3 decimals — the
+    // strongest evidence this file's normalization/Δp pipeline is correct.
+    //
+    // RE-RULED 2026-07-22: the panel originally called this "inaccuracy"
+    // under the 0.15 mistake floor. The owner's same-day recalibration
+    // (turningPoints.ts's TP_BAND_MISTAKE comment: a real game's Bxe4 case,
+    // Δp -0.1405, giving back a clear advantage) lowered the floor to 0.13.
+    // This point's |Δp| = 0.1489 now clears that floor too, so it
+    // intentionally flips to "mistake" — not a silent drift, the same
+    // owner ruling that motivated the recalibration applies here as well.
+    expect(tps[1]).toMatchObject({ rank: 2, ply: 15, san: "Bb4", label: "mistake", kind: "swing" });
     expect(tps[1].deltaP).toBeCloseTo(-0.1489, 3);
 
     expect(tps[2]).toMatchObject({

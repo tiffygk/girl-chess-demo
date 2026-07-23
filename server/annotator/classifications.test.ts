@@ -82,6 +82,24 @@ describe("classifyMoves — real game fixture", () => {
   });
 });
 
+describe("classifyMoves — 2026-07-22 recalibration (owner ruling)", () => {
+  // Real-game case that motivated the recalibration: Bxe4 swung her
+  // win-probability by -0.1405 (a clear advantage, +1.44, erased down to
+  // -0.12) but the old 0.15 mistake-band floor still called it an
+  // "inaccuracy". The owner ruled a swing this size — giving back a clear
+  // advantage — is a mistake, not an inaccuracy; blunder stays reserved for
+  // going-from-fine-to-losing / hanging material, untouched here.
+  it("classifies a 0.1405 advantage-erasing swing (Bxe4) as mistake, not inaccuracy", () => {
+    const moves: MoveEval[] = [
+      { ply: 13, san: "O-O", evalCp: -86, evalMate: null },
+      { ply: 14, san: "Bg4", evalCp: 144, evalMate: null },
+      { ply: 15, san: "Bxe4", evalCp: 12, evalMate: null },
+    ];
+    const result = classifyMoves(moves);
+    expect(result[2]).toEqual({ ply: 15, classification: "mistake" });
+  });
+});
+
 // Same LLM-free hard constraint / source-scan gate as classify.ts,
 // adjudicate.ts, motifs.ts, and turningPoints.ts.
 describe("classifications.ts LLM-free gate", () => {

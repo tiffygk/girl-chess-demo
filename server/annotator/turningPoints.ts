@@ -88,7 +88,14 @@ export const TP_HOLD_PLIES = 2;
 // Shared label-band boundaries (her moves AND opponent moves use the same
 // numeric tiers per the ruling's vocabulary line) — exported so
 // classifications.ts imports the same numbers rather than re-declaring them.
-export const TP_BAND_MISTAKE = 0.15;
+//
+// Owner recalibration (2026-07-22): a real game's Bxe4 gave back a clear
+// advantage (+1.44 -> -0.12, Δp -0.1405) and the original 0.15 floor still
+// read it as an "inaccuracy" — too soft for a swing that erases a lead
+// entirely. Lowered to 0.13 so a swing this size reads as a mistake.
+// Blunder stays reserved for going-from-fine-to-losing / hanging material,
+// unchanged at 0.25.
+export const TP_BAND_MISTAKE = 0.13;
 export const TP_BAND_BLUNDER = 0.25;
 
 export interface MoveEval {
