@@ -339,6 +339,20 @@ export interface ChatContext {
     bestSan?: string;
     pvSans?: string[];
   };
+  // Task 1 (R2, pending-move context threading): mirrors
+  // server/coach/chat.ts's ChatContext.pendingMove verbatim -- see
+  // chatFocus.ts's pendingMoveContext for the pure mapper that populates
+  // this. Sent whenever `pending` is truthy, regardless of verdict/tier
+  // state (silent/in-flight/coach-off all included) -- the R2 fix for "why
+  // should i not put it here?" going unanswered on a fine (silent) move.
+  pendingMove?: {
+    pieceKind: string;
+    from: string;
+    to: string;
+    san?: string;
+    tier?: "silent" | "nudge" | "warning";
+    judged: boolean;
+  };
 }
 
 // Mirrors manager.ts's chat() return envelope (ok:true text/source/cause?/
