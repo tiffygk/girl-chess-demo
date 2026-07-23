@@ -1,0 +1,313 @@
+{
+  "generatedAt": "2026-07-23T12:06:11.663Z",
+  "questionCount": 65,
+  "wiring": "threaded",
+  "repOrder": [
+    "sonnet-rep1",
+    "opus-rep1",
+    "opus-rep2",
+    "sonnet-rep2",
+    "sonnet-rep3",
+    "opus-rep3"
+  ],
+  "sonnet": {
+    "reps": 3,
+    "axes": {
+      "completeness": {
+        "median": 1,
+        "min": 1,
+        "max": 1,
+        "perRep": [
+          {
+            "rep": 1,
+            "rate": 1,
+            "n": 57
+          },
+          {
+            "rep": 2,
+            "rate": 1,
+            "n": 62
+          },
+          {
+            "rep": 3,
+            "rate": 1,
+            "n": 60
+          }
+        ]
+      },
+      "length": {
+        "median": 0.5483870967741935,
+        "min": 0.4666666666666667,
+        "max": 0.5614035087719298,
+        "perRep": [
+          {
+            "rep": 1,
+            "rate": 0.5614035087719298,
+            "n": 57
+          },
+          {
+            "rep": 2,
+            "rate": 0.5483870967741935,
+            "n": 62
+          },
+          {
+            "rep": 3,
+            "rate": 0.4666666666666667,
+            "n": 60
+          }
+        ]
+      },
+      "jargon": {
+        "median": 1,
+        "min": 1,
+        "max": 1,
+        "perRep": [
+          {
+            "rep": 1,
+            "rate": 1,
+            "n": 57
+          },
+          {
+            "rep": 2,
+            "rate": 1,
+            "n": 62
+          },
+          {
+            "rep": 3,
+            "rate": 1,
+            "n": 60
+          }
+        ]
+      },
+      "aiIsmCasing": {
+        "median": 0.9838709677419355,
+        "min": 0.9833333333333333,
+        "max": 1,
+        "perRep": [
+          {
+            "rep": 1,
+            "rate": 1,
+            "n": 57
+          },
+          {
+            "rep": 2,
+            "rate": 0.9838709677419355,
+            "n": 62
+          },
+          {
+            "rep": 3,
+            "rate": 0.9833333333333333,
+            "n": 60
+          }
+        ]
+      },
+      "pendingAwareness": {
+        "median": 1,
+        "min": 0.9285714285714286,
+        "max": 1,
+        "perRep": [
+          {
+            "rep": 1,
+            "rate": 1,
+            "n": 14
+          },
+          {
+            "rep": 2,
+            "rate": 1,
+            "n": 14
+          },
+          {
+            "rep": 3,
+            "rate": 0.9285714285714286,
+            "n": 14
+          }
+        ]
+      }
+    },
+    "pipeline": {
+      "perRep": [
+        {
+          "rep": 1,
+          "templateRate": 0.12307692307692308,
+          "timeoutCount": 0,
+          "errorCount": 0,
+          "medianLatencyMs": 7006,
+          "p90LatencyMs": 44500.4
+        },
+        {
+          "rep": 2,
+          "templateRate": 0.046153846153846156,
+          "timeoutCount": 0,
+          "errorCount": 0,
+          "medianLatencyMs": 9786,
+          "p90LatencyMs": 37100.4
+        },
+        {
+          "rep": 3,
+          "templateRate": 0.07692307692307693,
+          "timeoutCount": 0,
+          "errorCount": 0,
+          "medianLatencyMs": 9305,
+          "p90LatencyMs": 29450.4
+        }
+      ],
+      "pooled": {
+        "templateRate": 0.08205128205128205,
+        "medianLatencyMs": 8929,
+        "p90LatencyMs": 37100.4,
+        "totalRows": 195,
+        "failureRows": 16
+      }
+    }
+  },
+  "opus": {
+    "reps": 3,
+    "axes": {
+      "completeness": {
+        "median": 1,
+        "min": 1,
+        "max": 1,
+        "perRep": [
+          {
+            "rep": 1,
+            "rate": 1,
+            "n": 64
+          },
+          {
+            "rep": 2,
+            "rate": 1,
+            "n": 65
+          },
+          {
+            "rep": 3,
+            "rate": 1,
+            "n": 65
+          }
+        ]
+      },
+      "length": {
+        "median": 0.2153846153846154,
+        "min": 0.1875,
+        "max": 0.27692307692307694,
+        "perRep": [
+          {
+            "rep": 1,
+            "rate": 0.1875,
+            "n": 64
+          },
+          {
+            "rep": 2,
+            "rate": 0.2153846153846154,
+            "n": 65
+          },
+          {
+            "rep": 3,
+            "rate": 0.27692307692307694,
+            "n": 65
+          }
+        ]
+      },
+      "jargon": {
+        "median": 1,
+        "min": 1,
+        "max": 1,
+        "perRep": [
+          {
+            "rep": 1,
+            "rate": 1,
+            "n": 64
+          },
+          {
+            "rep": 2,
+            "rate": 1,
+            "n": 65
+          },
+          {
+            "rep": 3,
+            "rate": 1,
+            "n": 65
+          }
+        ]
+      },
+      "aiIsmCasing": {
+        "median": 1,
+        "min": 0.984375,
+        "max": 1,
+        "perRep": [
+          {
+            "rep": 1,
+            "rate": 0.984375,
+            "n": 64
+          },
+          {
+            "rep": 2,
+            "rate": 1,
+            "n": 65
+          },
+          {
+            "rep": 3,
+            "rate": 1,
+            "n": 65
+          }
+        ]
+      },
+      "pendingAwareness": {
+        "median": 1,
+        "min": 1,
+        "max": 1,
+        "perRep": [
+          {
+            "rep": 1,
+            "rate": 1,
+            "n": 14
+          },
+          {
+            "rep": 2,
+            "rate": 1,
+            "n": 14
+          },
+          {
+            "rep": 3,
+            "rate": 1,
+            "n": 14
+          }
+        ]
+      }
+    },
+    "pipeline": {
+      "perRep": [
+        {
+          "rep": 1,
+          "templateRate": 0.015384615384615385,
+          "timeoutCount": 0,
+          "errorCount": 0,
+          "medianLatencyMs": 9315,
+          "p90LatencyMs": 13779.6
+        },
+        {
+          "rep": 2,
+          "templateRate": 0,
+          "timeoutCount": 0,
+          "errorCount": 0,
+          "medianLatencyMs": 8534,
+          "p90LatencyMs": 13537.4
+        },
+        {
+          "rep": 3,
+          "templateRate": 0,
+          "timeoutCount": 0,
+          "errorCount": 0,
+          "medianLatencyMs": 8262,
+          "p90LatencyMs": 13800.2
+        }
+      ],
+      "pooled": {
+        "templateRate": 0.005128205128205128,
+        "medianLatencyMs": 8707,
+        "p90LatencyMs": 13779.6,
+        "totalRows": 195,
+        "failureRows": 1
+      }
+    }
+  }
+}

@@ -92,9 +92,40 @@ describe("checkVoice -- ai-ism axis", () => {
     expect(violations.some((v) => v.axis === "ai-ism" && v.id === "leverage")).toBe(true);
   });
 
-  it("fails on the banned 'let's' phrase", () => {
-    const violations = checkVoice("let's look at your last move.");
-    expect(violations.some((v) => v.axis === "ai-ism")).toBe(true);
+  it("fails on the banned 'let's' contraction (straight and curly apostrophe)", () => {
+    expect(checkVoice("let's look at your last move.").some((v) => v.axis === "ai-ism")).toBe(true);
+    expect(checkVoice("let’s look at your last move.").some((v) => v.axis === "ai-ism")).toBe(true);
+  });
+
+  // Audit iter 1: the `\blet'?s\b` optional apostrophe was matching the plain
+  // third-person verb "lets" ("X lets you take the bishop") -- not the banned
+  // contraction. All 7 disagreements were verb-"lets"-only. Fix requires the
+  // apostrophe; the verb must not be flagged.
+  it("does not flag the ordinary verb 'lets' as an ai-ism (audit iter 1: dir-06)", () => {
+    const violations = checkVoice("it also lets you take the bishop on b4 next.");
+    expect(violations.filter((v) => v.axis === "ai-ism")).toEqual([]);
+  });
+
+  // Regression: the three genuine ai-ism/casing FAILs from the audit sample
+  // must stay FAIL after the lets fix -- each fails on uppercase, not on
+  // "lets", so clearing the false verb hit must not flip them to clean.
+  it("keeps the true casing FAILs failing after the lets fix (audit iter 1)", () => {
+    // dir-06 sonnet rep2 -- has verb 'lets' AND uppercase: ai-ism clears, casing stays.
+    const r1 = checkVoice(
+      "Your knight on b1 has two legal moves right now: c3 or a3. Going to c3 also lets you take the bishop on b4 next if she doesn't move it, since your bishop on d2 is already eyeing it too.",
+    );
+    expect(r1.some((v) => v.axis === "ai-ism")).toBe(false);
+    expect(r1.some((v) => v.axis === "casing")).toBe(true);
+    // dir-03 sonnet rep3 -- uppercase sentence starts, no 'lets'.
+    const r2 = checkVoice(
+      "Take your bishop on d2 and capture the bishop on b4. It's hanging there for free, one piece attacking it with nothing extra needed.",
+    );
+    expect(r2.some((v) => v.axis === "casing")).toBe(true);
+    // narr-15 opus rep1 -- uppercase mid-answer ("Send", "If").
+    const r3 = checkVoice(
+      "c7 is the sore spot: her pawn there is undefended, and your knight can reach it. Send your knight to d5, where it hits both her rook on f6 and that c7 pawn at once. If her rook steps to d6, your knight takes the pawn on c7 for free.",
+    );
+    expect(r3.some((v) => v.axis === "casing")).toBe(true);
   });
 
   it("fails on 'great question' as an opener", () => {
