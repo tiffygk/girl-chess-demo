@@ -54,6 +54,12 @@ Run execution under **`superpowers:subagent-driven-development`** — the contro
 Run the review under **`superpowers:test-driven-development`**: a finding is proven by a failing test before it's fixed, and every fix is red-green (write the failing test that captures the bug, then make it pass). The reviewer also confirms the round's shipped changes carry tests, not just green suites.
 
 1. Dispatch one **Opus** reviewer over the whole round's diff (base..HEAD). Its brief: correctness first, hard project rules second, spec-vs-implementation third; adversarially verify every finding; write the full review to `.superpowers/sdd/rounds/<date>-<slug>/review.md`; return only the findings list (severity, file:line, one sentence) and the verdict.
+
+**Reasoning discipline for the review and for any root-cause work (learned the hard way, 2026-07-22):**
+- **A root cause must trace to observed real-world behavior, not a test-rig artifact.** "The synthetic games failed more" is a fact about the harness, not the product — never write it into a root-cause list. If a symptom only appears under your own scaffolding, that's the finding.
+- **Falsify your proposed fix against data you already have before building it.** The "obvious" fix (feed the model a precomputed line) was already contradicted by an existing measurement (bare-notation facts made answers slower, not faster). Check whether your own results refute the fix first.
+- **Verify magnitudes with the real math; do not eyeball.** A "0.20 drop, clearly a mistake" estimate was mathematically impossible (the curve caps that swing at ~0.14). Reasoning through the actual numbers (via Fable for the hard cases) changed a "bug fix" into a "calibration ruling" — a different, correct action.
+- **The controller verifies subagent findings and fixes, it does not rubber-stamp them.** This review caught a "material-aware hint" fix that would have shipped the very bug it was closing, an accuracy checker that inflated its own error rate, and an eval instrument with no discriminating power. Re-derive the load-bearing claim yourself.
 2. If findings: one fix wave — a **Sonnet** subagent for logic fixes, a **Fable** subagent for visual fixes — brief written the same way (findings pasted verbatim are fine, they're short), each instructed to work test-first per the TDD skill. Re-run gates.
 
 ## Phase 4 — visual gate (Opus controller dispatches a Fable subagent)
