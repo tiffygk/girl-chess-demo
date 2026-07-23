@@ -83,7 +83,11 @@ export const AI_ISM_WORDS: string[] = [
 
 export const AI_ISM_PHRASES: RegExp[] = [
   /^\s*great question/i,
-  /\blet'?s\b/i,
+  // Require the apostrophe (straight ' or curly ’): the banned AI-ism is the
+  // contraction "let's". The optional apostrophe (`'?`) previously also
+  // matched the ordinary verb "lets" ("X lets you take the bishop"), which is
+  // plain English, not banned (audit iter 1, 7 false positives).
+  /\blet['’]s\b/i,
   /it'?s not \S[^.!?]{0,40}, it'?s /i,
   /\bmoreover\b/i,
   /\bfurthermore\b/i,
