@@ -94,19 +94,31 @@ export function checkLength(text: string, isAffirmation: boolean): AxisResult & 
   return { pass, words, sentences, detail: `${words} words, ${sentences} sentences (limit ${wordLimit}w/${sentenceLimit}s)` };
 }
 
-// Axis 5 (the r2 headline metric), exact formula from methodology part 4:
+// Axis 5 (the r2 headline metric). Base formula from methodology part 4:
 //   mentions_to    = /\bto\b/.test(answer)
 //   mentions_piece = /\bpieceWord\b/.test(answer)
 //   mentions_from  = /\bfrom\b/.test(answer)
 //   pass = mentions_to || (mentions_piece && mentions_from)
 // on lowercased text.
+//
+// Audit iter 1 added a third disjunct: the coach's natural register
+// describes retreats / developments / refutations without printing either
+// square ("steps your knight away from the bishop's attack" = Ne1; "the pawn
+// push leaves it hanging" = h3). Those genuinely engage her pending move but
+// name no square, so they false-negatived on the square-substring formula.
+// Pass also when the pending piece is possessed by the player ("your knight",
+// "your light-square bishop") or, for a pawn move, described as "the pawn
+// push".
 export function checkPendingAwareness(text: string, pending: PendingRef): boolean {
   const lower = text.toLowerCase();
   const pieceWord = PIECE_WORDS[pending.pieceKind] ?? pending.pieceKind;
   const mentionsTo = new RegExp(`\\b${pending.to}\\b`).test(lower);
   const mentionsPiece = new RegExp(`\\b${pieceWord}\\b`).test(lower);
   const mentionsFrom = new RegExp(`\\b${pending.from}\\b`).test(lower);
-  return mentionsTo || (mentionsPiece && mentionsFrom);
+  // "your knight", "your light-square bishop" (one optional adjective token).
+  const mentionsYourPiece = new RegExp(`\\byour\\s+(?:\\S+[-\\s])?${pieceWord}\\b`).test(lower);
+  const mentionsPawnPush = pending.pieceKind === "p" && /\bpawn push\b/.test(lower);
+  return mentionsTo || (mentionsPiece && mentionsFrom) || mentionsYourPiece || mentionsPawnPush;
 }
 
 // Combines axes 1-5 for one answer row. Axis 6 (regen/template pressure) is

@@ -9,6 +9,8 @@ import {
   summarizePipeline,
   type AnswerRow,
 } from "./score";
+import { medianOf, aggregateAxis, type RepAxis } from "./render";
+import { decideModel, DEFAULT_MODEL, type DecideInputs } from "./decide";
 
 describe("countWords", () => {
   it("counts whitespace-separated words", () => {
@@ -82,11 +84,42 @@ describe("checkPendingAwareness", () => {
   it("fails when the answer names neither the destination nor piece+origin", () => {
     expect(checkPendingAwareness("develop a piece toward the center first.", pending)).toBe(false);
   });
-  it("fails when only the piece word is present without the origin square", () => {
-    expect(checkPendingAwareness("your knight has better options.", pending)).toBe(false);
+  it("fails when a bare piece word appears without 'your', the origin, or the destination", () => {
+    // "the knight" is not "your knight" -> mentionsYourPiece stays false.
+    expect(checkPendingAwareness("the knight has better options.", pending)).toBe(false);
   });
   it("is case-insensitive", () => {
     expect(checkPendingAwareness("Once it lands on F3 that's fine.", pending)).toBe(true);
+  });
+
+  // Audit iter 1: the coach's natural register describes retreats /
+  // developments / refutations without printing either square. The
+  // square-substring formula false-negatived on these (7 disagreements).
+  // Third disjunct: pass when the pending piece is possessed by the player
+  // ("your knight") or, for a pawn move, described as "the pawn push".
+  it("passes a described-not-named retreat via 'your <piece>' (audit iter 1: PD2)", () => {
+    const p = { pieceKind: "n", from: "f3", to: "e1" };
+    expect(
+      checkPendingAwareness(
+        "that's fine. it steps your knight away from the bishop's attack while keeping it ready to hop back into the game.",
+        p,
+      ),
+    ).toBe(true);
+  });
+  it("matches a compound-adjective piece name after 'your' (e.g. 'your light-square bishop')", () => {
+    const p = { pieceKind: "b", from: "c3", to: "e5" };
+    expect(
+      checkPendingAwareness("your light-square bishop takes on c8 and her queen recaptures.", p),
+    ).toBe(true);
+  });
+  it("passes a pending pawn move described as 'the pawn push' (audit iter 1: PD8)", () => {
+    const p = { pieceKind: "p", from: "h2", to: "h3" };
+    expect(
+      checkPendingAwareness(
+        "your bishop on f5 is attacked by her bishop on c8 and nothing defends it, so the pawn push leaves it hanging.",
+        p,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -173,5 +206,110 @@ describe("summarizePipeline", () => {
     expect(summary.total).toBe(0);
     expect(summary.templateRate).toBe(0);
     expect(summary.medianLatencyMs).toBe(0);
+  });
+});
+
+describe("medianOf", () => {
+  it("returns the middle value of an odd-length set", () => {
+    expect(medianOf([0.6, 0.9, 0.7])).toBe(0.7);
+  });
+  it("interpolates (averages the two middles) on an even-length set", () => {
+    expect(medianOf([0.2, 0.4, 0.6, 0.8])).toBeCloseTo(0.5);
+  });
+  it("does not mutate the input order", () => {
+    const input = [0.9, 0.1, 0.5];
+    medianOf(input);
+    expect(input).toEqual([0.9, 0.1, 0.5]);
+  });
+});
+
+describe("aggregateAxis", () => {
+  const rep = (n: number, rate: number | null): RepAxis => ({ rep: n, rate, n: 10 });
+
+  it("returns median/min/max across three reps", () => {
+    const agg = aggregateAxis([rep(1, 0.6), rep(2, 0.9), rep(3, 0.7)]);
+    expect(agg.median).toBe(0.7);
+    expect(agg.min).toBe(0.6);
+    expect(agg.max).toBe(0.9);
+    expect(agg.perRep).toHaveLength(3);
+  });
+
+  it("ignores null reps when some are present", () => {
+    const agg = aggregateAxis([rep(1, null), rep(2, 0.8), rep(3, 0.4)]);
+    expect(agg.median).toBeCloseTo(0.6);
+    expect(agg.min).toBe(0.4);
+    expect(agg.max).toBe(0.8);
+  });
+
+  it("returns all-null when every rep is null", () => {
+    const agg = aggregateAxis([rep(1, null), rep(2, null)]);
+    expect(agg.median).toBeNull();
+    expect(agg.min).toBeNull();
+    expect(agg.max).toBeNull();
+    expect(agg.perRep).toHaveLength(2);
+  });
+});
+
+describe("decideModel", () => {
+  const pair = (
+    sMed: number,
+    sLo: number,
+    sHi: number,
+    oMed: number,
+    oLo: number,
+    oHi: number
+  ) => ({
+    sonnet: { median: sMed, min: sLo, max: sHi },
+    opus: { median: oMed, min: oLo, max: oHi },
+  });
+  // A deliberately non-deciding (equal, overlapping) axis pair.
+  const flat = pair(0.9, 0.88, 0.92, 0.9, 0.88, 0.92);
+
+  it("decides on jargon when the delta exceeds the threshold and rep ranges are disjoint", () => {
+    const inputs: DecideInputs = {
+      jargon: pair(0.8, 0.78, 0.82, 0.95, 0.93, 0.97),
+      length: flat,
+      pending: flat,
+      pendingAudited: false,
+    };
+    const d = decideModel(inputs);
+    expect(d.decidedBy).toBe("jargon");
+    expect(d.winner).toBe("opus");
+  });
+
+  it("falls through jargon when the ranges overlap despite a median gap", () => {
+    const inputs: DecideInputs = {
+      // medians differ by 0.10 but the rep ranges overlap -> not decisive
+      jargon: pair(0.8, 0.7, 0.9, 0.9, 0.82, 0.98),
+      length: flat,
+      pending: flat,
+      pendingAudited: false,
+    };
+    const d = decideModel(inputs);
+    expect(d.decidedBy).not.toBe("jargon");
+    expect(d.winner).toBe("tie-keep-default");
+  });
+
+  it("ignores pending unless the checker was audited", () => {
+    const inputs: DecideInputs = {
+      jargon: flat,
+      length: flat,
+      pending: pair(0.5, 0.48, 0.52, 0.9, 0.88, 0.92),
+      pendingAudited: false,
+    };
+    const d = decideModel(inputs);
+    expect(d.decidedBy).toBe("default");
+    const audited = decideModel({ ...inputs, pendingAudited: true });
+    expect(audited.decidedBy).toBe("pending");
+    expect(audited.winner).toBe("opus");
+  });
+
+  it("returns tie-keep-default (semantically sonnet) when no axis decides", () => {
+    const inputs: DecideInputs = { jargon: flat, length: flat, pending: flat, pendingAudited: true };
+    const d = decideModel(inputs);
+    expect(d.winner).toBe("tie-keep-default");
+    expect(d.decidedBy).toBe("default");
+    expect(DEFAULT_MODEL).toBe("sonnet");
+    expect(d.reasoning.toLowerCase()).toContain("sonnet");
   });
 });

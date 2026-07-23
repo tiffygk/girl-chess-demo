@@ -1,0 +1,17 @@
+[
+  {
+    "i": 1,
+    "source": "model",
+    "latencyMs": 40576
+  },
+  {
+    "i": 2,
+    "source": "model",
+    "latencyMs": 30480
+  },
+  {
+    "i": 3,
+    "source": "template",
+    "latencyMs": 45004
+  }
+]
