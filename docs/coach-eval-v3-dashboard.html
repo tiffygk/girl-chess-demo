@@ -197,6 +197,51 @@
 
   footer { margin-top: 46px; padding-top: 20px; border-top: 1px solid var(--hair); font-size: 12px; color: var(--muted); line-height: 1.7; }
   footer .mono { background: transparent; padding: 0; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 6px; margin-top: 22px; border-bottom: 1px solid var(--hair); }
+  .tab-btn {
+    appearance: none; border: 1px solid transparent; border-bottom: none; background: transparent;
+    color: var(--text-2); font-family: inherit; font-size: 14px; font-weight: 600;
+    padding: 10px 18px 9px; cursor: pointer; border-radius: 10px 10px 0 0; position: relative; top: 1px;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn[aria-selected="true"] {
+    background: var(--surface); border-color: var(--hair); color: var(--text);
+    box-shadow: 0 -1px 0 color-mix(in srgb, var(--series-sonnet) 60%, transparent) inset;
+  }
+  .pane[hidden] { display: none; }
+
+  /* Tab 2: version stages */
+  .stages { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .stage { background: var(--surface-2); border: 1px solid var(--hair); border-radius: 10px; padding: 16px 18px; }
+  .stage .st-ver { font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+  .stage .st-name { font-size: 15px; font-weight: 700; margin: 4px 0 8px; }
+  .stage p { font-size: 13px; color: var(--text-2); line-height: 1.55; }
+  .stage.current { border-color: color-mix(in srgb, var(--series-sonnet) 55%, var(--hair)); }
+  .stage.current .st-ver { color: var(--series-sonnet); }
+
+  /* Tab 2: concern cards */
+  .concerns { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .concern { border: 1px solid var(--hair); border-radius: 10px; padding: 16px 18px; background: var(--surface-2); }
+  .concern .cn-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .concern .cn-title { font-size: 14.5px; font-weight: 700; }
+  .concern p { font-size: 13.5px; color: var(--text-2); line-height: 1.6; }
+  .concern p + p { margin-top: 8px; }
+  .concern p b { color: var(--text); }
+  .otag { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 11px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+  .otag.fixed { background: color-mix(in srgb, var(--series-sonnet) 14%, transparent); color: var(--chip-fg); }
+  .otag.artifact { background: color-mix(in srgb, var(--series-opus) 14%, transparent); color: var(--series-opus); }
+  .otag.cleared { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
+
+  /* Tab 2: retro lists */
+  ul.retro-list { list-style: none; margin-top: 4px; }
+  ul.retro-list li { position: relative; padding: 9px 4px 9px 26px; font-size: 13.5px; color: var(--text-2); line-height: 1.6; }
+  ul.retro-list li b { color: var(--text); }
+  ul.retro-list li::before { content: ""; position: absolute; left: 6px; top: 17px; width: 7px; height: 7px; border-radius: 2px; background: var(--series-sonnet); }
+  ul.retro-list.went-wrong li::before { background: var(--series-opus); }
+
+  @media (max-width: 680px) { .stages { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -206,19 +251,26 @@
     <div>
       <div class="kicker">Girl Chess · Coach model evaluation</div>
       <h1>Coach Eval v3: Sonnet vs Opus</h1>
-      <p class="dek">A controlled rerun comparing two model backends for the in-game coach, and what makes the pick defensible: a cold-start control, an audited instrument, honest exclusions.</p>
+      <p class="dek">Two AI models competed for the same job: powering an in-game coaching assistant. This report shows which one won, why, and the controls that make the result trustworthy. The second tab covers how the evaluation process itself was built, challenged, and hardened.</p>
     </div>
     <button class="theme-toggle" id="themeToggle" aria-label="Toggle light and dark theme">
       <span id="themeIcon">◐</span><span id="themeLabel">Theme</span>
     </button>
   </div>
 
+  <nav class="tabs" role="tablist" aria-label="Report tabs">
+    <button class="tab-btn" id="tabBtnResults" role="tab" aria-selected="true" aria-controls="pane-results">Results</button>
+    <button class="tab-btn" id="tabBtnProcess" role="tab" aria-selected="false" aria-controls="pane-process">Methodology &amp; Process</button>
+  </nav>
+
+  <div class="pane" id="pane-results" role="tabpanel" aria-labelledby="tabBtnResults">
+
   <div class="meta-row" id="metaRow"></div>
 
   <div class="legend-key">
     <span class="lk"><span class="swatch sonnet"></span> <b>Sonnet</b>&nbsp;(claude-sonnet-5, current default)</span>
     <span class="lk"><span class="swatch opus"></span> <b>Opus</b>&nbsp;(claude-opus, challenger)</span>
-    <span class="lk" style="color:var(--muted)">Median dot · whisker = min–max across 3 reps</span>
+    <span class="lk" style="color:var(--muted)">Large dot = middle of 3 repeats · line = lowest to highest repeat</span>
   </div>
 
   <hr class="rule">
@@ -226,7 +278,7 @@
   <!-- SECTION 1 -->
   <section id="s1">
     <div class="sec-head"><span class="sec-num">01</span><h2>Headline recommendation</h2></div>
-    <p class="sec-sub">A pre-registered rule (D4) picks the winner from the axes in priority order, so the choice is a rule outcome, not taste.</p>
+    <p class="sec-sub">The winner was picked by a decision rule written down before any data existed, applied to the measures in a fixed priority order — so the choice is a rule outcome, not taste.</p>
     <div class="card">
       <div class="verdict-top">
         <div>
@@ -239,13 +291,18 @@
       <div class="evidence" id="evidenceRow"></div>
 
       <div style="margin-top:22px">
-        <div class="an-label" style="font-size:11px;letter-spacing:0.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:6px">Decision rule (D4), evaluated in order</div>
+        <div class="an-label" style="font-size:11px;letter-spacing:0.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:6px">The decision rule, evaluated in order (pre-registered as "D4" before any data existed)</div>
         <ol class="rule-steps">
-          <li><b>Jargon-clean.</b> Take it if the median gap &gt; 3 points and the rep ranges are disjoint. <span style="color:var(--muted)">Tied at 100%, falls through.</span></li>
-          <li class="fired"><b>Length compliance.</b> Take it if the median gap &gt; 5 points and disjoint. <span class="fired-tag">this step fired: gap 33 pts, disjoint → sonnet</span></li>
-          <li><b>Audited pending-awareness.</b> Take it if the gap &gt; 15 points and disjoint, only if the checker passed the 95% audit. <span style="color:var(--muted)">Never reached.</span></li>
+          <li><b>Plain language.</b> If one model leaks internal engineering terms clearly less often (gap over 3 points, no overlap across repeats), it wins here. <span style="color:var(--muted)">Tied at 100%, falls through.</span></li>
+          <li class="fired"><b>Answer length.</b> If one model stays inside the coach's word budget clearly more often (gap over 5 points, no overlap), it wins here. <span class="fired-tag">this step fired: 33-point gap, no overlap → sonnet</span></li>
+          <li><b>Responds to her held move.</b> Counts only because its automated scorer passed a 95% human audit first. <span style="color:var(--muted)">Never reached.</span></li>
           <li><b>Tie.</b> Keep the current default, sonnet. <span style="color:var(--muted)">Not needed.</span></li>
         </ol>
+      </div>
+
+      <div class="annotation" style="margin-top:20px">
+        <span class="an-label">Reported, not suppressed</span>
+        The scorecard is not one-sided. Sonnet wins on the measure weighted highest — keeping answers short — but reliability runs the other way: sonnet fails over to a canned reply on 8.2% of turns against opus's 0.5%, and sonnet's first run (12.3%) even breached the 10% health gate that both models were expected to clear. Section 5 treats that as a real product finding against the winner, not a footnote. Both models scored 100% on finishing every reply cleanly.
       </div>
 
       <div class="annotation" style="margin-top:20px">
@@ -255,139 +312,298 @@
 
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Keep sonnet: jargon tied at 100%, so length compliance decided it, sonnet 55% vs opus 22% with no rep overlap.</div>
+        <div><span class="tk-label">Takeaway</span>Keep sonnet: both models tied at 100% on plain language, so answer length decided it — sonnet stays inside the word budget 55% of the time against opus's 22%, with no overlap across repeats.</div>
       </div>
     </div>
   </section>
 
   <!-- SECTION 2 -->
   <section id="s2">
-    <div class="sec-head"><span class="sec-num">02</span><h2>Jargon-clean rate by model</h2></div>
-    <p class="sec-sub">Share of eligible replies with no chess-engine jargon, under the corrected persona.</p>
+    <div class="sec-head"><span class="sec-num">02</span><h2>Plain language: does the coach sound like a person?</h2></div>
+    <p class="sec-sub">Share of replies with zero internal engineering vocabulary — the coach should talk the way a person would, never leak the machinery behind it. (Internal metric name: jargon-clean rate.)</p>
     <div class="card">
-      <div class="chart-title">Jargon-clean rate (0–100%)</div>
+      <div class="chart-title">Replies free of engineering terms (0–100%)</div>
       <div class="chart-holder" id="chart-jargon"></div>
       <div class="annotation">
-        <span class="an-label">Why the baseline gap vanished</span>
-        The baseline's 85% vs 38% "engine" gap traced to the persona at commit <code>ef8aa98</code>, which said "the engine's read". The current persona (commit <code>10619ce</code>) contains zero "engine" language, one un-branched prompt path, plus a runtime voice guard.
+        <span class="an-label">Why the earlier gap vanished — and the lesson it taught</span>
+        An earlier comparison showed 85% vs 38% and looked like one model naturally "talks like an engine." The real cause was the coach's own instruction text, which mentioned the engine — the models were quoting their instructions back. With that instruction text fixed, both models score 100%. The lesson this rerun cemented: fix the structure before comparing models. A broken prompt can make two models look different when they are not, and a bigger model cannot fix a broken prompt.
+        <div style="margin-top:8px;font-size:12px;color:var(--muted)">Technical detail: baseline ran against persona commit <code>ef8aa98</code> ("the engine's read"); current persona (<code>10619ce</code>) contains zero "engine" language, one un-branched prompt path, plus a runtime voice guard. The checker behind this number was hand-audited at 100% agreement (50/50 rows, both audit rounds).</div>
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Both models are 100% jargon-clean in all six runs; the baseline's 85% vs 38% gap was the old persona telling the coach about the engine, not a model difference.</div>
+        <div><span class="tk-label">Takeaway</span>Both models used plain language in 100% of replies across all six runs — the earlier 85%-vs-38% gap was a prompt bug, not a model difference.</div>
       </div>
     </div>
   </section>
 
   <!-- SECTION 3 -->
   <section id="s3">
-    <div class="sec-head"><span class="sec-num">03</span><h2>Length-budget compliance</h2><span class="chip" style="background:color-mix(in srgb, var(--series-sonnet) 14%, transparent);color:var(--chip-fg)">deciding axis</span></div>
-    <p class="sec-sub">Share of replies inside the persona's length budget (45 words / 3 sentences; 20 words for affirmations). The rep ranges are disjoint, which is the decision criterion.</p>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Brevity: does the coach keep answers short?</h2><span class="chip" style="background:color-mix(in srgb, var(--series-sonnet) 14%, transparent);color:var(--chip-fg)">this decided the pick</span></div>
+    <p class="sec-sub">Share of replies inside the coach's length budget (45 words / 3 sentences; 20 words for quick confirmations). Short answers matter because the coach speaks in the middle of a live game.</p>
     <div class="card">
-      <div class="chart-title">Length-budget compliance (0–100%)</div>
+      <div class="chart-title">Replies inside the length budget (0–100%)</div>
       <div class="chart-holder" id="chart-length"></div>
+      <div class="annotation">
+        <span class="an-label">Honest frame, and a fairness concern checked and cleared</span>
+        Neither model is good at this yet — sonnet misses the budget almost half the time — but sonnet is decisively closer to the coach the spec describes, in every one of six runs. Separately, the stakeholder suspected failed replies (timeouts served as canned fallbacks) were being counted against this score. That was verified directly in the scoring code and in the raw counts: failed replies never enter this measure. The concern did not reproduce, so nothing was changed — and the rule is printed below so the check stays visible.
+      </div>
       <div class="verbatim">
         "template/timeout/error rows are pipeline failures and are excluded from this denominator — verified in harness code and in baseline denominators 55/65".
-        <span class="vb-src">Exclusion rule, quoted verbatim from plan.md. Per-rep n values (57/62/60 and 64/65/65) equal 65 minus each rep's pipeline failures, so the exclusion is visible on inspection.</span>
+        <span class="vb-src">Exclusion rule, quoted verbatim from the pre-registered plan. Per-run sample sizes (57/62/60 and 64/65/65) equal 65 minus each run's failed replies, so the exclusion is visible on inspection.</span>
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Sonnet lands inside the 45-word budget 55% of the time (47 to 56 across reps) against opus at 22% (19 to 28); the ranges never overlap, and that decided the pick.</div>
+        <div><span class="tk-label">Takeaway</span>Sonnet stays inside the 45-word budget 55% of the time (47 to 56 across repeats) against opus's 22% (19 to 28); the ranges never overlap, and that decided the pick.</div>
       </div>
     </div>
   </section>
 
   <!-- SECTION 4 -->
   <section id="s4">
-    <div class="sec-head"><span class="sec-num">04</span><h2>Pending-awareness (audited)</h2></div>
-    <p class="sec-sub">Share of pending-move replies that engage her held move, judged by reading rather than substring match. n = 14 pending rows per rep, so one row moves this axis 7 points.</p>
+    <div class="sec-head"><span class="sec-num">04</span><h2>Staying on topic: does the coach address the move she is weighing?</h2></div>
+    <p class="sec-sub">When the player is holding a candidate move and asks about it, the reply should engage that specific move — judged by a human-audited reading, not keyword matching. Small sample: 14 such prompts per run, so a single miss moves this score 7 points. (Internal metric name: pending-awareness.)</p>
     <div class="card">
-      <div class="chart-title">Pending-awareness rate (0–100%)</div>
+      <div class="chart-title">Replies that engage her held move (0–100%)</div>
       <div class="chart-holder" id="chart-pending"></div>
       <div class="annotation">
-        <span class="an-label">This is the audited number</span>
-        Engagement judged by reading: 28/28 checker agreement at audit iteration 2. The earlier substring proxy false-passed on coincidental square mentions and false-failed on described-but-not-named moves; it was fixed and re-audited before this number was accepted.
+        <span class="an-label">This number survived a human audit</span>
+        The first automated scorer only gave credit when a reply named the exact square. It failed replies that plainly described her move in words ("steps your knight away from the bishop's attack"), and in an earlier version could pass replies that mentioned a square by coincidence. It was rebuilt and re-audited to 28-out-of-28 agreement with human labels before this number was accepted.
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Both models engage her pending move nearly every time (medians 100%, sonnet missed once in rep 3), so the audited axis never had to decide the pick.</div>
+        <div><span class="tk-label">Takeaway</span>Both models address her held move nearly every time (medians 100%; sonnet missed once in 42 chances), so this measure never had to decide the pick.</div>
       </div>
     </div>
   </section>
 
   <!-- SECTION 5 -->
   <section id="s5">
-    <div class="sec-head"><span class="sec-num">05</span><h2>Pipeline health</h2><span class="chip" style="background:color-mix(in srgb, var(--series-opus) 16%, transparent);color:var(--series-opus)">opus's ledger</span></div>
-    <p class="sec-sub">Template fallbacks, latency, and the cold-start control. Opus's strongest argument, and the failure gap survived the control.</p>
+    <div class="sec-head"><span class="sec-num">05</span><h2>Reliability: how often live coaching fails over to a canned reply</h2><span class="chip" style="background:color-mix(in srgb, var(--series-opus) 16%, transparent);color:var(--series-opus)">opus's strongest case</span></div>
+    <p class="sec-sub">When a reply takes longer than 45 seconds, the player sees a canned fallback message instead of live coaching. This is where opus is genuinely stronger — and the gap survived every control applied to the test.</p>
     <div class="card">
       <div class="panels">
         <div class="panel">
-          <div class="chart-title">Template-fallback rate per rep (0–15%)</div>
+          <div class="chart-title">Canned-fallback rate per run (0–15%)</div>
           <div class="chart-holder" id="chart-template"></div>
           <div class="panel-sub" id="template-pooled"></div>
         </div>
         <div class="panel">
-          <div class="chart-title">Cold-start control: sonnet fallback rate</div>
+          <div class="chart-title">Timing-bias control: sonnet's fallback rate, before vs after</div>
           <div class="chart-holder" id="chart-coldstart"></div>
-          <div class="panel-sub">Warmup = 3 discarded calls per process, plus ABBA block order. Baseline (uncontrolled): sonnet 10/65 front-loaded, opus 0/65.</div>
+          <div class="panel-sub">Each run began with 3 discarded warm-up calls — timing the runner after warm-up laps, not during them — and the models alternated which went first so time-of-day effects could not quietly favor one side. Uncontrolled baseline: sonnet 10/65 failures front-loaded, opus 0/65.</div>
         </div>
         <div class="panel full">
-          <div class="chart-title">Latency per rep: median and p90 (seconds), against the 45s cap</div>
+          <div class="chart-title">Response time per run: typical (median) and slowest-tenth (p90), against the 45s limit</div>
           <div class="chart-holder" id="chart-latency"></div>
           <div class="panel-sub" id="latency-pooled"></div>
         </div>
       </div>
       <div class="annotation">
-        <span class="an-label">The failure gap survived the control</span>
-        Sonnet's failure rate is real: it survived the cold-start control (warmup 3 + ABBA). open-07 and open-11 fail in all three sonnet reps; every failure is a template fallback at the 45s cap, zero hard errors. In product terms, sonnet serves the canned template on roughly 1 turn in 12.
+        <span class="an-label">Test artifact vs product finding, kept separate</span>
+        Part of the earlier failure rate was the test's fault: cold processes penalized whichever model was timed first, and warm-up roughly halved sonnet's measured failures (15.4% before controls, 8.2% after). What remains is a real product finding, not explained away: even warm and alternated, sonnet serves the canned fallback on roughly 1 turn in 12, with zero hard errors — always the same pattern of its slowest replies riding the 45-second limit, on the same two hard open-ended questions in all three of its runs. This finding argues against the recommended model and is reported anyway; it lost only because the decision rule weights brevity above reliability. If that weighting ever flips, the options start here: a longer time limit, an automatic retry, or revisiting the model choice.
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Even warm and counterbalanced, sonnet falls back to template on 8, 3, and 5 of 65 turns across reps while opus does once in 195, because sonnet's p90 latency (29 to 45s) rides the 45s cap on the same hard questions.</div>
+        <div><span class="tk-label">Takeaway</span>Even with warm-up and alternated ordering, sonnet fell back to a canned reply on 16 of 195 turns while opus did once — roughly 1 turn in 12 versus 1 in 195, the strongest argument on opus's side.</div>
       </div>
     </div>
   </section>
 
   <!-- SECTION 6 -->
   <section id="s6">
-    <div class="sec-head"><span class="sec-num">06</span><h2>Instrument integrity</h2><span class="chip pass" id="instrument-chip"></span></div>
-    <p class="sec-sub">Every axis number on this page is measured by a checker whose agreement with hand labels was itself audited. Bars show final checker-vs-hand-label agreement against a 95% threshold.</p>
+    <div class="sec-head"><span class="sec-num">06</span><h2>Can the numbers be trusted? The scoring system was itself audited</h2><span class="chip pass" id="instrument-chip"></span></div>
+    <p class="sec-sub">Every score on this page comes from an automated checker. Before any of them were believed, a human hand-labeled hundreds of replies and compared their judgment to the checker's, requiring 95% agreement on every measure. Bars show final human-vs-checker agreement.</p>
     <div class="card">
-      <div class="chart-title">Checker vs hand-label agreement, per axis (0–100%)</div>
+      <div class="chart-title">Automated checker vs human judgment, per measure (0–100%)</div>
       <div class="chart-holder" id="chart-instrument"></div>
       <div class="annotation">
-        <span class="an-label">Two audit iterations</span>
-        Two iterations of hand-labeling (473 then 466 rows) against the checker. Iteration 1 found two false-negative bugs: an AI-ism regex matching the verb "lets" instead of only the contraction "let's", and a pending checker missing described-but-not-named moves. Both were patched with regression tests (commits <code>e2d56b8</code>, <code>0b58498</code>) and confirmed fixed on fresh samples in iteration 2. The length axis's single disagreement is an accepted em-dash token-count artifact (1/285).
+        <span class="an-label">What the audit caught</span>
+        Two audit rounds (473 then 466 hand-labeled replies). Round 1 found two real scoring bugs, both in the same direction — the checker failing replies a human would pass: a text rule flagged the ordinary word "lets" as if it were the banned casual phrase "let's", and the on-topic scorer refused credit to replies that described her move without naming its square. Both were fixed as exact, testable rules with regression tests — not adjusted until the numbers agreed — and round 2 confirmed the fixes on fresh samples with no new failure modes. One known 1-in-285 word-count quirk (a dash counted as a word) was documented and accepted rather than patched. Honest scope note: one rare reply pattern the fix could theoretically mis-credit never occurred in either sample, so its behavior there is unmeasured.
+        <div style="margin-top:8px;font-size:12px;color:var(--muted)">Technical detail: fixes landed as commits <code>e2d56b8</code> and <code>0b58498</code>; full disagreement-by-disagreement ledger in <code>audit/iter-1.md</code> and <code>audit/iter-2.md</code>.</div>
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Every axis's checker agrees with hand labels at 99.6% or better after two audit iterations, so the numbers on this page are measured by a verified instrument, not a trusted script.</div>
+        <div><span class="tk-label">Takeaway</span>After two audit rounds, the automated checker agrees with human judgment at 99.6% or better on every measure — the numbers on this page come from a verified instrument, not a trusted script.</div>
       </div>
     </div>
   </section>
 
   <!-- SECTION 7 -->
   <section id="s7">
-    <div class="sec-head"><span class="sec-num">07</span><h2>Methodology integrity</h2></div>
+    <div class="sec-head"><span class="sec-num">07</span><h2>How the comparison was controlled</h2></div>
     <p class="sec-sub">The controls that make the pick defensible, and the limitations stated in the same breath.</p>
     <div class="card">
-      <div class="chart-title">Run order: six runs in ABBA blocks</div>
+      <div class="chart-title">Run order: six runs, alternating which model went first</div>
       <div class="chart-holder" id="chart-runorder"></div>
       <ul id="method-list" style="list-style:none;margin:20px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:10px 22px"></ul>
       <div class="annotation">
-        <span class="an-label">Stated honestly</span>
-        ABBA residual imbalance: sonnet ran first in 2 of 3 blocks, so warmup is the primary control and ordering is the belt-and-suspenders. Limitations: 3 reps on one night; subscription-backend latency variance (the same prompt ranged 20s to 80s); the mechanical pick stands in for the owner's blinded read until her morning review.
+        <span class="an-label">Limitations, stated plainly</span>
+        Three repeats in a single night: the 33-point gap that decided the pick is robust to that, but the small numbers (failure rates, the single on-topic miss) carry real run-to-run noise. Response times ran on a shared subscription backend whose speed varies by the hour — the same question ranged from 20 to 80 seconds — so timing numbers describe this backend on this night, not the models in the abstract. The alternation was imperfect: sonnet still went first in 2 of 3 pairs, so warm-up is the primary control and ordering the backup. The pick is a mechanical rule standing in for the owner's blinded side-by-side read; if her blind preference contradicts it, that is a finding to investigate, not an error to suppress. Two judgment calls are flagged for her review: her "over 95% accuracy" bar was interpreted as checker-vs-human agreement, and the tie rule defaults to the incumbent model.
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Three reps per model in counterbalanced blocks, warmed processes, a sha256-guarded database, a pre-registered decision rule, and a blinded artifact waiting for a human read.</div>
+        <div><span class="tk-label">Takeaway</span>Three repeats per model, alternated ordering, warmed processes, a database verified untouched after every run, a decision rule written before the data existed, and a blinded copy waiting for a human read.</div>
       </div>
     </div>
   </section>
 
+  </div><!-- /pane-results -->
+
+  <div class="pane" id="pane-process" role="tabpanel" aria-labelledby="tabBtnProcess" hidden>
+
+  <!-- P1 -->
+  <section id="p1">
+    <div class="sec-head"><span class="sec-num">01</span><h2>Why this tab exists</h2></div>
+    <p class="sec-sub">The Results tab says which model won. This tab is about whether the process behind that answer deserves trust.</p>
+    <div class="card">
+      <p style="font-size:14px;color:var(--text-2);line-height:1.65;max-width:74ch">
+        This evaluation did not start out trustworthy. The first attempt had measurement gaps, and the second produced a result the project's stakeholder explicitly did not believe — she named three specific concerns. What follows is the record of what happened next: each concern investigated on its merits rather than defended against, the measuring stick itself audited before any number was reported, and one finding that argues against the winning model promoted to the headline instead of buried. The domain here is a game-coaching assistant, but nothing below is specific to it — this is how any comparison of two AI systems should earn a stakeholder's trust.
+      </p>
+    </div>
+  </section>
+
+  <!-- P2 -->
+  <section id="p2">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Three versions to a defensible answer</h2></div>
+    <p class="sec-sub">Each round existed because the previous one had a flaw someone was willing to name.</p>
+    <div class="card">
+      <div class="stages">
+        <div class="stage">
+          <div class="st-ver">Round 1 · first attempt</div>
+          <div class="st-name">Numbers, but not evidence</div>
+          <p>Basic execution bugs — including replies cut off by the display before they were scored — plus a single measurement per test case and no controls for when each system ran. Its numbers could not separate real differences from noise, and were not used.</p>
+        </div>
+        <div class="stage">
+          <div class="st-ver">Round 2 · baseline</div>
+          <div class="st-name">A real comparison, distrusted</div>
+          <p>Fixed the execution bugs and produced the first usable head-to-head. The stakeholder still did not trust the result — and said exactly why, with three specific concerns (below). That pushback, not the data, is what shaped the final design.</p>
+        </div>
+        <div class="stage current">
+          <div class="st-ver">Round 3 · this run</div>
+          <div class="st-name">A controlled experiment</div>
+          <p>Rebuilt with the controls of a proper A/B test: three repeats per system, a warm-up pass before anything was timed, alternated run order, a decision rule written before the data existed, and a human audit of the scoring system before any number was believed.</p>
+        </div>
+      </div>
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>The evaluation took three rounds to become trustworthy, and the improvements came from taking a stakeholder's distrust seriously rather than defending the first result.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- P3 -->
+  <section id="p3">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The stakeholder pushback: three concerns, three different outcomes</h2></div>
+    <p class="sec-sub">Each concern got its own investigation and its own answer — one real flaw fixed with controls, one artifact traced to its cause, one complaint that did not reproduce and was deliberately left alone.</p>
+    <div class="card">
+      <div class="concerns">
+        <div class="concern">
+          <div class="cn-head"><span class="cn-title">1. "One system was timed cold."</span><span class="otag fixed">real — fixed with controls</span></div>
+          <p>The two systems had run under different conditions: whichever went first paid a start-up penalty the other never faced, inflating its failure count.</p>
+          <p><b>What was done:</b> the rerun added a warm-up pass — several discarded practice calls before anything counted, the same principle as timing a runner after their warm-up laps, not during them — and alternated which system ran first, so time-of-day effects could not quietly favor one side. The penalized system's measured failure rate fell from 15.4% to 8.2% (chart in section 05).</p>
+        </div>
+        <div class="concern">
+          <div class="cn-head"><span class="cn-title">2. "The test looks biased against one system."</span><span class="otag artifact">stale-data artifact — verified, not a bias</span></div>
+          <p>One system appeared to leak internal engineering terms far more often (85% vs 38% clean), which read as either a test bias or a damning model trait.</p>
+          <p><b>What was done:</b> traced, not assumed. The gap came from a stale snapshot: the earlier test had run against an old version of the assistant's instruction text that itself mentioned the engine — the models were quoting their instructions back. The instruction fix already existed in the product; the rerun against current instructions showed both systems at 100%. The test was not biased, and neither model "talks like an engine."</p>
+        </div>
+        <div class="concern">
+          <div class="cn-head"><span class="cn-title">3. "The scoring rule punishes one side unfairly."</span><span class="otag cleared">checked — does not reproduce</span></div>
+          <p>Failed replies (timeouts served as canned fallbacks) were suspected of also counting against that system's quality scores — a double penalty.</p>
+          <p><b>What was done:</b> checked directly in the scoring code and re-derived from the raw counts: failed replies never enter any quality score. The concern does not reproduce in the current code, so nothing was changed — no silent patch to something that was not broken. Instead, the exclusion rule is now printed on the results page itself, so anyone can verify it.</p>
+        </div>
+      </div>
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>Of three stakeholder concerns, one was a real flaw fixed with experimental controls, one was a stale-data artifact traced to its cause, and one did not reproduce and was cleared in the open rather than silently "fixed."</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- P4 -->
+  <section id="p4">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Auditing the measuring stick before trusting it</h2></div>
+    <p class="sec-sub">All scores come from an automated grader. Before believing any of them, a human hand-labeled samples of replies and compared their judgment to the grader's, requiring 95% agreement on every measure — with a hard cap of 10 audit rounds so the loop could not run forever.</p>
+    <div class="card">
+      <div class="chart-title">Human-vs-grader agreement by measure: audit round 1 vs round 2, against the 95% bar</div>
+      <div class="chart-holder" id="chart-audit"></div>
+      <div class="annotation">
+        <span class="an-label">The audit found real bugs, not noise</span>
+        Round 1 failed two of five measures, and both failures were genuine scoring bugs — cases where the grader failed replies a human would pass. One: a text rule meant to catch the banned casual phrase "let's" also flagged the ordinary verb "lets", as in "this lets you take the bishop." Two: the on-topic grader only gave credit when a reply named an exact board square, so a reply that clearly described the player's move in words was scored as off-topic. Both fixes were exact, describable rules with regression tests — require the apostrophe; accept a described move — not "adjust until the numbers agree." Round 2 re-checked on fresh samples: every measure at or above 95%, no new failure modes, and one known 1-in-285 word-counting quirk documented and accepted rather than patched.
+      </div>
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>The audit caught two real scoring bugs on its first pass and reached 95%+ human agreement on every measure by round two of the ten allowed.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- P5 -->
+  <section id="p5">
+    <div class="sec-head"><span class="sec-num">05</span><h2>What the timing controls changed — and what they didn't</h2></div>
+    <p class="sec-sub">The same reliability measure, before and after the warm-up and alternated-ordering controls. Failure here means the player saw a canned fallback message instead of live coaching.</p>
+    <div class="card">
+      <div class="chart-title">Canned-fallback rate, uncontrolled baseline vs controlled rerun</div>
+      <div class="chart-holder" id="chart-controls"></div>
+      <div class="annotation">
+        <span class="an-label">Half artifact, half finding — and the finding cuts against the winner</span>
+        Roughly half of the recommended system's measured failure rate was the test's fault, and vanished once the test was fair. The half that remains is real: it recurs on the same hard questions in every repeat, and it means the recommended system still shows a canned fallback about 1 turn in 12 while the challenger almost never does. That weakness is reported in the headline section of the Results tab, not hidden — a losing signal for the winner is a finding, not an embarrassment.
+      </div>
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>Fair timing cut the recommended system's measured failure rate roughly in half (15.4% to 8.2%); the remaining gap against the challenger (8.2% vs 0.5%) is real and is reported even though it argues against the winner.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- P6 -->
+  <section id="p6">
+    <div class="sec-head"><span class="sec-num">06</span><h2>Retrospective: what went well</h2></div>
+    <p class="sec-sub">The habits worth keeping, each tied to a concrete moment in this evaluation.</p>
+    <div class="card">
+      <ul class="retro-list">
+        <li><b>Checked, not defended — and not over-corrected.</b> When the stakeholder said a scoring rule was unfair, the answer was a code-level verification that the rule was already correct, stated plainly on the results page. Silently "fixing" something that is not broken would have been easier and wrong twice over.</li>
+        <li><b>The instrument was audited before the measurements were believed.</b> The automated grader turned out to be broken in two places, both of which would have gone unnoticed under "trust the script." No number was reported until the grader agreed with human judgment at 95% or better on every measure.</li>
+        <li><b>An inconvenient finding was promoted, not buried.</b> The winning system carries a real reliability weakness — a canned fallback roughly 1 turn in 12. It appears in the headline section of the results, with the conditions under which it should reverse the decision spelled out.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- P7 -->
+  <section id="p7">
+    <div class="sec-head"><span class="sec-num">07</span><h2>Retrospective: what didn't go well</h2></div>
+    <p class="sec-sub">The honest half of the ledger — what a stronger process would have prevented.</p>
+    <div class="card">
+      <ul class="retro-list went-wrong">
+        <li><b>The first round wasted time on basic execution bugs.</b> Replies were being truncated by the display before they were scored, among other mechanical errors a simple smoke test would have caught before any full run.</li>
+        <li><b>The original design had no repeats and no timing controls.</b> One measurement per test case cannot distinguish a real difference from noise, and uncontrolled ordering let a start-up penalty masquerade as a quality gap. Both are standard experimental hygiene, and both were added only after the stakeholder pushed back — they should have been in the design from day one, which is the direct source of the recommendations below.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- P8 -->
+  <section id="p8">
+    <div class="sec-head"><span class="sec-num">08</span><h2>Forward-looking recommendations</h2></div>
+    <p class="sec-sub">Action items adapted for a template rather than a team: what becomes default practice for every future evaluation.</p>
+    <div class="card">
+      <ol class="rule-steps">
+        <li><b>Repeats are the default, not a retrofit.</b> Every future comparison runs multiple repeats per system and reports a range, never a single point — a one-shot measurement cannot tell signal from noise, so it should not be possible to run one by accident.</li>
+        <li><b>Timing-bias controls ship in the harness template.</b> Warm-up passes and alternated run order become standard scaffolding for any latency-sensitive comparison, not a fix applied after a stakeholder notices the confound.</li>
+        <li><b>The instrument audit is a standing gate.</b> No automated grading system's numbers get reported until a human hand-label check confirms 95%+ agreement, with a fixed iteration cap and the commitment to report a failure to converge rather than hide it.</li>
+      </ol>
+      <div class="takeaway">
+        <div class="tk-mark"></div>
+        <div><span class="tk-label">Takeaway</span>Two of the three stakeholder concerns pointed at real problems, and the third, once checked in the open, made the whole report easier to believe — distrust taken seriously is how a measurement earns trust.</div>
+      </div>
+    </div>
+  </section>
+
+  </div><!-- /pane-process -->
+
   <footer>
     <div>Source data embedded inline in this file, verbatim from
       <span class="mono">tools/coach-eval/runs/2026-07-23-v3/summary.json</span> and
-      <span class="mono">decision.json</span>. Instrument agreement, cold-start baseline, and provenance constants are from the audit ledger (<span class="mono">audit/iter-2.md</span>) and <span class="mono">progress.md</span>.</div>
+      <span class="mono">decision.json</span>. Instrument agreement (both audit rounds), cold-start baseline, and provenance constants are from the audit ledger (<span class="mono">audit/iter-1.md</span>, <span class="mono">audit/iter-2.md</span>) and <span class="mono">progress.md</span>; the Methodology &amp; Process tab draws on the same ledger plus <span class="mono">findings.md</span>.</div>
     <div id="footer-gen" style="margin-top:6px"></div>
     <div style="margin-top:6px">All axis numbers are post-audit-loop. Self-contained: no external requests, works offline from a local file.</div>
   </footer>
@@ -406,11 +622,11 @@ const DECISION = {"winner":"sonnet","decidedBy":"length","reasoning":"jargon a w
 const LEDGER = {
   instrument: {
     axes: [
-      {axis:"jargon", num:50, den:50},
-      {axis:"length", num:284, den:285},
-      {axis:"completeness", num:50, den:50},
-      {axis:"ai-ism / casing", num:53, den:53},
-      {axis:"pending-awareness", num:28, den:28}
+      {axis:"Plain language", num:50, den:50},
+      {axis:"Answer length", num:284, den:285},
+      {axis:"Complete replies", num:50, den:50},
+      {axis:"Banned-phrase check", num:53, den:53},
+      {axis:"On-topic (held move)", num:28, den:28}
     ],
     threshold: 0.95, iterationsUsed: 2, iterationCap: 10, verdict: "PASS"
   },
@@ -418,6 +634,19 @@ const LEDGER = {
   dbSha: "9fea51c08381…",
   warmupPerProcess: 3
 };
+
+/* ============ PROCESS-TAB CONSTANTS (from audit/iter-1.md, audit/iter-2.md, progress.md) ============ */
+const AUDIT_CONVERGENCE = [
+  { axis: "Plain language",        iter1: 50/50,    iter2: 50/50 },
+  { axis: "Answer length",         iter1: 284/285,  iter2: 284/285 },
+  { axis: "Complete replies",      iter1: 50/50,    iter2: 50/50 },
+  { axis: "Banned-phrase check",   iter1: 53/60,    iter2: 53/53 },
+  { axis: "On-topic (held move)",  iter1: 21/28,    iter2: 28/28 }
+];
+const CONTROLS_BEFORE_AFTER = [
+  { label: "Before controls (baseline)", sonnet: 10/65,  opus: 0/65 },
+  { label: "After controls (this run)",  sonnet: 16/195, opus: 1/195 }
+];
 
 /* ============ FORMAT HELPERS ============ */
 const pct = f => Math.round(f * 100) + "%";
@@ -531,8 +760,8 @@ function groupedColumns(el) {
 /* ============ COLD-START BEFORE/AFTER (two horizontal bars) ============ */
 function coldStart(el) {
   const rows = [
-    { label:"Baseline (uncontrolled)", value: LEDGER.coldStart.baselinePct, sub:"cold start" },
-    { label:"Tonight (warmed)", value: LEDGER.coldStart.tonightPct, sub:"warmup 3 + ABBA" }
+    { label:"Before controls (timed cold)", value: LEDGER.coldStart.baselinePct },
+    { label:"After controls (warm + alternated)", value: LEDGER.coldStart.tonightPct }
   ];
   const xMax = 0.20;
   const W = 360, ML = 12, MR = 54, top = 14, rowH = 56;
@@ -662,18 +891,102 @@ function runOrder(el) {
   el.innerHTML = s;
 }
 
+/* ============ TAB 2: AUDIT CONVERGENCE DUMBBELL (round 1 -> round 2, 70-100%) ============ */
+function auditDumbbell(el) {
+  const rows = AUDIT_CONVERGENCE;
+  const xMin = 0.70, xMax = 1.0;
+  const W = 760, ML = 158, MR = 60, top = 30, rowH = 44;
+  const H = top + rows.length * rowH + 40;
+  const PL = ML, PR = W - MR, PW = PR - PL;
+  const xF = f => PL + ((f - xMin) / (xMax - xMin)) * PW;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="human versus grader agreement per measure, audit round 1 versus round 2">`;
+  [0.70, 0.80, 0.90, 1.0].forEach(t => {
+    const x = xF(t);
+    s += `<line class="grid-line" x1="${x}" y1="${top-6}" x2="${x}" y2="${top + rows.length*rowH}"/>`;
+    s += `<text class="ax-text" x="${x}" y="${H-14}" text-anchor="middle">${pctNum(t)}%</text>`;
+  });
+  const tx = xF(0.95);
+  s += `<line class="thresh-line" x1="${tx}" y1="${top-6}" x2="${tx}" y2="${top + rows.length*rowH}"/>`;
+  s += `<text class="cap-text" x="${tx}" y="${top-12}" text-anchor="middle" style="fill:var(--muted)">95% required agreement</text>`;
+  rows.forEach((r, i) => {
+    const cy = top + i * rowH + rowH/2;
+    s += `<text class="row-label" x="8" y="${cy+4}" style="font-size:12.5px">${esc(r.axis)}</text>`;
+    const x1 = xF(r.iter1), x2 = xF(r.iter2);
+    if (Math.abs(r.iter2 - r.iter1) > 0.0001) {
+      s += `<line class="conn-sonnet" x1="${x1}" y1="${cy}" x2="${x2}" y2="${cy}"/>`;
+      s += `<circle class="hollow-sonnet" cx="${x1}" cy="${cy}" r="5.5"/>`;
+      s += `<circle class="dot-sonnet" cx="${x2}" cy="${cy}" r="6.5"/>`;
+      s += `<text class="note-label" x="${x1 - 9}" y="${cy+4}" text-anchor="end">${(r.iter1*100).toFixed(1)}%</text>`;
+      s += `<text class="val-label" x="${x2 + 9}" y="${cy+4}" text-anchor="start" style="font-size:11.5px">${(r.iter2*100).toFixed(r.iter2===1?0:1)}%</text>`;
+    } else {
+      s += `<circle class="dot-sonnet" cx="${x2}" cy="${cy}" r="6.5"/>`;
+      s += `<text class="val-label" x="${x2 + 9}" y="${cy+4}" text-anchor="start" style="font-size:11.5px">${(r.iter2*100).toFixed(r.iter2===1?0:1)}%</text>`;
+    }
+  });
+  s += `</svg>`;
+  el.innerHTML = s +
+    `<div style="display:flex;gap:20px;margin-top:8px;font-size:11.5px;color:var(--text-2);flex-wrap:wrap">
+      <span style="display:inline-flex;align-items:center;gap:6px"><svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="var(--surface)" stroke="var(--series-sonnet)" stroke-width="2"/></svg> audit round 1</span>
+      <span style="display:inline-flex;align-items:center;gap:6px"><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="var(--series-sonnet)"/></svg> audit round 2 (final)</span>
+      <span style="color:var(--muted)">axis starts at 70% to show the fix; the 95% bar is the pass line</span>
+    </div>`;
+}
+
+/* ============ TAB 2: CONTROLS BEFORE/AFTER GROUPED COLUMNS ============ */
+function controlsBars(el) {
+  const groups = CONTROLS_BEFORE_AFTER;
+  const yMax = 0.20;
+  const W = 620, H = 250, ML = 40, MR = 10, top = 24, bot = 56;
+  const PB = H - bot, PH = PB - top;
+  const plotW = W - ML - MR;
+  const gw = plotW / groups.length;
+  const bw = 44, bgap = 14;
+  const yF = v => PB - (v / yMax) * PH;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="canned fallback rate before and after timing controls">`;
+  [0, .05, .10, .15, .20].forEach(t => {
+    const y = yF(t);
+    s += `<line class="grid-line" x1="${ML}" y1="${y}" x2="${W-MR}" y2="${y}"/>`;
+    s += `<text class="ax-text" x="${ML-6}" y="${y+3}" text-anchor="end">${pctNum(t)}%</text>`;
+  });
+  groups.forEach((g, gi) => {
+    const gx = ML + gi * gw;
+    const clusterW = bw*2 + bgap;
+    const startX = gx + (gw - clusterW)/2;
+    [["sonnet", g.sonnet], ["opus", g.opus]].forEach((b, bi) => {
+      const x = startX + bi * (bw + bgap);
+      const y = yF(b[1]);
+      const h = PB - y;
+      s += `<rect class="bar-${b[0]}" x="${x}" y="${y}" width="${bw}" height="${Math.max(h,1)}" rx="4"/>`;
+      s += `<text class="val-label" x="${x + bw/2}" y="${y - 6}" text-anchor="middle" style="font-size:11.5px">${(b[1]*100).toFixed(1)}%</text>`;
+    });
+    s += `<text class="ax-text" x="${gx + gw/2}" y="${H - 34}" text-anchor="middle" style="font-weight:600;fill:var(--text-2)">${esc(g.label)}</text>`;
+    s += `<text class="ax-text" x="${gx + gw/2}" y="${H - 18}" text-anchor="middle">${gi===0 ? "1 run each, timed cold" : "3 repeats each, warm + alternated"}</text>`;
+  });
+  s += `</svg>`;
+  el.innerHTML = s +
+    `<div style="display:flex;gap:20px;margin-top:8px;font-size:11.5px;color:var(--text-2);flex-wrap:wrap">
+      <span style="display:inline-flex;align-items:center;gap:6px"><span class="swatch sonnet"></span> sonnet (recommended)</span>
+      <span style="display:inline-flex;align-items:center;gap:6px"><span class="swatch opus"></span> opus (challenger)</span>
+    </div>`;
+}
+
 /* ============ SECTION 1 wiring ============ */
 function renderVerdict() {
+  const AXIS_PLAIN = { jargon: "plain language", length: "answer length", pending: "her held move" };
   document.getElementById("verdictWinner").textContent = DECISION.winner;
-  document.getElementById("decidedBy").textContent = DECISION.decidedBy;
-  document.getElementById("verdictReasoning").innerHTML =
-    `<b>Reasoning.</b> ${esc(DECISION.reasoning)}`;
-
+  document.getElementById("decidedBy").textContent = AXIS_PLAIN[DECISION.decidedBy] || DECISION.decidedBy;
   const inp = DECISION.inputs;
+  document.getElementById("verdictReasoning").innerHTML =
+    `<b>Reasoning.</b> Plain language tied at 100%, so the rule fell to answer length: ` +
+    `sonnet ${pct(inp.length.sonnet.median)} [${pct(inp.length.sonnet.min)}–${pct(inp.length.sonnet.max)}] vs ` +
+    `opus ${pct(inp.length.opus.median)} [${pct(inp.length.opus.min)}–${pct(inp.length.opus.max)}] — ` +
+    `a 33-point gap with no overlap across repeats, so sonnet wins. ` +
+    `<span style="color:var(--muted);font-size:12.5px">(Rule verbatim: ${esc(DECISION.reasoning)})</span>`;
+
   const cells = [
-    { key:"jargon", name:"Jargon-clean", d:inp.jargon, decides:false, note:"tied · falls through" },
-    { key:"length", name:"Length compliance", d:inp.length, decides:true, note:"decides → sonnet" },
-    { key:"pending", name:"Pending (audited)", d:inp.pending, decides:false, note:"never reached" }
+    { key:"jargon", name:"Plain language", d:inp.jargon, decides:false, note:"tied · falls through" },
+    { key:"length", name:"Answer length", d:inp.length, decides:true, note:"decides → sonnet" },
+    { key:"pending", name:"Her held move (audited)", d:inp.pending, decides:false, note:"never reached" }
   ];
   let h = "";
   cells.forEach(c => {
@@ -722,7 +1035,7 @@ function renderCharts() {
   groupedColumns(document.getElementById("chart-template"));
   const sp = SUMMARY.sonnet.pipeline.pooled, op = SUMMARY.opus.pipeline.pooled;
   document.getElementById("template-pooled").textContent =
-    "Pooled: sonnet " + pct(sp.templateRate) + " (" + sp.failureRows + "/" + sp.totalRows + "), opus " + pct(op.templateRate) + " (" + op.failureRows + "/" + op.totalRows + ").";
+    "All runs pooled: sonnet " + pct(sp.templateRate) + " (" + sp.failureRows + " of " + sp.totalRows + " turns), opus " + pct(op.templateRate) + " (" + op.failureRows + " of " + op.totalRows + "). Every failure was a timeout served as a canned reply; zero hard errors.";
 
   // S5 cold-start
   coldStart(document.getElementById("chart-coldstart"));
@@ -730,7 +1043,7 @@ function renderCharts() {
   // S5 latency
   latencyDumbbell(document.getElementById("chart-latency"));
   document.getElementById("latency-pooled").textContent =
-    "Pooled median: sonnet " + sec(sp.medianLatencyMs) + "s vs opus " + sec(op.medianLatencyMs) + "s (a wash). Pooled p90: sonnet " + sec(sp.p90LatencyMs) + "s vs opus " + sec(op.p90LatencyMs) + "s (not a wash).";
+    "Typical reply, all runs pooled: sonnet " + sec(sp.medianLatencyMs) + "s vs opus " + sec(op.medianLatencyMs) + "s — a wash. Slowest tenth of replies (p90): sonnet " + sec(sp.p90LatencyMs) + "s vs opus " + sec(op.p90LatencyMs) + "s — not a wash, and the source of every sonnet fallback.";
 
   // S6 instrument
   instrumentBars(document.getElementById("chart-instrument"));
@@ -738,6 +1051,10 @@ function renderCharts() {
 
   // S7 run order
   runOrder(document.getElementById("chart-runorder"));
+
+  // Tab 2 charts
+  auditDumbbell(document.getElementById("chart-audit"));
+  controlsBars(document.getElementById("chart-controls"));
 }
 
 /* ============ meta + method list ============ */
@@ -745,24 +1062,23 @@ function renderMeta() {
   const gen = new Date(SUMMARY.generatedAt);
   document.getElementById("metaRow").innerHTML =
     `<span><b>${SUMMARY.questionCount}</b> questions</span>` +
-    `<span><b>6</b> scored runs (3 reps × 2 models)</span>` +
-    `<span>wiring <b>${esc(SUMMARY.wiring)}</b></span>` +
-    `<span>warmup <b>${LEDGER.warmupPerProcess}</b> per process</span>` +
-    `<span>instrument <b>${LEDGER.instrument.verdict}</b> · ${LEDGER.instrument.iterationsUsed}/${LEDGER.instrument.iterationCap} iterations</span>` +
+    `<span><b>6</b> scored runs (3 repeats × 2 models)</span>` +
+    `<span><b>${LEDGER.warmupPerProcess}</b> warm-up calls before each run</span>` +
+    `<span>scoring audit <b>${LEDGER.instrument.verdict}</b> · round ${LEDGER.instrument.iterationsUsed} of ${LEDGER.instrument.iterationCap} allowed</span>` +
     `<span>generated <b>${gen.toISOString().slice(0,10)}</b></span>`;
 
   document.getElementById("footer-gen").textContent =
     "Run generated " + SUMMARY.generatedAt + ". Real database verified unchanged (sha256 " + LEDGER.dbSha + ") after every run.";
 
   const items = [
-    ["Reps per model", "3, run strictly sequentially"],
-    ["Wiring", SUMMARY.wiring + " (chat path, not the judge queue)"],
-    ["Counterbalancing", "ABBA blocks (see strip above)"],
-    ["Cold-start control", "warmup " + LEDGER.warmupPerProcess + " discarded calls per process"],
-    ["Database", "real db, sha256-verified unchanged (" + LEDGER.dbSha + ")"],
-    ["Blinded read", "report-blinded.md, metrics-blinded.md, unblinding.json (from rep 1)"],
-    ["Honest-stop policy", LEDGER.instrument.iterationCap + "-iteration audit cap; a capped result would be reported, not hidden"],
-    ["Decision rule", "D4 pre-registered in plan.md before any data existed"]
+    ["Repeats", "3 full runs per model, strictly one at a time"],
+    ["Context", "the coach saw the full game history, exactly as in the real product (wiring: " + SUMMARY.wiring + ")"],
+    ["Run order", "alternated which model went first (see strip above)"],
+    ["Warm-up", LEDGER.warmupPerProcess + " discarded practice calls before each run, so neither model was timed cold"],
+    ["Database", "real play history, cryptographically verified untouched after every run (sha256 " + LEDGER.dbSha + ")"],
+    ["Blinded read", "a side-by-side with model names hidden awaits the owner's independent judgment"],
+    ["Honest stop", "the scoring audit had a " + LEDGER.instrument.iterationCap + "-round cap; a failure to converge would be reported, not hidden"],
+    ["Decision rule", "written down in the plan before any data existed"]
   ];
   document.getElementById("method-list").innerHTML = items.map(it =>
     `<li style="font-size:13px;color:var(--text-2)"><b style="color:var(--text);display:block;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted)">${esc(it[0])}</b>${esc(it[1])}</li>`
@@ -784,6 +1100,23 @@ function renderMeta() {
   }
   btn.addEventListener("click", () => apply(current() === "dark" ? "light" : "dark"));
   label.textContent = current() === "dark" ? "Dark" : "Light";
+})();
+
+/* ============ tabs ============ */
+(function () {
+  const tabs = [
+    { btn: document.getElementById("tabBtnResults"), pane: document.getElementById("pane-results") },
+    { btn: document.getElementById("tabBtnProcess"), pane: document.getElementById("pane-process") }
+  ];
+  function select(idx) {
+    tabs.forEach((t, i) => {
+      const on = i === idx;
+      t.btn.setAttribute("aria-selected", on ? "true" : "false");
+      t.pane.hidden = !on;
+    });
+    window.scrollTo({ top: 0 });
+  }
+  tabs.forEach((t, i) => t.btn.addEventListener("click", () => select(i)));
 })();
 
 /* ============ init ============ */
