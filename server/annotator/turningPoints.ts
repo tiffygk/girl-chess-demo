@@ -45,6 +45,16 @@ export interface TurningPoint {
   // debrief-v2, king-pressure episode: only set when kind === "episode" —
   // the last ply of the qualifying run (game end counts).
   plyEnd?: number;
+  // 2026-07-22 (debrief copy grading): true iff this is HER move (odd ply)
+  // and the win-probability crossed from advantage to non-advantage across
+  // it — p was >= 0.5 BEFORE the move and < 0.5 AFTER. A purely factual,
+  // literal read of buildDeltaSeries' own p/deltaP for this point (prevP =
+  // p - deltaP), never a guess. Debrief copy (debriefBullets.ts/
+  // debriefLesson.ts) uses this to pick firmer wording for a mistake/
+  // inaccuracy that gave back a real lead, instead of flattening it to the
+  // same "small slip" text used for a move that was never leading to begin
+  // with. Undefined/false for episode points (no meaningful single-ply p).
+  crossedAdvantage?: boolean;
 }
 
 // debrief-v2: bumped when the turning-point algorithm changes shape in a way
@@ -54,7 +64,9 @@ export interface TurningPoint {
 // see server/store/db.ts's turning_points.algo_version column and
 // manager.ts's getSummary.
 // v3 = widened episode geometry (Chebyshev dist 2 + open-file shelter)
-export const TP_ALGO_VERSION = 3;
+// v4 = adds crossedAdvantage (2026-07-22, debrief copy grading) — a shape
+// change to TurningPoint, so old rows heal to pick up the new field.
+export const TP_ALGO_VERSION = 4;
 
 // Owner-calibratable: cp -> winprob steepness. This is the same constant as
 // chess.com's published win% formula (0.00368208, here to 3 sig figs per
@@ -88,7 +100,14 @@ export const TP_HOLD_PLIES = 2;
 // Shared label-band boundaries (her moves AND opponent moves use the same
 // numeric tiers per the ruling's vocabulary line) — exported so
 // classifications.ts imports the same numbers rather than re-declaring them.
-export const TP_BAND_MISTAKE = 0.15;
+//
+// Owner recalibration (2026-07-22): a real game's Bxe4 gave back a clear
+// advantage (+1.44 -> -0.12, Δp -0.1405) and the original 0.15 floor still
+// read it as an "inaccuracy" — too soft for a swing that erases a lead
+// entirely. Lowered to 0.13 so a swing this size reads as a mistake.
+// Blunder stays reserved for going-from-fine-to-losing / hanging material,
+// unchanged at 0.25.
+export const TP_BAND_MISTAKE = 0.13;
 export const TP_BAND_BLUNDER = 0.25;
 
 export interface MoveEval {
@@ -551,6 +570,10 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
     lowConfidence: s.lowConfidence,
     kind: s.kind,
     missedPunish: s.missedPunish,
+    // prevP = p - deltaP (deltaP is p minus the previous non-null point, so
+    // this recovers that previous point exactly) — literal arithmetic on
+    // fields this same point already carries, no new lookup.
+    crossedAdvantage: s.moverIsWhite && s.p - s.deltaP >= 0.5 && s.p < 0.5,
   }));
 
   // debrief-v2: the king-pressure episode is a STATE the per-ply swing

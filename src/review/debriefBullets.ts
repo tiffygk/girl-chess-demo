@@ -68,6 +68,19 @@ const NUDGES: Record<string, string> = {
   inaccuracy: "small slip, keep it tight next time.",
 };
 
+// 2026-07-22 recalibration (owner ruling): the flat NUDGES text above
+// flattens severity — the same "small slip" copy fires for a tiny 0.08
+// inaccuracy and a 0.14 swing that erased a clear lead. When a mistake or
+// inaccuracy ALSO crosses from advantage to non-advantage (TurningPoint.
+// crossedAdvantage — see turningPoints.ts's comment for the exact signal:
+// white winprob >= .5 before the move, < .5 after), the copy names the real
+// consequence instead of understating it. Only these two labels get graded
+// this way — blunder already reads firm ("check what's hanging"), and a
+// classification-only fallback fact (no TurningPoint, see couldBeBetterText's
+// caller) has no crossing data to grade on, so it keeps the flat NUDGES text.
+const CROSSED_LEAD_NUDGE = "that handed your lead back. not fatal, but you were better and now it's even.";
+const CROSSING_GRADED_LABELS = new Set(["mistake", "inaccuracy"]);
+
 // Phase derivation, recalibrated in the 2026-07-19 review round. The prior
 // literal-per-brief formula ("ply <= 20 is always opening") mislabeled the
 // owner's real game-127 fixture (24 plies): its ply-15 missed-punish and
@@ -191,9 +204,12 @@ function missedPunishText(missPoint: TurningPoint, turningPoints: TurningPoint[]
   return `move ${n}: she hung her ${piece} and ${gerund} let her off. take the piece first, ${action} after.`;
 }
 
-function couldBeBetterText(ply: number, label: string, san: string | undefined): string {
+function couldBeBetterText(ply: number, label: string, san: string | undefined, crossedAdvantage?: boolean): string {
   const n = moveNumberForPly(ply);
-  const nudge = NUDGES[label] ?? "look for a cleaner follow-up next time.";
+  const nudge =
+    crossedAdvantage && CROSSING_GRADED_LABELS.has(label)
+      ? CROSSED_LEAD_NUDGE
+      : NUDGES[label] ?? "look for a cleaner follow-up next time.";
   if (san) return `move ${n}: ${san} was a ${label}. ${nudge}`;
   return `move ${n}: a ${label} here. ${nudge}`;
 }
@@ -292,7 +308,7 @@ function buildCouldBeBetter(
       const episodeCtx = episode ? { ply: episode.ply, plyEnd: episode.plyEnd } : null;
       out.push({
         section: "could be better",
-        text: couldBeBetterText(c.ply, c.label, c.san),
+        text: couldBeBetterText(c.ply, c.label, c.san, c.crossedAdvantage),
         phase: phaseForPly(c.ply, totalPlies),
         category: categorize(c, phaseForPly(c.ply, totalPlies), episodeCtx),
         ply: c.ply,
