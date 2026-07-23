@@ -260,6 +260,39 @@ function derivePhase(ply: number, pieceCount: number): "opening" | "middlegame" 
   return "middlegame";
 }
 
+// Owner-calibratable starting values (Task 3b, R2 voice-enforcement round):
+// the cp thresholds bucketing perPlyAnalysis's per-ply eval into a plain-
+// language "read" for the MODEL-FACING projection only -- the voice rules
+// ban stating a number for the position outright (checkVoice above), so
+// factsForModel must never leak evalCp/evalMate as numbers. The raw
+// ChatFactList keeps the numbers untouched (validation + the F40 trace
+// still need them); only this bucketing is new.
+const READ_EVEN_CP = 60; // |cp| below this reads as "even" (nudge-sized edge)
+const READ_MUCH_BETTER_CP = 300; // |cp| at/above this reads as "much better" (roughly a minor piece)
+
+// evalCp/evalMate on ChatFactList are SIDE-TO-MOVE signed as of the
+// position AFTER the ply was played (same convention turningPoints.ts's
+// buildDeltaSeries documents and re-derives against real data): after an
+// ODD ply it's black's turn, so the stored value is black-perspective and
+// must be negated to reach the fixed "player is always white" read; after
+// an EVEN ply it's white's turn, so the stored value is already
+// white-perspective, used as-is.
+function toWhitePerspective(ply: number, signed: number): number {
+  return ply % 2 === 1 ? -signed : signed;
+}
+
+function readForPly(ply: number, evalCp: number | null, evalMate: number | null): string {
+  if (evalMate !== null) {
+    const whiteMate = toWhitePerspective(ply, evalMate);
+    return whiteMate > 0 ? `mate for you in ${whiteMate}` : `mate against you in ${Math.abs(whiteMate)}`;
+  }
+  if (evalCp === null) return "no read yet"; // honest "no data", not a guessed number
+  const whiteCp = toWhitePerspective(ply, evalCp);
+  if (Math.abs(whiteCp) < READ_EVEN_CP) return "even";
+  if (whiteCp > 0) return whiteCp >= READ_MUCH_BETTER_CP ? "you're much better" : "you're a bit better";
+  return whiteCp <= -READ_MUCH_BETTER_CP ? "she's much better" : "she's a bit better";
+}
+
 // Pure: replays gameSans from the start position with chess.js so
 // currentFen/occupancy/legalSans are all DERIVED, never hand-computed --
 // castling rights, en passant, and promotion are exactly whatever the
@@ -614,22 +647,25 @@ function focusForModel(facts: ChatFactList) {
 }
 
 // Task 3 (R1a): the compact projection of perPlyAnalysis sent to the model
-// -- ply/san/evalCp/evalMate/bestSan/phase plus only the first 2 pvSans
-// (dropping the rest keeps the whole-game list readable; the full pv is
-// never what "what should you have played" needs beyond a move or two of
-// follow-up, and the focused hint/turning-point folds already carry a
-// complete line when one is in view).
+// -- ply/san/bestSan/phase plus only the first 2 pvSans (dropping the rest
+// keeps the whole-game list readable; the full pv is never what "what
+// should you have played" needs beyond a move or two of follow-up, and the
+// focused hint/turning-point folds already carry a complete line when one
+// is in view).
+// Task 3b (R2, voice-enforcement round): evalCp/evalMate no longer reach
+// this projection at all -- readForPly (above) replaces both with a single
+// qualitative `read` string, and no key here contains the literal substring
+// "eval". The raw numbers stay on the ChatFactList itself.
 const PER_PLY_PV_MODEL_LIMIT = 2;
 
 function perPlyForModel(perPlyAnalysis: ChatFactList["perPlyAnalysis"]) {
   return perPlyAnalysis?.map((p) => ({
     ply: p.ply,
     san: p.san,
-    evalCp: p.evalCp,
-    evalMate: p.evalMate,
     bestSan: p.bestSan,
     phase: p.phase,
     pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
+    read: readForPly(p.ply, p.evalCp, p.evalMate),
   }));
 }
 
@@ -659,6 +695,15 @@ function pendingMoveForModel(pendingMove: ChatContext["pendingMove"]) {
   };
 }
 
+// Task 3b (R2, voice-enforcement round): audited every other numeric field
+// this function projects for the model -- context.best (san/pieceKind/from/
+// to), context.threat (motif/squares/pieceKind, uci already stripped by
+// stripThreatUci), context.hintFocus (same shape via hintFocusForModel),
+// context.pendingMove (pieceKind/from/to/san/tier, deliberately never
+// carried a number to begin with -- see pendingMoveForModel's own comment).
+// None of them carry a cp/mate number today, so there is nothing else to
+// sanitize; perPlyAnalysis (via readForPly above) is the one real leak this
+// task closes.
 function factsForModel(facts: ChatFactList) {
   const { allowedSans, context, focusPosition, perPlyAnalysis, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
