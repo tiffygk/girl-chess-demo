@@ -27,7 +27,7 @@ import {
   type TurningPoint,
 } from "./api";
 import { CoachChat, ThumbRating } from "./CoachChat";
-import { hintFocusContext, turningPointFocusContext, reconcileChatFocus } from "./chatFocus";
+import { hintFocusContext, turningPointFocusContext, reconcileChatFocus, pvUciToSan } from "./chatFocus";
 import { describeMove, type MoveRender } from "./describeMove";
 import { victimKind, materialDiff, rollbackCapture, capturesAtPly, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
@@ -1796,7 +1796,25 @@ export function GamePage() {
     // the focus's position identity -- same derivation buildChatContext
     // uses (mirrorRef is untouched while pending is set).
     const pendingPly = pending ? mirrorRef.current.history().length + 1 : 0;
-    const focus = hintFocusContext(hintLevel, renderedHintCopy, pendingPly);
+    // Task 4 (R1b, fact-gap round): the on-screen HintFacts, when the deep
+    // fetch has already landed (hintFacts is null at levels 1-2, before it
+    // has). `fen` here is the same before-position hintCtx already uses for
+    // hintCopy (the mirror's fen while pending is set, matching what
+    // computeHint evaluated server-side) -- pv is UCI on the wire
+    // (server/annotator/hint.ts's HintFacts.pv), converted to SAN here via
+    // the same replay discipline manager.ts's pvLine uses, never trusted as
+    // SAN directly. threat is the level-3 highlight's own ThreatFacts
+    // (verdict.threat, not a HintFacts field -- see threatReveal above).
+    const extra = hintFacts
+      ? {
+          bestSan: hintFacts.bestSan,
+          pvSans: pvUciToSan(fen, hintFacts.pv),
+          trade: hintFacts.trade,
+          recommendation: hintFacts.recommendation,
+          threat: verdict?.threat,
+        }
+      : undefined;
+    const focus = hintFocusContext(hintLevel, renderedHintCopy, pendingPly, extra);
     if (!focus) return;
     setChatFocus({ hintFocus: focus });
     requestChatOpen();

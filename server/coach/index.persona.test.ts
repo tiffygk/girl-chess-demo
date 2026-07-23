@@ -107,3 +107,42 @@ describe("real coach.md (Task 2)", () => {
     expect(persona.voice).toContain("delve");
   });
 });
+
+// Chat fact-gap round (2026-07-22), Task 5 (R2 + R5): the old hintFocus
+// instruction told the coach to "ground your answer in that hint's own
+// level and text", which read as license to restate the hint verbatim --
+// the owner's #1 chat complaint. This retunes coach.md so the coach (R2)
+// never repeats the hint back, answers the player's specific question one
+// ladder level deeper using the hint's own analysis facts, and uses the
+// game's per-ply analysis to answer questions about earlier moments; and
+// (R5) treats missing engine data as a data-coverage statement, never a
+// hedge about chess itself (chess is computed, not guessed).
+describe("chat system prompt retune (Task 5, R2 + R5)", () => {
+  function parseRealCoachMd() {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const md = fs.readFileSync(path.join(here, "personas/coach.md"), "utf-8");
+    return parsePersona(md);
+  }
+
+  it("R2: instructs the coach not to repeat the hint back to her", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain("do not repeat the hint back to her");
+  });
+
+  it("R2: instructs the coach to go one level deeper than the shown ladder level", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain("go one level deeper than the ladder level she already saw");
+  });
+
+  it("R2: instructs the coach to use per-ply analysis for questions about earlier moments", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain("use the per-ply analysis to answer");
+    expect(persona.chatSystemPrompt).toContain("'opening' means the early plies");
+  });
+
+  it("R5: instructs the coach to state missing engine data plainly, not hedge", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain("i don't have the engine's line for that moment");
+    expect(persona.chatSystemPrompt).toContain("never a hedge about chess itself");
+  });
+});

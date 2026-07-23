@@ -4,6 +4,7 @@ import type { CoachBackend } from "./backends/types";
 import { getPersona, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
+import { checkPlacementClaims } from "./placementClaims";
 import { insertAdviceTrace } from "../store/db";
 
 // F16 (this-game grounding chat): a second, independent narration surface
@@ -24,9 +25,14 @@ export const CHAT_HISTORY_WINDOW = 8; // messages (4 exchanges), owner-calibrata
 // provably does not block play (that is what moving it out of the centre
 // modal bought), so waiting longer for a real answer beats a fast
 // non-answer -- and the "slow" chip tells her which one she is getting.
+// Raised again 30000 -> 45000 the same day (R6, fact-gap round): the owner's
+// stated tolerance is ~60s, and a fast non-answer is the worst outcome of
+// all -- 45s gives real headroom under that ceiling without making 45s the
+// common wait (R1's per-ply-analysis fix is what should cut the common
+// case; this budget is a backstop for the tail, not the target latency).
 // narrate()'s own budget is deliberately NOT raised with it: that surface
 // speaks unprompted while she plays, where a late reply is worse than none.
-export const CHAT_TIMEOUT_MS = 30000;
+export const CHAT_TIMEOUT_MS = 45000;
 export const CHAT_MAX_LEN = 500;
 
 export interface ChatContext {
@@ -41,7 +47,25 @@ export interface ChatContext {
   // the player opened chat from the open hint ladder, turningPointFocus when
   // they opened it from a debrief turning-point card -- so the coach's reply
   // can ground itself in THAT moment instead of the whole game/position.
-  hintFocus?: { level: number; text: string };
+  // Task 4 (R1b, fact-gap round): before this, hintFocus carried only the
+  // ladder's level + rendered text -- none of the already-computed
+  // HintFacts the player is actually looking at ever reached the coach, so
+  // a hint follow-up couldn't legally name the best move, and had no engine
+  // facts to expand on. bestSan/pvSans are already SAN (client-converted,
+  // same "convert once, at the source" rule Task 3 follows); threat is the
+  // ThreatFacts that prompted the hint (level-3's own highlight, from the
+  // judge's verdict, not a HintFacts field); recommendation/trade are
+  // HintFacts' own fields verbatim. All optional -- a hint at level 1-2
+  // renders before any of this is computed.
+  hintFocus?: {
+    level: number;
+    text: string;
+    bestSan?: string;
+    pvSans?: string[];
+    threat?: ThreatFacts;
+    recommendation?: RecommendationFacts;
+    trade?: boolean;
+  };
   turningPointFocus?: {
     ply: number;
     san: string;
@@ -105,6 +129,26 @@ export interface ChatFactList {
     legalSans: string[];
     contested: ChatFactList["contested"];
   };
+  // Task 3 (R1a, fact-gap round): the WHOLE game's already-persisted engine
+  // analysis (moves.eval_cp/eval_mate/best_move/pv, written by the judge) --
+  // before this, chat had nothing but the bare san list and the current
+  // position, so a question about an earlier moment ("was my opening okay?")
+  // got answered by the model reasoning about chess itself instead of a
+  // fact. bestSan/pvSans arrive here ALREADY converted from the stored UCI
+  // by the caller (manager.ts, reusing the pvLine replay discipline
+  // getTurningLines already uses) -- this function only tags each entry with
+  // its phase. Affordable to carry the whole game because prompt size does
+  // not drive latency (r=-0.14, measured against advice_traces). Absent when
+  // the caller passes nothing, so every existing call site is untouched.
+  perPlyAnalysis?: {
+    ply: number;
+    san: string;
+    evalCp: number | null;
+    evalMate: number | null;
+    bestSan: string | null;
+    pvSans: string[];
+    phase: "opening" | "middlegame" | "endgame";
+  }[];
   // NOTE: no allowedSquares -- chat validation treats square names as free
   // geography (see validateChat below). Declared cut #2, not an oversight:
   // policing whether a named square is real/relevant would require the
@@ -164,6 +208,33 @@ function derivePositionFacts(chess: Chess): {
   return { fen: chess.fen(), toMove, occupancy, legalSans: chess.moves(), contested };
 }
 
+// Task 3 (R1a) input shape: one game's already-persisted per-ply analysis,
+// san/bestSan/pvSans already in SAN (converted by the caller -- see
+// ChatFactList.perPlyAnalysis's own comment for why the conversion lives
+// there and not here).
+export interface ChatPerPlyInput {
+  ply: number;
+  san: string;
+  evalCp: number | null;
+  evalMate: number | null;
+  bestSan: string | null;
+  pvSans: string[];
+}
+
+// Owner-calibratable starting values (Task 3, R1a): opening/endgame phase
+// tagging for perPlyAnalysis. Ply threshold checked first -- an early
+// piece-down position (e.g. a fast trade) still reads as "opening" for the
+// purpose of narrating what happened in the FIRST N plies, which is the
+// question this fact exists to answer ("was my opening okay?").
+const PHASE_OPENING_PLY_MAX = 20;
+const PHASE_ENDGAME_PIECE_MAX = 12;
+
+function derivePhase(ply: number, pieceCount: number): "opening" | "middlegame" | "endgame" {
+  if (ply <= PHASE_OPENING_PLY_MAX) return "opening";
+  if (pieceCount <= PHASE_ENDGAME_PIECE_MAX) return "endgame";
+  return "middlegame";
+}
+
 // Pure: replays gameSans from the start position with chess.js so
 // currentFen/occupancy/legalSans are all DERIVED, never hand-computed --
 // castling rights, en passant, and promotion are exactly whatever the
@@ -172,15 +243,31 @@ function derivePositionFacts(chess: Chess): {
 export function assembleChatFactList(
   gameMoves: { ply: number; san: string }[],
   ctx: ChatContext,
-  turningPoints?: { ply: number; san: string; label: string; punishSan?: string | null }[]
+  turningPoints?: { ply: number; san: string; label: string; punishSan?: string | null }[],
+  perPly?: ChatPerPlyInput[]
 ): ChatFactList {
   const chess = new Chess();
   const ordered = [...gameMoves].sort((a, b) => a.ply - b.ply);
   const gameSans: string[] = [];
+  // Task 3: piece count after each ply, captured in the SAME replay pass
+  // that builds gameSans -- the phase tag below needs "how many pieces were
+  // on the board at ply N", and this is the one place that walks the game
+  // ply by ply already.
+  const pieceCountByPly = new Map<number, number>();
   for (const m of ordered) {
     const mv = chess.move(m.san);
     gameSans.push(mv.san);
+    pieceCountByPly.set(m.ply, chess.board().flat().filter(Boolean).length);
   }
+
+  const perPlyAnalysis = perPly?.map((p) => ({
+    ...p,
+    // Falls back to a full board (32) when this ply isn't in the replay
+    // above -- defensive only; every real caller's perPly plies are a
+    // subset of the same gameMoves this function just replayed, but a
+    // missing lookup should read as "not yet endgame" rather than throw.
+    phase: derivePhase(p.ply, pieceCountByPly.get(p.ply) ?? 32),
+  }));
 
   const { fen: currentFen, toMove, occupancy, legalSans, contested } = derivePositionFacts(chess);
 
@@ -225,6 +312,11 @@ export function assembleChatFactList(
   // validation in validateChat below is untouched by this fold.
   if (ctx.turningPointFocus?.bestSan) sans.add(ctx.turningPointFocus.bestSan);
   for (const s of ctx.turningPointFocus?.pvSans ?? []) sans.add(s);
+  // Task 4 fold (R1b): identical reasoning, for the hint ladder's own focus
+  // -- without this, a hint follow-up asking "why is that the move?" could
+  // never legally name the move the hint itself is about.
+  if (ctx.hintFocus?.bestSan) sans.add(ctx.hintFocus.bestSan);
+  for (const s of ctx.hintFocus?.pvSans ?? []) sans.add(s);
   // Round 2026-07-22: moves that were legal AT the focused moment. Without
   // these, a coach correctly discussing what she could have played back
   // then gets its own true sentence rejected, because those moves are not
@@ -242,6 +334,7 @@ export function assembleChatFactList(
     context: ctx,
     allowedSans: [...sans],
     contested,
+    perPlyAnalysis,
   };
 }
 
@@ -367,6 +460,12 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
     violations.push(...currentDefense);
   }
   violations.push(...checkSideAttributionClaims(text, facts));
+  // Task 1 (R3, 2026-07-22 fact-gap round): the placement-claim check takes
+  // both occupancy lists itself and applies the same both-positions
+  // intersection internally (see checkPlacementClaims's own comment) --
+  // unlike checkDefenseClaims above, there's no separate current/focus call
+  // + filter needed here.
+  violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };
@@ -381,8 +480,9 @@ function stripThreatUci(t: ThreatFacts): Omit<ThreatFacts, "refutationUci"> {
 
 // The fact JSON serialized into the chat prompt carries NO uci fields --
 // san is all a model (or a player) ever needs; uci is an internal engine
-// detail. context.best.uci and context.threat.refutationUci are the only
-// two places one could leak in, so those are the only fields stripped here.
+// detail. context.best.uci, context.threat.refutationUci, and (as of Task
+// 4, R1b) context.hintFocus.threat.refutationUci are the three places one
+// could leak in, so those are the only fields stripped here.
 // Owner playtest 2026-07-22: the focused fact list added ~2.2k characters
 // to exactly the turns that were already the slowest, and her next two
 // focused asks both hit the hard 20s timeout (traces 57/58, prompts 9.7k
@@ -411,11 +511,41 @@ function focusForModel(facts: ChatFactList) {
   };
 }
 
+// Task 3 (R1a): the compact projection of perPlyAnalysis sent to the model
+// -- ply/san/evalCp/evalMate/bestSan/phase plus only the first 2 pvSans
+// (dropping the rest keeps the whole-game list readable; the full pv is
+// never what "what should you have played" needs beyond a move or two of
+// follow-up, and the focused hint/turning-point folds already carry a
+// complete line when one is in view).
+const PER_PLY_PV_MODEL_LIMIT = 2;
+
+function perPlyForModel(perPlyAnalysis: ChatFactList["perPlyAnalysis"]) {
+  return perPlyAnalysis?.map((p) => ({
+    ply: p.ply,
+    san: p.san,
+    evalCp: p.evalCp,
+    evalMate: p.evalMate,
+    bestSan: p.bestSan,
+    phase: p.phase,
+    pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
+  }));
+}
+
+// Task 4 (R1b): hintFocus's own threat carries the same refutationUci field
+// context.threat does -- stripped the same way, so "no uci fields reach the
+// model" stays true for this third place one could leak in (the other two
+// are context.best.uci and context.threat.refutationUci, noted below).
+function hintFocusForModel(hintFocus: ChatContext["hintFocus"]) {
+  if (!hintFocus) return undefined;
+  const { threat, ...rest } = hintFocus;
+  return { ...rest, threat: threat ? stripThreatUci(threat) : undefined };
+}
+
 function factsForModel(facts: ChatFactList) {
-  const { allowedSans, context, focusPosition, ...rest } = facts;
+  const { allowedSans, context, focusPosition, perPlyAnalysis, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
   if (context) {
-    const { best, threat, herMove, ...restCtx } = context;
+    const { best, threat, herMove, hintFocus, ...restCtx } = context;
     strippedContext = {
       ...restCtx,
       // The model-facing key is yourMove (the player is always "you"), even
@@ -423,6 +553,7 @@ function factsForModel(facts: ChatFactList) {
       yourMove: herMove,
       threat: threat ? stripThreatUci(threat) : undefined,
       best: best ? { san: best.san, pieceKind: best.pieceKind, from: best.from, to: best.to } : undefined,
+      hintFocus: hintFocusForModel(hintFocus),
     };
   }
   // legalSansBelongTo labels the bare legalSans list with whose moves it
@@ -434,6 +565,7 @@ function factsForModel(facts: ChatFactList) {
     ...rest,
     legalSansBelongTo: facts.toMove,
     focusPosition: focusForModel(facts),
+    perPlyAnalysis: perPlyForModel(perPlyAnalysis),
     context: strippedContext,
   };
 }

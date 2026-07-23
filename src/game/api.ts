@@ -316,7 +316,21 @@ export interface ChatContext {
   // "hint:${level}:${text}" alone was not a stable per-moment identity. This
   // field is purely a client-local identity for chatThread.ts's focusKey/
   // shouldInjectAnchor; the server does not read it.
-  hintFocus?: { level: number; text: string; ply: number };
+  // Task 4 (R1b, fact-gap round): mirrors server/coach/chat.ts's ChatContext.
+  // hintFocus extension verbatim -- bestSan/pvSans already SAN (converted
+  // client-side, see GamePage's hint-focus call site), threat is the
+  // level-3 highlight's ThreatFacts, recommendation/trade are HintFacts'
+  // own fields.
+  hintFocus?: {
+    level: number;
+    text: string;
+    ply: number;
+    bestSan?: string;
+    pvSans?: string[];
+    threat?: ThreatFacts;
+    recommendation?: RecommendationFacts;
+    trade?: boolean;
+  };
   turningPointFocus?: {
     ply: number;
     san: string;
