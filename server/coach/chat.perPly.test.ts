@@ -349,4 +349,29 @@ describe("perPlyForModel — then + pv depth (forward-prediction round)", () => 
     expect(prompt).toContain('"pvSans":["PV1","PV2","PV3","PV4","PV5","PV6"]');
     expect(prompt).not.toContain("PV7");
   });
+
+  it("naming a move in the message promotes its plies to full detail (pvSans ship)", async () => {
+    const prompt = await capture(
+      [
+        { ply: 27, san: "Nxd2", evalCp: 0, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5", "g4", "Be4"], then: "you win a pawn" },
+        { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+      ],
+      "what should i have done on move 14"
+      // move 14 -> plies 27, 28 (and raw 14): ply 27 sits outside the
+      // last-12 window of the 54-ply LONG_GAME and has no turning point, so
+      // WITHOUT promotion it would collapse and drop its pvSans.
+    );
+    expect(prompt).toContain('"pvSans":["Bxf5","g4","Be4"]');
+  });
+
+  it("the same ply stays collapsed when no move number is mentioned", async () => {
+    const prompt = await capture(
+      [
+        { ply: 27, san: "Nxd2", evalCp: 0, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5", "g4", "Be4"], then: "you win a pawn" },
+        { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+      ],
+      "how did this go?"
+    );
+    expect(prompt).not.toContain('"pvSans":["Bxf5","g4","Be4"]');
+  });
 });
