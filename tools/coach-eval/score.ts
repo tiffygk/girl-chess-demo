@@ -8,7 +8,13 @@
 // re-running the model).
 
 import { checkVoice, SENTENCE_END_RE } from "../../server/coach/voiceRules";
-import { PIECE_WORDS, type QuestionTag } from "./fixtures";
+// Wave E1: GENERAL_MAX_WORDS is imported, never hardcoded a second time --
+// per the skill's "share the enforcer's own regexes/budgets with the eval as
+// one source of truth so they can't drift" rule. It is the exact word budget
+// server/coach/personas/coach.md's "### general questions" section (via
+// chat.ts's buildChatPrompt) asks the model for.
+import { GENERAL_MAX_WORDS } from "../../server/coach/chat";
+import { PIECE_WORDS, type QuestionTag, type Arm } from "./fixtures";
 
 export interface PendingRef {
   pieceKind: string;
@@ -25,6 +31,11 @@ export interface AnswerRow {
   fixtureId: string;
   question: string;
   tag: QuestionTag;
+  // Wave E1: which arm this row belongs to -- board-live/general/board-review
+  // decide BOTH the length budget (checkLength below) and how render.ts
+  // aggregates/reports (per arm, never pooled -- see the skill's axis-4/6
+  // rules on pooling hiding the tail).
+  arm: Arm;
   probe: boolean;
   text: string;
   source: "model" | "template" | "timeout" | "error";
@@ -84,12 +95,41 @@ export const STANDARD_WORD_LIMIT = 45;
 export const STANDARD_SENTENCE_LIMIT = 3;
 export const AFFIRMATION_WORD_LIMIT = 20;
 export const AFFIRMATION_SENTENCE_LIMIT = 2;
+// Wave E1: the general/board-review arms' budget is GENERAL_MAX_WORDS (120),
+// imported above from server/coach/chat.ts -- the exact number the general
+// route's own prompt asks for (personas/coach.md's "### general questions"
+// section: "up to about 120 words"). That section states NO sentence cap
+// ("these answers can run longer than the usual one to three sentences") --
+// so unlike the board-live budgets above, there is no real enforcer sentence
+// rule to mirror here. GENERAL_SENTENCE_LIMIT is a harness-only, generous,
+// owner-calibratable ceiling (not a mirrored prompt rule) so a wall of one
+// 120-word run-on sentence still fails something -- it does NOT gate length
+// on its own; only the word count does, per the enforcer's actual budget.
+export const GENERAL_SENTENCE_LIMIT = 8;
 
-export function checkLength(text: string, isAffirmation: boolean): AxisResult & { words: number; sentences: number } {
-  const wordLimit = isAffirmation ? AFFIRMATION_WORD_LIMIT : STANDARD_WORD_LIMIT;
-  const sentenceLimit = isAffirmation ? AFFIRMATION_SENTENCE_LIMIT : STANDARD_SENTENCE_LIMIT;
+// Wave E1: `arm` picks the budget (board-live keeps the original 45w/3s or
+// 20w/2s-affirmation split, unchanged; general/board-review use the
+// GENERAL_MAX_WORDS budget). Defaulted to "board-live" so every pre-existing
+// call site (score.test.ts's original assertions) compiles and behaves
+// exactly as before without passing the new argument.
+export function checkLength(
+  text: string,
+  isAffirmation: boolean,
+  arm: Arm = "board-live"
+): AxisResult & { words: number; sentences: number } {
   const words = countWords(text);
   const sentences = countSentences(text);
+  if (arm === "general" || arm === "board-review") {
+    const pass = words <= GENERAL_MAX_WORDS;
+    return {
+      pass,
+      words,
+      sentences,
+      detail: `${words} words, ${sentences} sentences (limit ${GENERAL_MAX_WORDS}w, no enforced sentence cap for this arm; ${GENERAL_SENTENCE_LIMIT}s is informational only)`,
+    };
+  }
+  const wordLimit = isAffirmation ? AFFIRMATION_WORD_LIMIT : STANDARD_WORD_LIMIT;
+  const sentenceLimit = isAffirmation ? AFFIRMATION_SENTENCE_LIMIT : STANDARD_SENTENCE_LIMIT;
   const pass = words <= wordLimit && sentences <= sentenceLimit;
   return { pass, words, sentences, detail: `${words} words, ${sentences} sentences (limit ${wordLimit}w/${sentenceLimit}s)` };
 }
@@ -129,7 +169,7 @@ export function scoreAnswer(row: AnswerRow): Scorecard {
   }
 
   const completeness = checkCompleteness(row.text);
-  const length = checkLength(row.text, row.tag === "affirmation");
+  const length = checkLength(row.text, row.tag === "affirmation", row.arm);
 
   const voice = checkVoice(row.text);
   const jargonHits = voice.filter((v) => v.axis === "jargon");
