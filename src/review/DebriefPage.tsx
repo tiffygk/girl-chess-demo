@@ -200,6 +200,7 @@ const BULLET_SECTION_ORDER: DebriefBullet["section"][] = ["done well", "could be
 function DebriefBulletList({
   bullets,
   turningLines,
+  gameSans,
   onRewind,
   onTryLine,
   onAskAbout,
@@ -213,6 +214,11 @@ function DebriefBulletList({
   // this closes (a done-well bullet with nothing better to try, and a
   // classification-fallback ply with no line to seed a sandbox from).
   turningLines: TurningLine[];
+  // Visual gate 2026-07-28: turningLines ALONE is not enough. Judging "is
+  // there a better line" needs the move she actually replied with at
+  // seedPly+1, which only gameSans carries -- without it, an opponent
+  // turning point she punished perfectly still showed "try the line".
+  gameSans: SummaryMove[] | undefined;
   onRewind: (ply: number) => void;
   // Coach truth-speed round (Wave C1, 2026-07-27): a bullet earns the SAME
   // three affordances a TurningPointCard already has (replay/try the line/
@@ -243,7 +249,7 @@ function DebriefBulletList({
               // a ply" locally — one source of truth for the affordance
               // gate, same discipline the rest of this file follows for
               // other shared facts.
-              const aff = affordancesForBullet(b, turningLines);
+              const aff = affordancesForBullet(b, turningLines, gameSans);
               return (
                 <div className="debrief-bullet" key={i}>
                   <p className="debrief-bullet-text">{b.text}</p>
@@ -448,6 +454,7 @@ export function DebriefPage({
       <DebriefBulletList
         bullets={bullets}
         turningLines={turningLines}
+        gameSans={gameSans}
         onRewind={onRewind}
         onTryLine={onTryLine}
         onAskAbout={onAskAboutPly}

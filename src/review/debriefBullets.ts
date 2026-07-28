@@ -648,12 +648,27 @@ function sameSquares(
   return !!a && !!b && a.from === b.from && a.to === b.to;
 }
 
+// Visual gate 2026-07-28: the geometric compare described above is NOT
+// sufficient on its own. At an even (mallow) turning point, playedFromTo is
+// MALLOW'S move, so it never matches her best line's squares and tryLine
+// rendered true even on a blunder she punished with the exact best reply --
+// caught on real game 150. That is this round's own ply-parity bug
+// (followedBest: the move to judge is her REPLY at seedPly+1), reintroduced
+// by reimplementing the comparison here instead of calling the truth layer.
+// gameSans stays optional so existing callers compile; without it there is no
+// way to know what she replied, so it falls back to the geometric check.
 export function affordancesForBullet(
   b: DebriefBullet,
-  turningLines?: TurningLine[]
+  turningLines?: TurningLine[],
+  gameSans?: SummaryMove[]
 ): { replay: boolean; tryLine: boolean; ask: boolean } {
   const has = b.ply != null;
   const line = has ? turningLines?.find((l) => l.ply === b.ply) : undefined;
-  const betterLineExists = !!line?.bestFromTo && !sameSquares(line.bestFromTo, line.playedFromTo);
+  const fb = followedBest(line, gameSans);
+  // fb is undefined when there is no line, no bestSan on it, or the reply
+  // falls outside the game -- none of those PROVE a better line existed.
+  const betterLineExists = fb
+    ? !fb.followed
+    : !!line?.bestFromTo && !sameSquares(line.bestFromTo, line.playedFromTo);
   return { replay: has, tryLine: has && betterLineExists, ask: has };
 }

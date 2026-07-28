@@ -734,6 +734,66 @@ describe("affordancesForBullet (2026-07-27, a later wave's UI consumer)", () => 
     expect(affordancesForBullet(followedBullet, [line]).replay).toBe(true);
     expect(affordancesForBullet(followedBullet, [line]).ask).toBe(true);
   });
+
+  // Visual gate 2026-07-28 caught this on real game 150: the bullet for a
+  // blunder SHE PUNISHED still offered "try the line" though she had played
+  // the exact best reply. The squares-only check above cannot see it -- at an
+  // EVEN (mallow) turning point, line.playedFromTo is MALLOW'S move, so it
+  // never matches her best line's squares and tryLine always rendered true.
+  // This is the same ply-parity error the round's truth layer was built to
+  // fix (src/review/followedBest.ts: the comparison at an opponent turning
+  // point is her REPLY at ply+1), resurfacing in a consumer that reimplemented
+  // the comparison by hand instead of calling followedBest.
+  // Real game 150 (2026-07-28, her 91-ply win), truncated at ply 55 -- the
+  // exact position the visual gate caught this on. Must be a LEGAL sequence:
+  // debriefBullets replays it through fenAtPly to describe moves in words.
+  // ply 54 = Kh6 is MALLOW's; ply 55 = Nf7+ is hers, and Qh8# was the mate
+  // available to her there instead.
+  const GAME150_TO_55: SummaryMove[] = [
+    "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+    "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+    "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+    "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+",
+  ].map((san, i) => ({ ply: i + 1, san }));
+
+  function bulletAt54(line: TurningLine) {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 54, san: "Kh6", label: "blunder", deltaP: -0.4 })],
+      classifications: [],
+      result: null,
+      totalPlies: 55,
+      gameSans: GAME150_TO_55,
+      turningLines: [line],
+    });
+    return bullets.find((b) => b.ply === 54)!;
+  }
+
+  it("an opponent turning point she punished gets no tryLine -- the comparison is her reply at ply+1, not mallow's move", () => {
+    const line: TurningLine = {
+      ply: 54,                                  // even: MALLOW's move (Kh6)
+      pvSans: ["Nf7+"],                          // best reply == what she played at 55
+      bestSan: "Nf7+",
+      bestFromTo: { from: "e5", to: "f7" },
+      playedFromTo: { from: "g7", to: "h6" },    // MALLOW's king move at ply 54
+    };
+    const bullet = bulletAt54(line);
+    const aff = affordancesForBullet(bullet, [line], GAME150_TO_55);
+    expect(aff.tryLine).toBe(false);
+    expect(aff.replay).toBe(true);
+    expect(aff.ask).toBe(true);
+  });
+
+  it("an opponent turning point she MISSED still offers tryLine -- a better line genuinely exists", () => {
+    const line: TurningLine = {
+      ply: 54,
+      pvSans: ["Qh8#"],                          // the mate she did not find
+      bestSan: "Qh8#",
+      bestFromTo: { from: "a8", to: "h8" },
+      playedFromTo: { from: "g7", to: "h6" },
+    };
+    const bullet = bulletAt54(line);
+    expect(affordancesForBullet(bullet, [line], GAME150_TO_55).tryLine).toBe(true);
+  });
 });
 
 describe("missed-win bullets", () => {
