@@ -76,7 +76,7 @@ const DONE_WELL_NOTE = "nothing here was a mistake. trust the instinct that made
 // wording must not imply fault (measured: ~97% of her real moves carry no
 // classification at all).
 const SEVERITY_LINE: Record<Severity, (best: string) => string> = {
-  "not-an-error": (best) => `nothing went wrong here. ${best} was the stronger move, but this cost you nothing.`,
+  "not-an-error": (best) => `you just didn't pick the best move here. ${best} was the stronger move, and this cost you nothing.`,
   inaccuracy: (best) => `this was an inaccuracy. ${best} would have held more of your edge.`,
   mistake: (best) => `this was a mistake. ${best} was the move the position needed.`,
   blunder: (best) => `this was a blunder. ${best} would have kept the game where it was.`,

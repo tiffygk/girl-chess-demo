@@ -68,6 +68,12 @@ describe("buildHighlightedRows", () => {
     expect(rows[0].severity).toBe("not-an-error");
     expect(rows[0].note).toMatch(/stronger move/);
     expect(rows[0].note).not.toMatch(/inaccuracy|mistake|blunder/);
+    // The chip above this note reads "could be better", so the note has to
+    // NAME that case, not open by negating it. Owner's ask, verbatim:
+    // articulate "if i just didnt pick the best move". Leading with
+    // "nothing went wrong here" under a "could be better" chip read as a
+    // contradiction in the union review.
+    expect(rows[0].note).toMatch(/didn't pick the best move/);
   });
 
   it("a could-be-better move names its severity when one was recorded", () => {
