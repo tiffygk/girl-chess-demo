@@ -1444,6 +1444,33 @@
   box-shadow: 0 2px 0 #C22B7E, 0 4px 8px rgba(255,61,166,.35);
 }
 
+/* Highlight-a-move (Task 4): her flagged ply in the recap — the machine's
+   record of the highlight, per the "Mark a Move" mockup's recap spec. The
+   ROW wears the flat statement (cyan tint + inset left rule, never a
+   shadow); the ply button keeps its shipped candy recipe untouched (it
+   still jumps the board) and gains the same 7px cyan dot she filled live,
+   as a badge at its top-right; the closing chip reads `highlighted` — the
+   owner's word, never `marked`. Cyan only: her voice, not an alarm. */
+.gc-app .debrief-movelist-row.highlighted-row {
+  background: rgba(35,229,255,.10);
+  box-shadow: inset 2px 0 0 #23E5FF;
+  border-radius: 6px;
+  padding: 3px 6px 3px 8px;
+}
+.gc-app button.small.debrief-movelist-move.highlighted { position: relative; }
+.gc-app button.small.debrief-movelist-move.highlighted::after {
+  content: ""; position: absolute; top: -2px; right: -2px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #23E5FF; box-shadow: 0 0 0 1.5px #FFF;
+}
+.gc-app .debrief-movelist-hl-chip {
+  margin-left: auto; flex: none;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 8.5px;
+  letter-spacing: .12em; text-transform: lowercase; color: #1A7A93;
+  background: rgba(35,229,255,.14); border: 1px solid #23A8C7;
+  padding: 2px 7px; border-radius: 4px;
+}
+
 .gc-app .debrief-footer {
   display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
 }
