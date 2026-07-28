@@ -6,7 +6,7 @@ import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims } from "./placementClaims";
 import { insertAdviceTrace } from "../store/db";
-import { isOffTopic, type ChatIntent } from "./intent";
+import { isOffTopic, mentionedPlies, type ChatIntent } from "./intent";
 
 // F16 (this-game grounding chat): a second, independent narration surface
 // alongside narrate() in ./index.ts. Same shape (persona prompt + fact JSON
@@ -839,7 +839,7 @@ const PER_PLY_PV_MODEL_LIMIT = 6;
 const RECENT_PLY_WINDOW = 12;
 const FOCUS_PLY_RADIUS = 2;
 
-function perPlyForModel(facts: ChatFactList) {
+function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
   const perPlyAnalysis = facts.perPlyAnalysis;
   if (!perPlyAnalysis) return undefined;
 
@@ -854,6 +854,15 @@ function perPlyForModel(facts: ChatFactList) {
   if (facts.context?.pendingMove) fullDetailPlies.add(facts.gameSans.length + 1);
   for (const p of perPlyAnalysis) {
     if (p.ply > maxPly - RECENT_PLY_WINDOW) fullDetailPlies.add(p.ply);
+  }
+  // Forward-prediction round (2026-07-28): plies the player named in this
+  // very message ("move 27", "ply 55") -- promoted with the same radius the
+  // focused moment gets, for the same reason (a "what about that moment"
+  // follow-up wants a move or two of surrounding context).
+  for (const p of mentioned) {
+    for (let d = -FOCUS_PLY_RADIUS; d <= FOCUS_PLY_RADIUS; d++) {
+      fullDetailPlies.add(p + d);
+    }
   }
 
   return perPlyAnalysis.map((p) => {
@@ -915,7 +924,7 @@ function pendingMoveForModel(pendingMove: ChatContext["pendingMove"]) {
 // None of them carry a cp/mate number today, so there is nothing else to
 // sanitize; perPlyAnalysis (via readForPly above) is the one real leak this
 // task closes.
-function factsForModel(facts: ChatFactList) {
+function factsForModel(facts: ChatFactList, mentioned: number[] = []) {
   const { allowedSans, context, focusPosition, perPlyAnalysis, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
   if (context) {
@@ -940,7 +949,7 @@ function factsForModel(facts: ChatFactList) {
     ...rest,
     legalSansBelongTo: facts.toMove,
     focusPosition: focusForModel(facts),
-    perPlyAnalysis: perPlyForModel(facts),
+    perPlyAnalysis: perPlyForModel(facts, mentioned),
     context: strippedContext,
   };
 }
@@ -983,13 +992,14 @@ function buildChatPrompt(
   history: { role: "user" | "coach"; text: string }[],
   userMessage: string,
   persona: ReturnType<typeof getPersona>,
-  intent: ChatIntent
+  intent: ChatIntent,
+  mentioned: number[] = []
 ): string {
   const systemPrompt =
     intent === "general"
       ? [persona.chatSystemPrompt, persona.chatGeneralPrompt].filter(Boolean).join("\n\n")
       : persona.chatSystemPrompt;
-  const factsPayload = intent === "general" ? generalFactsForModel(facts) : factsForModel(facts);
+  const factsPayload = intent === "general" ? generalFactsForModel(facts) : factsForModel(facts, mentioned);
   return [
     systemPrompt,
     "",
@@ -1138,7 +1148,8 @@ export async function chat(
     return { text, source: "template", cause: "off-topic", traceId };
   }
 
-  const basePrompt = buildChatPrompt(facts, history, userMessage, persona, intent);
+  const mentioned = mentionedPlies(userMessage, facts.gameSans.length);
+  const basePrompt = buildChatPrompt(facts, history, userMessage, persona, intent, mentioned);
 
   let attemptPrompt = basePrompt;
   let attemptOutput = "";

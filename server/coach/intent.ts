@@ -164,3 +164,43 @@ const OFF_TOPIC_DOMAIN_RE =
 export function isOffTopic(message: string): boolean {
   return OFF_TOPIC_DOMAIN_RE.test(message) && !hasBoardSignal(message);
 }
+
+// Forward-prediction round (2026-07-28): when the player names a specific
+// move or ply, that moment gets full per-ply detail (pvSans + then) for
+// this one turn -- deterministic promotion, decided here from the message
+// text alone, never by the model. Grounded in the real game-150 thread:
+// she asked "what should i have done on move 28" and the collapsed
+// projection had no line to give. "move N" is read BOTH as move N (plies
+// 2N-1 and 2N) and as a bare ply N -- her own thread shows the two getting
+// mixed ("ply 54 is move 27", then she says "move 54"), and the double
+// reading costs a few promoted plies only on turns that name a number.
+// Word numbers mirror MOVE_NUMBER_RE above, including the "for"/"four"
+// speech-to-text homophone that regex already documents.
+const MENTION_WORD_NUMBERS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, for: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+};
+const MOVE_MENTION_RE = /\bmove\s+(\d+|one|two|three|four|for|five|six|seven|eight|nine|ten)\b/gi;
+const PLY_MENTION_RE = /\bply\s+(\d+)\b/gi;
+// Owner-calibratable: hard cap on promoted plies per turn, so a message
+// listing many numbers cannot re-inflate the prompt past the slimming win.
+const MENTIONED_PLY_MAX = 12;
+
+export function mentionedPlies(message: string, maxPly: number): number[] {
+  const plies = new Set<number>();
+  const add = (p: number) => {
+    if (p >= 1 && p <= maxPly && plies.size < MENTIONED_PLY_MAX) plies.add(p);
+  };
+  for (const m of message.matchAll(MOVE_MENTION_RE)) {
+    const raw = m[1].toLowerCase();
+    const n = MENTION_WORD_NUMBERS[raw] ?? parseInt(raw, 10);
+    if (!Number.isFinite(n) || n < 1) continue;
+    add(2 * n - 1);
+    add(2 * n);
+    add(n);
+  }
+  for (const m of message.matchAll(PLY_MENTION_RE)) {
+    add(parseInt(m[1], 10));
+  }
+  return [...plies];
+}

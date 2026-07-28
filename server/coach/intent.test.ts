@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyIntent, isOffTopic } from "./intent";
+import { classifyIntent, isOffTopic, mentionedPlies } from "./intent";
 
 function ctx(overrides: Partial<{ hasFocus: boolean; hasPendingMove: boolean; status: "in-progress" | "finished" }> = {}) {
   return { hasFocus: false, hasPendingMove: false, status: "in-progress" as const, ...overrides };
@@ -121,5 +121,31 @@ describe("isOffTopic", () => {
 
   it("is false for a board-shaped message", () => {
     expect(isOffTopic("why was my pawn on f3 to f4 the right move")).toBe(false);
+  });
+});
+
+// Forward-prediction round (2026-07-28): deterministic ply promotion from
+// the message text -- no model routing, same philosophy as classifyIntent.
+describe("mentionedPlies", () => {
+  it("maps move N to both its plies and the raw number read as a ply", () => {
+    expect(new Set(mentionedPlies("what should i have done on move 27", 91))).toEqual(new Set([53, 54, 27]));
+  });
+
+  it("reads word numbers including the speech-to-text 'for' homophone", () => {
+    expect(new Set(mentionedPlies("what move did i make on move for?", 91))).toEqual(new Set([7, 8, 4]));
+  });
+
+  it("reads explicit ply mentions directly", () => {
+    expect(mentionedPlies("what about ply 55", 91)).toEqual([55]);
+  });
+
+  it("clamps to the game's real plies and returns empty for no mention", () => {
+    expect(mentionedPlies("what should i have done on move 27", 20)).toEqual([]);
+    expect(mentionedPlies("was my opening okay?", 91)).toEqual([]);
+  });
+
+  it("is bounded even against a message listing many numbers", () => {
+    const msg = "moves 1 2 3 4 5 6 7 8 9 10 11 12".replace(/(\d+)/g, "move $1");
+    expect(mentionedPlies(msg, 200).length).toBeLessThanOrEqual(12);
   });
 });
