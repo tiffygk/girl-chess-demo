@@ -716,6 +716,89 @@
   97%, 100% { text-shadow: none; transform: none; }
 }
 
+/* Highlight-a-move (Task 3): the bar pocket — mockup of record "Mark a Move
+   (2026-07-28)", direction D2, ported with the owner's word (highlight,
+   never mark). Two-axis law: the pill and the tray's toggles are pressables
+   → candy (squishy 0 Npx 0 press shadows, .thumb-btn's #E3D9F5 family); a
+   toggle's HIGHLIGHTED state is a machine statement → flat cyan tint,
+   shadow dropped, still tappable to un-highlight but it reads checked, not
+   springy. Cyan only: the highlight is her own voice — never magenta (not
+   an alarm), never mint (the armed-win button's). No animation: this
+   control is on screen for the whole game, so it spends zero of the
+   effects budget (the ≤150ms press transitions below are affordance, not
+   motion spend). All hexes pre-exist in this file. */
+.gc-app .bar-chip-slot { display: inline-flex; align-items: center; gap: 8px; }
+.gc-app .highlight-pocket { display: inline-flex; flex: none; }
+.gc-app .highlight-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 24px; padding: 3px 10px; border-radius: 999px;
+  background: #FFF; border: none; cursor: pointer;
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 11px; color: #4A3B7E;
+  box-shadow: 0 2px 0 #E3D9F5;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.gc-app .highlight-pill:active { transform: translateY(1px); box-shadow: 0 1px 0 #E3D9F5; }
+/* Disabled = the shipped togglesDisabled rule (a move is pending confirm):
+   dimmed, never removed from layout, and the cyan count dot stays visible
+   even dimmed — state is never hidden, only the action. */
+.gc-app .highlight-pill:disabled { opacity: .45; cursor: default; transform: none; box-shadow: 0 2px 0 #E3D9F5; }
+.gc-app .highlight-ring {
+  width: 7px; height: 7px; border-radius: 50%;
+  border: 1.5px solid #9A8BC9; background: transparent; flex: none;
+}
+.gc-app .highlight-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: #23E5FF; flex: none; }
+/* Popover tray: anchored 8px above the bar's right edge (.player-bar is
+   position: relative). z-index 9 clears the board's highest layer (.pixel
+   at 8); it floats over the bottom rank only while open. */
+.gc-app .highlight-tray {
+  position: absolute; right: 12px; bottom: calc(100% + 8px); z-index: 9;
+  width: 216px; background: #FFF; border-radius: 16px;
+  box-shadow: 0 4px 0 #C9BFEF, 0 12px 22px rgba(90,70,180,.28);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.gc-app .highlight-tray-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #6952C4;
+  margin-bottom: 2px;
+}
+/* The toggle — the mockup's one control recipe, .thumb-btn family. */
+.gc-app .highlight-toggle {
+  display: inline-flex; align-items: center; width: 100%; justify-content: flex-start;
+  height: 30px; padding: 5px 11px;
+  background: #FFF; border: 1.5px solid #E3D9F5; border-radius: 12px;
+  box-shadow: 0 3px 0 #E3D9F5; cursor: pointer;
+  font-family: 'Fredoka', sans-serif;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.gc-app .highlight-toggle:hover { transform: translateY(-1px); }
+.gc-app .highlight-toggle:active { transform: translateY(2px); box-shadow: 0 1px 0 #E3D9F5; }
+.gc-app .highlight-toggle .highlight-ring { margin-right: 6px; }
+.gc-app .highlight-toggle-num {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px;
+  letter-spacing: .04em; color: #9C8FC7; margin-right: 5px;
+}
+.gc-app .highlight-toggle-san {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
+  letter-spacing: .02em; color: #4A3B7E;
+  text-transform: none; /* SAN keeps its true case */
+}
+.gc-app .highlight-toggle.highlighted {
+  background: rgba(35,229,255,.14); border-color: #23E5FF; box-shadow: none;
+}
+.gc-app .highlight-toggle.highlighted .highlight-ring { border: none; background: #23E5FF; }
+.gc-app .highlight-toggle.highlighted .highlight-toggle-san { color: #1A7A93; }
+.gc-app .highlight-toggle.highlighted:hover { transform: none; }
+.gc-app .highlight-toggle.highlighted:active { transform: none; box-shadow: none; }
+/* <=480: after the base rules above — equal specificity, source order
+   decides (the chat-corner precedent's own rule). */
+@media (max-width: 480px) {
+  .gc-app .highlight-toggle { height: 26px; padding: 4px 8px; }
+  .gc-app .highlight-toggle-san { font-size: 11.5px; }
+  .gc-app .highlight-toggle-num { font-size: 9px; }
+  .gc-app .highlight-toggle .highlight-ring { width: 6px; height: 6px; }
+}
+
 /* Mallow's decline bark anchors to her bar (the top of the board), poking
    up into the open header space above the board-stack rather than over
    the board itself. */
@@ -1359,6 +1442,121 @@
 .gc-app button.small.debrief-movelist-move.active.debrief-movelist-mallow {
   background: #FF3DA6; color: #fff;
   box-shadow: 0 2px 0 #C22B7E, 0 4px 8px rgba(255,61,166,.35);
+}
+
+/* Highlight-a-move (Task 4): her flagged ply in the recap — the machine's
+   record of the highlight, per the "Mark a Move" mockup's recap spec. The
+   ROW wears the flat statement (cyan tint + inset left rule, never a
+   shadow); the ply button keeps its shipped candy recipe untouched (it
+   still jumps the board) and gains the same 7px cyan dot she filled live,
+   as a badge at its top-right; the closing chip reads `highlighted` — the
+   owner's word, never `marked`. Cyan only: her voice, not an alarm. */
+.gc-app .debrief-movelist-row.highlighted-row {
+  background: rgba(35,229,255,.10);
+  box-shadow: inset 2px 0 0 #23E5FF;
+  border-radius: 6px;
+  padding: 3px 6px 3px 8px;
+}
+.gc-app button.small.debrief-movelist-move.highlighted { position: relative; }
+.gc-app button.small.debrief-movelist-move.highlighted::after {
+  content: ""; position: absolute; top: -2px; right: -2px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #23E5FF; box-shadow: 0 0 0 1.5px #FFF;
+}
+.gc-app .debrief-movelist-hl-chip {
+  margin-left: auto; flex: none;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 8.5px;
+  letter-spacing: .12em; text-transform: lowercase; color: #1A7A93;
+  background: rgba(35,229,255,.14); border: 1px solid #23A8C7;
+  padding: 2px 7px; border-radius: 4px;
+}
+
+/* Highlight-a-move (Task 6): the study ledger — mockup of record
+   "Highlighted Moves Section (2026-07-28)", direction D2. Two-axis law: a
+   collapsed row is a pressable (it expands) → candy, 0 2px 0 press shadow;
+   the open card is the machine restating HER annotation → flat cyan tint +
+   inset left rule, no drop shadow, no press chrome. Verdict chips are
+   machine statements — flat, 1px border, no shadow — reading `done well` /
+   `could be better`, the bullet sections' own vocabulary (owner ruling
+   2026-07-28). A done-well note is a full statement in the same ink, never
+   grayed. Cyan frames every record (her voice); magenta appears nowhere (a
+   highlight is never an alarm). No animation: a persistent analysis
+   surface. Zero highlights renders null upstream — no ghost chrome (the
+   2026-07-22 dead-chrome ruling). All hexes pre-exist in this file. */
+.gc-app .highlight-ledger { display: flex; flex-direction: column; gap: 6px; }
+.gc-app .highlight-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: #23E5FF; box-shadow: 0 0 0 1.5px #FFF;
+}
+.gc-app .highlight-chip {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 8.5px;
+  letter-spacing: .12em; text-transform: lowercase;
+  padding: 2px 7px; border-radius: 4px; flex: none; white-space: nowrap;
+}
+.gc-app .highlight-chip-done { color: #1A7A93; background: rgba(35,229,255,.14); border: 1px solid #23A8C7; }
+.gc-app .highlight-chip-better { color: #6952C4; background: #E7DFFF; border: 1px solid #C9BFEF; }
+/* collapsed row: 20px content in 7px 10px padding → 37.5px + 2px shadow */
+.gc-app .highlight-ledger-row {
+  display: flex; align-items: center; width: 100%; text-align: left;
+  background: #FFF; border: 1.5px solid #E3D9F5; border-radius: 10px;
+  padding: 7px 10px; cursor: pointer;
+  box-shadow: 0 2px 0 #E3D9F5;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.gc-app .highlight-ledger-row:active { transform: translateY(1px); box-shadow: 0 1px 0 #E3D9F5; }
+.gc-app .highlight-ledger-row .highlight-dot { margin-right: 7px; }
+.gc-app .highlight-ledger-num {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px;
+  letter-spacing: .04em; color: #9C8FC7; margin-right: 6px;
+}
+.gc-app .highlight-ledger-phrase {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13px; color: #4A3B7E;
+  flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gc-app .highlight-caret {
+  width: 7px; height: 7px; flex: none; margin-left: 6px;
+  border-right: 1.5px solid #9A8BC9; border-bottom: 1.5px solid #9A8BC9;
+  transform: rotate(45deg) translateY(-2px);
+}
+.gc-app .highlight-caret-up { transform: rotate(-135deg) translateY(-1px); }
+/* the open card */
+.gc-app .highlight-card {
+  background: rgba(35,229,255,.10);
+  border: 1.5px solid #E3D9F5; border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: inset 2px 0 0 #23E5FF;
+  display: flex; flex-direction: column; gap: 6px;
+}
+/* The head doubles as the collapse control when >1 highlight exists — a
+   bare hit area, no candy chrome of its own (the card stays a statement). */
+.gc-app .highlight-card-head {
+  display: flex; align-items: center; gap: 7px;
+  background: none; border: none; padding: 0; width: 100%; text-align: left;
+}
+.gc-app button.highlight-card-head { cursor: pointer; }
+.gc-app .highlight-card-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #23A8C7;
+  flex: 1 1 auto;
+}
+.gc-app .highlight-card-move { display: flex; align-items: baseline; gap: 7px; }
+.gc-app .highlight-card-phrase { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 14px; color: #4A3B7E; }
+.gc-app .highlight-card-san {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10.5px;
+  letter-spacing: .04em; color: #1A7A93;
+  text-transform: none; /* SAN keeps its true case */
+}
+.gc-app .highlight-card-note {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13.5px;
+  color: #4A3B7E; line-height: 1.4; margin: 0;
+}
+.gc-app .highlight-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+/* <=480 (debrief at 88vw): the mockup verified no structural overrides are
+   needed at 343px; only the card tightens. After the base rules — equal
+   specificity, source order decides. */
+@media (max-width: 480px) {
+  .gc-app .highlight-card { padding: 9px 12px; }
+  .gc-app .highlight-card-note { font-size: 13px; }
 }
 
 .gc-app .debrief-footer {

@@ -51,6 +51,12 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // plies (never fabricated). Written once at game end by
     // manager.ts's persistGameSummary.
     { name: "classification", addSql: "classification TEXT" },
+    // Highlight-a-move: a per-move flag the player sets during live play
+    // ("that move I paused on") via POST /api/game/:id/move/:ply/highlight.
+    // 0/1 rather than boolean -- SQLite has no boolean type, and this
+    // matches every other flag column in this table (e.g. mate_against
+    // over in verdicts).
+    { name: "highlighted", addSql: "highlighted INTEGER" },
   ],
   mode_timers: [
     { name: "session_id", addSql: "session_id INTEGER REFERENCES sessions(id)" },
@@ -446,6 +452,13 @@ export const listFinishedGames = (limit = 30) =>
 // value — unlike turning_points above, this needs no existence guard.
 export const setMoveClassification = (gameId: number, ply: number, classification: string | null) =>
   db.prepare("UPDATE moves SET classification = ? WHERE game_id = ? AND ply = ?").run(classification, gameId, ply);
+
+// Highlight-a-move: a plain repeatable UPDATE, same convention as
+// setMoveClassification above -- safe to call twice with the same value,
+// no existence guard needed.
+export const setMoveHighlighted = (gameId: number, ply: number, highlighted: boolean): void => {
+  db.prepare("UPDATE moves SET highlighted = ? WHERE game_id = ? AND ply = ?").run(highlighted ? 1 : 0, gameId, ply);
+};
 
 // Increment 3.9 (F16): written by server/game/manager.ts's chat() for both
 // the player's message and the coach's reply. traceId is omitted (stored

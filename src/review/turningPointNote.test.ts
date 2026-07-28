@@ -288,6 +288,65 @@ describe("couldImprove (part ii)", () => {
   });
 });
 
+// Highlight-a-move (Task 7): buildTurningPointNote's fields are all
+// optional -- a turning point with a neutral label (e.g. "strong move")
+// and no missedPunish/line-mismatch naturally renders NO couldImprove at
+// all (confirmed by the "is absent for a strong move" test above). But a
+// move she flagged as uncertain must always say something true, not go
+// silent -- the 5th `highlighted` param opts a ply into an honest fallback
+// when the existing logic left couldImprove unset.
+describe("highlighted-move fallback (Task 7)", () => {
+  // A real, independently legal game reaching ply 11 with Qd2 played there
+  // (1.d4 d5 2.Nf3 Nf6 3.Nc3 Nc6 4.Bf4 Bf5 5.e3 e6 6.Qd2) -- verified via
+  // chess.js, same fixture discipline as highlightedMoves.test.ts.
+  const GAME_TO_PLY_11 = ["d4", "d5", "Nf3", "Nf6", "Nc3", "Nc6", "Bf4", "Bf5", "e3", "e6", "Qd2"].map(
+    (san, i) => ({ ply: i + 1, san })
+  );
+
+  it("a highlighted move with no fault affirms the instinct instead of inventing one", () => {
+    const note = buildTurningPointNote(
+      tp({ ply: 11, san: "Qd2", label: "strong move" }),
+      undefined,
+      line({ ply: 11, bestSan: "Qd2" }),
+      GAME_TO_PLY_11,
+      true
+    );
+    expect(note.couldImprove).toMatch(/nothing here was a mistake/);
+    expect(note.couldImprove).not.toMatch(/should have/);
+  });
+
+  it("a highlighted move that missed a stronger idea names it, honestly, instead of staying silent", () => {
+    const note = buildTurningPointNote(
+      tp({ ply: 11, san: "Qd2", label: "strong move" }),
+      undefined,
+      line({ ply: 11, bestSan: "Nd5" }), // a different, hypothetical stronger idea
+      GAME_TO_PLY_11,
+      true
+    );
+    expect(note.couldImprove).toBeTruthy();
+    // Renders in plain English (same convention as the rest of this file's
+    // clauses) since Nd5 is actually legal at the seed position, not raw SAN.
+    expect(note.couldImprove).toContain("knight takes on d5");
+  });
+
+  it("does not touch an existing couldImprove -- the fallback only fills a genuine gap", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Nxe5" }),
+      undefined,
+      undefined,
+      undefined,
+      true
+    );
+    expect(note.couldImprove).toContain("Nxe5");
+    expect(note.couldImprove).not.toMatch(/you highlighted this one/);
+  });
+
+  it("a non-highlighted ply with the same neutral label still has no couldImprove", () => {
+    const note = buildTurningPointNote(tp({ label: "strong move" }), undefined, undefined, undefined, false);
+    expect(note.couldImprove).toBeUndefined();
+  });
+});
+
 describe("whatMayHaveHappened (part iv)", () => {
   it("is absent when there is no line at all", () => {
     const note = buildTurningPointNote(tp({}), undefined, undefined);

@@ -15,6 +15,7 @@ import {
   fetchGames,
   getTurningLines,
   exploreReply,
+  highlightMove,
   type MoveResponse,
   type GameOverInfo,
   type Verdict,
@@ -37,6 +38,8 @@ import {
 import { turningLineArrows, arrowsToHighlights, type ArrowColor } from "./reviewArrows";
 import { followedBest, playedArrowForPly } from "../review/followedBest";
 import { describeMove, type MoveRender } from "./describeMove";
+import { pushLiveMove, setHighlight, markableWindow, type LiveMove } from "./liveMoves";
+import { HighlightPocket } from "./HighlightPocket";
 import { victimKind, materialDiff, rollbackCapture, capturesAtPly, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
 import { reconcile } from "./reconcile";
@@ -231,6 +234,13 @@ export function GamePage() {
   // cleared on new game. For castling this is always the king's from/to,
   // since describeMove's render.from/to are the king's squares already.
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+  // Highlight-a-move (Task 2): a reactive live SAN list, since
+  // activeReviewMoves is null mid-game (liveSummary is fetched only once
+  // the game is over, and mirrorRef is a ref -- it never triggers a
+  // render). Appended alongside lastMove at each settle site below, cleared
+  // on new game the same place lastMove is. Read by the highlight pocket
+  // (Task 3) via markableWindow, mounted in her PlayerBar below.
+  const [liveMoves, setLiveMoves] = useState<LiveMove[]>([]);
   // A5: transient status-line hint for a click that was meaningful but
   // couldn't do what it looked like (currently: "can't castle right now").
   const [inputHint, setInputHint] = useState<string | null>(null);
@@ -479,6 +489,7 @@ export function GamePage() {
     postVerdictTokenRef.current += 1;
     setPostVerdict(null);
     setLastMove(null);
+    setLiveMoves([]);
     setMallowThinking(false);
     if (inputHintTimerRef.current) {
       window.clearTimeout(inputHintTimerRef.current);
@@ -651,6 +662,14 @@ export function GamePage() {
         // castle (describeMove keeps the rook in `secondary`), so this is
         // already "the king's from/to" for castling, no special-casing.
         setLastMove({ from: render.from, to: render.to });
+        // Highlight-a-move (Task 2): her move just settled — she can now
+        // highlight it. mirror.history().length is the ply just played
+        // (chess.js already pushed it onto history at the mirror.move()
+        // call above), 1-indexed same as the server's ply column. Captured
+        // once here so the revert branches below can roll back the SAME
+        // ply if the move never actually lands server-side.
+        const playedPly = mirror.history().length;
+        setLiveMoves((prev) => pushLiveMove(prev, { ply: playedPly, san: mv.san, highlighted: false }));
 
         const timeSpentMs = Date.now() - lastReplyAtRef.current;
         // Turn state lives in the player bars now (top bar's "thinking..."
@@ -679,6 +698,11 @@ export function GamePage() {
           setResyncTick((t) => t + 1);
           setStatus("connection hiccup. try that move again");
           setLastMove(null); // the move never actually landed — nothing to highlight
+          // adoptServerFen's undo fallback just unwound mirror's history --
+          // the ply we optimistically pushed above no longer exists, so the
+          // live list must drop it too or a later highlight call targets a
+          // ply the server never recorded.
+          setLiveMoves((prev) => prev.filter((m) => m.ply !== playedPly));
           return;
         }
         lastReplyAtRef.current = Date.now();
@@ -695,6 +719,10 @@ export function GamePage() {
           setResyncTick((t) => t + 1);
           setStatus("that didn't land. try another move");
           setLastMove(null); // reverted — the highlighted move didn't actually happen
+          // Same reasoning as the catch branch above: the server rejected
+          // this move, so its ply was never recorded -- drop it from the
+          // live list too.
+          setLiveMoves((prev) => prev.filter((m) => m.ply !== playedPly));
           return;
         }
 
@@ -732,6 +760,10 @@ export function GamePage() {
           // A4: Mallow's reply just settled — the highlight moves to her
           // move now, same "both sides" lichess convention.
           setLastMove({ from: replyRender.from, to: replyRender.to });
+          // Mallow's move also joins the live list (for ply-identity
+          // bookkeeping) even though markableWindow's isHerPly filter means
+          // she can never highlight it -- out of scope, see the plan.
+          setLiveMoves((prev) => pushLiveMove(prev, { ply: mirror.history().length, san: replyMove.san, highlighted: false }));
         }
 
         setFen(res.fen);
@@ -1769,6 +1801,23 @@ export function GamePage() {
 
   const togglesDisabled = uiBusy || pending !== null;
 
+  // Highlight-a-move (Task 3): optimistic flip, persisted immediately
+  // (moves.highlighted) so the highlight survives a reload — it is db
+  // state, not React state. On a failed write the flip reverts: the db is
+  // the debrief's source of truth, and a pill that lies about what was
+  // recorded is worse than a bounced tap.
+  const handleHighlightToggle = useCallback(
+    (ply: number, on: boolean) => {
+      setLiveMoves((prev) => setHighlight(prev, ply, on));
+      if (gameId != null) {
+        highlightMove(gameId, ply, on).catch(() => {
+          setLiveMoves((prev) => setHighlight(prev, ply, !on));
+        });
+      }
+    },
+    [gameId]
+  );
+
   // Wave B: turn/state info lives entirely in the two player bars now.
   // uiBusy is true for the whole span from "player's move confirmed" to
   // "reply (or failure) resolved" — that's mallow's side of the board being
@@ -2074,6 +2123,22 @@ export function GamePage() {
           chip={youChip}
           moveNumber={moveNumber}
           elo={PLAYER_ELO}
+          // Highlight-a-move (Task 3): live play only — in review mode
+          // liveMoves belongs to the live game, not the reviewed one, and
+          // post-game the debrief's study ledger is the highlight surface
+          // ("highlight from the recap" is explicitly a later, additive
+          // feature). Disabled by the same togglesDisabled rule as every
+          // other toggle, so it can never sit active beside a pending
+          // "confirm g4, tap it again" — which this control never touches.
+          pocket={
+            gameOver == null && !reviewGame ? (
+              <HighlightPocket
+                moves={markableWindow(liveMoves, 3)}
+                disabled={togglesDisabled}
+                onToggle={handleHighlightToggle}
+              />
+            ) : null
+          }
         />
       </div>
       {/* Fixed-height reserve so the judge indicator and controls appearing

@@ -788,6 +788,21 @@ describe("GameManager", () => {
     }, 20000);
   });
 
+  // Highlight-a-move (Task 1): a per-ply flag the player sets during live
+  // play, round-tripped through gm.highlightMove -> gm.getSummary. Built
+  // directly against the db accessors, same reasoning as the healing test
+  // below: a pure persistence concern, no live engine needed.
+  it("a highlighted move comes back highlighted in the summary", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 0 });
+
+    gm.highlightMove(g, 1, true);
+    expect(gm.getSummary(g).moves.find((m) => m.ply === 1)?.highlighted).toBe(true);
+
+    gm.highlightMove(g, 1, false);
+    expect(gm.getSummary(g).moves.find((m) => m.ply === 1)?.highlighted).toBe(false);
+  });
+
   // debrief-v2: algo versioning self-heal. A game finished under the OLD
   // algorithm (dedup-swallows-her-swings, no episode detector) has a stale
   // algo_version=1 row set — getSummary must recompute under the current
