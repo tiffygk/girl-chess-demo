@@ -296,6 +296,44 @@ const GAME150_SANS = [
   "Qh6+","Kd5","Be7","Kc4","Qc6#",
 ].map((san, i) => ({ ply: i + 1, san }));
 
+describe("perPlyForModel — missed-win turning point ships full detail (missed-win round, 2026-07-28)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  // Regression pin: pins the EXISTING fullDetailPlies fold (facts.turningPoints
+  // ply -> full detail, see perPlyForModel) against the missed-win shape
+  // specifically -- proving the "one emission point lights up every surface"
+  // design claim for chat without adding a second mechanism. perPlyForModel
+  // itself isn't exported (same convention as every other test in this file),
+  // so this goes through the real chat() call and inspects the captured
+  // model-facing prompt, exactly like the ply-scoping tests above.
+  it("a missed-win turning point's ply ships full detail however old it is", async () => {
+    const gameMoves = GAME150_SANS; // shared fixture, declared above
+    const perPly: ChatPerPlyInput[] = gameMoves.map((m) => ({
+      ply: m.ply, san: m.san, evalCp: 0, evalMate: null, bestSan: m.ply === 55 ? "Qh8#" : null, pvSans: m.ply === 55 ? ["Qh8#"] : [],
+    }));
+    const facts = assembleChatFactList(
+      gameMoves,
+      {},
+      [{ ply: 55, san: "Nf7+", label: "missed mate" }],
+      perPly
+    );
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "the missed mate on move 28 is the story of this game.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("what happened on move 28?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"ply":55');
+    expect(capturedPrompt).toContain('"pvSans":["Qh8#"]'); // full detail, not the collapsed shape
+  });
+});
+
 describe("derivePhase — nearly-bare side (missed-win round, 2026-07-28)", () => {
   it("reads a nearly-bare board as endgame regardless of total piece count (game 150 ply 55)", () => {
     const gameMoves = GAME150_SANS; // shared fixture from the plan header
