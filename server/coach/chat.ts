@@ -5,6 +5,7 @@ import { getPersona, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims } from "./placementClaims";
+import { checkMateClaims } from "./mateClaims";
 import { insertAdviceTrace } from "../store/db";
 import { isOffTopic, mentionedPlies, type ChatIntent } from "./intent";
 
@@ -679,6 +680,17 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
   // is about the SHAPE of the prose (notation/banned words/numbers), not
   // whether a claim matches the position.
   violations.push(...checkVoice(text));
+  // Forward-prediction round (2026-07-28): the then facts invite the model
+  // to name mates by number -- adjudicate digit-form "mate in N" against
+  // the Ns the fact list itself vouches for (evalMate, then claims, and a
+  // focused line that visibly ends in #). Board route only: the general
+  // route may legitimately reference mates outside this game.
+  const focusMateNs: number[] = [];
+  for (const line of [facts.context?.hintFocus?.pvSans, facts.context?.turningPointFocus?.pvSans]) {
+    const last = line?.[line.length - 1];
+    if (line && last && last.endsWith("#")) focusMateNs.push(Math.ceil(line.length / 2));
+  }
+  violations.push(...checkMateClaims(text, facts.perPlyAnalysis ?? [], focusMateNs));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };

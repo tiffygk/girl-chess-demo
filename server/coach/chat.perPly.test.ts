@@ -374,4 +374,18 @@ describe("perPlyForModel — then + pv depth (forward-prediction round)", () => 
     );
     expect(prompt).not.toContain('"pvSans":["Bxf5","g4","Be4"]');
   });
+
+  it("validateChat flags an invented mate-in-N and the reply falls back through the regen discipline", async () => {
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, [
+      { ply: 54, san: "Bxh6", evalCp: null, evalMate: 2, bestSan: null, pvSans: [] },
+    ]);
+    const outputs = ["you had mate in 7 there.", "you had mate in 7 there."];
+    let calls = 0;
+    const backend = fakeBackend(async () => outputs[calls++]);
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    const result = await chat("how did the end go?", [], facts, backend, { gameId, ply: 54, kind: "chat" });
+    expect(result.source).toBe("template");
+    expect(result.cause).toBe("validation-failed");
+  });
 });
