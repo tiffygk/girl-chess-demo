@@ -288,7 +288,15 @@ export function buildTurningPointNote(
   tp: TurningPoint,
   cls: MoveClassification | undefined,
   line: TurningLine | undefined,
-  gameSans?: SummaryMove[]
+  gameSans?: SummaryMove[],
+  // Highlight-a-move (Task 7): true when the player flagged tp.ply during
+  // live play. This function's other fields are all optional and a neutral
+  // point (no missedPunish, no error-band label) naturally leaves
+  // couldImprove unset -- fine for an ordinary turning-point card, but a
+  // move she paused on must always say something true rather than go
+  // silent. Only ever fills a genuine gap (below), never overwrites an
+  // couldImprove the existing logic already produced.
+  highlighted?: boolean
 ): TurningPointNote {
   const motif = inferMotif(tp);
   const seedFen = seedFenForLine(line, gameSans);
@@ -299,6 +307,14 @@ export function buildTurningPointNote(
   if (didWell) note.didWell = didWell;
   const couldImprove = buildCouldImprove(tp, cls, line, gameSans, seedFen, fb);
   if (couldImprove) note.couldImprove = couldImprove;
+  if (highlighted && !note.couldImprove) {
+    const bestSan = line?.bestSan;
+    const notFollowed = fb ? !fb.followed : !!bestSan && bestSan !== tp.san;
+    note.couldImprove =
+      bestSan && notFollowed
+        ? `you highlighted this one. our chess brain would have played ${describedOrRaw(bestSan, seedFen)} here.`
+        : "you highlighted this one. nothing here was a mistake, so trust the instinct that made you pause.";
+  }
   const whatMayHaveHappened = buildWhatMayHaveHappened(line, seedFen, fb);
   if (whatMayHaveHappened) note.whatMayHaveHappened = whatMayHaveHappened;
   const opportunity = opportunityForLine(line, gameSans);
