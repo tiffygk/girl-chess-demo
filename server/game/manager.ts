@@ -10,6 +10,7 @@ import { classifyMove, isAdviceLevel, DEFAULT_ADVICE_LEVEL } from "../annotator/
 import { adjudicatePosition } from "../annotator/adjudicate";
 import { computeHint as computeHintFacts, type HintFacts } from "../annotator/hint";
 import { moveEndpoints } from "../annotator/moveEndpoints";
+import { deriveContinuation } from "../annotator/continuation";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
 // Increment 3b: panel-ruled turning points + move classifications. Reads
 // STORED evals only (see persistGameSummary below) — never touches
@@ -931,6 +932,11 @@ export class GameManager {
         evalMate: (r.eval_mate ?? null) as number | null,
         bestSan: bestSan ?? null,
         pvSans,
+        // Forward-prediction round (2026-07-28): the replay-proven claim for
+        // this ply's line -- deterministic, chess.js only, derived from the
+        // exact fenBefore + pvSans pair pvLine just replayed. undefined when
+        // nothing is provable; JSON.stringify drops the key entirely then.
+        then: deriveContinuation(fenBefore, pvSans),
       };
     });
     const facts = assembleChatFactList(gameMoves, body.context, turningPoints, perPlyAnalysis, {

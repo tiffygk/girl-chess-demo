@@ -5,8 +5,9 @@ import { getPersona, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims } from "./placementClaims";
+import { checkMateClaims } from "./mateClaims";
 import { insertAdviceTrace } from "../store/db";
-import { isOffTopic, type ChatIntent } from "./intent";
+import { isOffTopic, mentionedPlies, type ChatIntent } from "./intent";
 
 // F16 (this-game grounding chat): a second, independent narration surface
 // alongside narrate() in ./index.ts. Same shape (persona prompt + fact JSON
@@ -230,6 +231,7 @@ export interface ChatFactList {
     bestSan: string | null;
     pvSans: string[];
     phase: "opening" | "middlegame" | "endgame";
+    then?: string;
   }[];
   // NOTE: no allowedSquares -- chat validation treats square names as free
   // geography (see validateChat below). Declared cut #2, not an oversight:
@@ -301,6 +303,13 @@ export interface ChatPerPlyInput {
   evalMate: number | null;
   bestSan: string | null;
   pvSans: string[];
+  // Forward-prediction round (2026-07-28): the replay-proven continuation
+  // claim for this ply's line (server/annotator/continuation.ts), derived by
+  // the caller (manager.ts) from the same fenBefore + pvSans replay that
+  // produced bestSan/pvSans -- same "caller derives, this function only
+  // carries it" discipline as every other field here. Absent when the line
+  // proves nothing claimable (about half of real plies, measured).
+  then?: string;
 }
 
 // Owner-calibratable starting values (Task 3, R1a): opening/endgame phase
@@ -671,6 +680,17 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
   // is about the SHAPE of the prose (notation/banned words/numbers), not
   // whether a claim matches the position.
   violations.push(...checkVoice(text));
+  // Forward-prediction round (2026-07-28): the then facts invite the model
+  // to name mates by number -- adjudicate digit-form "mate in N" against
+  // the Ns the fact list itself vouches for (evalMate, then claims, and a
+  // focused line that visibly ends in #). Board route only: the general
+  // route may legitimately reference mates outside this game.
+  const focusMateNs: number[] = [];
+  for (const line of [facts.context?.hintFocus?.pvSans, facts.context?.turningPointFocus?.pvSans]) {
+    const last = line?.[line.length - 1];
+    if (line && last && last.endsWith("#")) focusMateNs.push(Math.ceil(line.length / 2));
+  }
+  violations.push(...checkMateClaims(text, facts.perPlyAnalysis ?? [], focusMateNs));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };
@@ -791,7 +811,13 @@ function focusForModel(facts: ChatFactList) {
 // this projection at all -- readForPly (above) replaces both with a single
 // qualitative `read` string, and no key here contains the literal substring
 // "eval". The raw numbers stay on the ChatFactList itself.
-const PER_PLY_PV_MODEL_LIMIT = 2;
+// Forward-prediction round (2026-07-28): raised 2 -> 6 for full-detail
+// plies. Two moves of line cannot answer "and what happens after that" --
+// six (three of hers, three of mallow's) walks a real sequence, and the
+// full-detail set is small enough that the measured cost on a real 91-ply
+// game was +35 tokens of the round's +363 total. Collapsed plies still ship
+// no pvSans at all -- the `then` claim is their whole continuation story.
+const PER_PLY_PV_MODEL_LIMIT = 6;
 
 // B4b (2026-07-27, coach-truth-speed round): the whole-game perPlyAnalysis
 // list is affordable to CARRY (assembleChatFactList still ships every ply,
@@ -825,7 +851,7 @@ const PER_PLY_PV_MODEL_LIMIT = 2;
 const RECENT_PLY_WINDOW = 12;
 const FOCUS_PLY_RADIUS = 2;
 
-function perPlyForModel(facts: ChatFactList) {
+function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
   const perPlyAnalysis = facts.perPlyAnalysis;
   if (!perPlyAnalysis) return undefined;
 
@@ -841,10 +867,28 @@ function perPlyForModel(facts: ChatFactList) {
   for (const p of perPlyAnalysis) {
     if (p.ply > maxPly - RECENT_PLY_WINDOW) fullDetailPlies.add(p.ply);
   }
+  // Forward-prediction round (2026-07-28): plies the player named in this
+  // very message ("move 27", "ply 55") -- promoted with the same radius the
+  // focused moment gets, for the same reason (a "what about that moment"
+  // follow-up wants a move or two of surrounding context).
+  for (const p of mentioned) {
+    for (let d = -FOCUS_PLY_RADIUS; d <= FOCUS_PLY_RADIUS; d++) {
+      fullDetailPlies.add(p + d);
+    }
+  }
 
   return perPlyAnalysis.map((p) => {
     const read = readForPly(p.ply, p.evalCp, p.evalMate);
-    if (!fullDetailPlies.has(p.ply)) return { ply: p.ply, san: p.san, bestSan: p.bestSan, read };
+    if (!fullDetailPlies.has(p.ply)) {
+      // Collapsed plies: then only where she deviated from best -- the
+      // "what did i miss" set (62/91 plies on real game 150; +363 tokens
+      // measured for the whole rule vs +508 for then-everywhere). A ply
+      // where she played the best move has nothing missed to explain.
+      const deviated = p.bestSan !== null && p.bestSan !== p.san;
+      return deviated && p.then
+        ? { ply: p.ply, san: p.san, bestSan: p.bestSan, read, then: p.then }
+        : { ply: p.ply, san: p.san, bestSan: p.bestSan, read };
+    }
     return {
       ply: p.ply,
       san: p.san,
@@ -852,6 +896,7 @@ function perPlyForModel(facts: ChatFactList) {
       phase: p.phase,
       pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
       read,
+      ...(p.then ? { then: p.then } : {}),
     };
   });
 }
@@ -891,7 +936,7 @@ function pendingMoveForModel(pendingMove: ChatContext["pendingMove"]) {
 // None of them carry a cp/mate number today, so there is nothing else to
 // sanitize; perPlyAnalysis (via readForPly above) is the one real leak this
 // task closes.
-function factsForModel(facts: ChatFactList) {
+function factsForModel(facts: ChatFactList, mentioned: number[] = []) {
   const { allowedSans, context, focusPosition, perPlyAnalysis, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
   if (context) {
@@ -916,7 +961,7 @@ function factsForModel(facts: ChatFactList) {
     ...rest,
     legalSansBelongTo: facts.toMove,
     focusPosition: focusForModel(facts),
-    perPlyAnalysis: perPlyForModel(facts),
+    perPlyAnalysis: perPlyForModel(facts, mentioned),
     context: strippedContext,
   };
 }
@@ -959,13 +1004,14 @@ function buildChatPrompt(
   history: { role: "user" | "coach"; text: string }[],
   userMessage: string,
   persona: ReturnType<typeof getPersona>,
-  intent: ChatIntent
+  intent: ChatIntent,
+  mentioned: number[] = []
 ): string {
   const systemPrompt =
     intent === "general"
       ? [persona.chatSystemPrompt, persona.chatGeneralPrompt].filter(Boolean).join("\n\n")
       : persona.chatSystemPrompt;
-  const factsPayload = intent === "general" ? generalFactsForModel(facts) : factsForModel(facts);
+  const factsPayload = intent === "general" ? generalFactsForModel(facts) : factsForModel(facts, mentioned);
   return [
     systemPrompt,
     "",
@@ -1114,7 +1160,8 @@ export async function chat(
     return { text, source: "template", cause: "off-topic", traceId };
   }
 
-  const basePrompt = buildChatPrompt(facts, history, userMessage, persona, intent);
+  const mentioned = mentionedPlies(userMessage, facts.gameSans.length);
+  const basePrompt = buildChatPrompt(facts, history, userMessage, persona, intent, mentioned);
 
   let attemptPrompt = basePrompt;
   let attemptOutput = "";

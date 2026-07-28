@@ -82,6 +82,14 @@ describe("assembleChatFactList: perPlyAnalysis (Task 3, R1a)", () => {
     expect(facts.perPlyAnalysis![0].bestSan).toBeNull();
     expect(facts.perPlyAnalysis![0].pvSans).toEqual([]);
   });
+
+  it("carries an optional then claim through untouched (forward-prediction round)", () => {
+    const perPly = [
+      { ply: 1, san: "f4", evalCp: 30, evalMate: null, bestSan: "d5", pvSans: ["d5", "Nf3"], then: "you win a pawn" },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+    expect(facts.perPlyAnalysis![0].then).toBe("you win a pawn");
+  });
 });
 
 // Task 3b (R2, voice-enforcement round, 2026-07-22): factsForModel is
@@ -281,5 +289,103 @@ describe("perPlyForModel — ply-scoping (B4b)", () => {
 
     expect(capturedPrompt).toContain('"ply":3');
     expect(capturedPrompt).toContain('"bestSan":"Nc6"');
+  });
+});
+
+// Forward-prediction round (2026-07-28): perPlyForModel's then/pv-depth
+// rules. Collapsed plies carry then only when she deviated from best (the
+// "what did i miss" set -- measured +363 tokens on real 91-ply game 150 vs
+// +508 for then-everywhere); full-detail plies carry it whenever derivable,
+// and their pvSans deepen from 2 to 6 so cookie can walk a real line.
+describe("perPlyForModel — then + pv depth (forward-prediction round)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  async function capture(perPly: ChatPerPlyInput[], message = "how did this go?") {
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "that stretch went fine for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat(message, [], facts, backend, { gameId, ply: 1, kind: "chat" });
+    return capturedPrompt;
+  }
+
+  it("a collapsed ply where she deviated from best carries its then claim", async () => {
+    const prompt = await capture([
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "d4", pvSans: ["d4"], then: "you win a pawn" },
+      { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+    ]);
+    expect(prompt).toContain('"ply":3');
+    expect(prompt).toContain('"then":"you win a pawn"');
+  });
+
+  it("a collapsed ply where she PLAYED the best move drops then", async () => {
+    const prompt = await capture([
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nf3", pvSans: ["Nf3"], then: "you win a pawn" },
+      { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+    ]);
+    expect(prompt).not.toContain('"then"');
+  });
+
+  it("a full-detail ply carries then even when she played the best move", async () => {
+    const prompt = await capture([
+      { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: "Bxh6", pvSans: ["Bxh6"], then: "you win a pawn" },
+    ]);
+    expect(prompt).toContain('"then":"you win a pawn"');
+  });
+
+  it("a full-detail ply now ships up to six pv moves, not two", async () => {
+    const prompt = await capture([
+      {
+        ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: "PV1",
+        pvSans: ["PV1", "PV2", "PV3", "PV4", "PV5", "PV6", "PV7"],
+      },
+    ]);
+    expect(prompt).toContain('"pvSans":["PV1","PV2","PV3","PV4","PV5","PV6"]');
+    expect(prompt).not.toContain("PV7");
+  });
+
+  it("naming a move in the message promotes its plies to full detail (pvSans ship)", async () => {
+    const prompt = await capture(
+      [
+        { ply: 27, san: "Nxd2", evalCp: 0, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5", "g4", "Be4"], then: "you win a pawn" },
+        { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+      ],
+      "what should i have done on move 14"
+      // move 14 -> plies 27, 28 (and raw 14): ply 27 sits outside the
+      // last-12 window of the 54-ply LONG_GAME and has no turning point, so
+      // WITHOUT promotion it would collapse and drop its pvSans.
+    );
+    expect(prompt).toContain('"pvSans":["Bxf5","g4","Be4"]');
+  });
+
+  it("the same ply stays collapsed when no move number is mentioned", async () => {
+    const prompt = await capture(
+      [
+        { ply: 27, san: "Nxd2", evalCp: 0, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5", "g4", "Be4"], then: "you win a pawn" },
+        { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+      ],
+      "how did this go?"
+    );
+    expect(prompt).not.toContain('"pvSans":["Bxf5","g4","Be4"]');
+  });
+
+  it("validateChat flags an invented mate-in-N and the reply falls back through the regen discipline", async () => {
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, [
+      { ply: 54, san: "Bxh6", evalCp: null, evalMate: 2, bestSan: null, pvSans: [] },
+    ]);
+    const outputs = ["you had mate in 7 there.", "you had mate in 7 there."];
+    let calls = 0;
+    const backend = fakeBackend(async () => outputs[calls++]);
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    const result = await chat("how did the end go?", [], facts, backend, { gameId, ply: 54, kind: "chat" });
+    expect(result.source).toBe("template");
+    expect(result.cause).toBe("validation-failed");
   });
 });

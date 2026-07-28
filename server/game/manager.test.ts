@@ -1278,6 +1278,41 @@ describe("GameManager", () => {
       // from (there is no ply-0 row) -- an honest gap, not a guess.
       expect(capturedPrompt).toContain('"ply":1,"san":"e4","bestSan":null');
     }, 20000);
+
+    it("derives a then claim from the persisted pv and ships it in the prompt (forward-prediction round)", async () => {
+      const gameId = createGame(sessionId, "maia-1100");
+      recordMove({ gameId, ply: 1, san: "e4", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 2, san: "d5", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 3, san: "Nf3", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      // attachEval(2) persists the eval of the position AFTER black's d5 --
+      // white to move at ply 3. Best line exd5 (white nets a pawn, nothing
+      // recaptures in the line) attaches to ply 3's row as its "instead"
+      // line, and deriveContinuation proves "you win a pawn" from it.
+      attachEval(gameId, 2, { cp: 40, mate: null, bestMove: "e4d5", pv: ["e4d5", "g8f6"] });
+
+      let capturedPrompt = "";
+      gm.setCoachBackendForTesting(
+        {
+          name: "capture-fake",
+          async available() {
+            return true;
+          },
+          async generate(prompt: string) {
+            capturedPrompt = prompt;
+            return "you had a clean pawn grab there.";
+          },
+        },
+        "claude"
+      );
+
+      const result = await gm.chat(gameId, {
+        message: "was my opening okay?",
+        context: { mode: "live" },
+        backendPref: "claude",
+      });
+      expect(result.ok).toBe(true);
+      expect(capturedPrompt).toContain('"then":"you win a pawn"');
+    }, 20000);
   });
 
   // 2026-07-28 (coach-truth-speed round): the off-by-one bug, pinned against
