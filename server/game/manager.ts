@@ -935,10 +935,20 @@ export class GameManager {
         pvSans,
       };
     });
-    const facts = assembleChatFactList(gameMoves, body.context, turningPoints, perPlyAnalysis, {
-      status: finished ? "finished" : "in-progress",
-      outcome,
-    });
+    // Highlight-a-move (Task 8): straight off the same moveRows Task 1
+    // widened with `highlighted` -- no extra query.
+    const highlightedPlies = moveRows.filter((r: any) => r.highlighted === 1).map((r: any) => r.ply as number);
+    const facts = assembleChatFactList(
+      gameMoves,
+      body.context,
+      turningPoints,
+      perPlyAnalysis,
+      {
+        status: finished ? "finished" : "in-progress",
+        outcome,
+      },
+      highlightedPlies.length > 0 ? highlightedPlies : undefined
+    );
 
     const historyRows = getChatMessages(gameId, CHAT_HISTORY_WINDOW);
     const history = historyRows.map((r: any) => ({ role: r.role as "user" | "coach", text: r.text }));
