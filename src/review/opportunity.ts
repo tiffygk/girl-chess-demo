@@ -16,8 +16,14 @@
 // did, on adversarial repro lines) tell her a line that mates HER, or one
 // where the OPPONENT nets material, "opens up" something good. Every branch
 // below now proves the claim is a gain for white specifically before
-// returning it; anything it can't prove that way returns undefined or the
-// neutral "keeps the initiative" fallback rather than inventing a direction.
+// returning it; anything it can't prove that way returns undefined rather
+// than inventing a direction. Coach truth-speed round (2026-07-27): the old
+// neutral "keeps the initiative" fallback was itself dropped per owner
+// feedback ("this is stupid and not useful") — a claim that can't be proven
+// now returns undefined (both render sites already guard on truthiness), and
+// two of the previously-vague cases were recovered as provable claims
+// instead (a sub-minor-piece net material gain, and a checking developing
+// move) — see deriveOpportunity's own doc comment below.
 import { Chess } from "chess.js";
 
 const PIECE_NAMES: Record<string, string> = {
@@ -35,10 +41,18 @@ const PIECE_NAMES: Record<string, string> = {
 // ahead."
 const PIECE_VALUES: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
 
-// A minor piece (knight/bishop) is the honesty-gate floor for "wins the
-// {piece}" — a smaller net (e.g. a lone pawn) stays unclaimed rather than
-// risk overstating a marginal edge as a named win.
+// A minor piece (knight/bishop) is the honesty-gate floor for NAMING the
+// specific piece ("wins the {piece}") — below this, the specific-piece claim
+// stays unclaimed rather than risk overstating a marginal edge.
 const MATERIAL_WIN_FLOOR = 3;
+
+// Coach truth-speed round (2026-07-27): the owner's report named "keeps the
+// initiative" as a useless, non-conclusive clause — 11 of the 37 measured
+// turning lines fell into that bucket. A genuine net pawn gain (below the
+// minor-piece floor above, so still no specific piece is named) is honest
+// and provable from the same replay; PAWN_GAIN_FLOOR recovers those cases
+// as "wins a pawn" rather than the vague fallback.
+const PAWN_GAIN_FLOOR = 1;
 
 /**
  * Replays `pvSans` on top of `fenSeed` — the exact seed position server/
@@ -56,18 +70,23 @@ const MATERIAL_WIN_FLOOR = 3;
  *      several plies on is netted out correctly, not just an immediate
  *      one-ply lookahead) is at least a minor piece (>= 3) -> "wins the
  *      {pieceKind}" naming the single largest piece white captured.
- *   3. (only once neither of the above fires, and white's net material
- *      isn't negative — never dress up a line that costs the player
- *      material as an opportunity) a file that had a pawn before the pv and
- *      has none after -> "opens the {file} file"
- *   4. the honest neutral fallback: "keeps the initiative" — only reached
- *      when white's net material is >= 0 (never claimed after a proven
- *      player material loss)
+ *   3. white's net material is at least a lone pawn (>= 1, below the minor-
+ *      piece floor above) -> "wins a pawn" — still provable from the same
+ *      replay, just without naming a specific (non-pawn) piece.
+ *   4. (only once none of the above fire, and white's net material isn't
+ *      negative — never dress up a line that costs the player material as
+ *      an opportunity) the pv's first move (white's) delivers check AND the
+ *      pv's white moves include a knight/bishop move or a castle -> "develops
+ *      with the initiative" — a concrete, replay-checkable claim, never the
+ *      old vague "keeps the initiative".
+ *   5. a file that had a pawn before the pv and has none after -> "opens the
+ *      {file} file"
  *
  * Returns undefined when pvSans is empty, fenSeed is unparseable, not even
- * the first pv move replays legally, white is the one checkmated, or white's
- * net material across the pv is negative — nothing provably good for the
- * player, never a guess.
+ * the first pv move replays legally, white is the one checkmated, white's
+ * net material across the pv is negative, or none of the above provable
+ * claims apply — nothing provably good for the player, never a guess, and
+ * never the old vague "keeps the initiative" fallback.
  */
 export function deriveOpportunity(fenSeed: string, pvSans: string[]): string | undefined {
   if (pvSans.length === 0) return undefined;
@@ -81,7 +100,7 @@ export function deriveOpportunity(fenSeed: string, pvSans: string[]): string | u
 
   const filesBefore = pawnFiles(chess);
 
-  const played: { captured?: string }[] = [];
+  const played: { captured?: string; piece: string; flags: string; checkAfter: boolean }[] = [];
   for (const san of pvSans) {
     let mv;
     try {
@@ -90,7 +109,7 @@ export function deriveOpportunity(fenSeed: string, pvSans: string[]): string | u
       mv = null;
     }
     if (!mv) break;
-    played.push({ captured: mv.captured });
+    played.push({ captured: mv.captured, piece: mv.piece, flags: mv.flags, checkAfter: chess.inCheck() });
   }
   if (played.length === 0) return undefined;
 
@@ -135,9 +154,30 @@ export function deriveOpportunity(fenSeed: string, pvSans: string[]): string | u
     if (pieceName) return `wins the ${pieceName}`;
   }
 
+  // Below the minor-piece floor, a genuine net pawn gain is still an honest,
+  // replay-provable claim — just without naming a specific bigger piece.
+  if (netForWhite >= PAWN_GAIN_FLOOR) {
+    return "wins a pawn";
+  }
+
   // A pv that costs the player net material is never dressed up as an
-  // opportunity — not as a file-opening, not as "keeps the initiative".
+  // opportunity — not as a developing check, not as a file-opening, and
+  // never as the old vague "keeps the initiative".
   if (netForWhite < 0) return undefined;
+
+  // A concrete, provable substitute for "keeps the initiative": the pv's
+  // first move (white's own) delivers check, AND at least one of white's
+  // own moves in the pv develops a minor piece or castles. Both facts are
+  // read directly off chess.js's own move object (piece type / castle
+  // flags), never inferred from SAN text.
+  const firstMoveGivesCheck = played[0]?.checkAfter === true;
+  const hasWhiteDevelopment = played.some(
+    (mv, i) =>
+      i % 2 === 0 && (mv.piece === "n" || mv.piece === "b" || mv.flags.includes("k") || mv.flags.includes("q"))
+  );
+  if (firstMoveGivesCheck && hasWhiteDevelopment) {
+    return "develops with the initiative";
+  }
 
   const filesAfter = pawnFiles(chess);
   for (const file of "abcdefgh") {
@@ -146,7 +186,7 @@ export function deriveOpportunity(fenSeed: string, pvSans: string[]): string | u
     }
   }
 
-  return "keeps the initiative";
+  return undefined;
 }
 
 function pawnFiles(chess: Chess): Set<string> {
