@@ -33,7 +33,15 @@ describe("StockfishEvaluator", () => {
   // computeHint uses to see comparable alternatives, not just the single
   // best line. Best-first ordering matters -- computeHint's margin math
   // assumes candidates[0] is the strongest.
-  it("evaluateMulti returns up to k lines, best first, each legal for the position", async () => {
+  //
+  // Depth-consistency (bug fix, 2026-07-27): the collector used to keep the
+  // LAST-SEEN info line per multipv index independently, so when the search
+  // was stopped mid-iteration one index could hold a deeper (or shallower)
+  // depth than another -- making the cp comparison across lines apples-to-
+  // oranges and, ~1-in-3 runs, breaking best-first ordering outright. This
+  // asserts every returned line carries the SAME search depth, which makes
+  // that failure mode deterministic to catch instead of a 1-in-3 flake.
+  it("evaluateMulti returns up to k lines, best first, each legal for the position, all at the same search depth", async () => {
     const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const lines = await sf.evaluateMulti!(fen, 500, 3);
     expect(lines.length).toBeGreaterThan(0);
@@ -42,7 +50,10 @@ describe("StockfishEvaluator", () => {
       expect(line.bestMove).toMatch(/^[a-h][1-8][a-h][1-8][qrbn]?$/);
       expect(line.pv.length).toBeGreaterThan(0);
       expect(line.pv[0]).toBe(line.bestMove);
+      expect(typeof line.depth).toBe("number");
     }
+    const depths = new Set(lines.map((l) => l.depth));
+    expect(depths.size).toBe(1);
     const score = (l: Evaluation) => (l.mate !== null ? (l.mate > 0 ? 100000 : -100000) : l.cp ?? 0);
     for (let i = 1; i < lines.length; i++) {
       expect(score(lines[i - 1])).toBeGreaterThanOrEqual(score(lines[i]));

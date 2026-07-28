@@ -3,6 +3,11 @@ export interface Evaluation {
   mate: number | null;
   bestMove: string;
   pv: string[];
+  // The search depth this evaluation was read at. Set by evaluateMulti (all
+  // lines it returns share one depth, by construction -- see stockfish.ts);
+  // left undefined by the single-line evaluate(), which has no cross-line
+  // consistency to vouch for.
+  depth?: number;
 }
 export interface Opponent {
   pickMove(fen: string): Promise<string>; // uci move
