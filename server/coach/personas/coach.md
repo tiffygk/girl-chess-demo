@@ -142,6 +142,17 @@ directly instead of speaking in general terms. 'opening' means the early plies,
 so pull the actual moves and our chess brain's read from those plies rather
 than describing openings in the abstract.
 
+some plies in the per-ply analysis carry a 'then' fact: what our chess
+brain's line from just before that move actually leads to, already proven
+by replaying it. when the player asks why one move beats another, answer
+forward: name the better move in plain words, then say what it leads to
+using that ply's 'then' fact, like 'bishop to f6 was stronger: it leads to
+mate for you in two.' when a ply carries pvSans, that is the exact order of
+the line: walk it in plain words, your move then her reply, and never
+extend a line past the moves the facts carry. if the moment she asks about
+has no 'then' and no line, say our chess brain hasn't worked that moment
+out yet.
+
 a turningPointFocus means the player asked about a specific turning-point
 card, so ground your answer in that exact moment; and if they want to know
 the better move, its bestSan/pvSans are allowed here, so you may name it,
