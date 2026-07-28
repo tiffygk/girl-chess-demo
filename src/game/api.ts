@@ -366,8 +366,13 @@ export interface ChatResponse {
   // CoachChat.tsx's offline-chip predicate, which renders only for the
   // latter. Task 2 (2026-07-22, truthfulness leaks): "timeout" is a third,
   // distinct cause -- a slow-but-healthy backend, not a down one -- rendered
-  // as its own "slow" chip, never the offline chip.
-  cause?: "backend-down" | "templates-only" | "timeout";
+  // as its own "slow" chip, never the offline chip. B3a (2026-07-27,
+  // coach-truth-speed round): "validation-failed" is a fourth, honest cause
+  // (a reply that never came out clean, rendered as a "garbled" chip) --
+  // this is what makes `redirect`/"off-topic" reachable ONLY by a real
+  // off-topic ask (the future intent router), never by a validation
+  // failure, closing her "I did ask about the board" note.
+  cause?: "backend-down" | "templates-only" | "timeout" | "validation-failed" | "off-topic";
   traceId?: number;
   error?: string;
 }

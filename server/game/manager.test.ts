@@ -4,7 +4,7 @@ import { Chess } from "chess.js";
 import {
   openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces,
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
-  insertVerdict,
+  insertVerdict, getAllChatMessages,
 } from "../store/db";
 import { GameManager, BACKEND_CACHE_TTL_MS } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
@@ -1112,6 +1112,111 @@ describe("GameManager", () => {
     expect(line?.threat).toEqual({ from: "h5", to: "e8" });
   });
 
+  // B3b (2026-07-27, coach-truth-speed round): measured ground truth from
+  // game 146 -- failed replies were persisted into chat_messages
+  // unconditionally, and a retry's own prompt then carried the coach's own
+  // apology back in as "history" (trace 98's prompt literally contained
+  // "that one took me longer than i had" twice), inflating every retry and
+  // raising the odds the NEXT attempt also times out. Gating persistence on
+  // result.source === "model" closes that doom loop: a template reply is
+  // never fed back to the coach as if it were a real turn, while the user's
+  // own row (and the advice_trace, unconditionally) still records that she
+  // asked.
+  describe("chat: coach-row persistence gated on source (B3b)", () => {
+    it("a template reply is absent from getChatMessages while its advice_trace row still exists", async () => {
+      const gameId = createGame(sessionId, "maia-1100");
+      recordMove({ gameId, ply: 1, san: "e4", uci: "e2e4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      gm.setCoachBackendForTesting({
+        name: "fake-invalid",
+        async available() {
+          return true;
+        },
+        async generate() {
+          return "Qxh7 wins the game right now.";
+        },
+      });
+
+      const result = await gm.chat(gameId, { message: "what should I do next?", context: { mode: "live" } });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      expect(result.source).toBe("template");
+
+      const messages = getAllChatMessages(gameId);
+      expect(messages).toHaveLength(1); // the user's row only
+      expect(messages[0].role).toBe("user");
+
+      const traces = getAdviceTraces(gameId);
+      expect(traces).toHaveLength(1);
+      expect(traces[0].kind).toBe("chat");
+    });
+
+    it("a model reply is present in getChatMessages alongside the advice_trace row", async () => {
+      const gameId = createGame(sessionId, "maia-1100");
+      recordMove({ gameId, ply: 1, san: "e4", uci: "e2e4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      gm.setCoachBackendForTesting({
+        name: "fake-valid",
+        async available() {
+          return true;
+        },
+        async generate() {
+          return "e4 opens things up nicely for you.";
+        },
+      });
+
+      const result = await gm.chat(gameId, { message: "what did I just play?", context: { mode: "live" } });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      expect(result.source).toBe("model");
+
+      const messages = getAllChatMessages(gameId);
+      expect(messages).toHaveLength(2);
+      expect(messages[0].role).toBe("user");
+      expect(messages[1].role).toBe("coach");
+      expect(messages[1].trace_id).toBe(result.traceId);
+    });
+  });
+
+  // B4a (2026-07-27, coach-truth-speed round): proves deriveChatOutcome's
+  // real wiring end to end -- not just that assembleChatFactList carries an
+  // outcomeInfo param through untouched (chat.outcome.test.ts's own unit
+  // tests already prove that), but that manager.ts's chat() actually reads
+  // the db's result/end_reason columns and the game's own last san to
+  // produce the right winner/how. Fool's mate (fastest possible checkmate)
+  // is used deliberately: a real, short, legally-replayable game whose last
+  // san ends in "#", with no end_reason set (finishGame's 2-arg call, same
+  // as the natural-checkmate path real games take) -- exercising the
+  // "no end_reason -> read the last san's own '#'" branch, not the
+  // /adjudicate button's reason-string branch.
+  describe("chat: game-over outcome fact reaches the model prompt (B4a)", () => {
+    it("a finished game's winner and checkmate 'how' reach the model prompt", async () => {
+      const gameId = createGame(sessionId, "maia-1100");
+      recordMove({ gameId, ply: 1, san: "f3", uci: "f2f3", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 2, san: "e5", uci: "e7e5", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 3, san: "g4", uci: "g2g4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 4, san: "Qh4#", uci: "d8h4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      finishGame(gameId, "0-1"); // black (mallow) delivers mate -- no end_reason, same as a real game
+
+      let capturedPrompt = "";
+      gm.setCoachBackendForTesting({
+        name: "capture-outcome",
+        async available() {
+          return true;
+        },
+        async generate(prompt: string) {
+          capturedPrompt = prompt;
+          return "that game ended in checkmate against you.";
+        },
+      });
+
+      const result = await gm.chat(gameId, { message: "how did the game end?", context: { mode: "review" } });
+      expect(result.ok).toBe(true);
+
+      expect(capturedPrompt).toContain('"status":"finished"');
+      expect(capturedPrompt).toContain('"winner":"mallow"');
+      expect(capturedPrompt).toContain('"how":"checkmate"');
+    });
+  });
+
   // Task 3 (R1a, fact-gap round): chat()'s call site used to map
   // getGameMoves' rows down to bare {ply, san}, throwing away eval_cp/
   // eval_mate/best_move/pv entirely. This proves the wiring end to end --
@@ -1151,8 +1256,8 @@ describe("GameManager", () => {
       expect(result.ok).toBe(true);
 
       expect(capturedPrompt).toContain('"perPlyAnalysis"');
-      expect(capturedPrompt).toContain('"bestSan": "e5"');
-      expect(capturedPrompt).toContain('"phase": "opening"');
+      expect(capturedPrompt).toContain('"bestSan":"e5"');
+      expect(capturedPrompt).toContain('"phase":"opening"');
       // pv converted from UCI (e7e5, g1f3) to SAN (e5, Nf3) via the same
       // replay discipline pvLine/getTurningLines already use.
       expect(capturedPrompt).toContain('"e5"');

@@ -118,10 +118,10 @@ describe("the hint follow-up's engine facts reach the model prompt (Task 4, R1b)
     await chat("why is that the move?", [], facts, backend, { gameId, ply: 3, kind: "chat" });
 
     expect(capturedPrompt).toContain('"hintFocus"');
-    expect(capturedPrompt).toContain('"bestSan": "Bb5"');
-    expect(capturedPrompt).toContain('"trade": false');
-    expect(capturedPrompt).toContain('"refutationSan": "Qh4+"');
-    expect(capturedPrompt).toContain('"accomplishment": "develops"');
+    expect(capturedPrompt).toContain('"bestSan":"Bb5"');
+    expect(capturedPrompt).toContain('"trade":false');
+    expect(capturedPrompt).toContain('"refutationSan":"Qh4+"');
+    expect(capturedPrompt).toContain('"accomplishment":"develops"');
     // uci never reaches the model, same rule as context.threat/context.best.
     expect(capturedPrompt).not.toContain("refutationUci");
   });
