@@ -56,6 +56,26 @@ app.post("/api/game/:id/move", async (req, res) => {
   }
 });
 
+// Highlight-a-move (Task 1): the player flags a move (her own, up to three
+// back) she wasn't sure about during live play. Sync passthrough to
+// gm.highlightMove -- no engine call, same shape-check-then-call convention
+// as /api/trace/:id/rate above.
+app.post("/api/game/:id/move/:ply/highlight", (req, res) => {
+  const gameId = Number(req.params.id);
+  const ply = Number(req.params.ply);
+  const { highlighted } = req.body ?? {};
+  if (!Number.isInteger(gameId) || !Number.isInteger(ply) || ply < 1) {
+    res.status(400).json({ error: "bad game id or ply" });
+    return;
+  }
+  if (typeof highlighted !== "boolean") {
+    res.status(400).json({ error: "highlighted must be a boolean" });
+    return;
+  }
+  gm.highlightMove(gameId, ply, highlighted);
+  res.json({ ok: true });
+});
+
 app.post("/api/game/:id/judge", async (req, res) => {
   // `strictness` (Task 6, F10 tuning — UI label "judge strictness"):
   // optional, appended after `mode` same as that field's own convention;

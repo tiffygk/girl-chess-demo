@@ -5,6 +5,7 @@ import {
   createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict, getVerdicts,
   getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
   listFinishedGames, insertChatMessage, getChatMessages, getMoveEvalsByPlies,
+  setMoveHighlighted,
 } from "../store/db";
 import { classifyMove, isAdviceLevel, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
@@ -193,6 +194,14 @@ export class GameManager {
     this.coachBackends.set(pref ?? "claude", { backend, cachedAt: this.clock() });
   }
 
+  // Highlight-a-move (Task 1): a plain passthrough to the db accessor. No
+  // validation of gameId/ply here -- the route already checks shape before
+  // calling in, and setMoveHighlighted's UPDATE is a safe no-op against an
+  // unknown (game_id, ply) pair.
+  highlightMove(gameId: number, ply: number, highlighted: boolean): void {
+    setMoveHighlighted(gameId, ply, highlighted);
+  }
+
   private async opponentFor(elo: number): Promise<MaiaOpponent> {
     if (!this.opponents.has(elo)) {
       const o = new MaiaOpponent(elo);
@@ -280,11 +289,11 @@ export class GameManager {
     ok: true;
     turningPoints: TurningPoint[];
     classifications: { ply: number; classification: string }[];
-    moves: { ply: number; san: string }[];
+    moves: { ply: number; san: string; highlighted: boolean }[];
   } {
     let persisted = getTurningPoints(gameId);
     const rows = getGameMoves(gameId);
-    const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san }));
+    const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, highlighted: r.highlighted === 1 }));
 
     const persistedVersion = persisted.length > 0 ? (persisted[0].algo_version ?? 1) : TP_ALGO_VERSION;
     if (persisted.length > 0 && persistedVersion < TP_ALGO_VERSION) {
@@ -939,10 +948,20 @@ export class GameManager {
         then: deriveContinuation(fenBefore, pvSans),
       };
     });
-    const facts = assembleChatFactList(gameMoves, body.context, turningPoints, perPlyAnalysis, {
-      status: finished ? "finished" : "in-progress",
-      outcome,
-    });
+    // Highlight-a-move (Task 8): straight off the same moveRows Task 1
+    // widened with `highlighted` -- no extra query.
+    const highlightedPlies = moveRows.filter((r: any) => r.highlighted === 1).map((r: any) => r.ply as number);
+    const facts = assembleChatFactList(
+      gameMoves,
+      body.context,
+      turningPoints,
+      perPlyAnalysis,
+      {
+        status: finished ? "finished" : "in-progress",
+        outcome,
+      },
+      highlightedPlies.length > 0 ? highlightedPlies : undefined
+    );
 
     const historyRows = getChatMessages(gameId, CHAT_HISTORY_WINDOW);
     const history = historyRows.map((r: any) => ({ role: r.role as "user" | "coach", text: r.text }));

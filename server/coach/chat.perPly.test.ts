@@ -298,6 +298,14 @@ describe("perPlyForModel — ply-scoping (B4b)", () => {
 // +508 for then-everywhere); full-detail plies carry it whenever derivable,
 // and their pvSans deepen from 2 to 6 so cookie can walk a real line.
 describe("perPlyForModel — then + pv depth (forward-prediction round)", () => {
+// Highlight-a-move (Task 8): a ply she flagged during live play must ship
+// full detail regardless of age, or "why did I highlight this?" hits the
+// same RECENT_PLY_WINDOW wall the turning-point/focus cases above already
+// get an exemption from. Seeded directly into fullDetailPlies (perPlyForModel),
+// NOT routed through facts.turningPoints -- turningPoints' sans fold into
+// allowedSans for validateChat, and a highlighted ply that never was an
+// actual turning point would drift that allow-list.
+describe("perPlyForModel — a highlighted ply ships full detail (Task 8)", () => {
   beforeEach(() => {
     openDb(":memory:");
   });
@@ -387,5 +395,44 @@ describe("perPlyForModel — then + pv depth (forward-prediction round)", () => 
     const result = await chat("how did the end go?", [], facts, backend, { gameId, ply: 54, kind: "chat" });
     expect(result.source).toBe("template");
     expect(result.cause).toBe("validation-failed");
+  it("a highlighted ply outside the recent window still ships pvSans/phase", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
+      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly, undefined, [3]);
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "you highlighted move 2 -- here's the position then.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why did I highlight move 2?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"ply":3');
+    expect(capturedPrompt).toContain('"bestSan":"Nc6"');
+    expect(capturedPrompt).toContain('"pvSans":["Nc6","Bc4"]');
+  });
+
+  it("without highlightedPlies, the same ply collapses (no behavior change for existing callers)", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
+      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+    expect(facts.highlightedPlies).toBeUndefined();
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "e4 opens things up nicely for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("what should you have played at move 3 instead?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).not.toContain("Bc4");
   });
 });

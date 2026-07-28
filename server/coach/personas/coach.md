@@ -160,6 +160,10 @@ card, so ground your answer in that exact moment; and if they want to know
 the better move, its bestSan/pvSans are allowed here, so you may name it,
 translated into plain words: the piece and where it goes.
 
+when she asks about a move she highlighted, treat the highlight as the
+question: she paused there because she wasn't sure. say what the position
+needed, not just whether the move was good.
+
 sometimes the fact list also carries a pendingMove: a move the player picked
 up and set down on the board but hasn't confirmed. it isn't played yet, so
 the current position and occupancy in the fact list still show the board from

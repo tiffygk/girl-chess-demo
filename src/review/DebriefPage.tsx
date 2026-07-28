@@ -54,6 +54,13 @@ import { describeSanMove, stripRedundantCheckSuffix } from "../game/describeSanM
 // analysisLegend.test.ts for the gating pin (this component only ever
 // renders inside DebriefPage, which is itself analysis/review-only).
 import { AnalysisLegend } from "./AnalysisLegendRail";
+// Highlight-a-move (Task 6): the study ledger — her live highlights, pulled
+// into their own section between the bullets and the turning-point cards
+// (her chosen moments immediately before the machine's chosen moments, peer
+// to peer). Pure row model in highlightedMoves.ts; render in
+// HighlightedMovesSection.tsx. Zero highlights renders nothing at all.
+import { buildHighlightedRows } from "./highlightedMoves";
+import { HighlightedMovesSection } from "./HighlightedMovesSection";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -381,6 +388,18 @@ export function DebriefPage({
   // directly via opportunityForLine.
   const exploreLine = exploring?.ply != null ? turningLines.find((l) => l.ply === exploring.ply) : undefined;
   const exploreOpportunity = exploreLine ? opportunityForLine(exploreLine, gameSans) : undefined;
+  // Highlight-a-move (Tasks 4+6): derived straight off gameSans (the summary
+  // Task 1 widened), same "no new prop" pattern the rest of this component
+  // already uses for gameSans-derived data. The list feeds the study ledger
+  // (game order, since gameSans is ply-ordered); the Set feeds the recap.
+  const highlightedPlyList = gameSans.filter((m) => m.highlighted).map((m) => m.ply);
+  const highlightedPlies = new Set(highlightedPlyList);
+  const highlightedRows = buildHighlightedRows({
+    highlightedPlies: highlightedPlyList,
+    gameSans,
+    turningLines,
+    classifications,
+  });
   return (
     <div className="debrief pop-in">
       <AnalysisLegend />
@@ -422,6 +441,16 @@ export function DebriefPage({
         onAskAbout={onAskAboutPly}
         exploring={!!exploring}
       />
+      {highlightedRows.length > 0 && (
+        <HighlightedMovesSection
+          rows={highlightedRows}
+          gameSans={gameSans}
+          onRewind={onRewind}
+          onTryLine={onTryLine}
+          onAskAboutPly={onAskAboutPly}
+          exploring={!!exploring}
+        />
+      )}
       {turningPoints.length > 0 && (
         <div className="debrief-cards">
           {turningPoints.map((point) => (
@@ -445,6 +474,7 @@ export function DebriefPage({
         currentPly={rewindPly}
         onSelect={onRewind}
         disabled={!!exploring}
+        highlightedPlies={highlightedPlies}
       />
       <div className="debrief-footer">
         {rewindPly != null && !exploring && (

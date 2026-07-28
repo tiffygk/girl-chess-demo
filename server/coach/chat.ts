@@ -239,6 +239,14 @@ export interface ChatFactList {
   // fact list to also carry per-square provenance, which nothing upstream
   // computes today. See validateChat's comment and chat.test.ts's cut #2
   // test for the honesty documentation this decision requires.
+  // Highlight-a-move (Task 8): plies she flagged during live play ("that
+  // move I paused on"). Fed into perPlyForModel's fullDetailPlies below so
+  // "why did I highlight this?" always gets pvSans/phase, regardless of how
+  // far outside RECENT_PLY_WINDOW the ply sits -- the same exemption a
+  // turning point or the focused ply already gets. Deliberately NOT folded
+  // into turningPoints/allowedSans: a highlighted ply that was never an
+  // actual turning point would drift validateChat's SAN allow-list.
+  highlightedPlies?: number[];
 }
 
 // Every position-shaped fact the coach gets, derived from one chess.js
@@ -374,7 +382,14 @@ export function assembleChatFactList(
   // one place that knows the db's result/end_reason columns. Every existing
   // caller (every test, every pre-this-round call site) omits it and gets
   // status "in-progress", outcome undefined -- unchanged behavior.
-  outcomeInfo?: { status: "in-progress" | "finished"; outcome?: ChatOutcome }
+  outcomeInfo?: { status: "in-progress" | "finished"; outcome?: ChatOutcome },
+  // Highlight-a-move (Task 8): additive optional 6th param, same
+  // "caller derives, this function only carries it through" discipline as
+  // outcomeInfo above -- manager.ts is the one place that knows the db's
+  // moves.highlighted column. Every existing caller (every test, every
+  // pre-this-round call site) omits it and gets undefined -- unchanged
+  // behavior.
+  highlightedPlies?: number[]
 ): ChatFactList {
   const chess = new Chess();
   const ordered = [...gameMoves].sort((a, b) => a.ply - b.ply);
@@ -499,6 +514,7 @@ export function assembleChatFactList(
     allowedSans: [...sans],
     contested,
     perPlyAnalysis,
+    highlightedPlies,
   };
 }
 
@@ -876,6 +892,13 @@ function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
       fullDetailPlies.add(p + d);
     }
   }
+  // Highlight-a-move (Task 8): a ply she flagged during live play always
+  // ships full detail, no matter its age -- same exemption a turning point
+  // or the focused ply already get above. Seeded directly here rather than
+  // through facts.turningPoints (see that field's own comment: turning
+  // points fold into allowedSans for validateChat, and a highlighted ply
+  // that was never an actual turning point would drift that allow-list).
+  for (const ply of facts.highlightedPlies ?? []) fullDetailPlies.add(ply);
 
   return perPlyAnalysis.map((p) => {
     const read = readForPly(p.ply, p.evalCp, p.evalMate);
