@@ -7,7 +7,7 @@
 // persisted into the raw json, so a scoring-rule fix never requires
 // re-running the model).
 
-import { checkVoice, SENTENCE_END_RE } from "../../server/coach/voiceRules";
+import { checkVoice, checkRegister, SENTENCE_END_RE } from "../../server/coach/voiceRules";
 // Note (eval-instrument-repair round, 2026-07-28): this module used to import
 // GENERAL_MAX_WORDS from server/coach/chat.ts as the general/board-review
 // length budget, under the skill's "share the enforcer's own budgets with the
@@ -67,6 +67,13 @@ export interface Scorecard {
   length?: AxisResult & { underTarget: boolean };
   jargon?: AxisResult;
   aiIsmCasing?: AxisResult;
+  // A SEPARATE, NEW axis (eval-instrument-repair round, 2026-07-28), never
+  // folded into `jargon` -- folding it in would silently change what the v2/v3
+  // jargon numbers mean and break the only historical comparison this harness
+  // has. Reported, never decisive: voiceRules.ts's REGISTER_DRIFT list is
+  // unvalidated, and the coach-eval skill's rule 3 is that an unaudited
+  // checker never picks a model.
+  registerDrift?: AxisResult;
   // Present only when the row carries a pending move (PD1-10, AF1-3/AF5).
   pendingAwareness?: AxisResult;
 }
@@ -214,6 +221,12 @@ export function scoreAnswer(row: AnswerRow): Scorecard {
     detail: aiIsmHits.length === 0 ? "clean" : aiIsmHits.map((v) => `${v.axis}:${v.id}`).join(", "),
   };
 
+  const registerHits = checkRegister(row.text);
+  const registerDrift: AxisResult = {
+    pass: registerHits.length === 0,
+    detail: registerHits.length === 0 ? "clean" : registerHits.map((p) => `"${p}"`).join(", "),
+  };
+
   const pendingAwareness: AxisResult | undefined = row.pending
     ? (() => {
         const pass = checkPendingAwareness(row.text, row.pending!);
@@ -221,7 +234,7 @@ export function scoreAnswer(row: AnswerRow): Scorecard {
       })()
     : undefined;
 
-  return { pipelineFailure: false, completeness, length, jargon, aiIsmCasing, pendingAwareness };
+  return { pipelineFailure: false, completeness, length, jargon, aiIsmCasing, registerDrift, pendingAwareness };
 }
 
 export interface PipelineSummary {

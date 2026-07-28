@@ -210,6 +210,12 @@ export interface ArmDecisionInputs extends DecideInputs {
   // the owner's own grades put her preferred answers ABOVE the target as often
   // as below it. A test asserts a 90-point gap here changes nothing.
   underTargetRate?: DecidePair;
+  // INFORMATIONAL ONLY, same contract as underTargetRate above: the share of
+  // answers clean on voiceRules.ts's REGISTER_DRIFT list. Echoed into
+  // decision.json, never consulted. The list is unvalidated and the
+  // coach-eval skill's rule 3 forbids an unaudited checker from deciding
+  // anything; hand-audit it against a sample before it is ever promoted.
+  registerDriftRate?: DecidePair;
 }
 
 export interface ArmDecision extends Decision {
@@ -309,6 +315,7 @@ function armDecisionInputsFrom(_arm: Arm, sonnet: ArmSummary["sonnet"], opus: Ar
     // Echoed into decision.json for the reader; never consulted. See the
     // field's comment on ArmDecisionInputs.
     underTargetRate: pairFrom(sonnet.axes.underTarget, opus.axes.underTarget),
+    registerDriftRate: pairFrom(sonnet.axes.registerDrift, opus.axes.registerDrift),
   };
 }
 

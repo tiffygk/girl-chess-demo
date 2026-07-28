@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkVoice, JARGON_RULES, SENTENCE_END_RE, ENGINE_NAME_ALLOWLIST } from "./voiceRules";
+import { checkVoice, checkRegister, REGISTER_DRIFT, JARGON_RULES, SENTENCE_END_RE, ENGINE_NAME_ALLOWLIST } from "./voiceRules";
 
 // R2 methodology (2026-07-22), build checklist item 1: this file exists so
 // the coach-eval harness and the future runtime checkVoice (R2 Task 3,
@@ -164,5 +164,57 @@ describe("exported constants stay the single source of truth", () => {
 
   it("JARGON_RULES exposes exactly the four rule ids the methodology names", () => {
     expect(JARGON_RULES.map((r) => r.id).sort()).toEqual(["cp", "engine", "eval", "signed-number"]);
+  });
+});
+
+// ---- register drift (eval-instrument-repair round, 2026-07-28) ------------
+//
+// The owner, after grading all 30 blinded rows: "we also still have AIisms
+// that are in here that are passing as clean but they're saying things like
+// this: 'compounds that's the whole loop buying and selling,' which is weird
+// for a chess game." The jargon axis bans engine words, raw notation and
+// signed numbers; the ai-ism axis bans a fixed word list. Neither has any
+// concept of a chess coach sliding into productivity/business register, which
+// is why both of these scored clean:
+//
+//   "...then spend ten minutes with our chess brain looking at the moments it
+//    flagged. that's the whole loop."
+//   "that habit compounds faster than anything else at your stage."
+describe("checkRegister", () => {
+  it("flags productivity-register drift", () => {
+    expect(checkRegister("that habit compounds faster than anything else")).toContain("compounds");
+    expect(checkRegister("that's the whole loop")).toContain("the whole loop");
+    expect(checkRegister("it's just buying and selling at the right moment")).toContain("buying and selling");
+  });
+
+  it("does not flag ordinary chess prose", () => {
+    expect(checkRegister("her queen is eyeing b2, worth a look before you commit")).toEqual([]);
+    expect(checkRegister("the knight forks your rook and queen")).toEqual([]);
+    expect(checkRegister("you traded down into a won endgame and then held it")).toEqual([]);
+  });
+
+  // Precision over recall, and the eval skill's rule 3 (audit the instrument,
+  // not just the subject). The plan's draft used a raw substring test; "roi"
+  // is a substring of ordinary English words a chess coach really might use,
+  // so the check is word-boundary anchored instead.
+  it("does not fire on words that merely contain a listed phrase", () => {
+    expect(checkRegister("that was a heroic defence")).toEqual([]);
+    expect(checkRegister("she was adroit about the timing")).toEqual([]);
+    expect(checkRegister("the compound of those two ideas")).toEqual([]);
+  });
+
+  it("returns every distinct phrase it found, once each", () => {
+    const hits = checkRegister("that compounds, and it compounds fast -- double down on it");
+    expect(hits).toEqual(["compounds", "double down"]);
+  });
+
+  it("is case-insensitive and reports the canonical phrase, not the raw match", () => {
+    expect(checkRegister("Bandwidth is the issue")).toEqual(["bandwidth"]);
+  });
+
+  it("REGISTER_DRIFT is a short, deliberately unvalidated list -- it reports, it never decides", () => {
+    expect(REGISTER_DRIFT).toContain("compounds");
+    expect(REGISTER_DRIFT).toContain("the whole loop");
+    expect(REGISTER_DRIFT.length).toBeLessThanOrEqual(15);
   });
 });

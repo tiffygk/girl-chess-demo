@@ -942,3 +942,55 @@ describe("selectPrioritySubset (owner graded subset, hard cap 30)", () => {
     expect(sel.graded.size).toBe(PRIORITY_TARGET_TOTAL);
   });
 });
+
+// ---- register drift as a reported axis (2026-07-28) -----------------------
+describe("scoreAnswer's registerDrift axis", () => {
+  function mkRow(over: Partial<AnswerRow>): AnswerRow {
+    return {
+      id: "x",
+      fixtureId: "C1",
+      question: "q",
+      tag: "open",
+      arm: "board-live",
+      probe: false,
+      text: "a clean answer.",
+      source: "model",
+      regenCount: 0,
+      latencyMs: 1,
+      ...over,
+    } as AnswerRow;
+  }
+
+  it("fails a row whose answer drifts into productivity register", () => {
+    const sc = scoreAnswer(mkRow({ text: "that habit compounds. that's the whole loop." }));
+    expect(sc.registerDrift?.pass).toBe(false);
+    expect(sc.registerDrift?.detail).toContain("compounds");
+  });
+
+  it("passes ordinary chess prose", () => {
+    const sc = scoreAnswer(mkRow({ text: "her queen is eyeing b2, worth a look before you commit." }));
+    expect(sc.registerDrift?.pass).toBe(true);
+  });
+
+  // The v2/v3 jargon comparison must survive this round. A register hit is a
+  // NEW axis, never folded into the existing jargon axis, or the historical
+  // jargon numbers would silently change meaning.
+  it("never contaminates the jargon axis", () => {
+    const sc = scoreAnswer(mkRow({ text: "that habit compounds faster than anything." }));
+    expect(sc.jargon?.pass).toBe(true);
+    expect(sc.jargon?.detail).toBe("clean");
+    expect(sc.registerDrift?.pass).toBe(false);
+  });
+
+  it("never enters the decision -- the list is unaudited", () => {
+    const flat = { sonnet: { median: 0.9, min: 0.88, max: 0.92 }, opus: { median: 0.9, min: 0.88, max: 0.92 } };
+    const d = decideArm("general", {
+      jargon: flat,
+      length: flat,
+      pending: flat,
+      pendingAudited: false,
+      registerDriftRate: { sonnet: { median: 0.1, min: 0.08, max: 0.12 }, opus: { median: 0.99, min: 0.98, max: 1 } },
+    });
+    expect(d.decidedBy).toBe("default");
+  });
+});
