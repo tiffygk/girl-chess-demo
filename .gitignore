@@ -31,3 +31,6 @@ data/*
 
 # playwright-cli tool scratch
 .playwright-cli/
+
+# truth-check tool scratch (WAL-safe read-only db copy, never committed)
+tools/.truth-check-scratch/
