@@ -230,6 +230,7 @@ export interface ChatFactList {
     bestSan: string | null;
     pvSans: string[];
     phase: "opening" | "middlegame" | "endgame";
+    then?: string;
   }[];
   // NOTE: no allowedSquares -- chat validation treats square names as free
   // geography (see validateChat below). Declared cut #2, not an oversight:
@@ -301,6 +302,13 @@ export interface ChatPerPlyInput {
   evalMate: number | null;
   bestSan: string | null;
   pvSans: string[];
+  // Forward-prediction round (2026-07-28): the replay-proven continuation
+  // claim for this ply's line (server/annotator/continuation.ts), derived by
+  // the caller (manager.ts) from the same fenBefore + pvSans replay that
+  // produced bestSan/pvSans -- same "caller derives, this function only
+  // carries it" discipline as every other field here. Absent when the line
+  // proves nothing claimable (about half of real plies, measured).
+  then?: string;
 }
 
 // Owner-calibratable starting values (Task 3, R1a): opening/endgame phase
@@ -844,7 +852,11 @@ function perPlyForModel(facts: ChatFactList) {
 
   return perPlyAnalysis.map((p) => {
     const read = readForPly(p.ply, p.evalCp, p.evalMate);
-    if (!fullDetailPlies.has(p.ply)) return { ply: p.ply, san: p.san, bestSan: p.bestSan, read };
+    if (!fullDetailPlies.has(p.ply)) {
+      return p.then
+        ? { ply: p.ply, san: p.san, bestSan: p.bestSan, read, then: p.then }
+        : { ply: p.ply, san: p.san, bestSan: p.bestSan, read };
+    }
     return {
       ply: p.ply,
       san: p.san,
@@ -852,6 +864,7 @@ function perPlyForModel(facts: ChatFactList) {
       phase: p.phase,
       pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
       read,
+      ...(p.then ? { then: p.then } : {}),
     };
   });
 }

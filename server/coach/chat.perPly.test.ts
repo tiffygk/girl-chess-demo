@@ -82,6 +82,14 @@ describe("assembleChatFactList: perPlyAnalysis (Task 3, R1a)", () => {
     expect(facts.perPlyAnalysis![0].bestSan).toBeNull();
     expect(facts.perPlyAnalysis![0].pvSans).toEqual([]);
   });
+
+  it("carries an optional then claim through untouched (forward-prediction round)", () => {
+    const perPly = [
+      { ply: 1, san: "f4", evalCp: 30, evalMate: null, bestSan: "d5", pvSans: ["d5", "Nf3"], then: "you win a pawn" },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+    expect(facts.perPlyAnalysis![0].then).toBe("you win a pawn");
+  });
 });
 
 // Task 3b (R2, voice-enforcement round, 2026-07-22): factsForModel is
