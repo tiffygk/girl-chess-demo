@@ -799,7 +799,13 @@ function focusForModel(facts: ChatFactList) {
 // this projection at all -- readForPly (above) replaces both with a single
 // qualitative `read` string, and no key here contains the literal substring
 // "eval". The raw numbers stay on the ChatFactList itself.
-const PER_PLY_PV_MODEL_LIMIT = 2;
+// Forward-prediction round (2026-07-28): raised 2 -> 6 for full-detail
+// plies. Two moves of line cannot answer "and what happens after that" --
+// six (three of hers, three of mallow's) walks a real sequence, and the
+// full-detail set is small enough that the measured cost on a real 91-ply
+// game was +35 tokens of the round's +363 total. Collapsed plies still ship
+// no pvSans at all -- the `then` claim is their whole continuation story.
+const PER_PLY_PV_MODEL_LIMIT = 6;
 
 // B4b (2026-07-27, coach-truth-speed round): the whole-game perPlyAnalysis
 // list is affordable to CARRY (assembleChatFactList still ships every ply,
@@ -853,7 +859,12 @@ function perPlyForModel(facts: ChatFactList) {
   return perPlyAnalysis.map((p) => {
     const read = readForPly(p.ply, p.evalCp, p.evalMate);
     if (!fullDetailPlies.has(p.ply)) {
-      return p.then
+      // Collapsed plies: then only where she deviated from best -- the
+      // "what did i miss" set (62/91 plies on real game 150; +363 tokens
+      // measured for the whole rule vs +508 for then-everywhere). A ply
+      // where she played the best move has nothing missed to explain.
+      const deviated = p.bestSan !== null && p.bestSan !== p.san;
+      return deviated && p.then
         ? { ply: p.ply, san: p.san, bestSan: p.bestSan, read, then: p.then }
         : { ply: p.ply, san: p.san, bestSan: p.bestSan, read };
     }
