@@ -1325,7 +1325,10 @@ describe("GameManager", () => {
       expect(capturedPrompt).toContain('"perPlyAnalysis"');
       // bestSan/pvSans land on ply 2 (Nc6's row) -- the move she could have
       // played instead of Nc6 -- not on ply 1 (e4's own row).
-      expect(capturedPrompt).toContain('"ply":2,"san":"Nc6","bestSan":"e5"');
+      // Union-review fix (2026-07-28, finding 2): a `side` field now sits
+      // between san and bestSan on every projected per-ply object (see
+      // chat.ts's sideForPly) -- ply 2 is mallow's own move.
+      expect(capturedPrompt).toContain('"ply":2,"san":"Nc6","side":"mallow","bestSan":"e5"');
       expect(capturedPrompt).toContain('"phase":"opening"');
       // pv converted from UCI (e7e5, g1f3) to SAN (e5, Nf3) via the same
       // replay discipline pvLine/getTurningLines already use.
@@ -1333,7 +1336,7 @@ describe("GameManager", () => {
       expect(capturedPrompt).toContain('"Nf3"');
       // Ply 1 has no PRIOR persisted eval to draw a "what instead" answer
       // from (there is no ply-0 row) -- an honest gap, not a guess.
-      expect(capturedPrompt).toContain('"ply":1,"san":"e4","bestSan":null');
+      expect(capturedPrompt).toContain('"ply":1,"san":"e4","side":"you","bestSan":null');
     }, 20000);
 
     it("derives a then claim from the persisted pv and ships it in the prompt (forward-prediction round)", async () => {
@@ -1440,8 +1443,12 @@ describe("GameManager", () => {
       });
       expect(result.ok).toBe(true);
 
-      expect(capturedPrompt).toContain('"ply":54,"san":"Kh6","bestSan":"Kh7"');
-      expect(capturedPrompt).toContain('"ply":55,"san":"Nf7+","bestSan":"Qh8#"');
+      // Union-review fix (2026-07-28, finding 2): `side` now sits between
+      // san and bestSan -- ply 54 (Kh6) is mallow's own move, ply 55
+      // (Nf7+) is the player's, matching this test's own header comment on
+      // whose move each ply actually is.
+      expect(capturedPrompt).toContain('"ply":54,"san":"Kh6","side":"mallow","bestSan":"Kh7"');
+      expect(capturedPrompt).toContain('"ply":55,"san":"Nf7+","side":"you","bestSan":"Qh8#"');
     }, 20000);
   });
 });
