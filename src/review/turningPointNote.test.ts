@@ -20,6 +20,19 @@ const SCHOLARS_MATE_SANS: SummaryMove[] = [
   { ply: 6, san: "Nf6" },
 ];
 
+// Missed-win round (2026-07-28): shared real-game fixture (game 150,
+// 2026-07-28, her real 91-ply win). Ply 55 (Nf7+) declined Qh8#. Repeated
+// per repo convention (each test file keeps its own copy).
+const GAME150_SANS: SummaryMove[] = [
+  "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+  "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+  "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+  "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+","Kg6","Nh8+","Kh7",
+  "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
+  "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
+  "Qh6+","Kd5","Be7","Kc4","Qc6#",
+].map((san, i) => ({ ply: i + 1, san }));
+
 function tp(overrides: Partial<TurningPoint>): TurningPoint {
   return {
     rank: 1,
@@ -67,7 +80,7 @@ describe("NEXT_TIME_TIPS motif bank", () => {
   it("has a distinct tip for every declared motif", () => {
     const motifs = Object.keys(NEXT_TIME_TIPS);
     expect(motifs.sort()).toEqual(
-      ["eval-drop", "good-moment", "king-safety", "missed-punish"].sort()
+      ["eval-drop", "good-moment", "king-safety", "missed-punish", "missed-mate"].sort()
     );
     const tips = Object.values(NEXT_TIME_TIPS);
     expect(new Set(tips).size).toBe(tips.length);
@@ -567,5 +580,31 @@ describe("copy hygiene (lowercase, no em-dash, SAN preserved)", () => {
       undefined
     );
     assertCleanCopy(note.didWell!);
+  });
+});
+
+describe("missed-win note", () => {
+  const missedTp = tp({
+    rank: 3, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0,
+    lowConfidence: false, kind: "missed-win", mateIn: 1, missedCount: 5,
+  });
+  const missedLine = { ply: 55, pvSans: ["Qh8#"], bestSan: "Qh8#" };
+
+  it("names the mate, what she played, and the repeat count", () => {
+    const note = buildTurningPointNote(missedTp, undefined, missedLine, GAME150_SANS);
+    expect(note.couldImprove).toBe(
+      "you had checkmate in one here. your queen to h8 ends it on the spot. you played knight to f7, check instead. this happened 5 times this game."
+    );
+    expect(note.nextTime).toBe(NEXT_TIME_TIPS["missed-mate"]);
+    // The existing counterfactual + opportunity machinery serves this card unchanged:
+    expect(note.whatMayHaveHappened).toBe("if instead your queen to h8, checkmate.");
+    expect(note.opportunity).toContain("mate in 1");
+  });
+
+  it("degrades honestly with no line: states the miss without inventing the move", () => {
+    const note = buildTurningPointNote({ ...missedTp, missedCount: 1 }, undefined, undefined, GAME150_SANS);
+    expect(note.couldImprove).toBe(
+      "you had checkmate in one here. you played knight to f7, check instead."
+    );
   });
 });

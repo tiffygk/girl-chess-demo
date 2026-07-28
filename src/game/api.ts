@@ -496,20 +496,25 @@ export function logHint(
 // 4 (the episode card sits after up to 3 swing/backfill cards) — mirrors
 // TP_ALGO_VERSION 2's additive shape exactly.
 export interface TurningPoint {
-  rank: 1 | 2 | 3 | 4;
+  rank: 1 | 2 | 3 | 4 | 5;
   ply: number;
   san: string;
   label: string;
   punishSan?: string;
   deltaP: number;
   lowConfidence: boolean;
-  kind: "swing" | "backfill" | "episode";
+  kind: "swing" | "backfill" | "episode" | "missed-win";
   missedPunish?: boolean;
   plyEnd?: number;
   // 2026-07-22: mirrors server TurningPoint's crossedAdvantage — see that
   // file's comment. Used by debrief copy (debriefBullets.ts/
   // debriefLesson.ts) to grade a mistake/inaccuracy's severity.
   crossedAdvantage?: boolean;
+  // Missed-win round (2026-07-28): mirrors the server TurningPoint — set
+  // only on kind "missed-win" points. mateIn = the forced-mate depth she
+  // had; missedCount = how many times it slipped this game.
+  mateIn?: number;
+  missedCount?: number;
 }
 
 export interface MoveClassification {

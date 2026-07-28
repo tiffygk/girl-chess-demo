@@ -68,7 +68,10 @@ import { HighlightedMovesSection } from "./HighlightedMovesSection";
 // was already lost) is negative in outcome even though she didn't play it,
 // so it gets the same tint; every other label (opponent errors, checkmate,
 // the clincher, strong move) stays the lavender default.
-const NEGATIVE_CARD_LABELS = new Set(["blunder", "mistake", "inaccuracy", "the losing move"]);
+// Missed-win round (2026-07-28): "missed mate" joins the negative-tint set —
+// a forced mate she had and played past is the game's alarm moment, exactly
+// as much as a blunder is.
+const NEGATIVE_CARD_LABELS = new Set(["blunder", "mistake", "inaccuracy", "the losing move", "missed mate"]);
 
 function resultWord(result: string): string {
   if (result === "1-0") return "won";

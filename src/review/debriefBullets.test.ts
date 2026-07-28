@@ -17,6 +17,20 @@ import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from 
 
 const OLD_PLATITUDE = "a draw. solid, careful, nothing hung.";
 
+// Missed-win round (2026-07-28): shared real-game fixture (game 150,
+// 2026-07-28, her real 91-ply win). Ply 55 (Nf7+) declined Qh8#. Repeated
+// per repo convention (each test file keeps its own copy) rather than a
+// shared fixtures module.
+const GAME150_SANS: SummaryMove[] = [
+  "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+  "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+  "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+  "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+","Kg6","Nh8+","Kh7",
+  "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
+  "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
+  "Qh6+","Kd5","Be7","Kc4","Qc6#",
+].map((san, i) => ({ ply: i + 1, san }));
+
 function tp(overrides: Partial<TurningPoint>): TurningPoint {
   return {
     rank: 1,
@@ -642,5 +656,119 @@ describe("affordancesForBullet (2026-07-27, a later wave's UI consumer)", () => 
     // At least one bullet in this fixture has a ply, so the true branch
     // above is actually exercised.
     expect(bullets.some((b) => b.ply != null)).toBe(true);
+  });
+});
+
+describe("missed-win bullets", () => {
+  const missedTp = {
+    rank: 3 as const, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0,
+    lowConfidence: false, kind: "missed-win" as const, mateIn: 1, missedCount: 5,
+  };
+  const line55 = { ply: 55, pvSans: ["Qh8#"], bestSan: "Qh8#" };
+
+  it("forces a could-be-better bullet that names the move, the cost, and the repeats (game 150)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedTp],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toBe(
+      "move 28: you had checkmate in one. your queen to h8 was mate on the spot, and the win took 18 more moves to land. this happened 5 times this game."
+    );
+    expect(b.category).toBe("endgame technique");
+    expect(b.phase).toBe("endgame");
+    expect(b.ply).toBe(55);
+  });
+
+  it("says the mate never landed when the game ended without one (adjudication shape)", () => {
+    // Same real game truncated before the mating move: last san is Kc4, no '#'.
+    const truncated = GAME150_SANS.slice(0, 90);
+    const bullets = debriefBullets({
+      turningPoints: [{ ...missedTp, missedCount: 1 }],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 90,
+      gameSans: truncated,
+      turningLines: [line55],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toBe(
+      "move 28: you had checkmate in one. your queen to h8 was mate on the spot, but the game ended 17 moves later without it."
+    );
+  });
+
+  it("outranks the cap: a missed win plus two ordinary mistakes still shows the missed win first", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        missedTp,
+        { rank: 1, ply: 21, san: "bxc5", label: "mistake", deltaP: -0.2, lowConfidence: false, kind: "swing" as const },
+        { rank: 2, ply: 31, san: "Qxa4", label: "blunder", deltaP: -0.3, lowConfidence: false, kind: "swing" as const },
+      ],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const cbb = bullets.filter((x) => x.section === "could be better");
+    expect(cbb).toHaveLength(2); // cap holds
+    expect(cbb[0].ply).toBe(55); // forced first
+  });
+
+  it("makes both no-finding fallbacks unreachable when a missed win exists", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedTp], // no HER_NEG labels, no classifications: old code fell through twice
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const texts = bullets.map((b) => b.text).join(" | ");
+    expect(texts).not.toContain("no clear mistakes to flag here");
+    expect(texts).not.toContain("no repeat pattern showed up");
+    const wn = bullets.find((b) => b.section === "watch next time")!;
+    expect(wn.text).toBe(
+      "you had checkmate on the board 5 times and played past it. when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move."
+    );
+    expect(wn.category).toBe("endgame technique");
+  });
+
+  it("keeps the episode bullet alongside the missed-win watch bullet (game 149 shape)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        { ...missedTp, missedCount: 1 },
+        { rank: 4, ply: 30, san: "Qxh3", label: "king pressure", deltaP: -0.05, lowConfidence: false, kind: "episode" as const, plyEnd: 40 },
+      ],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const wn = bullets.filter((b) => b.section === "watch next time");
+    expect(wn).toHaveLength(2);
+    expect(wn[0].text).toContain("you had checkmate on the board");
+    expect(wn[1].text).toContain("pieces camped on your king");
+  });
+});
+
+describe("nearly-bare-side phase override (missed-win round, 2026-07-28)", () => {
+  it("a bullet at a nearly-bare-board ply reads endgame even when the tail rule would say middlegame", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        { rank: 1, ply: 55, san: "Nf7+", label: "inaccuracy", deltaP: -0.09, lowConfidence: false, kind: "swing" },
+      ],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const b = bullets.find((x) => x.ply === 55);
+    expect(b?.phase).toBe("endgame"); // old rule: endgame only from ply 69
   });
 });

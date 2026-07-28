@@ -35,7 +35,7 @@ import type { FollowedBest } from "./followedBest";
 // move) now routes through the shared plain-English renderer whenever a fen
 // to replay it from is available. Falls back to the raw SAN string when
 // gameSans is absent or the fen can't be reconstructed — never nothing.
-import { describeSanMove } from "../game/describeSanMove";
+import { describeSanMove, stripRedundantCheckSuffix } from "../game/describeSanMove";
 
 export interface TurningPointNote {
   didWell?: string; // (i)   present when the point is a good moment / good defense
@@ -60,7 +60,7 @@ export interface TurningPointNote {
 // backfill labels "checkmate" / "the losing move" / "the clincher", which
 // carry no distinct motif of their own) falls through to GENERIC_TIP below —
 // a declared cut (plan Task 3), asserted directly in the test file.
-export type Motif = "king-safety" | "missed-punish" | "good-moment" | "eval-drop";
+export type Motif = "king-safety" | "missed-punish" | "good-moment" | "eval-drop" | "missed-mate";
 
 function moveNumberForPly(ply: number): number {
   return Math.ceil(ply / 2);
@@ -104,6 +104,8 @@ export const NEXT_TIME_TIPS: Record<Motif, string> = {
   "good-moment": "good eye. keep hunting for your most forcing move first every turn.",
   "eval-drop":
     "this move gave back the most ground here. before you commit, check every forcing reply she has: her checks, her captures, her threats.",
+  "missed-mate":
+    "when you are winning big, hunt the fastest finish first: look at every check you have and count her king's escape squares. a check she cannot answer while her king has nowhere to go is mate.",
 };
 
 // Motif inference is read-only off TurningPoint.label/kind/missedPunish —
@@ -115,6 +117,7 @@ export const NEXT_TIME_TIPS: Record<Motif, string> = {
 // are pure winprob-delta magnitude bands — they say nothing about *why* the
 // eval moved, so they only ever earn the honest eval-drop/good-moment tips.
 function inferMotif(tp: TurningPoint): Motif | undefined {
+  if (tp.kind === "missed-win") return "missed-mate";
   if (tp.kind === "episode") return "king-safety";
   if (tp.missedPunish) return "missed-punish";
   if (tp.label === "strong move") return "good-moment";
@@ -201,6 +204,20 @@ function buildCouldImprove(
   if (tp.missedPunish) {
     const bestClause = line?.bestSan ? ` ${describedOrRaw(line.bestSan, seedFen)} was on the board.` : "";
     return `${played} let the punish slip.${bestClause}`;
+  }
+  // Missed-win round (2026-07-28): kind carries the fact (a forced mate she
+  // had and declined — see turningPoints.ts), so the eval-band nudge
+  // vocabulary below never applies. Names the mate move when the line
+  // carries it; states only the miss when it does not — never a guess.
+  if (tp.kind === "missed-win") {
+    const count = tp.missedCount ?? 1;
+    const repeat = count > 1 ? ` this happened ${count} times this game.` : "";
+    const best = line?.bestSan
+      ? stripRedundantCheckSuffix(describedOrRaw(line.bestSan, seedFen), "checkmate")
+      : undefined;
+    return best
+      ? `you had checkmate in one here. your ${best} ends it on the spot. you played ${played} instead.${repeat}`
+      : `you had checkmate in one here. you played ${played} instead.${repeat}`;
   }
   const label = cls?.classification ?? tp.label;
   const nudge = IMPROVE_NUDGE[label];
