@@ -15,6 +15,15 @@
 // literals -- run.ts is the only place that replays these against a real
 // (scratch) db copy and actually calls the coach.
 
+// Wave E1 (coach-truth-speed round, 2026-07-27): the owner's ask -- "if I ask
+// a question specifically about a move or the board, it should only use the
+// chess brain... if I'm asking general chess questions, we should see if it
+// works" -- adds two new arms alongside the original (now-named) "board-live"
+// arm. `arm` is the axis decide.ts and render.ts now score/aggregate BY;
+// `tag` (below) stays the bucket label it always was (open/narr/dir/pending/
+// affirmation), extended with "general" for the new arm's own rows.
+export type Arm = "board-live" | "general" | "board-review";
+
 export type FixtureId = "C1" | "C2" | "C3" | "C4" | "C5";
 
 export interface Fixture {
@@ -81,11 +90,17 @@ export const ENGINE_BEST_UCI_BY_FIXTURE: Partial<Record<FixtureId, string>> = {
   C5: "b4d5", // Nd5
 };
 
-export type QuestionTag = "open" | "narr" | "dir" | "pending" | "affirmation";
+export type QuestionTag = "open" | "narr" | "dir" | "pending" | "affirmation" | "general";
 
 export interface BaseQuestion {
   id: string;
   tag: "open" | "narr" | "dir";
+  // Wave E1: every row now carries which arm it belongs to. All of
+  // BASE_QUESTIONS/PENDING_QUESTIONS/AFFIRMATION_QUESTIONS are "board-live"
+  // (the arm's original, unchanged meaning) -- see the *_RAW arrays below,
+  // which stay byte-identical to the frozen v2/v3 content; arm is added by
+  // a map, never by editing those literals.
+  arm: Arm;
   q: string;
   ctx: FixtureId;
   // A deliberate false-premise or missing-referent probe -- the right
@@ -99,7 +114,12 @@ export interface BaseQuestion {
 // The exact v1 50 questions (questions-v1-base.json, ids/wording verbatim),
 // pinned to fixture contexts + probe markers per the methodology's part 3
 // tables. Order matches both v1's ids and the methodology's own tables.
-export const BASE_QUESTIONS: BaseQuestion[] = [
+//
+// Wave E1: kept as a private, byte-identical-to-v2/v3 RAW literal -- `arm`
+// is added by the map below, never by touching this array, so "the existing
+// 65 questions ... must stay byte-identical" holds by construction, not by
+// discipline.
+const BASE_QUESTIONS_RAW: Omit<BaseQuestion, "arm">[] = [
   // [open], 18
   { id: "open-01", tag: "open", ctx: "C3", probe: true, q: "why is that the best move?", note: "no referent -- no hint attached to open bucket" },
   { id: "open-02", tag: "open", ctx: "C2", probe: true, q: "why should i not put this piece here?", note: "deixis void, NO pending -- the control twin of PD1" },
@@ -159,6 +179,8 @@ export const BASE_QUESTIONS: BaseQuestion[] = [
   { id: "dir-16", tag: "dir", ctx: "C5", probe: false, q: "what move keeps my advantage?", note: "premise TRUE (white better)" },
 ];
 
+export const BASE_QUESTIONS: BaseQuestion[] = BASE_QUESTIONS_RAW.map((q) => ({ ...q, arm: "board-live" as const }));
+
 export type PendingTier = "silent" | "warning" | "nudge" | "judge-in-flight";
 
 export interface PendingMove {
@@ -171,6 +193,7 @@ export interface PendingMove {
 export interface PendingQuestion {
   id: string;
   tag: "pending" | "affirmation";
+  arm: Arm; // Wave E1 -- always "board-live" for these fixtures, see below.
   ctx: FixtureId;
   pending?: PendingMove;
   tier?: PendingTier;
@@ -182,7 +205,9 @@ export interface PendingQuestion {
 // pending move was legality-checked with chess.js at its fixture fen by the
 // methodology's author; run.ts re-verifies legality at startup and aborts
 // on any illegal fixture (do not trust this file alone).
-export const PENDING_QUESTIONS: PendingQuestion[] = [
+//
+// Wave E1: RAW + mapped, same discipline as BASE_QUESTIONS_RAW above.
+const PENDING_QUESTIONS_RAW: Omit<PendingQuestion, "arm">[] = [
   { id: "PD1", tag: "pending", ctx: "C2", tier: "silent", pending: { pieceKind: "n", from: "g1", to: "f3", san: "Nf3" }, q: "why should i not put this piece here" },
   { id: "PD2", tag: "pending", ctx: "C3", tier: "silent", pending: { pieceKind: "n", from: "f3", to: "e1", san: "Ne1" }, q: "is this ok", note: "engine best" },
   { id: "PD3", tag: "pending", ctx: "C5", tier: "silent", pending: { pieceKind: "n", from: "b4", to: "d5", san: "Nd5" }, q: "what if i go here", note: "engine best" },
@@ -195,14 +220,118 @@ export const PENDING_QUESTIONS: PendingQuestion[] = [
   { id: "PD10", tag: "pending", ctx: "C2", tier: "judge-in-flight", pending: { pieceKind: "b", from: "d2", to: "b4", san: "Bxb4" }, q: "wait should i do this instead", note: "recapturable trade, judged:false" },
 ];
 
+export const PENDING_QUESTIONS: PendingQuestion[] = PENDING_QUESTIONS_RAW.map((q) => ({ ...q, arm: "board-live" as const }));
+
 // The 5 short-affirmation prompts (methodology part 3).
-export const AFFIRMATION_QUESTIONS: PendingQuestion[] = [
+const AFFIRMATION_QUESTIONS_RAW: Omit<PendingQuestion, "arm">[] = [
   { id: "AF1", tag: "affirmation", ctx: "C3", tier: "silent", pending: { pieceKind: "n", from: "f3", to: "e1", san: "Ne1" }, q: "is this fine" },
   { id: "AF2", tag: "affirmation", ctx: "C5", tier: "silent", pending: { pieceKind: "n", from: "b4", to: "d5", san: "Nd5" }, q: "this looks safe to me, right" },
   { id: "AF3", tag: "affirmation", ctx: "C4", tier: "silent", pending: { pieceKind: "b", from: "f5", to: "c8", san: "Bxc8" }, q: "i think this is right" },
   { id: "AF4", tag: "affirmation", ctx: "C5", q: "am i doing ok so far", note: "no pending -- white clearly better here" },
   { id: "AF5", tag: "affirmation", ctx: "C2", tier: "silent", pending: { pieceKind: "n", from: "g1", to: "f3", san: "Nf3" }, q: "quick check, this ok" },
 ];
+
+export const AFFIRMATION_QUESTIONS: PendingQuestion[] = AFFIRMATION_QUESTIONS_RAW.map((q) => ({ ...q, arm: "board-live" as const }));
+
+// ---- arm: general (Wave E1, coach-truth-speed round) ----------------------
+//
+// The axis the owner cares about and that v3 never measured: "how do I know
+// when it's a good idea..." -- next-game strategy, not this game's position.
+// Every one of these MUST classify as "general" via server/coach/intent.ts's
+// classifyIntent(q, {hasFocus:false, hasPendingMove:false, status:
+// "in-progress"}) -- the same ctx run.ts actually passes for this arm
+// (signature widened, Wave F review fix 2026-07-27; see intent.ts). score.
+// test.ts asserts this so a general question that silently routes to
+// "board" can never pass unnoticed (that would measure the wrong pipeline
+// and invalidate the whole arm).
+// `ctx` still pins a real fixture -- the harness needs a real position/
+// gameSans/turningPoints to assemble a fact list from, even though a general
+// answer is not required to reference the position at all (and is graded
+// by validateChatGeneral, which only checks position claims IF the reply
+// makes one -- see chat.ts). Varied across C1-C5 so different questions see
+// different amounts of real game history to (truthfully) connect to.
+export interface GeneralQuestion {
+  id: string;
+  arm: "general";
+  tag: "general";
+  ctx: FixtureId;
+  probe: boolean;
+  q: string;
+  note?: string;
+}
+
+const GENERAL_QUESTIONS_RAW: Omit<GeneralQuestion, "arm" | "tag">[] = [
+  // gen-01 is the owner's real refused question, verbatim (brief's own
+  // quote, casing included -- every other entry follows this file's usual
+  // lowercase house style).
+  {
+    id: "gen-01",
+    ctx: "C5",
+    probe: false,
+    q: "I learned that I always want my pawns staggered so they support each other. How do I know when it's a good idea to have them staggered versus move them in a horizontal wall?",
+    note: "owner's real refused question (trace), verbatim",
+  },
+  { id: "gen-02", ctx: "C2", probe: false, q: "when should i trade pieces versus keep them on the board?" },
+  { id: "gen-03", ctx: "C1", probe: false, q: "what should i work on before my next game?" },
+  { id: "gen-04", ctx: "C3", probe: false, q: "what is a fork in chess, and how do i spot one before it happens?" },
+  { id: "gen-05", ctx: "C5", probe: false, q: "how do i know when the endgame has started?" },
+  { id: "gen-06", ctx: "C4", probe: false, q: "what is a pin, and why is it dangerous?" },
+  { id: "gen-07", ctx: "C3", probe: false, q: "how should i decide which side of the board to attack on?" },
+  { id: "gen-08", ctx: "C1", probe: false, q: "what's a good way to study my own games afterward?" },
+  { id: "gen-09", ctx: "C5", probe: false, q: "how do i tell if a position is worth simplifying into an endgame?" },
+  { id: "gen-10", ctx: "C2", probe: false, q: "what's the difference between a good bishop and a bad bishop?" },
+  { id: "gen-11", ctx: "C4", probe: false, q: "when is it worth giving up a pawn for faster development?" },
+  { id: "gen-12", ctx: "C1", probe: false, q: "how many hours should i actually spend studying versus playing?" },
+  { id: "gen-13", ctx: "C3", probe: false, q: "what separates a good plan from a bad one in the middlegame?" },
+  { id: "gen-14", ctx: "C5", probe: false, q: "is it better to focus on tactics or endgames as a beginner?" },
+  { id: "gen-15", ctx: "C2", probe: false, q: "how do i build an opening repertoire without memorizing everything?" },
+];
+
+export const GENERAL_QUESTIONS: GeneralQuestion[] = GENERAL_QUESTIONS_RAW.map((q) => ({
+  ...q,
+  arm: "general" as const,
+  tag: "general" as const,
+}));
+
+// ---- arm: board-review (Wave E1) ------------------------------------------
+//
+// Board questions, but against a FINISHED game -- exercises the 90s
+// CHAT_REVIEW_BUDGET_MS budget and the ChatFactList `status: "finished"` +
+// `outcome` facts (server/coach/chat.ts), which board-live's fixtures never
+// touch (C1-C5 are all mid-game, status "in-progress"). Reuses the [dir]
+// bucket's own question TEXT and CTX verbatim from BASE_QUESTIONS_RAW above
+// (same fixture, same wording) so any live-vs-review delta is attributable
+// to the budget/outcome-fact change alone, never to different wording --
+// per the brief's own instruction. The `outcome` itself is a harness-
+// synthesized wrapper (run.ts), NOT the real db result for games 130/134 at
+// that ply -- it exists only to exercise the "finished game" plumbing, and
+// must never be read as a product finding about those real games (skill
+// rule 6: a rig artifact is not a root cause).
+export interface BoardReviewQuestion {
+  id: string;
+  arm: "board-review";
+  tag: "open" | "narr" | "dir";
+  ctx: FixtureId;
+  probe: boolean;
+  q: string;
+  note?: string;
+}
+
+const BOARD_REVIEW_QUESTIONS_RAW: Omit<BoardReviewQuestion, "arm">[] = BASE_QUESTIONS_RAW.filter((q) => q.tag === "dir").map(
+  (q, i) => ({
+    id: `rev-${String(i + 1).padStart(2, "0")}`,
+    tag: q.tag,
+    ctx: q.ctx,
+    probe: q.probe,
+    q: q.q,
+    note: q.note ? `${q.note} (board-review reuse of ${q.id})` : `board-review reuse of ${q.id}`,
+  })
+);
+
+export const BOARD_REVIEW_QUESTIONS: BoardReviewQuestion[] = BOARD_REVIEW_QUESTIONS_RAW.map((q) => ({
+  ...q,
+  arm: "board-review" as const,
+}));
 
 // chess.js piece-kind letter -> plain-language word, for the pending-
 // awareness mechanical check (methodology part 4, axis 5).
@@ -224,4 +353,11 @@ export const PIECE_WORDS: Record<string, string> = {
 export const NARR_HINT_LEVEL = 3;
 export const NARR_HINT_TEXT = "there's a better option here.";
 
-export const TOTAL_QUESTION_COUNT = BASE_QUESTIONS.length + PENDING_QUESTIONS.length + AFFIRMATION_QUESTIONS.length; // 50 + 10 + 5 = 65
+// board-live is the original v2/v3 arm -- byte-identical 65 questions,
+// frozen per README/skill rule. Wave E1 adds general (15) and board-review
+// (16, one per [dir] question) as new arms; TOTAL_QUESTION_COUNT is the sum
+// of all three, and run.ts's drift assertion checks against it.
+export const BOARD_LIVE_QUESTION_COUNT = BASE_QUESTIONS.length + PENDING_QUESTIONS.length + AFFIRMATION_QUESTIONS.length; // 50 + 10 + 5 = 65
+export const GENERAL_QUESTION_COUNT = GENERAL_QUESTIONS.length; // 15
+export const BOARD_REVIEW_QUESTION_COUNT = BOARD_REVIEW_QUESTIONS.length; // 16
+export const TOTAL_QUESTION_COUNT = BOARD_LIVE_QUESTION_COUNT + GENERAL_QUESTION_COUNT + BOARD_REVIEW_QUESTION_COUNT;

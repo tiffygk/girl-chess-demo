@@ -899,6 +899,14 @@
     inset 0 0 0 5px rgba(76,175,140,.75),
     inset 0 0 12px rgba(76,175,140,.3);
 }
+/* Review fix (Wave F, 2026-07-27, review.md finding 7): "mallow" — an
+   opponent-ply turning line's own move, previously washed the same cyan as
+   her reply. Reuses #C22B7E, mallow's own existing deeper magenta/pink
+   (already her name-plate/chip text colour — see .np-mallow/.player-bar.mallow
+   above), never the solid alarm #FF3DA6 .tp-threat uses and never a new hex.
+   Thinner ring than tp-threat's alarm band so it reads as "her voice," not
+   "you are being threatened." */
+.gc-app .sq.tp-mallow { box-shadow: inset 0 0 0 2px rgba(194,43,126,.55), inset 0 0 8px rgba(194,43,126,.25); }
 
 .gc-app .board-arrows {
   position: absolute;
@@ -939,6 +947,16 @@
   stroke-width: 1.6;
   stroke-linejoin: round;
 }
+/* Review fix (Wave F, 2026-07-27, review.md finding 7): "mallow" — her own
+   move on an opponent-ply turning line, previously the same solid cyan
+   .arrow-played her reply also uses, so the owner "could not tell them
+   apart." Reuses #C22B7E, her own existing deeper magenta/pink (not the
+   solid alarm #FF3DA6 .arrow-threat uses, and no new hex), rendered dashed
+   and slightly thinner than the solid arrows so "mallow moved here" reads
+   distinctly from "you are being threatened" even at a glance. */
+.gc-app .board-arrows .arrow-mallow line,
+.gc-app .board-arrows .arrow-mallow polygon { stroke: #C22B7E; fill: #C22B7E; }
+.gc-app .board-arrows .arrow-mallow line { stroke-width: 1.3; stroke-dasharray: 3 2.5; }
 
 /* check ring — sits under the piece sprite (.pieces layer paints over .squares) */
 .gc-app .sq.check-ring {

@@ -175,7 +175,7 @@ about what the best move is.
 
 sometimes the player isn't asking about this game at all: a chess principle,
 when to do one thing versus another, how to know something, or what to work
-on before her next game. answer it for real, the same voice, the same
+on before your next game. answer it for real, the same voice, the same
 teaching: plain words, one takeaway, warm. ground the answer in this actual
 game when a genuine connection is there ("you saw this yourself when..."),
 but never invent one just to sound grounded -- a true general answer beats a

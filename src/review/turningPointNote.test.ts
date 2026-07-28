@@ -412,6 +412,37 @@ describe("followedBest integration: no counterfactual when she played the recomm
     expect(note.couldImprove).toBeTruthy();
     expect(note.couldImprove).not.toMatch(/stronger idea/);
   });
+
+  // Review fix (Wave F, 2026-07-27, review.md finding 6): buildCouldImprove's
+  // guard went from `line.bestSan !== tp.san` to `!fb?.followed` -- with fb
+  // undefined (gameSans unavailable, so followedBest has nothing to check
+  // against), that reads as "didn't follow it" and renders "…was the
+  // stronger idea" about the move she just played, whenever bestSan happens
+  // to equal tp.san. Not reachable from DebriefPage today (it always passes
+  // gameSans), but wrong on its own terms -- this proves the guard itself is
+  // correct without relying on that caller discipline.
+  it("couldImprove falls back to the direct SAN comparison (and so drops 'stronger idea') when fb is undefined but bestSan equals the played move", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Qh5", ply: 3 }),
+      undefined,
+      line({ ply: 3, pvSans: ["Qh5"], bestSan: "Qh5" })
+      // gameSans omitted entirely -- fb is undefined inside buildCouldImprove.
+    );
+    expect(note.couldImprove).toBeTruthy();
+    expect(note.couldImprove).not.toMatch(/stronger idea/);
+  });
+
+  it("couldImprove still shows 'stronger idea' when fb is undefined and bestSan genuinely differs from the played move", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Nxe5", ply: 3 }),
+      undefined,
+      line({ ply: 3, pvSans: ["Nf3"], bestSan: "Nf3" })
+      // gameSans omitted -- fb undefined, falls back to the direct SAN
+      // comparison, which correctly finds bestSan ("Nf3") !== tp.san ("Nxe5").
+    );
+    expect(note.couldImprove).toBeTruthy();
+    expect(note.couldImprove).toMatch(/stronger idea/);
+  });
 });
 
 describe("opportunity (part v)", () => {

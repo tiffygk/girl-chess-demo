@@ -53,26 +53,49 @@ describe("coach/chat.ts general-chess route (Wave D, coach-truth-speed round)", 
     });
   });
 
-  describe("validateChatGeneral vs validateChat (SAN-allowlist skip)", () => {
+  // Review fix (Wave F, 2026-07-27, review.md finding 5): the OLD version of
+  // this describe block asserted the SAN-allowlist relaxation vacuously --
+  // `generalResult.violations` was never going to contain the bare move
+  // token "Nf3" in the first place (checkVoice pushes "voice-notation: Nf3",
+  // a different string), so the assertion passed regardless of whether the
+  // relaxation did anything at all. It doesn't: checkVoice already flags
+  // EVERY non-bare-square SAN-shaped token as voice-notation on BOTH routes,
+  // so a move named via raw notation is rejected either way, board or
+  // general, played-here-or-not. What the general route's missing
+  // allowedSans check actually buys is real but narrower: a move discussed
+  // in PLAIN WORDS, never in notation, that was never played in this game.
+  describe("validateChatGeneral vs validateChat (SAN-allowlist skip is real, but only for plain-language mentions)", () => {
     const gameMoves = [{ ply: 1, san: "e4" }];
 
-    it("validateChat (board route) flags a SAN move never played/legal here; validateChatGeneral does not add that violation", () => {
+    it("a general reply may discuss a move that was never played in this game, phrased in plain words -- validateChat would also accept this (no SAN-shaped token to flag either way)", () => {
       const facts = assembleChatFactList(gameMoves, { mode: "review" });
-      const text = "developing your knight with Nf3 early is a fine idea in general.";
-
-      const boardResult = validateChat(text, facts);
-      expect(boardResult.ok).toBe(false);
-      if (!boardResult.ok) expect(boardResult.violations).toContain("Nf3");
+      // Nf3 was never played in this game (gameMoves is just 1. e4) -- named
+      // here as "knight to f3", never as notation, so checkVoice has nothing
+      // to flag on either route and validateChat's allowedSans check (which
+      // only ever scans SAN-shaped tokens) has nothing to scan either.
+      const text = "developing your knight to f3 early is a fine idea in general.";
 
       const generalResult = validateChatGeneral(text, facts);
-      if (!generalResult.ok) expect(generalResult.violations).not.toContain("Nf3");
+      expect(generalResult).toEqual({ ok: true });
+
+      const boardResult = validateChat(text, facts);
+      expect(boardResult).toEqual({ ok: true });
     });
 
-    it("a general-route reply using raw notation in prose IS still a violation (voice rules apply regardless of route)", () => {
+    it("a general-route reply using raw notation in prose IS still a violation (voice rules apply regardless of route, identically to the board route)", () => {
       const facts = assembleChatFactList(gameMoves, { mode: "review" });
-      const result = validateChatGeneral("developing your knight with Nf3 early is a fine idea.", facts);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-notation"))).toBe(true);
+      const text = "developing your knight with Nf3 early is a fine idea.";
+
+      const generalResult = validateChatGeneral(text, facts);
+      expect(generalResult.ok).toBe(false);
+      if (!generalResult.ok) expect(generalResult.violations.some((v) => v.startsWith("voice-notation"))).toBe(true);
+
+      // The board route rejects the exact same text, for the exact same
+      // voice-notation reason -- proving the relaxation never actually
+      // widens what raw notation gets away with.
+      const boardResult = validateChat(text, facts);
+      expect(boardResult.ok).toBe(false);
+      if (!boardResult.ok) expect(boardResult.violations.some((v) => v.startsWith("voice-notation"))).toBe(true);
     });
 
     it("skips the three position-claim checkers entirely when the reply makes no positional claim", () => {

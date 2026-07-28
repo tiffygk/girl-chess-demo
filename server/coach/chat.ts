@@ -691,10 +691,23 @@ function replyReferencesPosition(text: string): boolean {
 // route) stays byte-for-byte unchanged by this wave ("board route: change
 // nothing").
 //
-// Skips the SAN-allowlist check entirely: a general answer legitimately
-// names moves that were never played in this game -- "consider castling
-// early" is a true, useful answer to a general question, and validateChat's
-// allowedSans membership check would wrongly flag it as a fabricated move.
+// Review fix (Wave F, 2026-07-27, review.md finding 5): this function has NO
+// allowedSans-membership check at all (unlike validateChat's SAN loop) --
+// by design, a general answer may legitimately name a move that was never
+// played in THIS game ("consider castling early" is a true, useful answer
+// to a general question). The PREVIOUS version of this comment overclaimed
+// what that relaxation buys: checkVoice (kept unconditionally, below)
+// already flags EVERY non-bare-square SAN-shaped token as voice-notation
+// regardless of whether it names a real/legal/played move, so
+// "developing your knight with Nf3" is rejected on THIS route exactly as it
+// would be on the board route -- not because it names an unplayed move
+// (this route was built specifically not to police that), but because
+// cookie never speaks in notation, on EITHER route. So the relaxation only
+// ever has daylight to matter for a move named in PLAIN WORDS with no
+// SAN-shaped token at all ("knight to f3", not "Nf3") -- see
+// chat.general.test.ts for the honest version of this claim, replacing a
+// prior test that asserted it vacuously (checking a violations array that
+// was never going to contain the bare move token in the first place).
 //
 // Keeps checkVoice unconditionally: voice rules are about HOW cookie talks
 // (no raw notation, no engine/eval/centipawn jargon, no signed numbers), not

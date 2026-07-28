@@ -45,12 +45,42 @@ describe("turningLineArrows", () => {
       followed: false,
     });
     const arrows = turningLineArrows(l, notFollowed);
-    expect(arrows).toContainEqual({ from: "e2", to: "e4", color: "played" });
+    // Review fix (Wave F, 2026-07-27, finding 7): mallow's own move is now
+    // "mallow", not "played" -- "played" is reserved for HER own moves.
+    expect(arrows).toContainEqual({ from: "e2", to: "e4", color: "mallow" });
     expect(arrows).toContainEqual({ from: "b8", to: "c6", color: "played" });
     expect(arrows).toContainEqual({ from: "d8", to: "h4", color: "best" });
     // her reply and the opponent's move are distinct arrows, not merged.
     const froms = arrows.map((a) => `${a.from}${a.to}`);
     expect(new Set(froms).size).toBe(arrows.length);
+  });
+
+  // Review fix (Wave F, 2026-07-27, review.md finding 7): the owner's
+  // verbatim ask, quoted in this file's own header -- "I want you to also
+  // show a different colored arrow for what I actually did." Before this
+  // fix, mallow's own move and her reply both rendered "played" (cyan),
+  // distinguished only by endpoint. This is the regression guard for the
+  // fix itself, independent of the "distinct arrows" test above (which only
+  // asserted the endpoints differ, not the colours).
+  it("an opponent-ply line yields mallow's move and her reply in DIFFERENT colours", () => {
+    const l = line({
+      ply: 8,
+      playedFromTo: { from: "e2", to: "e4" }, // mallow's own move
+      bestFromTo: { from: "d8", to: "h4" },
+    });
+    const notFollowed = fb({
+      playerPly: 9,
+      playedFromTo: { from: "b8", to: "c6" }, // her actual reply
+      followed: false,
+    });
+    const arrows = turningLineArrows(l, notFollowed);
+    const mallowArrow = arrows.find((a) => a.from === "e2" && a.to === "e4");
+    const herReplyArrow = arrows.find((a) => a.from === "b8" && a.to === "c6");
+    expect(mallowArrow?.color).toBeDefined();
+    expect(herReplyArrow?.color).toBeDefined();
+    expect(mallowArrow?.color).not.toBe(herReplyArrow?.color);
+    expect(mallowArrow?.color).toBe("mallow");
+    expect(herReplyArrow?.color).toBe("played");
   });
 
   it("an opponent-ply line she punished exactly as recommended collapses her reply + best into one 'found' arrow", () => {
@@ -61,7 +91,10 @@ describe("turningLineArrows", () => {
     });
     const followed = fb({ playerPly: 9, playedFromTo: { from: "d8", to: "h4" }, followed: true });
     const arrows = turningLineArrows(l, followed);
-    expect(arrows).toContainEqual({ from: "e2", to: "e4", color: "played" });
+    // Review fix (Wave F, finding 7): mallow's own move still renders
+    // "mallow" even in the followed branch (it is unconditional -- her own
+    // slip happened regardless of how she replied).
+    expect(arrows).toContainEqual({ from: "e2", to: "e4", color: "mallow" });
     expect(arrows).toContainEqual({ from: "d8", to: "h4", color: "found" });
     expect(arrows).not.toContainEqual({ from: "d8", to: "h4", color: "best" });
     expect(arrows).toHaveLength(2);

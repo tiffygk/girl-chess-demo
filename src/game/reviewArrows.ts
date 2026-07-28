@@ -37,7 +37,18 @@ import type { FollowedBest } from "../review/followedBest";
 // "found" is new this round — the single-arrow dedup colour above. Board.tsx
 // and GamePage.tsx's own ArrowColor alias both need this widened union too
 // (the visual wave owns the actual colour/CSS, not this file).
-export type ArrowColor = "played" | "best" | "threat" | "found";
+//
+// "mallow" (review fix, Wave F, 2026-07-27, review.md finding 7): the
+// owner's verbatim ask above ends "I want you to also show a different
+// colored arrow for what I actually did" — before this fix, an opponent-ply
+// turning line drew BOTH mallow's own move and her reply as the same
+// "played" cyan, distinguished only by which endpoint they landed on. Cyan
+// is the player's own voice (see the header's three-colour language); mallow
+// gets her own existing magenta/pink from the closed palette instead (never
+// a new hex — see sugar-glitch.css's .arrow-mallow), rendered visually
+// distinct from the solid alarm-magenta .arrow-threat so "mallow moved here"
+// can never read as "you are being threatened."
+export type ArrowColor = "played" | "best" | "threat" | "found" | "mallow";
 
 export interface ReviewArrow {
   from: string;
@@ -61,8 +72,12 @@ export function turningLineArrows(line: TurningLine, fb?: FollowedBest): ReviewA
   if (isOpponentPly) {
     // The opponent's own move at line.ply is always its own, distinct arrow
     // — this is what she asked to keep seeing regardless of what she did
-    // next.
-    if (line.playedFromTo) arrows.push({ ...line.playedFromTo, color: "played" });
+    // next. Review fix (Wave F, finding 7): colour "mallow", not "played" —
+    // this is HER move, never the player's own, and cyan is the player's
+    // voice. Unconditional (drawn in both the followed and not-followed
+    // branches below), since it is always its own move regardless of what
+    // she replied.
+    if (line.playedFromTo) arrows.push({ ...line.playedFromTo, color: "mallow" });
     if (fb?.followed && fb.playedFromTo) {
       // Her reply matched the recommendation exactly — line.bestFromTo and
       // fb.playedFromTo are the same move, so one "found" arrow replaces
@@ -71,10 +86,9 @@ export function turningLineArrows(line: TurningLine, fb?: FollowedBest): ReviewA
     } else {
       if (line.bestFromTo) arrows.push({ ...line.bestFromTo, color: "best" });
       // Her actual reply, distinct from the recommendation — the gap the
-      // owner reported as invisible. Tagged "played" like the opponent's own
-      // move (both are things that actually happened in the game, just at
-      // different plies); the visual wave differentiates them by endpoint,
-      // not a third colour.
+      // owner reported as invisible. Stays "played" (cyan, her own voice) —
+      // distinct from mallow's own move above, which is exactly the owner's
+      // ask ("show a different colored arrow for what I actually did").
       if (fb?.playedFromTo) arrows.push({ ...fb.playedFromTo, color: "played" });
     }
   } else if (fb?.followed) {

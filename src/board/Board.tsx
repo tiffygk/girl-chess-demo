@@ -149,13 +149,17 @@ interface BoardProps {
   // move, replacing what would otherwise be two coincident "played"/"best"
   // arrows on identical endpoints. Data-only change: the visual wave owns
   // the actual colour/CSS for this new value.
-  arrows?: { from: string; to: string; color: "played" | "best" | "threat" | "found" }[];
+  // Review fix (Wave F, 2026-07-27, review.md finding 7): "mallow" added --
+  // an opponent-ply turning line's own move, now distinct from her "played"
+  // cyan reply. Data-only change here too; see sugar-glitch.css's
+  // .arrow-mallow/.tp-mallow for the actual colour.
+  arrows?: { from: string; to: string; color: "played" | "best" | "threat" | "found" | "mallow" }[];
   /**
    * Increment 3.91 (Task 1): companion square wash for the arrows above —
    * reuses the existing square-name-class pass on `.sq` (below) with new
    * `.tp-played`/`.tp-best`/`.tp-threat` classes, same render-only contract.
    */
-  highlightSquares?: { square: string; kind: "played" | "best" | "threat" | "found" }[];
+  highlightSquares?: { square: string; kind: "played" | "best" | "threat" | "found" | "mallow" }[];
 }
 
 // ambient decorative jitter squares, same indices as the demo — staggered

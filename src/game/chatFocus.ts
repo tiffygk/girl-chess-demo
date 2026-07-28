@@ -93,12 +93,25 @@ export function hintFocusContext(
  *
  * Task 3 (Wave D, deferred from A1): `gameSans` is optional and additive --
  * every pre-this-wave caller that omits it still gets exactly the shape
- * above, with `followedBest: false` and `playedNextSan: undefined` (never
- * guessed at without the game to check against). When supplied, `followed
- * Best`/`playedNextSan` are derived from the SAME followedBest() reviewArrows
- * /debriefBullets/turningPointNote already use, never re-derived here -- so
- * a chat answer and the debrief note can never disagree about whether she
- * played the recommended move.
+ * above, with `followedBest: undefined` and `playedNextSan: undefined`
+ * (unknown, never guessed at without the game to check against). When
+ * supplied, `followedBest`/`playedNextSan` are derived from the SAME
+ * followedBest() reviewArrows/debriefBullets/turningPointNote already use,
+ * never re-derived here -- so a chat answer and the debrief note can never
+ * disagree about whether she played the recommended move.
+ *
+ * Review fix (Wave F, 2026-07-27, review.md finding 2): `followedBest` used
+ * to coerce the absent-gameSans case to `false` via `?? false` -- not
+ * "unknown", an outright assertion that she did NOT play the recommended
+ * move, sent to the model as fact on every real call site (both of which,
+ * at the time, omitted `gameSans` entirely, so this fired on every "ask
+ * about this" click). `false` and "unknown" are never interchangeable here:
+ * the whole reason this field exists is so the coach can answer "did I play
+ * the recommended move or not" truthfully, and a wrong "not" is exactly the
+ * falsehood this seam was built to remove. Now genuinely undefined
+ * (omitted, via `fb?.followed` with no `??` fallback) whenever `gameSans` is
+ * unavailable -- the caller/model must treat absence as unknown, never as a
+ * negative answer.
  */
 export function turningPointFocusContext(
   point: Pick<TurningPoint, "ply" | "san" | "label" | "punishSan">,
@@ -114,7 +127,7 @@ export function turningPointFocusContext(
     bestSan: line?.bestSan,
     pvSans: line?.pvSans,
     playedNextSan: fb?.playedSan,
-    followedBest: fb?.followed ?? false,
+    followedBest: fb?.followed,
   };
 }
 
