@@ -39,3 +39,6 @@ tools/.truth-check-scratch/
 # never committed as directories into the parent repo
 /girl-chess-eval3/
 /girl-chess-r2/
+/wt-highlight/
+/wt-forward/
+/wt-missedwin/
