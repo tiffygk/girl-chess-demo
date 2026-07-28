@@ -15,6 +15,7 @@ import {
   fetchGames,
   getTurningLines,
   exploreReply,
+  highlightMove,
   type MoveResponse,
   type GameOverInfo,
   type Verdict,
@@ -37,7 +38,8 @@ import {
 import { turningLineArrows, arrowsToHighlights, type ArrowColor } from "./reviewArrows";
 import { followedBest, playedArrowForPly } from "../review/followedBest";
 import { describeMove, type MoveRender } from "./describeMove";
-import { pushLiveMove, type LiveMove } from "./liveMoves";
+import { pushLiveMove, setHighlight, markableWindow, type LiveMove } from "./liveMoves";
+import { HighlightPocket } from "./HighlightPocket";
 import { victimKind, materialDiff, rollbackCapture, capturesAtPly, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
 import { reconcile } from "./reconcile";
@@ -236,12 +238,9 @@ export function GamePage() {
   // activeReviewMoves is null mid-game (liveSummary is fetched only once
   // the game is over, and mirrorRef is a ref -- it never triggers a
   // render). Appended alongside lastMove at each settle site below, cleared
-  // on new game the same place lastMove is. `liveMoves` itself is read by
-  // the highlight pocket (Task 3, a separate visual port not in this
-  // round's scope) via markableWindow -- kept here so that mount has
-  // nothing left to wire but the component itself.
+  // on new game the same place lastMove is. Read by the highlight pocket
+  // (Task 3) via markableWindow, mounted in her PlayerBar below.
   const [liveMoves, setLiveMoves] = useState<LiveMove[]>([]);
-  void liveMoves;
   // A5: transient status-line hint for a click that was meaningful but
   // couldn't do what it looked like (currently: "can't castle right now").
   const [inputHint, setInputHint] = useState<string | null>(null);
@@ -1802,6 +1801,23 @@ export function GamePage() {
 
   const togglesDisabled = uiBusy || pending !== null;
 
+  // Highlight-a-move (Task 3): optimistic flip, persisted immediately
+  // (moves.highlighted) so the highlight survives a reload — it is db
+  // state, not React state. On a failed write the flip reverts: the db is
+  // the debrief's source of truth, and a pill that lies about what was
+  // recorded is worse than a bounced tap.
+  const handleHighlightToggle = useCallback(
+    (ply: number, on: boolean) => {
+      setLiveMoves((prev) => setHighlight(prev, ply, on));
+      if (gameId != null) {
+        highlightMove(gameId, ply, on).catch(() => {
+          setLiveMoves((prev) => setHighlight(prev, ply, !on));
+        });
+      }
+    },
+    [gameId]
+  );
+
   // Wave B: turn/state info lives entirely in the two player bars now.
   // uiBusy is true for the whole span from "player's move confirmed" to
   // "reply (or failure) resolved" — that's mallow's side of the board being
@@ -2107,6 +2123,22 @@ export function GamePage() {
           chip={youChip}
           moveNumber={moveNumber}
           elo={PLAYER_ELO}
+          // Highlight-a-move (Task 3): live play only — in review mode
+          // liveMoves belongs to the live game, not the reviewed one, and
+          // post-game the debrief's study ledger is the highlight surface
+          // ("highlight from the recap" is explicitly a later, additive
+          // feature). Disabled by the same togglesDisabled rule as every
+          // other toggle, so it can never sit active beside a pending
+          // "confirm g4, tap it again" — which this control never touches.
+          pocket={
+            gameOver == null && !reviewGame ? (
+              <HighlightPocket
+                moves={markableWindow(liveMoves, 3)}
+                disabled={togglesDisabled}
+                onToggle={handleHighlightToggle}
+              />
+            ) : null
+          }
         />
       </div>
       {/* Fixed-height reserve so the judge indicator and controls appearing

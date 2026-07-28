@@ -31,4 +31,10 @@ describe("liveMoves", () => {
     list = pushLiveMove(list, { ply: 2, san: "d5", highlighted: false });
     expect(list.find((m) => m.ply === 1)?.highlighted).toBe(true);
   });
+
+  // Task 3's empty-state guard: HighlightPocket renders null on an empty
+  // window, so the bar carries no dead chrome before her first move.
+  it("the pocket is empty before her first move", () => {
+    expect(markableWindow([], 3)).toEqual([]);
+  });
 });
