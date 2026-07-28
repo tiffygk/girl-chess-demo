@@ -17,6 +17,20 @@ import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from 
 
 const OLD_PLATITUDE = "a draw. solid, careful, nothing hung.";
 
+// Missed-win round (2026-07-28): shared real-game fixture (game 150,
+// 2026-07-28, her real 91-ply win). Ply 55 (Nf7+) declined Qh8#. Repeated
+// per repo convention (each test file keeps its own copy) rather than a
+// shared fixtures module.
+const GAME150_SANS: SummaryMove[] = [
+  "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+  "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+  "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+  "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+","Kg6","Nh8+","Kh7",
+  "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
+  "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
+  "Qh6+","Kd5","Be7","Kc4","Qc6#",
+].map((san, i) => ({ ply: i + 1, san }));
+
 function tp(overrides: Partial<TurningPoint>): TurningPoint {
   return {
     rank: 1,
@@ -642,5 +656,21 @@ describe("affordancesForBullet (2026-07-27, a later wave's UI consumer)", () => 
     // At least one bullet in this fixture has a ply, so the true branch
     // above is actually exercised.
     expect(bullets.some((b) => b.ply != null)).toBe(true);
+  });
+});
+
+describe("nearly-bare-side phase override (missed-win round, 2026-07-28)", () => {
+  it("a bullet at a nearly-bare-board ply reads endgame even when the tail rule would say middlegame", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        { rank: 1, ply: 55, san: "Nf7+", label: "inaccuracy", deltaP: -0.09, lowConfidence: false, kind: "swing" },
+      ],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const b = bullets.find((x) => x.ply === 55);
+    expect(b?.phase).toBe("endgame"); // old rule: endgame only from ply 69
   });
 });
