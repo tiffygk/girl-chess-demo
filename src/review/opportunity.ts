@@ -24,6 +24,11 @@
 // two of the previously-vague cases were recovered as provable claims
 // instead (a sub-minor-piece net material gain, and a checking developing
 // move) — see deriveOpportunity's own doc comment below.
+//
+// Server sibling (forward-prediction round, 2026-07-28): server/annotator/
+// continuation.ts derives the same replay-proven claims side-aware and
+// player-relative for the chat fact list -- change the honesty gates here
+// and check that file too.
 import { Chess } from "chess.js";
 
 const PIECE_NAMES: Record<string, string> = {
