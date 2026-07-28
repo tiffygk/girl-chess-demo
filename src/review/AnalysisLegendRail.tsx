@@ -97,7 +97,7 @@ export function AnalysisLegend() {
       <span className="legend-kicker">analysis legend</span>
       <div className="rail-body">
         <div className="cluster-inner">
-          <AxisHead dashed={false} words="solid — it happened" />
+          <AxisHead dashed={false} words="solid: it happened" />
           <div className="cluster-rows stack">
             {LEGEND_SOLID_ROWS.map((row) => (
               <LegendRowLine row={row} key={row.kind} />
@@ -106,7 +106,7 @@ export function AnalysisLegend() {
         </div>
         <div className="cluster-divider" />
         <div className="cluster-inner">
-          <AxisHead dashed={true} words="dashed — it didn't" />
+          <AxisHead dashed={true} words="dashed: it didn't" />
           <div className="cluster-rows stack">
             {LEGEND_DASHED_ROWS.map((row) => (
               <LegendRowLine row={row} key={row.kind} />

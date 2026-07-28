@@ -10,6 +10,7 @@ import type { ArrowColor } from "../game/reviewArrows";
 // read instead of a filesystem one.
 import gamePageSrc from "../game/GamePage.tsx?raw";
 import debriefPageSrc from "./DebriefPage.tsx?raw";
+import analysisLegendRailSrc from "./AnalysisLegendRail.tsx?raw";
 
 describe("analysisLegend.ts row model (D1 cipher rail)", () => {
   it("has exactly six rows, four solid then two dashed", () => {
@@ -86,5 +87,28 @@ describe("analysis-legend render gating: analysis/review only, never live play",
 
   it("AnalysisLegend is rendered from within DebriefPage.tsx, its only mount site", () => {
     expect(debriefPageSrc).toMatch(/<AnalysisLegend\s*\/>/);
+  });
+});
+
+// Union-review fix (2026-07-28, finding 4): the project bans em-dashes in
+// user-facing copy, but AxisHead's two `words` props ("solid — it
+// happened" / "dashed — it didn't") shipped a real em-dash character. Pins
+// the fix at the source-string level (same ?raw pattern the render-gating
+// block above already uses -- AnalysisLegendRail.tsx has no unit-test
+// harness of its own) rather than only the two literal strings, so a
+// future third AxisHead usage can't reintroduce the same bug unnoticed.
+describe("AnalysisLegendRail copy hygiene: no em-dash in user-facing text (union-review finding 4)", () => {
+  it("neither AxisHead 'words' string contains an em-dash", () => {
+    const wordsProps = [...analysisLegendRailSrc.matchAll(/words="([^"]*)"/g)].map((m) => m[1]);
+    expect(wordsProps.length).toBeGreaterThan(0); // sanity: the match actually found the two AxisHead usages
+    for (const words of wordsProps) expect(words).not.toContain("—");
+  });
+
+  it("the solid-cluster axis head still reads 'solid' and still explains what solid means", () => {
+    expect(analysisLegendRailSrc).toMatch(/words="solid[^"]*it happened"/);
+  });
+
+  it("the dashed-cluster axis head still reads 'dashed' and still explains what dashed means", () => {
+    expect(analysisLegendRailSrc).toMatch(/words="dashed[^"]*it didn't"/);
   });
 });
