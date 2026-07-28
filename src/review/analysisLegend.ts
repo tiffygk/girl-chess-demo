@@ -1,0 +1,54 @@
+// D1 "cipher rail" -- the six-state arrow legend's pure row model.
+//
+// Port of the approved mockup (vault "3 visual/Girl Chess — Arrow Legend
+// (mockup, 2026-07-28).html", direction D1, owner-selected). AnalysisLegend
+// .tsx just maps this list to markup -- same split debriefBullets.ts/
+// DebriefBulletList already use, since .tsx has no unit-test harness here.
+//
+// The six kinds are exactly reviewArrows.ts's ArrowColor union (imported,
+// not re-declared) so a future arrow kind can't silently drift out of sync
+// with the legend that explains it -- see analysisLegend.test.ts's
+// "covers every ArrowColor" assertion.
+//
+// Colours are pinned to the REAL shipped arrow CSS (src/skin/sugar-
+// glitch.css .arrow-played/.arrow-best/.arrow-threat/.arrow-found/
+// .arrow-mallow/.arrow-mallow-best, commit c199c55), not re-derived from
+// the mockup's own swatch script -- if a swatch and the real arrow ever
+// disagree, the swatch is the bug (owner ruling).
+import type { ArrowColor } from "../game/reviewArrows";
+
+export type LegendStyle = "solid" | "dashed";
+
+export interface LegendRow {
+  kind: ArrowColor;
+  label: string;
+  style: LegendStyle;
+  // Primary swatch stroke/fill colour -- matches the real arrow's own CSS
+  // colour exactly (see file header).
+  color: string;
+  // Only "found" carries a second colour: the cyan under-stroke/outline
+  // beneath the green body (.arrow-found's halo layer).
+  haloColor?: string;
+}
+
+const CYAN = "#23E5FF"; // your move -- .arrow-played
+const GREEN = "rgb(76,175,140)"; // engine's counsel -- .arrow-best / .arrow-found body
+const ROSE = "#C22B7E"; // mallow -- .arrow-mallow / .arrow-mallow-best
+const ALARM = "#FF3DA6"; // real threat only -- .arrow-threat
+
+// "solid -- it happened" cluster. Order matches the mockup/spec panel.
+export const LEGEND_SOLID_ROWS: LegendRow[] = [
+  { kind: "played", label: "your move", style: "solid", color: CYAN },
+  { kind: "found", label: "you found the best move", style: "solid", color: GREEN, haloColor: CYAN },
+  { kind: "mallow", label: "mallow's move", style: "solid", color: ROSE },
+  { kind: "threat", label: "a real threat", style: "solid", color: ALARM },
+];
+
+// "dashed -- it didn't" cluster.
+export const LEGEND_DASHED_ROWS: LegendRow[] = [
+  { kind: "best", label: "you should've", style: "dashed", color: GREEN },
+  { kind: "mallow-best", label: "mallow should've", style: "dashed", color: ROSE },
+];
+
+// All six, solid cluster first -- the order the rail actually renders in.
+export const LEGEND_ROWS: LegendRow[] = [...LEGEND_SOLID_ROWS, ...LEGEND_DASHED_ROWS];
