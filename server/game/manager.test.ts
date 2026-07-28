@@ -844,6 +844,48 @@ describe("GameManager", () => {
     expect(getTurningPointsAllVersions(g).length).toBe(allVersions.length);
   });
 
+  // Missed-win round (2026-07-28): the mate_in/missed_count columns must
+  // survive the full insert -> read -> heal round trip intact, exactly like
+  // every other additive TurningPoint field before them.
+  it("persists and heals a missed-win turning point with mateIn/missedCount intact", () => {
+    const g = createGame(sessionId, "maia-1100");
+    // Game-150-shaped tail: she faces mate-in-1 twice, declines both, then mates.
+    const tail: [number, string, number | null, number | null][] = [
+      [1, "e4", 20, null], [2, "e5", 25, null],
+      [53, "h4", null, -2], [54, "Kh6", null, 1], [55, "Nf7+", null, -3],
+      [56, "Kg6", null, 1], [57, "Nh8+", null, -3], [58, "Kh7", null, -2],
+      [59, "Qh8#", null, null],
+    ];
+    for (const [ply, san, cp, mate] of tail) {
+      recordMove({ gameId: g, ply, san, uci: "a1a1", fenAfter: `fen${ply}`, timeSpentMs: 0 });
+      if (cp !== null || mate !== null) attachEval(g, ply, { cp, mate, bestMove: "a8h8", pv: ["a8h8"] });
+    }
+    finishGame(g, "1-0");
+
+    // Seed a stale v4 row set the way games 149/150 have one today.
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 2, san: "e5", label: "opponent blunder", deltaP: 0.9, lowConfidence: false, kind: "swing" }],
+      4
+    );
+
+    const summary = gm.getSummary(g); // heals: v4 < TP_ALGO_VERSION(5)
+    const missed = summary.turningPoints.find((t: any) => t.kind === "missed-win");
+    expect(missed).toMatchObject({ ply: 55, label: "missed mate", mateIn: 1, missedCount: 2 });
+
+    // The healed rows carry the columns; the stale v4 rows survive untouched.
+    const latest = getTurningPoints(g) as any[];
+    const row = latest.find((r) => r.kind === "missed-win");
+    expect(row.mate_in).toBe(1);
+    expect(row.missed_count).toBe(2);
+    expect(getTurningPointsAllVersions(g).some((r: any) => r.algo_version === 4)).toBe(true);
+
+    // Second read is a no-op (idempotent heal).
+    const before = getTurningPointsAllVersions(g).length;
+    gm.getSummary(g);
+    expect(getTurningPointsAllVersions(g).length).toBe(before);
+  });
+
   // Task 11 fix 2 (.superpowers/sdd/rounds/2026-07-20-inc-3.95/task-11-brief.md):
   // on-read historical backfill. A finished game that has NEVER had
   // turning_points computed (zero rows — not just a stale version, the case

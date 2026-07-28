@@ -62,6 +62,15 @@ export function moveNumberForPly(ply: number): number {
 }
 
 export function debriefLesson(turningPoints: TurningPoint[], result: GameResult): string {
+  // Missed-win round (2026-07-28): a game where a forced mate slipped must
+  // never headline with a move-3 inaccuracy (the owner's game-149 report).
+  // Checked first, ahead of every eval-band label.
+  const missedWin = turningPoints.find((t) => t.kind === "missed-win");
+  if (missedWin) {
+    const n = moveNumberForPly(missedWin.ply);
+    return `today's lesson: you had checkmate in one on move ${n} and played past it. hunt the finish when you are winning.`;
+  }
+
   const ownMistakes = turningPoints.filter((t) => HER_NEGATIVE_LABELS.has(t.label));
   if (ownMistakes.length > 0) {
     const worst = ownMistakes.reduce((a, b) => (b.deltaP < a.deltaP ? b : a));

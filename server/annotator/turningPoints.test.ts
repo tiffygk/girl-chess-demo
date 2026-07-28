@@ -12,6 +12,7 @@ import {
   TP_HOLD_THRESHOLD,
   TP_HOLD_PLIES,
   TP_K,
+  TP_ALGO_VERSION,
   winProb,
   type MoveEval,
 } from "./turningPoints";
@@ -148,10 +149,21 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     expect(tps[2].punishSan).toBeUndefined();
   });
 
-  it("reproduces game 86: three genuine swings including HER inaccuracy, no backfill needed", () => {
+  it("reproduces game 86: three genuine swings including HER inaccuracy, no backfill needed, PLUS a real missed mate-in-1 (missed-win round, 2026-07-28)", () => {
     const tps = computeTurningPoints(GAME_86, "1-0");
-    expect(tps).toHaveLength(3);
-    expect(tps.every((t) => t.kind === "swing")).toBe(true);
+    // Missed-win round finding, verified by direct computation (not assumed
+    // from the plan): this pre-existing acceptance fixture's own mate
+    // ladder — ...35. Rd1 -> M-2 | 36. Bf8 -> M1 | 37. Qxe6+ -> M-6...
+    // — carries a REAL missed mate-in-1 the old algorithm had no way to
+    // see: after black's ply 36, white (her) had M1 and played the check
+    // Qxe6+ instead of mating, giving the distance back out to M6. A
+    // second miss recurs at ply 59 (after ply 58's M1). detectMissedWins
+    // correctly flags both; the anchor is the earlier one (ply 37) not
+    // already claimed by an existing turning point, with missedCount 2.
+    // This is a genuine, previously-invisible fact surfacing on 2026-07-28
+    // fixture data that predates this round — not a fixture change.
+    expect(tps).toHaveLength(4);
+    expect(tps.slice(0, 3).every((t) => t.kind === "swing")).toBe(true);
 
     expect(tps[0]).toMatchObject({ rank: 1, ply: 18, san: "c5", label: "opponent mistake", kind: "swing" });
     expect(tps[0].deltaP).toBeCloseTo(0.1581, 2);
@@ -175,6 +187,11 @@ describe("computeTurningPoints — acceptance fixtures", () => {
       rank: 3, ply: 22, san: "Nd7", label: "opponent inaccuracy", punishSan: "Bxc6", kind: "swing",
     });
     expect(tps[2].deltaP).toBeCloseTo(0.1003, 2);
+
+    expect(tps[3]).toMatchObject({
+      rank: 4, ply: 37, san: "Qxe6+", label: "missed mate", kind: "missed-win", mateIn: 1, missedCount: 2,
+    });
+    expect(tps[3].deltaP).toBe(0);
   });
 });
 
@@ -598,4 +615,76 @@ describe("turningPoints.ts LLM-free gate", () => {
       expect(line).not.toMatch(/from\s+["']\.\.?\/coach/);
     }
   });
+});
+
+describe("missed-win turning point", () => {
+  // Game 150's shape: she is completely winning, faces mate-in-1 twice,
+  // declines both, later mates. Evals below keep every swing under
+  // TP_FLOOR so the missed win is the only her-side story.
+  const mvs = (r: [number, string, number | null, number | null][]) =>
+    r.map(([ply, san, evalCp, evalMate]) => ({ ply, san, evalCp, evalMate }));
+
+  it("emits one 'missed mate' point at the earliest miss, counting all of them", () => {
+    const points = computeTurningPoints(
+      mvs([
+        [53, "h4", null, -2],
+        [54, "Kh6", null, 1],
+        [55, "Nf7+", null, -3],
+        [56, "Kg6", null, 1],
+        [57, "Nh8+", null, -3],
+        [58, "Kh7", null, -2],
+        [59, "Qh8#", null, null],
+      ]),
+      "1-0"
+    );
+    const missed = points.filter((p) => p.kind === "missed-win");
+    expect(missed).toHaveLength(1);
+    expect(missed[0]).toMatchObject({
+      ply: 55,
+      san: "Nf7+",
+      label: "missed mate",
+      mateIn: 1,
+      missedCount: 2,
+      deltaP: 0,
+      lowConfidence: false,
+    });
+    // Appended after the swing/backfill/episode points, rank sequential.
+    expect(missed[0].rank).toBe(points.length);
+  });
+
+  it("emits nothing when no mate was missed", () => {
+    const points = computeTurningPoints(
+      mvs([[1, "e4", 30, null], [2, "e5", 25, null], [3, "Nf3", 35, null]]),
+      "1-0"
+    );
+    expect(points.some((p) => p.kind === "missed-win")).toBe(false);
+  });
+
+  it("anchors on the first miss whose ply is not already a turning point", () => {
+    // Ply 55 doubles as a huge swing (mate-1 position to LOSING eval), so
+    // the swing detector already owns ply 55; the missed-win point moves to
+    // the next miss at ply 57 while still counting both.
+    const points = computeTurningPoints(
+      mvs([
+        [54, "Kh6", null, 1],
+        // She threw the mate AND the eval. Stored evals are SIDE-TO-MOVE
+        // signed (buildDeltaSeries header): after her odd ply 55 it is
+        // black's turn, so +900 here means black is up 900 — i.e. white
+        // collapsed to -900, a blunder-band swing at ply 55.
+        [55, "Qb8", 900, null],
+        [56, "Kg6", null, 1],
+        [57, "Nh8+", null, -3],
+        [58, "Kh7", null, -2],
+      ]),
+      "1-0"
+    );
+    expect(points.some((p) => p.kind === "swing" && p.ply === 55)).toBe(true);
+    const missed = points.find((p) => p.kind === "missed-win");
+    expect(missed?.ply).toBe(57);
+    expect(missed?.missedCount).toBe(2);
+  });
+});
+
+it("TP_ALGO_VERSION is 5 so old games heal on read", () => {
+  expect(TP_ALGO_VERSION).toBe(5);
 });

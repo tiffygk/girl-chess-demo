@@ -327,8 +327,17 @@ export interface ChatPerPlyInput {
 // question this fact exists to answer ("was my opening okay?").
 const PHASE_OPENING_PLY_MAX = 20;
 const PHASE_ENDGAME_PIECE_MAX = 12;
+// Missed-win round (2026-07-28): hand-duplicates src/review/phase.ts's
+// ENDGAME_BARE_PIECE_MAX (server code never imports from src/ — same
+// hand-mirroring convention as api.ts's types). A side reduced to at most
+// this many non-pawn, non-king pieces makes the position an endgame no
+// matter how much the OTHER side kept — the owner's real game 150 finish
+// (her full army vs a lone king, 17 pieces total) never tripped the
+// pieceCount rule below and tagged every mate-in-1 miss "middlegame".
+const CHAT_ENDGAME_BARE_PIECE_MAX = 1;
 
-function derivePhase(ply: number, pieceCount: number): "opening" | "middlegame" | "endgame" {
+function derivePhase(ply: number, pieceCount: number, nearlyBare = false): "opening" | "middlegame" | "endgame" {
+  if (nearlyBare) return "endgame"; // a nearly-bare board is never usefully "opening"
   if (ply <= PHASE_OPENING_PLY_MAX) return "opening";
   if (pieceCount <= PHASE_ENDGAME_PIECE_MAX) return "endgame";
   return "middlegame";
@@ -399,10 +408,17 @@ export function assembleChatFactList(
   // on the board at ply N", and this is the one place that walks the game
   // ply by ply already.
   const pieceCountByPly = new Map<number, number>();
+  // Missed-win round (2026-07-28): captured in the same replay pass — see
+  // CHAT_ENDGAME_BARE_PIECE_MAX's comment.
+  const nearlyBareByPly = new Map<number, boolean>();
   for (const m of ordered) {
     const mv = chess.move(m.san);
     gameSans.push(mv.san);
-    pieceCountByPly.set(m.ply, chess.board().flat().filter(Boolean).length);
+    const pieces = chess.board().flat().filter((p) => p != null);
+    pieceCountByPly.set(m.ply, pieces.length);
+    const nonPawn = (color: "w" | "b") =>
+      pieces.filter((p) => p!.color === color && p!.type !== "k" && p!.type !== "p").length;
+    nearlyBareByPly.set(m.ply, Math.min(nonPawn("w"), nonPawn("b")) <= CHAT_ENDGAME_BARE_PIECE_MAX);
   }
 
   const perPlyAnalysis = perPly?.map((p) => ({
@@ -411,7 +427,7 @@ export function assembleChatFactList(
     // above -- defensive only; every real caller's perPly plies are a
     // subset of the same gameMoves this function just replayed, but a
     // missing lookup should read as "not yet endgame" rather than throw.
-    phase: derivePhase(p.ply, pieceCountByPly.get(p.ply) ?? 32),
+    phase: derivePhase(p.ply, pieceCountByPly.get(p.ply) ?? 32, nearlyBareByPly.get(p.ply) ?? false),
   }));
 
   const { fen: currentFen, toMove, occupancy, legalSans, contested } = derivePositionFacts(chess);
@@ -467,6 +483,15 @@ export function assembleChatFactList(
   for (const t of tpOut ?? []) {
     sans.add(t.san);
     if (t.punishSan) sans.add(t.punishSan);
+  }
+  // Missed-win round (2026-07-28): every per-ply bestSan/pvSans the model is
+  // HANDED (restored by 46f641a, replay-verified server-side from fenBefore)
+  // must also be SPEAKABLE — without this fold, a reply echoing its own fact
+  // list's "Qh8#" as literal SAN gets zapped by validateChat and burns the
+  // one regen. Only replay-verified engine lines join here, never a claim.
+  for (const p of perPly ?? []) {
+    if (p.bestSan) sans.add(p.bestSan);
+    for (const s of p.pvSans) sans.add(s);
   }
   // Task 7 fold: the turningPoints list above only ever carries a turning
   // point's OWN san/punishSan (the debrief's persisted facts) -- never the
