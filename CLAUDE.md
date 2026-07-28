@@ -10,7 +10,22 @@ Prior state (2026-07-21, HEAD `b5ebc24`). Increment 3.95 ("Coach Live, Hardening
 
 ## Repository and primitives (file structure locks the decomposition)
 
-Repo: `/Users/tiffany/girl-chess` (new). Plans, handoffs, and product docs live in the Obsidian vault, NOT the repo: **plans go to the vault `2 build/`, handoffs go to the vault `6 handoffs/`** — write them there, or if first drafted under `.superpowers/`, mirror to the vault immediately (owner rule, 2026-07-21). `CLAUDE.md` in the repo carries the architecture map for future sessions. This includes front-end design references — component libraries, visual style guides, anything like `front-end-components.md`: they belong in the vault's `3 visual/` folder alongside `Sugar Glitch Demo.html`, never in a repo-local `design/` folder. (Corrected 2026-07-17 after one got created in the wrong place.)
+**Repo location (owner reorg 2026-07-28 — the old `/Users/tiffany/girl-chess` path is DEAD):**
+`/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/`
+
+The owner moved the repo inside the Obsidian vault so everything about this project is
+findable and reviewable in one master folder. The vault `girl chess game/` is now the root
+of the whole project: the human-facing folders (`1 product/`, `2 build/`, `3 visual/`,
+`6 handoffs/`) sit alongside `girl-chess-agents/`, which holds the code and every agent
+worktree. **Any new folder or worktree an agent creates goes INSIDE `girl-chess-agents/`,
+never at `~/` and never loose in the vault root** — the point of the reorg is that the owner
+can review agent output without hunting for it. The two existing worktrees now live at
+`girl-chess-agents/girl-chess-eval3` and `girl-chess-agents/girl-chess-r2`; they are
+registered with `git worktree` and gitignored as directories, so never `git add` them.
+If a path in an old handoff or round ledger still says `/Users/tiffany/girl-chess`, it is
+stale — translate it to the path above rather than recreating the old directory.
+
+Plans, handoffs, and product docs live in the Obsidian vault, NOT the repo: **plans go to the vault `2 build/`, handoffs go to the vault `6 handoffs/`** — write them there, or if first drafted under `.superpowers/`, mirror to the vault immediately (owner rule, 2026-07-21). `CLAUDE.md` in the repo carries the architecture map for future sessions. This includes front-end design references — component libraries, visual style guides, anything like `front-end-components.md`: they belong in the vault's `3 visual/` folder alongside `Sugar Glitch Demo.html`, never in a repo-local `design/` folder. (Corrected 2026-07-17 after one got created in the wrong place.)
 
 ```
 girl-chess/
