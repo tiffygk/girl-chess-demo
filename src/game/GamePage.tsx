@@ -23,8 +23,8 @@ import {
   type GameListEntry,
   type ChatContext,
   type TurningLine,
-  type SummaryMove,
   type TurningPoint,
+  type MoveClassification,
 } from "./api";
 import { CoachChat, ThumbRating } from "./CoachChat";
 import {
@@ -34,6 +34,8 @@ import {
   pvUciToSan,
   pendingMoveContext,
 } from "./chatFocus";
+import { turningLineArrows, arrowsToHighlights, type ArrowColor } from "./reviewArrows";
+import { followedBest, playedArrowForPly } from "../review/followedBest";
 import { describeMove, type MoveRender } from "./describeMove";
 import { victimKind, materialDiff, rollbackCapture, capturesAtPly, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
@@ -174,62 +176,16 @@ function adoptServerFen(mirror: Chess, serverFen: string | undefined | null): st
   return mirror.fen();
 }
 
-// Increment 3.91 (Task 4): a turning-point card's "replay" click threads a
-// TurningLine (already replay-derived server-side, see api.ts's TurningLine
-// comment) into the board's arrows/highlightSquares props. Pure and
-// additive-only — never recomputes or guesses a from/to, only reshapes the
-// fields TurningLine already carries.
-type ArrowColor = "played" | "best" | "threat";
-
-function turningLineArrows(line: TurningLine): { from: string; to: string; color: ArrowColor }[] {
-  const arrows: { from: string; to: string; color: ArrowColor }[] = [];
-  if (line.playedFromTo) arrows.push({ ...line.playedFromTo, color: "played" });
-  if (line.bestFromTo) arrows.push({ ...line.bestFromTo, color: "best" });
-  if (line.threat) arrows.push({ ...line.threat, color: "threat" });
-  return arrows;
-}
-
-// Increment 3.95 (Task 4, Part 2): highlights are always just the arrows'
-// own endpoints, so deriving them FROM whatever arrows array actually ends
-// up on screen (rather than re-deriving separately from `line`) keeps the
-// two in lockstep by construction — including the played-arrow fallback
-// below, which has no `line` to derive highlights from at all.
-function arrowsToHighlights(
-  arrows: { from: string; to: string; color: ArrowColor }[]
-): { square: string; kind: ArrowColor }[] {
-  const highlights: { square: string; kind: ArrowColor }[] = [];
-  for (const a of arrows) {
-    highlights.push({ square: a.from, kind: a.color });
-    highlights.push({ square: a.to, kind: a.color });
-  }
-  return highlights;
-}
-
-// Increment 3.95 (Task 4, Part 2): the owner's report — a turning-point note
-// with NO arrows at all — traced to debriefBullets.ts's could-be-better/
-// watch-next-time bullets, which (unlike the curated turning-point cards)
-// draw plies from the broader `classifications` list, a strict superset of
-// turningLines' plies (see debriefBullets.ts's buildCouldBeBetter: it falls
-// back to `classifications` once the turningPoints-derived candidates run
-// out). A bullet's "replay" click rewinds to a ply with NO matching
-// TurningLine, and reviewArrows previously cleared to [] in that case —
-// text with literally nothing to look at. This is the SAME replay-derived
-// from/to computation server/annotator/moveEndpoints.ts does for the played
-// move (chess.js replaying the game's own recorded SAN, never a guess),
-// just client-side against the already-loaded move list, so every rewind
-// gets at least its played (cyan) arrow regardless of whether a curated
-// TurningLine exists for that exact ply.
-function playedArrowForPly(moves: SummaryMove[], ply: number): { from: string; to: string } | undefined {
-  if (ply < 1 || ply > moves.length) return undefined;
-  const chess = new Chess();
-  try {
-    for (let i = 0; i < ply - 1; i++) chess.move(moves[i].san);
-    const mv = chess.move(moves[ply - 1].san);
-    return mv ? { from: mv.from, to: mv.to } : undefined;
-  } catch {
-    return undefined;
-  }
-}
+// Increment 3.91 (Task 4)/Coach truth-speed round (Wave C1, 2026-07-27): a
+// turning-point card's "replay" click threads a TurningLine (already
+// replay-derived server-side, see api.ts's TurningLine comment) into the
+// board's arrows/highlightSquares props. The derivation itself (plus the
+// "found" dedup + her-actual-reply behavior this round adds) now lives in
+// reviewArrows.ts — one home for endpoint math, per A1's report — and
+// playedArrowForPly (the played-arrow fallback for a ply with no matching
+// TurningLine) lives in review/followedBest.ts, lifted verbatim from this
+// file by that same wave. Both are imported back below rather than
+// re-declared here.
 
 // Increment 3.91 (Task 6): explore's engine-reply elo — the live debrief's
 // opponentElo state is correct for the game that just finished, but a
@@ -1313,8 +1269,44 @@ export function GamePage() {
   // Board to a fen without animating through it (see Rewind.tsx's header
   // comment) — never builds a second board.
   const activeReviewMoves = reviewGame ? reviewGame.summary.moves : gameOver ? (liveSummary?.moves ?? null) : null;
+  // Coach truth-speed round (Wave C1, 2026-07-27): same "whichever debrief is
+  // active" derivation as activeReviewMoves above, for the two other summary
+  // fields handleAskAboutPly needs to look up a bullet's own turning point
+  // (or fall back to its bare classification) by ply.
+  const activeTurningPoints: TurningPoint[] = reviewGame
+    ? reviewGame.summary.turningPoints
+    : gameOver
+      ? (liveSummary?.turningPoints ?? [])
+      : [];
+  const activeClassifications: MoveClassification[] = reviewGame
+    ? reviewGame.summary.classifications
+    : gameOver
+      ? (liveSummary?.classifications ?? [])
+      : [];
 
   const requestChatOpen = useCallback(() => setChatOpenSignal((t) => t + 1), []);
+
+  // Coach truth-speed round (Wave C1, 2026-07-27): the arrow-building steps
+  // handleRewind/handleAskAboutTurningPoint/handleAskAboutPly all repeat —
+  // followedBest against activeReviewMoves, reviewArrows.ts's
+  // turningLineArrows, then the played-arrow fallback for a ply with no
+  // matching TurningLine (or a TurningLine whose own playedFromTo never
+  // resolved). Centralized so the "found" dedup case (which legitimately has
+  // no "played"-coloured arrow at all — see reviewArrows.ts) doesn't
+  // re-trigger the fallback and double up on the same move.
+  const buildArrowsForPly = useCallback(
+    (line: TurningLine | undefined, ply: number): { from: string; to: string; color: ArrowColor }[] => {
+      if (!activeReviewMoves) return [];
+      const fb = followedBest(line, activeReviewMoves);
+      const arrows = line ? turningLineArrows(line, fb) : [];
+      if (!arrows.some((a) => a.color === "played" || a.color === "found")) {
+        const played = playedArrowForPly(activeReviewMoves, ply);
+        if (played) arrows.unshift({ ...played, color: "played" });
+      }
+      return arrows;
+    },
+    [activeReviewMoves]
+  );
 
   // Increment 3.9, Task 3: coach chat's per-message context. Review mode is
   // bare (the server grounds against the whole stored game); live mode
@@ -1422,18 +1414,63 @@ export function GamePage() {
         setFen(fenAtPly(activeReviewMoves, point.ply));
         setResyncTick((t) => t + 1);
         setRewindPly(point.ply);
-        const arrows = line ? turningLineArrows(line) : [];
-        if (!arrows.some((a) => a.color === "played")) {
-          const played = playedArrowForPly(activeReviewMoves, point.ply);
-          if (played) arrows.unshift({ ...played, color: "played" });
-        }
+        const arrows = buildArrowsForPly(line, point.ply);
         setReviewArrows(arrows);
         setReviewHighlights(arrowsToHighlights(arrows));
       }
       setChatFocus({ turningPointFocus: turningPointFocusContext(point, line) });
       requestChatOpen();
     },
-    [activeReviewMoves, turningLines, requestChatOpen]
+    [activeReviewMoves, turningLines, buildArrowsForPly, requestChatOpen]
+  );
+
+  // Coach truth-speed round (Wave C1, 2026-07-27): a debrief BULLET's own
+  // "ask about this"/"try the line"/"replay" — bullets (unlike curated
+  // turning-point cards) may point at a ply with no TurningPoint at all (the
+  // could-be-better/watch-next-time fallback candidates draw from the wider
+  // `classifications` list — see debriefBullets.ts's buildCouldBeBetter).
+  // When a real TurningPoint exists at this ply, this is just
+  // handleAskAboutTurningPoint's own path (reuse it, don't fork the arrow/
+  // focus logic in two places). Otherwise, the focus is built from the
+  // MoveClassification alone — every field on it (`ply`, `san` from
+  // activeReviewMoves, `label` from the classification string) is a real,
+  // already-in-hand fact; nothing is invented. A ply with neither a
+  // TurningPoint nor a resolvable san/classification (should not happen —
+  // affordancesForBullet only gates on ply != null) is a no-op rather than a
+  // guess.
+  const handleAskAboutPly = useCallback(
+    (ply: number) => {
+      const point = activeTurningPoints.find((p) => p.ply === ply);
+      if (point) {
+        handleAskAboutTurningPoint(point);
+        return;
+      }
+      const cls = activeClassifications.find((c) => c.ply === ply);
+      const san = activeReviewMoves?.[ply - 1]?.san;
+      if (!cls || !san) return;
+      const line = turningLines.find((l) => l.ply === ply);
+      if (activeReviewMoves) {
+        setFen(fenAtPly(activeReviewMoves, ply));
+        setResyncTick((t) => t + 1);
+        setRewindPly(ply);
+        const arrows = buildArrowsForPly(line, ply);
+        setReviewArrows(arrows);
+        setReviewHighlights(arrowsToHighlights(arrows));
+      }
+      setChatFocus({
+        turningPointFocus: turningPointFocusContext({ ply, san, label: cls.classification }, line),
+      });
+      requestChatOpen();
+    },
+    [
+      activeTurningPoints,
+      activeClassifications,
+      activeReviewMoves,
+      turningLines,
+      buildArrowsForPly,
+      handleAskAboutTurningPoint,
+      requestChatOpen,
+    ]
   );
 
   // Visibility (panel B1, binding): gameId present OR reviewGame — NOT
@@ -1469,13 +1506,9 @@ export function GamePage() {
       // Increment 3.95 (Task 4, Part 2): every rewind gets at least the
       // played (cyan) arrow now, even with no matching TurningLine (a plain
       // bullet-section replay) or one whose own playedFromTo never
-      // resolved — see playedArrowForPly's header comment above.
+      // resolved — see buildArrowsForPly's own fallback above.
       const line = turningLines.find((l) => l.ply === ply);
-      const arrows = line ? turningLineArrows(line) : [];
-      if (!arrows.some((a) => a.color === "played")) {
-        const played = playedArrowForPly(activeReviewMoves, ply);
-        if (played) arrows.unshift({ ...played, color: "played" });
-      }
+      const arrows = buildArrowsForPly(line, ply);
       setReviewArrows(arrows);
       setReviewHighlights(arrowsToHighlights(arrows));
       // Reviewer fix (Task 7 follow-up, tidiness): replaying ANY card (the
@@ -1486,7 +1519,7 @@ export function GamePage() {
       // drawer isn't still holding a soon-to-be-invalidated one around.
       setChatFocus({});
     },
-    [activeReviewMoves, turningLines]
+    [activeReviewMoves, turningLines, buildArrowsForPly]
   );
 
   const handleBackToEnd = useCallback(() => {
@@ -2227,6 +2260,7 @@ export function GamePage() {
                 onTryLine={openExplore}
                 onExitExplore={exitExplore}
                 onAskAboutTurningPoint={handleAskAboutTurningPoint}
+                onAskAboutPly={handleAskAboutPly}
               />
             ) : null
           }
@@ -2250,6 +2284,7 @@ export function GamePage() {
           onTryLine={openExplore}
           onExitExplore={exitExplore}
           onAskAboutTurningPoint={handleAskAboutTurningPoint}
+          onAskAboutPly={handleAskAboutPly}
         />
       )}
       <PastGamesDrawer open={pastGamesOpen} games={pastGames} onSelect={selectPastGame} onClose={closePastGames} />

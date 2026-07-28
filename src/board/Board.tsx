@@ -144,13 +144,18 @@ interface BoardProps {
    * in a new SVG layer inside `.board-inner`, sibling of `.squares`/
    * `.pieces`, using `squareCenter` (squareMapping.ts) for geometry.
    */
-  arrows?: { from: string; to: string; color: "played" | "best" | "threat" }[];
+  // Coach truth-speed round (Wave C1, 2026-07-27): "found" added to the
+  // union — a single arrow rendered when she played exactly the recommended
+  // move, replacing what would otherwise be two coincident "played"/"best"
+  // arrows on identical endpoints. Data-only change: the visual wave owns
+  // the actual colour/CSS for this new value.
+  arrows?: { from: string; to: string; color: "played" | "best" | "threat" | "found" }[];
   /**
    * Increment 3.91 (Task 1): companion square wash for the arrows above —
    * reuses the existing square-name-class pass on `.sq` (below) with new
    * `.tp-played`/`.tp-best`/`.tp-threat` classes, same render-only contract.
    */
-  highlightSquares?: { square: string; kind: "played" | "best" | "threat" }[];
+  highlightSquares?: { square: string; kind: "played" | "best" | "threat" | "found" }[];
 }
 
 // ambient decorative jitter squares, same indices as the demo — staggered

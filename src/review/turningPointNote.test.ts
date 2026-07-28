@@ -340,22 +340,16 @@ describe("whatMayHaveHappened (part iv)", () => {
 // Coach truth-speed round (2026-07-27): the owner's verbatim playtest
 // report — she played the recommended reply (queen to f6, checkmate; rook
 // to g8) and the debrief still asked "what may have happened if instead...",
-// forcing her to go ask the chat whether she'd already done it. These tests
-// pin the fix: when followedBest confirms she played the recommended move,
-// the counterfactual is replaced by a congratulation and the "stronger
-// idea" clause disappears.
-//
-// Note on test naming: the round's brief titled the combined case
-// "whatMayHaveHappened is absent and didWell congratulates when she played
-// the recommended move." Per this file's actual (and, we judged, more
-// useful) implementation, buildWhatMayHaveHappened does NOT go silent when
-// followed — it swaps the counterfactual for an explicit "you found it"
-// congratulation (ambiguous copy like silence could still leave her
-// wondering). Both halves of the brief's intent are covered below: the OLD
-// counterfactual text is gone in both the odd-ply and even-ply cases, and
-// didWell separately congratulates the even-ply (opponent-punished) case.
+// forcing her to go ask the chat whether she'd already done it. Controller
+// ruling (post-A1 review): buildWhatMayHaveHappened now goes silent (not a
+// swapped-in congratulation) when followed — the "what may have happened:"
+// label is itself a counterfactual label and putting a congratulation under
+// it was the exact confusion the owner reported. The congratulation moved to
+// buildDidWell instead, for BOTH parities: the pre-existing even-ply
+// ("opponent" turning point she punished) branch, plus a new odd-ply
+// ("her own turning point she got right") branch this wave adds.
 describe("followedBest integration: no counterfactual when she played the recommended move", () => {
-  it("whatMayHaveHappened swaps the counterfactual for a found-it congratulation on an odd-ply (her own move) turning point", () => {
+  it("whatMayHaveHappened is absent when she played the recommended move (odd-ply, her own turning point)", () => {
     // ply 3 (Qh5) is her own move; the pv recommends the exact move she played.
     const note = buildTurningPointNote(
       tp({ label: "the clincher", kind: "backfill", san: "Qh5", ply: 3 }),
@@ -363,8 +357,19 @@ describe("followedBest integration: no counterfactual when she played the recomm
       line({ ply: 3, pvSans: ["Qh5"], bestSan: "Qh5" }),
       SCHOLARS_MATE_SANS
     );
-    expect(note.whatMayHaveHappened).toBe("you found it. your queen to h5 was the top move here.");
-    expect(note.whatMayHaveHappened).not.toMatch(/if instead/);
+    expect(note.whatMayHaveHappened).toBeUndefined();
+  });
+
+  it("whatMayHaveHappened is absent when she played the recommended reply (even-ply, an opponent turning point)", () => {
+    // ply 4 (Nc6) is the opponent's move; her reply at ply 5 (Bc4) matches
+    // the pv's recommendation.
+    const note = buildTurningPointNote(
+      tp({ label: "opponent inaccuracy", kind: "swing", san: "Nc6", ply: 4 }),
+      undefined,
+      line({ ply: 4, pvSans: ["Bc4"], bestSan: "Bc4" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.whatMayHaveHappened).toBeUndefined();
   });
 
   it("didWell congratulates ('you punished it') on an even-ply (opponent) turning point she followed, even without tp.punishSan set", () => {
@@ -381,6 +386,20 @@ describe("followedBest integration: no counterfactual when she played the recomm
     expect(note.didWell).toBeTruthy();
     expect(note.didWell).toContain("you punished it");
     expect(note.didWell).toContain("move 3");
+  });
+
+  it("an odd-ply followed turning point still congratulates in didWell", () => {
+    // ply 3 (Qh5) is her own move; the pv recommends the exact move she
+    // played. Not labeled "strong move" (that branch already covers its own
+    // congratulation), so this is the new odd-ply followedBest branch.
+    const note = buildTurningPointNote(
+      tp({ label: "the clincher", kind: "backfill", san: "Qh5", ply: 3 }),
+      undefined,
+      line({ ply: 3, pvSans: ["Qh5"], bestSan: "Qh5" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.didWell).toBeTruthy();
+    expect(note.didWell).toBe("you found it. your queen to h5 was the top move here.");
   });
 
   it("couldImprove drops the 'stronger idea' clause when she played the recommended move", () => {
