@@ -28,7 +28,7 @@ import { followedBest } from "./followedBest";
 // turningPointNote.ts/Rewind.tsx already share). No gameSans (every
 // pre-existing call site) falls back to the raw SAN string unchanged.
 import { fenAtPly } from "./Rewind";
-import { describeSanMove } from "../game/describeSanMove";
+import { describeSanMove, stripRedundantCheckSuffix } from "../game/describeSanMove";
 import { nearlyBarePlies } from "./phase";
 
 export type BulletSection = "done well" | "could be better" | "watch next time";
@@ -261,6 +261,40 @@ function couldBeBetterText(
   return `move ${n}: ${article} ${label} here. ${nudge}`;
 }
 
+// Missed-win round (2026-07-28): the one bullet the owner's report was
+// about — "actually tell me the direct thing i should have done, not just
+// that i had mate in one and i didn't take it." Names the exact move in
+// plain language (describedOrRaw over the persisted best line), quantifies
+// the cost in moves, and counts the repeats. Every clause is a literal
+// fact off the TurningPoint/TurningLine/gameSans passed in.
+function missedWinText(
+  tp: TurningPoint,
+  totalPlies: number,
+  gameSans: SummaryMove[] | undefined,
+  turningLines: TurningLine[] | undefined
+): string {
+  const n = moveNumberForPly(tp.ply);
+  const line = turningLines?.find((l) => l.ply === tp.ply);
+  // bestSan is a move from the position she faced — fenBefore(tp.ply), the
+  // same fen describedOrRaw derives (missed-win plies are always hers/odd,
+  // where seedPly === tp.ply - 1). The sentence already says "checkmate in
+  // one", so the ", checkmate" suffix is stripped as redundant.
+  const best = line?.bestSan
+    ? stripRedundantCheckSuffix(describedOrRaw(line.bestSan, tp.ply, gameSans), "checkmate")
+    : undefined;
+  const count = tp.missedCount ?? 1;
+  const repeat = count > 1 ? ` this happened ${count} times this game.` : "";
+  if (!best || !gameSans || gameSans.length === 0) {
+    return `move ${n}: you had checkmate in one and played past it.${repeat}`;
+  }
+  const lastSan = gameSans[gameSans.length - 1].san;
+  const extra = moveNumberForPly(totalPlies) - n;
+  const cost = lastSan.includes("#")
+    ? `, and the win took ${extra} more moves to land.`
+    : `, but the game ended ${extra} moves later without it.`;
+  return `move ${n}: you had checkmate in one. your ${best} was mate on the spot${cost}${repeat}`;
+}
+
 // Coach truth-speed round (2026-07-27): the positive counterpart to
 // couldBeBetterText, used when followedBest confirms a would-be
 // could-be-better candidate was actually the move she played.
@@ -346,6 +380,23 @@ function buildCouldBeBetter(
   const out: DebriefBullet[] = [];
 
   const lineForPly = (ply: number): TurningLine | undefined => turningLines?.find((l) => l.ply === ply);
+
+  // Missed-win round (2026-07-28): FORCED, never ranked. A missed-win point
+  // carries deltaP 0 by construction (see turningPoints.ts), so any sort by
+  // swing size would bury the single most important note of a winning game
+  // under a 0.09 inaccuracy. It takes the first could-be-better slot
+  // unconditionally; the cap of 2 still holds for everything after it.
+  const missedWin = turningPoints.find((t) => t.kind === "missed-win");
+  if (missedWin) {
+    used.add(missedWin.ply);
+    out.push({
+      section: "could be better",
+      text: missedWinText(missedWin, totalPlies, gameSans, turningLines),
+      phase: phaseForPly(missedWin.ply, totalPlies, endgamePlies),
+      category: "endgame technique",
+      ply: missedWin.ply,
+    });
+  }
 
   // Missed-punish and her-own-mistake turning points, worst-first by
   // deltaP together (both are negative swings; more negative = worse). A
@@ -442,18 +493,40 @@ function buildWatchNextTime(
   totalPlies: number,
   endgamePlies?: Set<number>
 ): DebriefBullet[] {
+  const bullets: DebriefBullet[] = [];
+
+  // Missed-win round (2026-07-28): when a forced mate slipped, THAT is the
+  // pattern to watch — the "no repeat pattern" fallback below must be
+  // unreachable on such a game (owner requirement, 2026-07-28). The tip is
+  // her stated learning goal ("how to coordinate the pieces to corner the
+  // king") made procedural.
+  const missedWin = turningPoints.find((t) => t.kind === "missed-win");
+  if (missedWin) {
+    const count = missedWin.missedCount ?? 1;
+    const opener =
+      count > 1
+        ? `you had checkmate on the board ${count} times and played past it.`
+        : `you had checkmate on the board and played past it.`;
+    bullets.push({
+      section: "watch next time",
+      text: `${opener} when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move.`,
+      phase: phaseForPly(missedWin.ply, totalPlies, endgamePlies),
+      category: "endgame technique",
+      ply: missedWin.ply,
+    });
+  }
+
   if (episode) {
     const n1 = moveNumberForPly(episode.ply);
     const n2 = moveNumberForPly(episode.plyEnd ?? episode.ply);
-    return [
-      {
-        section: "watch next time",
-        text: `moves ${n1}-${n2}: she kept pieces camped on your king. keep the pawn shelter intact when you recapture.`,
-        phase: phaseForPly(episode.ply, totalPlies, endgamePlies),
-        category: "king safety",
-        ply: episode.ply,
-      },
-    ];
+    bullets.push({
+      section: "watch next time",
+      text: `moves ${n1}-${n2}: she kept pieces camped on your king. keep the pawn shelter intact when you recapture.`,
+      phase: phaseForPly(episode.ply, totalPlies, endgamePlies),
+      category: "king safety",
+      ply: episode.ply,
+    });
+    return bullets;
   }
 
   // Most repeated negative category, deduped by ply across both sources so
@@ -471,6 +544,7 @@ function buildWatchNextTime(
   }
 
   if (byPly.size === 0) {
+    if (bullets.length > 0) return bullets; // a missed win IS the pattern; the fallback below is unreachable
     return [
       {
         section: "watch next time",
@@ -505,6 +579,7 @@ function buildWatchNextTime(
   if (repPly === undefined) repPly = totalPlies;
 
   return [
+    ...bullets,
     {
       section: "watch next time",
       text:
