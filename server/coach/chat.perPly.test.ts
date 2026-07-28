@@ -298,27 +298,6 @@ describe("perPlyForModel — ply-scoping (B4b)", () => {
 // +508 for then-everywhere); full-detail plies carry it whenever derivable,
 // and their pvSans deepen from 2 to 6 so cookie can walk a real line.
 describe("perPlyForModel — then + pv depth (forward-prediction round)", () => {
-// Highlight-a-move (Task 8): a ply she flagged during live play must ship
-// full detail regardless of age, or "why did I highlight this?" hits the
-// same RECENT_PLY_WINDOW wall the turning-point/focus cases above already
-// get an exemption from. Seeded directly into fullDetailPlies (perPlyForModel),
-// NOT routed through facts.turningPoints -- turningPoints' sans fold into
-// allowedSans for validateChat, and a highlighted ply that never was an
-// actual turning point would drift that allow-list.
-describe("perPlyForModel — a highlighted ply ships full detail (Task 8)", () => {
-// Missed-win round (2026-07-28): shared real-game fixture (game 150,
-// 2026-07-28, her real 91-ply win). Repeated per repo convention.
-const GAME150_SANS = [
-  "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
-  "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
-  "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
-  "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+","Kg6","Nh8+","Kh7",
-  "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
-  "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
-  "Qh6+","Kd5","Be7","Kc4","Qc6#",
-].map((san, i) => ({ ply: i + 1, san }));
-
-describe("perPlyForModel — missed-win turning point ships full detail (missed-win round, 2026-07-28)", () => {
   beforeEach(() => {
     openDb(":memory:");
   });
@@ -408,12 +387,85 @@ describe("perPlyForModel — missed-win turning point ships full detail (missed-
     const result = await chat("how did the end go?", [], facts, backend, { gameId, ply: 54, kind: "chat" });
     expect(result.source).toBe("template");
     expect(result.cause).toBe("validation-failed");
+  });
+});
+
+// Highlight-a-move (Task 8): a ply she flagged during live play must ship
+// full detail regardless of age, or "why did I highlight this?" hits the
+// same RECENT_PLY_WINDOW wall the turning-point/focus cases above already
+// get an exemption from. Seeded directly into fullDetailPlies (perPlyForModel),
+// NOT routed through facts.turningPoints -- turningPoints' sans fold into
+// allowedSans for validateChat, and a highlighted ply that never was an
+// actual turning point would drift that allow-list.
+describe("perPlyForModel — a highlighted ply ships full detail (Task 8)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
   it("a highlighted ply outside the recent window still ships pvSans/phase", async () => {
     const perPly: ChatPerPlyInput[] = [
       { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
       { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
     ];
     const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly, undefined, [3]);
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "here's the position at the moment you flagged.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    // The message names NO move number on purpose. Once the forward-prediction
+    // round's mentioned-ply promotion merged in, "why did I highlight move 2?"
+    // promoted ply 3 by itself, so this test and its control below both passed
+    // without the highlight seed doing any work. A neutral message leaves
+    // highlightedPlies as the only path to full detail.
+    await chat("why did i flag that one?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"ply":3');
+    expect(capturedPrompt).toContain('"bestSan":"Nc6"');
+    expect(capturedPrompt).toContain('"pvSans":["Nc6","Bc4"]');
+  });
+
+  it("without highlightedPlies, the same ply collapses (no behavior change for existing callers)", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
+      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+    expect(facts.highlightedPlies).toBeUndefined();
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "e4 opens things up nicely for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why did i flag that one?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).not.toContain("Bc4");
+  });
+});
+
+// Missed-win round (2026-07-28): shared real-game fixture (game 150,
+// 2026-07-28, her real 91-ply win). Repeated per repo convention.
+const GAME150_SANS = [
+  "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+  "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+  "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+  "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+","Kg6","Nh8+","Kh7",
+  "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
+  "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
+  "Qh6+","Kd5","Be7","Kc4","Qc6#",
+].map((san, i) => ({ ply: i + 1, san }));
+
+describe("perPlyForModel — missed-win turning point ships full detail (missed-win round, 2026-07-28)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
   // Regression pin: pins the EXISTING fullDetailPlies fold (facts.turningPoints
   // ply -> full detail, see perPlyForModel) against the missed-win shape
   // specifically -- proving the "one emission point lights up every surface"
@@ -436,35 +488,6 @@ describe("perPlyForModel — missed-win turning point ships full detail (missed-
     let capturedPrompt = "";
     const backend = fakeBackend(async (prompt) => {
       capturedPrompt = prompt;
-      return "you highlighted move 2 -- here's the position then.";
-    });
-    const sessionId = createSession();
-    const gameId = createGame(sessionId, "maia-1100");
-    await chat("why did I highlight move 2?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
-
-    expect(capturedPrompt).toContain('"ply":3');
-    expect(capturedPrompt).toContain('"bestSan":"Nc6"');
-    expect(capturedPrompt).toContain('"pvSans":["Nc6","Bc4"]');
-  });
-
-  it("without highlightedPlies, the same ply collapses (no behavior change for existing callers)", async () => {
-    const perPly: ChatPerPlyInput[] = [
-      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
-      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
-    ];
-    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
-    expect(facts.highlightedPlies).toBeUndefined();
-
-    let capturedPrompt = "";
-    const backend = fakeBackend(async (prompt) => {
-      capturedPrompt = prompt;
-      return "e4 opens things up nicely for you.";
-    });
-    const sessionId = createSession();
-    const gameId = createGame(sessionId, "maia-1100");
-    await chat("what should you have played at move 3 instead?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
-
-    expect(capturedPrompt).not.toContain("Bc4");
       return "the missed mate on move 28 is the story of this game.";
     });
     const sessionId = createSession();
