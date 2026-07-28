@@ -26,16 +26,17 @@
 // reproduce the ruling's fixtures exactly — see turningPoints.test.ts.
 
 import { Chess } from "chess.js";
+import { detectMissedWins } from "./missedWins";
 
 export interface TurningPoint {
-  rank: 1 | 2 | 3 | 4;
+  rank: 1 | 2 | 3 | 4 | 5;
   ply: number;
   san: string;
   label: string; // exact lowercase vocabulary from the ruling
   punishSan?: string; // the "you punished with {san}" suffix source, when the guard passes
   deltaP: number; // signed, white perspective
   lowConfidence: boolean; // null-gap > TP_DEDUP_PLIES plies behind this point
-  kind: "swing" | "backfill" | "episode";
+  kind: "swing" | "backfill" | "episode" | "missed-win";
   // debrief-v2, dedup fix: set on HER kept swing when the preceding kept
   // point in the same dedup cluster is an opponent-error label and her
   // swing is negative — the "missed punish" shape (she had a winning
@@ -55,6 +56,17 @@ export interface TurningPoint {
   // same "small slip" text used for a move that was never leading to begin
   // with. Undefined/false for episode points (no meaningful single-ply p).
   crossedAdvantage?: boolean;
+  // Missed-win round (2026-07-28): set only when kind === "missed-win" —
+  // the forced-mate depth she had (mateIn, from the PRIOR row's evalMate,
+  // see missedWins.ts) and how many times a mate-in-<=MISSED_MATE_DEPTH
+  // slipped this game (missedCount). One point per game, anchored at the
+  // EARLIEST miss not already claimed by another point; deltaP is 0 by
+  // construction (both sides of a missed mate sit at winprob ~1.0 — the
+  // measured signal on the real game was 1.3e-6, which is WHY this point
+  // exists outside the TP_FLOOR machinery; never "fix" it by lowering the
+  // floor).
+  mateIn?: number;
+  missedCount?: number;
 }
 
 // debrief-v2: bumped when the turning-point algorithm changes shape in a way
@@ -66,7 +78,10 @@ export interface TurningPoint {
 // v3 = widened episode geometry (Chebyshev dist 2 + open-file shelter)
 // v4 = adds crossedAdvantage (2026-07-22, debrief copy grading) — a shape
 // change to TurningPoint, so old rows heal to pick up the new field.
-export const TP_ALGO_VERSION = 4;
+// v5 = missed-win points (2026-07-28) — a game where she let a forced
+// mate-in-1 slip gains one "missed mate" point on heal, which is exactly
+// what retro-fixes games 149/150's debriefs the next time they're opened.
+export const TP_ALGO_VERSION = 5;
 
 // Owner-calibratable: cp -> winprob steepness. This is the same constant as
 // chess.com's published win% formula (0.00368208, here to 3 sig figs per
@@ -583,7 +598,7 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   const episode = detectKingPressureEpisode(moves, series);
   if (episode) {
     points.push({
-      rank: (points.length + 1) as 1 | 2 | 3 | 4,
+      rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5,
       ply: episode.plyStart,
       plyEnd: episode.plyEnd,
       san: episode.san,
@@ -592,6 +607,29 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
       lowConfidence: false,
       kind: "episode",
     });
+  }
+
+  // Missed-win round (2026-07-28): a missed forced mate is invisible to the
+  // swing detector by construction (see TP_FLOOR's comment) — detected
+  // directly from the stored mate distances instead, and appended as one
+  // point per game so every turning-point surface (cards, arrows,
+  // try-the-line, notes, chat full-detail) lights up without new plumbing.
+  const missedEvents = detectMissedWins(moves);
+  if (missedEvents.length > 0) {
+    const anchor = missedEvents.find((e) => !points.some((p) => p.ply === e.ply));
+    if (anchor) {
+      points.push({
+        rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5,
+        ply: anchor.ply,
+        san: anchor.san,
+        label: "missed mate",
+        deltaP: 0,
+        lowConfidence: false,
+        kind: "missed-win",
+        mateIn: anchor.mateIn,
+        missedCount: missedEvents.length,
+      });
+    }
   }
 
   return points;
