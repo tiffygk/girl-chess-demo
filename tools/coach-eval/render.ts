@@ -50,6 +50,8 @@ interface AxesAgg {
   length: AxisAgg;
   jargon: AxisAgg;
   aiIsmCasing: AxisAgg;
+  // Reported, never decisive -- see score.ts's Scorecard.registerDrift.
+  registerDrift: AxisAgg;
   pendingAwareness: AxisAgg;
   // INFORMATIONAL ONLY (eval-instrument-repair round, 2026-07-28): share of
   // model answers at or under score.ts's CONCISION_TARGET_WORDS. It sits in
@@ -162,13 +164,14 @@ function discover(dir: string): RepFile[] {
 
 // ---- per-axis rate over one rep's rows (model-source only) ---------------
 
-const AXIS_KEYS = ["completeness", "length", "jargon", "aiIsmCasing", "pendingAwareness", "underTarget"] as const;
+const AXIS_KEYS = ["completeness", "length", "jargon", "aiIsmCasing", "registerDrift", "pendingAwareness", "underTarget"] as const;
 type AxisKey = (typeof AXIS_KEYS)[number];
 const AXIS_PICKS: Record<AxisKey, (sc: Scorecard) => { pass: boolean } | undefined> = {
   completeness: (sc) => sc.completeness,
   length: (sc) => sc.length,
   jargon: (sc) => sc.jargon,
   aiIsmCasing: (sc) => sc.aiIsmCasing,
+  registerDrift: (sc) => sc.registerDrift,
   pendingAwareness: (sc) => sc.pendingAwareness,
   // Reuses the same rate machinery as a real axis, but "pass" here means
   // "at or under the concision target" -- a description, not a grade.
@@ -185,7 +188,7 @@ function axisRateAndN(rows: AnswerRow[], pick: (sc: Scorecard) => { pass: boolea
 // Exported for score.test.ts's per-arm aggregation / p90-computation tests.
 export function buildModelSummary(files: RepFile[]): ModelSummary {
   const sorted = [...files].sort((a, b) => a.rep - b.rep);
-  const perRepAxes: Record<AxisKey, RepAxis[]> = { completeness: [], length: [], jargon: [], aiIsmCasing: [], pendingAwareness: [], underTarget: [] };
+  const perRepAxes: Record<AxisKey, RepAxis[]> = { completeness: [], length: [], jargon: [], aiIsmCasing: [], registerDrift: [], pendingAwareness: [], underTarget: [] };
   const perRepPipeline: PerRepPipeline[] = [];
   const medianSeries: RepAxis[] = [];
   const p90Series: RepAxis[] = [];
@@ -222,6 +225,7 @@ export function buildModelSummary(files: RepFile[]): ModelSummary {
       length: aggregateAxis(perRepAxes.length),
       jargon: aggregateAxis(perRepAxes.jargon),
       aiIsmCasing: aggregateAxis(perRepAxes.aiIsmCasing),
+      registerDrift: aggregateAxis(perRepAxes.registerDrift),
       pendingAwareness: aggregateAxis(perRepAxes.pendingAwareness),
       underTarget: aggregateAxis(perRepAxes.underTarget),
     },
@@ -472,6 +476,7 @@ function renderScorecard(sc: Scorecard): string {
     renderAxis("length", sc.length),
     renderAxis("jargon", sc.jargon),
     renderAxis("ai-ism/casing", sc.aiIsmCasing),
+    renderAxis("register-drift (reported only)", sc.registerDrift),
   ];
   if (sc.pendingAwareness) parts.push(renderAxis("pending-awareness", sc.pendingAwareness));
   return parts.join(" | ");
@@ -634,6 +639,7 @@ function writeArmSection(arm: Arm, A: ColumnAgg, B: ColumnAgg): string[] {
     `| length (${LENGTH_MAX_WORDS}-word hard cap, one cap for every arm) | ${fmtAgg(sa.axes.length)} | ${fmtAgg(sb.axes.length)} |`,
     `| jargon (zero-tolerance) | ${fmtAgg(sa.axes.jargon)} | ${fmtAgg(sb.axes.jargon)} |`,
     `| ai-ism / casing (zero-tolerance) | ${fmtAgg(sa.axes.aiIsmCasing)} | ${fmtAgg(sb.axes.aiIsmCasing)} |`,
+    `| register drift (NEW 2026-07-28, reported only -- unaudited list, never decides) | ${fmtAgg(sa.axes.registerDrift)} | ${fmtAgg(sb.axes.registerDrift)} |`,
     `| pending-awareness | ${fmtAgg(sa.axes.pendingAwareness)} | ${fmtAgg(sb.axes.pendingAwareness)} |`,
     "",
     "### concision, INFORMATIONAL ONLY -- reported, never scored, never decides",
