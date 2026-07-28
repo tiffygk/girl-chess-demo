@@ -716,6 +716,89 @@
   97%, 100% { text-shadow: none; transform: none; }
 }
 
+/* Highlight-a-move (Task 3): the bar pocket — mockup of record "Mark a Move
+   (2026-07-28)", direction D2, ported with the owner's word (highlight,
+   never mark). Two-axis law: the pill and the tray's toggles are pressables
+   → candy (squishy 0 Npx 0 press shadows, .thumb-btn's #E3D9F5 family); a
+   toggle's HIGHLIGHTED state is a machine statement → flat cyan tint,
+   shadow dropped, still tappable to un-highlight but it reads checked, not
+   springy. Cyan only: the highlight is her own voice — never magenta (not
+   an alarm), never mint (the armed-win button's). No animation: this
+   control is on screen for the whole game, so it spends zero of the
+   effects budget (the ≤150ms press transitions below are affordance, not
+   motion spend). All hexes pre-exist in this file. */
+.gc-app .bar-chip-slot { display: inline-flex; align-items: center; gap: 8px; }
+.gc-app .highlight-pocket { display: inline-flex; flex: none; }
+.gc-app .highlight-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 24px; padding: 3px 10px; border-radius: 999px;
+  background: #FFF; border: none; cursor: pointer;
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 11px; color: #4A3B7E;
+  box-shadow: 0 2px 0 #E3D9F5;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.gc-app .highlight-pill:active { transform: translateY(1px); box-shadow: 0 1px 0 #E3D9F5; }
+/* Disabled = the shipped togglesDisabled rule (a move is pending confirm):
+   dimmed, never removed from layout, and the cyan count dot stays visible
+   even dimmed — state is never hidden, only the action. */
+.gc-app .highlight-pill:disabled { opacity: .45; cursor: default; transform: none; box-shadow: 0 2px 0 #E3D9F5; }
+.gc-app .highlight-ring {
+  width: 7px; height: 7px; border-radius: 50%;
+  border: 1.5px solid #9A8BC9; background: transparent; flex: none;
+}
+.gc-app .highlight-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: #23E5FF; flex: none; }
+/* Popover tray: anchored 8px above the bar's right edge (.player-bar is
+   position: relative). z-index 9 clears the board's highest layer (.pixel
+   at 8); it floats over the bottom rank only while open. */
+.gc-app .highlight-tray {
+  position: absolute; right: 12px; bottom: calc(100% + 8px); z-index: 9;
+  width: 216px; background: #FFF; border-radius: 16px;
+  box-shadow: 0 4px 0 #C9BFEF, 0 12px 22px rgba(90,70,180,.28);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.gc-app .highlight-tray-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #6952C4;
+  margin-bottom: 2px;
+}
+/* The toggle — the mockup's one control recipe, .thumb-btn family. */
+.gc-app .highlight-toggle {
+  display: inline-flex; align-items: center; width: 100%; justify-content: flex-start;
+  height: 30px; padding: 5px 11px;
+  background: #FFF; border: 1.5px solid #E3D9F5; border-radius: 12px;
+  box-shadow: 0 3px 0 #E3D9F5; cursor: pointer;
+  font-family: 'Fredoka', sans-serif;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.gc-app .highlight-toggle:hover { transform: translateY(-1px); }
+.gc-app .highlight-toggle:active { transform: translateY(2px); box-shadow: 0 1px 0 #E3D9F5; }
+.gc-app .highlight-toggle .highlight-ring { margin-right: 6px; }
+.gc-app .highlight-toggle-num {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px;
+  letter-spacing: .04em; color: #9C8FC7; margin-right: 5px;
+}
+.gc-app .highlight-toggle-san {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
+  letter-spacing: .02em; color: #4A3B7E;
+  text-transform: none; /* SAN keeps its true case */
+}
+.gc-app .highlight-toggle.highlighted {
+  background: rgba(35,229,255,.14); border-color: #23E5FF; box-shadow: none;
+}
+.gc-app .highlight-toggle.highlighted .highlight-ring { border: none; background: #23E5FF; }
+.gc-app .highlight-toggle.highlighted .highlight-toggle-san { color: #1A7A93; }
+.gc-app .highlight-toggle.highlighted:hover { transform: none; }
+.gc-app .highlight-toggle.highlighted:active { transform: none; box-shadow: none; }
+/* <=480: after the base rules above — equal specificity, source order
+   decides (the chat-corner precedent's own rule). */
+@media (max-width: 480px) {
+  .gc-app .highlight-toggle { height: 26px; padding: 4px 8px; }
+  .gc-app .highlight-toggle-san { font-size: 11.5px; }
+  .gc-app .highlight-toggle-num { font-size: 9px; }
+  .gc-app .highlight-toggle .highlight-ring { width: 6px; height: 6px; }
+}
+
 /* Mallow's decline bark anchors to her bar (the top of the board), poking
    up into the open header space above the board-stack rather than over
    the board itself. */
