@@ -1,28 +1,63 @@
-# coach-eval v2
+# coach-eval
 
 A committed, re-runnable eval harness for the coach chat surface
-(`server/coach/chat.ts`'s `chat()`), built against the vault methodology doc
-*"girl chess — coach eval v2 methodology (2026-07-22)"* (`2 build/` in the
-vault). That doc is authoritative for the question set, fixtures,
-thresholds, and blinding rules — this README is only the "how to run it"
-companion.
+(`server/coach/chat.ts`'s `chat()`), originally built against the vault
+methodology doc *"girl chess — coach eval v2 methodology (2026-07-22)"*
+(`2 build/` in the vault). That doc is authoritative for the ORIGINAL
+`board-live` question set, fixtures, thresholds, and blinding rules — this
+README is the "how to run it" companion, now covering three arms.
 
 v1's mistakes (display truncation, no committed tool, unblinded columns,
 uncontrolled positions, no pipeline-health recording) are why this exists —
 see the methodology doc's part 1 for the full post-mortem and the mechanism
 that makes each one structurally impossible here.
 
+## Wave E1 (coach-truth-speed round, 2026-07-27): three arms, not one
+
+The owner's ask: "if I ask a question specifically about a move or the
+board, it should only use the chess brain... if I'm asking general chess
+questions, we should see if it works [with Sonnet 5] ... I also want to test
+and run with the eval skill if we then use Opus 5, since Opus 5 just came
+out." `server/coach/intent.ts`'s `classifyIntent` (shipped Wave D, same
+round) now makes board-vs-general a real per-message router decision, and
+this harness measures all three shapes that decision creates:
+
+| arm | what it exercises | length budget | wall-clock budget | question count |
+|---|---|---|---|---|
+| `board-live` | the original v2/v3 arm — a live game, a board/move question | 45 words / 3 sentences (20/2 for affirmation) — `STANDARD_WORD_LIMIT`/`STANDARD_SENTENCE_LIMIT` in `score.ts` | `CHAT_TIMEOUT_MS` (45s) | 65 (frozen, byte-identical to v2/v3) |
+| `general` | a next-game-strategy question, never about this position (owner's real refused question is `gen-01`, verbatim) | `GENERAL_MAX_WORDS` (120 words, imported from `server/coach/chat.ts` — never a second hardcoded copy) | `CHAT_TIMEOUT_MS` (45s; these fixtures are live games) | 15 |
+| `board-review` | a board/move question, but against a FINISHED game — exercises `status:"finished"` + the `outcome` fact and the longer review budget | same `GENERAL_MAX_WORDS` budget as `general` (chat.ts applies the same one-to-three-sentences-can-run-longer rule to any finished-game chat, not just off-topic ones) | `CHAT_REVIEW_BUDGET_MS` (90s) | 16 (one per `board-live`'s `[dir]` question, same text + fixture, so the live-vs-review delta is attributable to the budget/outcome fact alone) |
+
+**`board-review`'s `status`/`outcome` facts are a harness-synthesized
+wrapper** (`run.ts`'s `boardReviewOutcome`), not the real db result for games
+130/134 at that ply (those games continue well past every `C1`-`C5`
+fixture) — it exists purely to exercise the finished-game plumbing. Never
+read it as a product finding about those real games (skill rule 6: a rig
+artifact is not a root cause).
+
+**Hard constraint, honored by construction, not by discipline:** the
+original 65 `board-live` questions/fixtures are BYTE-IDENTICAL to v2/v3 —
+`fixtures.ts` keeps them as a private `*_RAW` literal untouched since v2, and
+adds `arm`/tag fields only via a `.map()` over that frozen array. `general`
+and `board-review` are new fixture IDs (`gen-*`, `rev-*`), never edits to the
+original ids/wording/order.
+
 ## What it measures
 
-65 questions (50 reused from v1 verbatim + 10 pending-move cases + 5
-short-affirmation cases) against 5 pinned real-game fixtures (C1-C5, games
-130/134), run through the production `chat()` pipeline unmodified — same
-`assembleChatFactList`, same `validateChat`, same one-regen-then-template
-fallback. Six mechanical axes, all deterministic, no llm judge:
-completeness, length, jargon (incl. raw-SAN-as-move-name), ai-isms/casing,
-pending-awareness (the r2 headline metric), and regen/template pressure.
-Chess correctness and subjective usefulness are NOT mechanized — the
-blinded owner read is the instrument for those (see `render.ts`'s output).
+96 questions total across the three arms above (65 `board-live` + 15
+`general` + 16 `board-review`), against 5 pinned real-game fixtures (C1-C5,
+games 130/134), run through the production `chat()` pipeline unmodified —
+same `assembleChatFactList`, same `classifyIntent`-driven routing
+(`validateChat` for the board route, `validateChatGeneral` for the general
+route), same one-regen-then-template fallback. Six mechanical axes, all
+deterministic, no llm judge: completeness, length (per-arm budget, above),
+jargon (incl. raw-SAN-as-move-name), ai-isms/casing, pending-awareness (the
+r2 headline metric, `board-live` only), and regen/template pressure —
+reported PER ARM, never pooled (board-live/general/board-review have
+different budgets; pooling would silently re-derive whichever arm has the
+most rows). Chess correctness and subjective usefulness are NOT mechanized —
+the blinded owner read is the instrument for those (see `render.ts`'s
+output).
 
 ## Isolation (hard rules, enforced at runtime)
 
@@ -58,8 +93,18 @@ sonnet and the opus invocation** — `render.ts` reads `raw-sonnet.json` and
 
 `--limit N` runs only the first N questions — for a cheap end-to-end wiring
 smoke test only (e.g. `--limit 1`). A real baseline/post-fix run must
-always cover all 65 questions or it is not comparable against the other
-model's run; never pass `--limit` for a run you intend to render/report.
+always cover every question in scope (all three arms, or the single
+`--arm`-filtered arm) or it is not comparable against the other model's run;
+never pass `--limit` for a run you intend to render/report.
+
+`--arm board-live|general|board-review` (Wave E1) restricts the run to one
+arm, without disturbing the others — use it to re-run just `general` after
+an audit-loop fix, for example. Applied AFTER `buildQuestionList()`'s own
+drift assertion against the FULL, unfiltered question count, so a
+single-arm re-run can never silently hide a fixture-count drift in one of
+the other arms. `render.ts` still requires the sonnet/opus row-id lists to
+match each other, so pass the same `--arm` (or omit it) to both models in
+one `--out` directory.
 
 ### Multi-rep runs: `--warmup`, `--rep`, and the ABBA convention (v3)
 
@@ -112,6 +157,42 @@ instrument-audit loop:
 npx tsx tools/coach-eval/audit-sample.ts --dir $OUT --iter 1 --out audit/sample-iter1.md
 ```
 
+### This run: Wave E1 (coach-truth-speed round, 2026-07-27) -- sonnet vs Opus 5, all three arms
+
+The exact command block for the sonnet-vs-Opus-5 bake-off this wave's brief
+was built for. `--wiring threaded` (the current wiring; `--wiring legacy` is
+retained only as a historical baseline reproduction), 3 reps, `--warmup 3`,
+ABBA-ordered, all three arms in one run (omit `--arm` to run every arm):
+
+```bash
+OUT=tools/coach-eval/runs/2026-07-27-coach-truth-speed
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --warmup 3 --rep 1 --out $OUT
+npx tsx tools/coach-eval/run.ts --model opus   --wiring threaded --warmup 3 --rep 1 --out $OUT
+npx tsx tools/coach-eval/run.ts --model opus   --wiring threaded --warmup 3 --rep 2 --out $OUT
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --warmup 3 --rep 2 --out $OUT
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --warmup 3 --rep 3 --out $OUT
+npx tsx tools/coach-eval/run.ts --model opus   --wiring threaded --warmup 3 --rep 3 --out $OUT
+npx tsx tools/coach-eval/render.ts --dir $OUT
+npx tsx tools/coach-eval/decide.ts --summary $OUT/summary.json --pending-audited true
+```
+
+Confirm `--model opus` actually resolved to `claude-opus-5` (not the stale
+`claude-opus-4-8` v3 shipped with) by grepping any of that run's console
+output for `GC_COACH_MODEL=` — it must read
+`GC_COACH_MODEL=claude-opus-5`. `decide.ts`'s output now reports either one
+winner or a per-route `{ board, general }` split (see `decide.ts`'s own
+`decideAcrossArms`) — read `decision.json`'s `perArm` block for the reasoning
+behind each arm's own pick before trusting the top-line recommendation.
+
+Re-running only the general arm after an instrument fix, without touching
+the other two:
+
+```bash
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm general --warmup 3 --rep 1 --out $OUT
+npx tsx tools/coach-eval/run.ts --model opus   --wiring threaded --arm general --warmup 3 --rep 1 --out $OUT
+npx tsx tools/coach-eval/render.ts --dir $OUT
+```
+
 Post-fix run (after R2 tasks 1-3 merge — pendingMove threading, the coach
 voice/notation fixes, and `checkVoice` wired into `validateChat`), same
 fixtures, same questions, `--wiring threaded`:
@@ -127,7 +208,9 @@ permitted between the baseline and post-fix runs is `ENGINE_NAME_ALLOWLIST`
 in `server/coach/voiceRules.ts`, once the task-0 owner ruling on the
 engine's in-cast name lands. Everything else (fixtures, questions, pending
 cases, thresholds) must stay byte-identical across both runs, or the delta
-per axis is not apples-to-apples.
+per axis is not apples-to-apples. (Wave E1's `general`/`board-review` arms
+are ADDITIVE new fixture ids, not edits to this frozen set — see "three
+arms" above.)
 
 ### `--wiring legacy` vs `--wiring threaded`
 
@@ -151,10 +234,12 @@ point this harness needs no change to start exercising it for real.
    mechanical scorecard. Two blank columns for you to fill in:
    `preference (A/B/tie)` and `explains the consequence (y/n)`. No latency
    anywhere in this file, on purpose — a fast column fingerprints sonnet.
-2. **`metrics-blinded.md`** — the aggregate: per-axis pass rates, pipeline
-   health (template rate, pipeline failures), and latency medians/p90 per
-   bucket, still column A/B. Open this only after you've filled in your
-   subjective columns above.
+2. **`metrics-blinded.md`** — the aggregate, ONE SECTION PER ARM (Wave E1):
+   per-axis pass rates against that arm's own length budget, pipeline
+   health (template rate, timeout rate, pipeline failures), and latency
+   median/p90 per bucket, still column A/B. Nothing here is pooled across
+   arms. Open this only after you've filled in your subjective columns
+   above.
 3. **`unblinding.json`** — the only file that names which column is which
    model. Open last.
 
@@ -169,14 +254,20 @@ hand — they are never scored. The deterministic banned-word/phrase list in
 ## Files
 
 ```
-fixtures.ts     pinned contexts C1-C5, the 65-question set, PD/AF pending fixtures (frozen after baseline)
-run.ts          cli entry: executes one model over all fixtures; --warmup/--rep; writes raw-<model>[-rep<K>].json incrementally
-score.ts        mechanical checks (axes 1-6), imports server/coach/voiceRules.ts
-render.ts       multi-rep discovery + aggregation; summary.json (unblinded) + blinded trio; exports medianOf/aggregateAxis
-decide.ts       mechanical model recommendation (D4 rule) from summary.json -> decision.json; exports decideModel
+fixtures.ts     pinned contexts C1-C5; board-live's 65-question set + PD/AF pending fixtures (frozen, byte-identical since v2);
+                Wave E1 adds GENERAL_QUESTIONS (15, gen-*) and BOARD_REVIEW_QUESTIONS (16, rev-*, reusing [dir]'s text/ctx)
+run.ts          cli entry: executes one model over all three arms (or one, via --arm); --warmup/--rep; writes raw-<model>[-rep<K>].json
+                incrementally; routes every question through classifyIntent + the finished/live budget split, same as manager.ts
+score.ts        mechanical checks (axes 1-6), imports server/coach/voiceRules.ts + GENERAL_MAX_WORDS (server/coach/chat.ts);
+                checkLength(text, isAffirmation, arm) picks board-live's 45w/3s vs general/board-review's GENERAL_MAX_WORDS budget
+render.ts       multi-rep discovery + PER-ARM aggregation; summary.json (unblinded, arm-keyed) + blinded trio; exports
+                medianOf/aggregateAxis/buildModelSummary/filterFilesByArm
+decide.ts       mechanical model recommendation, PER ARM, incl. a p90-latency deciding axis for general/board-review; emits a
+                single winner or a { board, general } split from summary.json -> decision.json; exports decideModel/decideArm/decideAcrossArms
 audit-sample.ts deterministic (LCG-seeded) full-text hand-audit sample sheets for the instrument-audit loop
 util.ts         arg parsing / sha256 / timestamp helpers shared by run.ts and render.ts
-score.test.ts   unit tests for every mechanical check + aggregation (medianOf/aggregateAxis) + decideModel
+score.test.ts   unit tests for every mechanical check + aggregation + decideModel/decideArm/decideAcrossArms + per-arm budget
+                selection + the general-arm intent-routing assertion (every GENERAL_QUESTIONS entry must classify "general")
 .gitignore      .scratch/ (db copies) and runs/ (raw output + reports) -- neither is committed
 ```
 
