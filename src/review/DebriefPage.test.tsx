@@ -120,15 +120,19 @@ describe("DebriefPage: highlighted plies in the move recap", () => {
     const html = renderToStaticMarkup(
       <DebriefPage {...baseProps({ gameSans, totalPlies: 4, turningPoints: [] })} />
     );
+    // Scope to the recap: the study ledger (Task 6) legitimately renders the
+    // same SAN earlier in the page (the open card's SAN token), so the first
+    // ">Qh5<" in the whole document is no longer the move-list button.
+    const recap = html.slice(html.indexOf("debrief-movelist-rows"));
     // The highlighted ply's own button carries the class...
-    const qh5Idx = html.indexOf(">Qh5<");
+    const qh5Idx = recap.indexOf(">Qh5<");
     expect(qh5Idx).toBeGreaterThan(-1);
-    const qh5ButtonStart = html.lastIndexOf("<button", qh5Idx);
-    expect(html.slice(qh5ButtonStart, qh5Idx)).toContain("highlighted");
+    const qh5ButtonStart = recap.lastIndexOf("<button", qh5Idx);
+    expect(recap.slice(qh5ButtonStart, qh5Idx)).toContain("highlighted");
     // ...and no other move-list button does.
-    const e4Idx = html.indexOf(">e4<");
-    const e4ButtonStart = html.lastIndexOf("<button", e4Idx);
-    expect(html.slice(e4ButtonStart, e4Idx)).not.toContain("highlighted");
+    const e4Idx = recap.indexOf(">e4<");
+    const e4ButtonStart = recap.lastIndexOf("<button", e4Idx);
+    expect(recap.slice(e4ButtonStart, e4Idx)).not.toContain("highlighted");
   });
 
   it("adds no highlighted class when nothing was flagged", () => {

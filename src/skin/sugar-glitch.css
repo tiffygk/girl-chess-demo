@@ -1471,6 +1471,94 @@
   padding: 2px 7px; border-radius: 4px;
 }
 
+/* Highlight-a-move (Task 6): the study ledger — mockup of record
+   "Highlighted Moves Section (2026-07-28)", direction D2. Two-axis law: a
+   collapsed row is a pressable (it expands) → candy, 0 2px 0 press shadow;
+   the open card is the machine restating HER annotation → flat cyan tint +
+   inset left rule, no drop shadow, no press chrome. Verdict chips are
+   machine statements — flat, 1px border, no shadow — reading `done well` /
+   `could be better`, the bullet sections' own vocabulary (owner ruling
+   2026-07-28). A done-well note is a full statement in the same ink, never
+   grayed. Cyan frames every record (her voice); magenta appears nowhere (a
+   highlight is never an alarm). No animation: a persistent analysis
+   surface. Zero highlights renders null upstream — no ghost chrome (the
+   2026-07-22 dead-chrome ruling). All hexes pre-exist in this file. */
+.gc-app .highlight-ledger { display: flex; flex-direction: column; gap: 6px; }
+.gc-app .highlight-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: #23E5FF; box-shadow: 0 0 0 1.5px #FFF;
+}
+.gc-app .highlight-chip {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 8.5px;
+  letter-spacing: .12em; text-transform: lowercase;
+  padding: 2px 7px; border-radius: 4px; flex: none; white-space: nowrap;
+}
+.gc-app .highlight-chip-done { color: #1A7A93; background: rgba(35,229,255,.14); border: 1px solid #23A8C7; }
+.gc-app .highlight-chip-better { color: #6952C4; background: #E7DFFF; border: 1px solid #C9BFEF; }
+/* collapsed row: 20px content in 7px 10px padding → 37.5px + 2px shadow */
+.gc-app .highlight-ledger-row {
+  display: flex; align-items: center; width: 100%; text-align: left;
+  background: #FFF; border: 1.5px solid #E3D9F5; border-radius: 10px;
+  padding: 7px 10px; cursor: pointer;
+  box-shadow: 0 2px 0 #E3D9F5;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.gc-app .highlight-ledger-row:active { transform: translateY(1px); box-shadow: 0 1px 0 #E3D9F5; }
+.gc-app .highlight-ledger-row .highlight-dot { margin-right: 7px; }
+.gc-app .highlight-ledger-num {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px;
+  letter-spacing: .04em; color: #9C8FC7; margin-right: 6px;
+}
+.gc-app .highlight-ledger-phrase {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13px; color: #4A3B7E;
+  flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gc-app .highlight-caret {
+  width: 7px; height: 7px; flex: none; margin-left: 6px;
+  border-right: 1.5px solid #9A8BC9; border-bottom: 1.5px solid #9A8BC9;
+  transform: rotate(45deg) translateY(-2px);
+}
+.gc-app .highlight-caret-up { transform: rotate(-135deg) translateY(-1px); }
+/* the open card */
+.gc-app .highlight-card {
+  background: rgba(35,229,255,.10);
+  border: 1.5px solid #E3D9F5; border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: inset 2px 0 0 #23E5FF;
+  display: flex; flex-direction: column; gap: 6px;
+}
+/* The head doubles as the collapse control when >1 highlight exists — a
+   bare hit area, no candy chrome of its own (the card stays a statement). */
+.gc-app .highlight-card-head {
+  display: flex; align-items: center; gap: 7px;
+  background: none; border: none; padding: 0; width: 100%; text-align: left;
+}
+.gc-app button.highlight-card-head { cursor: pointer; }
+.gc-app .highlight-card-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #23A8C7;
+  flex: 1 1 auto;
+}
+.gc-app .highlight-card-move { display: flex; align-items: baseline; gap: 7px; }
+.gc-app .highlight-card-phrase { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 14px; color: #4A3B7E; }
+.gc-app .highlight-card-san {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10.5px;
+  letter-spacing: .04em; color: #1A7A93;
+  text-transform: none; /* SAN keeps its true case */
+}
+.gc-app .highlight-card-note {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13.5px;
+  color: #4A3B7E; line-height: 1.4; margin: 0;
+}
+.gc-app .highlight-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+/* <=480 (debrief at 88vw): the mockup verified no structural overrides are
+   needed at 343px; only the card tightens. After the base rules — equal
+   specificity, source order decides. */
+@media (max-width: 480px) {
+  .gc-app .highlight-card { padding: 9px 12px; }
+  .gc-app .highlight-card-note { font-size: 13px; }
+}
+
 .gc-app .debrief-footer {
   display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
 }
