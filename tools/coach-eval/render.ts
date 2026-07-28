@@ -24,7 +24,7 @@
 import fs from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
-import { scoreAnswer, summarizePipeline, TEMPLATE_RATE_PASS_MAX, type AnswerRow, type Scorecard, type AxisResult } from "./score";
+import { scoreAnswer, summarizePipeline, TEMPLATE_RATE_PASS_MAX, type AnswerRow, type Scorecard } from "./score";
 import type { QuestionTag, Arm } from "./fixtures";
 import { parseArgs } from "./util";
 
@@ -254,23 +254,30 @@ export function filterFilesByArm(files: RepFile[], arm: Arm): RepFile[] {
   return files.map((f) => ({ ...f, rows: f.rows.filter((r) => r.arm === arm) }));
 }
 
-// ---- priority subset selection (owner triage) -----------------------------
+// ---- graded subset selection (owner triage) --------------------------------
 //
-// The owner cannot hand-grade all ~96 questions in report-blinded.md. This
-// picks a much smaller subset actually worth her read and marks it so she can
-// jump straight there; everything else stays in the file but is optional.
+// The owner cannot hand-grade all ~96 questions in report-blinded.md, and a
+// prior tie-based rule marked 66/96 -- not a meaningful reduction, since the
+// mechanical axes pass nearly everything (jargon ~100%, completeness 100%)
+// so most rows tie. A criterion that matches most of the population is not a
+// filter. Replaced with a HARD CAP of PRIORITY_TARGET_TOTAL (30), filled in
+// priority order:
+//   1. every eligible general-arm row (the owner's live opus-for-general-
+//      questions hypothesis -- the only arm the mechanical axes can't speak
+//      to at all; 15 of these exist, so this alone takes 15 of the 30 slots)
+//   2. a deterministic pseudo-random sample of the remaining slots, drawn
+//      from eligible rows in the OTHER two arms (board-live, board-review),
+//      stratified proportionally so neither arm crowds out the other.
 //
 // HARD CONSTRAINT: every criterion here is symmetric wrt column A/B -- it
 // only reads row.source ("model" required on BOTH sides or the row is
-// skipped entirely), row.arm, and pass/fail scorecards. Never add a
-// criterion that can only be evaluated by knowing which column is
-// sonnet/opus, faster, or longer -- that would quietly unblind the read.
+// skipped entirely), row.arm, and row id. Never add a criterion that can
+// only be evaluated by knowing which column is sonnet/opus, faster, or
+// longer, or by scorecard pass/fail -- that would quietly unblind the read
+// or reintroduce the tie-based non-filter this replaces.
 
-// Target grand total (NEEDS_YOU + SAMPLE) when NEEDS_YOU is a small minority
-// -- the expected case. If NEEDS_YOU alone already reaches or exceeds this,
-// SAMPLE clamps to 0 rather than un-marking anything already selected (see
-// selectPrioritySubset below) -- the target is a ceiling on additional
-// sampling, not a hard cap on NEEDS_YOU.
+// Hard cap on the graded subset -- not a target ceiling on top of a
+// tie-based floor (the old scheme), an absolute total.
 export const PRIORITY_TARGET_TOTAL = 30;
 
 // Fixed literal -- NOT Date.now()/argv/mtime-derived -- so "re-running
@@ -298,48 +305,91 @@ function lcgShuffle<T>(arr: T[], seed: number): T[] {
   return a;
 }
 
-// Same pass/fail on every axis applicable to BOTH scorecards. An axis absent
-// from one/both sides (e.g. pendingAwareness on a non-pending question) is
-// skipped, never treated as a mismatch. Symmetric: scorecardsTie(a,b) ===
-// scorecardsTie(b,a) -- order/column-independent by construction.
-function scorecardsTie(a: Scorecard, b: Scorecard): boolean {
-  const axisPairs: [AxisResult | undefined, AxisResult | undefined][] = [
-    [a.completeness, b.completeness],
-    [a.length, b.length],
-    [a.jargon, b.jargon],
-    [a.aiIsmCasing, b.aiIsmCasing],
-    [a.pendingAwareness, b.pendingAwareness],
-  ];
-  return axisPairs.every(([av, bv]) => av === undefined || bv === undefined || av.pass === bv.pass);
+// Non-general arms eligible for the stratified random draw, in a fixed
+// display/allocation order. "general" is deliberately excluded -- it is
+// handled entirely by the first-priority rule below, never by sampling.
+const SAMPLE_ARMS: Arm[] = ["board-live", "board-review"];
+
+// Largest-remainder proportional allocation of `slots` across `pools`
+// (arm -> eligible id list), capped per-arm by that arm's own pool size so
+// a small arm (board-review, 16 rows) still gets its proportional share
+// instead of being crowded out by a larger one (board-live, 65 rows) under
+// naive rounding. Any slots an arm can't fill (pool smaller than its
+// rounded share) are redistributed to arms with spare capacity, repeated
+// until either every slot is placed or every pool is exhausted. Pure and
+// order-independent given a fixed `arms` order -- no randomness lives here,
+// only how many slots each arm gets; lcgShuffle (below) decides which ids.
+function proportionalAllocation(pools: Record<string, string[]>, arms: Arm[], slots: number): Record<string, number> {
+  const allocated: Record<string, number> = Object.fromEntries(arms.map((a) => [a, 0]));
+  let remainingArms = arms.filter((a) => pools[a].length > 0);
+  let slotsLeft = Math.min(slots, arms.reduce((sum, a) => sum + pools[a].length, 0));
+  while (slotsLeft > 0 && remainingArms.length > 0) {
+    const poolTotal = remainingArms.reduce((sum, a) => sum + pools[a].length, 0);
+    const raw = remainingArms.map((a) => (pools[a].length / poolTotal) * slotsLeft);
+    const floors = raw.map(Math.floor);
+    let remainder = slotsLeft - floors.reduce((sum, f) => sum + f, 0);
+    const fracOrder = raw.map((r, i) => ({ i, frac: r - floors[i] })).sort((x, y) => y.frac - x.frac);
+    const roundAlloc = [...floors];
+    for (let k = 0; k < remainder; k++) roundAlloc[fracOrder[k].i]++;
+    let overflow = 0;
+    remainingArms.forEach((arm, i) => {
+      const cap = pools[arm].length - allocated[arm];
+      const want = roundAlloc[i];
+      const give = Math.min(want, cap);
+      allocated[arm] += give;
+      overflow += want - give;
+    });
+    slotsLeft = overflow;
+    remainingArms = remainingArms.filter((a) => pools[a].length - allocated[a] > 0);
+  }
+  return allocated;
 }
 
 export interface PrioritySelection {
-  needsYou: Set<string>;
-  sample: Set<string>;
+  // The full graded set -- general union random, capped at
+  // PRIORITY_TARGET_TOTAL. This is what report-blinded.md marks [GRADE ME].
+  graded: Set<string>;
+  // Subset of graded: every eligible general-arm row (owner's live
+  // hypothesis -- the mechanical axes can't speak to this arm at all).
+  general: Set<string>;
+  // Subset of graded: the stratified deterministic random draw from the
+  // other two arms, filling whatever slots general didn't use.
+  random: Set<string>;
 }
 
 // Exported for score.test.ts: (1) determinism across repeat calls on
 // identical input, (2) the guarantee that a pipeline-failure row (source
-// !== "model" on either side -- template/timeout/error) is never selectable
-// by either marker, since it never even enters `eligible`.
+// !== "model" on either side -- template/timeout/error) is never selectable,
+// since it never even enters `eligible`, (3) the hard 30-row cap, (4) both
+// non-general arms appearing in `random` when both have eligible rows.
 export function selectPrioritySubset(ids: string[], rowsA: Map<string, AnswerRow>, rowsB: Map<string, AnswerRow>): PrioritySelection {
-  const eligible: string[] = [];
-  const needsYou = new Set<string>();
+  const eligibleArm = new Map<string, Arm>();
   for (const id of ids) {
     const a = rowsA.get(id);
     const b = rowsB.get(id);
     if (!a || !b) continue;
     if (a.source !== "model" || b.source !== "model") continue; // pipeline failure on either side -- nothing to compare, never selectable
-    eligible.push(id);
-    const tie = scorecardsTie(scoreAnswer(a), scoreAnswer(b));
-    // Owner's live hypothesis (Opus-for-general-questions) -- every eligible
-    // general-arm row is priority regardless of whether it happens to tie.
-    if (tie || a.arm === "general") needsYou.add(id);
+    eligibleArm.set(id, a.arm);
   }
-  const remaining = eligible.filter((id) => !needsYou.has(id));
-  const sampleSize = Math.max(0, Math.min(remaining.length, PRIORITY_TARGET_TOTAL - needsYou.size));
-  const sample = new Set(lcgShuffle(remaining, SAMPLE_SEED).slice(0, sampleSize));
-  return { needsYou, sample };
+
+  // Priority 1: every eligible general-arm row, unconditionally.
+  const general = new Set<string>();
+  for (const [id, arm] of eligibleArm) if (arm === "general") general.add(id);
+
+  // Priority 2: fill whatever's left of the hard cap with a stratified
+  // random draw from the other two arms.
+  const remainingSlots = Math.max(0, PRIORITY_TARGET_TOTAL - general.size);
+  const pools: Record<string, string[]> = Object.fromEntries(SAMPLE_ARMS.map((arm) => [arm, [] as string[]]));
+  for (const [id, arm] of eligibleArm) if (arm !== "general" && pools[arm]) pools[arm].push(id);
+  const targets = proportionalAllocation(pools, SAMPLE_ARMS, remainingSlots);
+
+  const random = new Set<string>();
+  for (const arm of SAMPLE_ARMS) {
+    for (const id of lcgShuffle(pools[arm], SAMPLE_SEED).slice(0, targets[arm])) random.add(id);
+  }
+
+  const graded = new Set<string>([...general, ...random]);
+  return { graded, general, random };
 }
 
 // ---- blinded report (rep 1 only, unchanged behavior) ---------------------
@@ -394,13 +444,9 @@ function armCountsLabel(ids: Set<string>, colA: Column, colB: Column): string {
 }
 
 function writeBlindedReport(dir: string, ids: string[], colA: Column, colB: Column) {
-  const { needsYou, sample } = selectPrioritySubset(ids, colA.rows, colB.rows);
-  const markedCount = needsYou.size + sample.size;
+  const { graded, general, random } = selectPrioritySubset(ids, colA.rows, colB.rows);
+  const markedCount = graded.size;
   const unmarkedCount = ids.length - markedCount;
-  const sampleZeroNote =
-    sample.size === 0
-      ? " (0 drawn this run -- [NEEDS YOU] alone already met or exceeded the target, and/or no eligible rows remained to draw from)"
-      : "";
 
   const lines: string[] = [
     "# coach eval -- blinded side-by-side (rep 1)",
@@ -413,24 +459,24 @@ function writeBlindedReport(dir: string, ids: string[], colA: Column, colB: Colu
     "cannot judge chess correctness or usefulness -- that is what the owner",
     "preference/consequence/why columns below are for.",
     "",
-    `**${markedCount} of ${ids.length} questions below are marked -- the remaining ${unmarkedCount} are unmarked and OPTIONAL.** ` +
-      "please read every marked question in full; read the rest only if you have time.",
+    `**${markedCount} of ${ids.length} questions are marked [GRADE ME] -- these ${markedCount} are the set to grade; ` +
+      `the other ${unmarkedCount} are optional.** please read every marked question in full; read the rest only if you have time.`,
     "",
-    "- **[NEEDS YOU]** -- both answers are model-generated (a pipeline failure on either side is never marked) and their " +
-      "mechanical scorecards tie (same pass/fail on every axis that applies to both), OR the question is in the " +
-      "general-questions arm (the owner's live opus-for-general-questions hypothesis, only 15 questions total) -- the " +
-      `mechanical instrument cannot discriminate here, so your read is the only signal. (${needsYou.size} rows: ${armCountsLabel(needsYou, colA, colB)})`,
-    "- **[SAMPLE]** -- a deterministic pseudo-random draw (fixed seed, reproducible on re-render) of the remaining " +
-      `eligible rows, topping the marked total out at ~${PRIORITY_TARGET_TOTAL} -- included so the graded set isn't ` +
-      `purely mechanical-ties, which would itself be a selection artifact. (${sample.size} rows: ${armCountsLabel(sample, colA, colB)})${sampleZeroNote}`,
+    `- **[GRADE ME]** (${graded.size} rows total, hard-capped at ${PRIORITY_TARGET_TOTAL}: ${armCountsLabel(graded, colA, colB)}) -- ` +
+      "two groups, both deliberate:",
+    `  - every eligible general-questions-arm row (${general.size} rows) -- included on purpose: this is the owner's live ` +
+      "opus-for-general-questions hypothesis, and it's the only arm the mechanical axes (jargon, completeness, length) " +
+      "can't speak to at all, so a human read is the only signal available here.",
+    `  - a deterministic pseudo-random draw from the other two arms (${random.size} rows: ${armCountsLabel(random, colA, colB)}, ` +
+      "fixed seed, reproducible on re-render, stratified so board-live and board-review are both represented roughly in " +
+      "proportion to their size) -- included so the graded set isn't a biased subpopulation (e.g. only ties, or only one arm).",
     "",
   ];
 
   if (markedCount > 0) {
     lines.push("## jump to marked questions", "");
     for (const id of ids) {
-      if (needsYou.has(id)) lines.push(`- [${id}](#${id}) [NEEDS YOU]`);
-      else if (sample.has(id)) lines.push(`- [${id}](#${id}) [SAMPLE]`);
+      if (graded.has(id)) lines.push(`- [${id}](#${id}) [GRADE ME]`);
     }
     lines.push("");
   }
@@ -441,7 +487,7 @@ function writeBlindedReport(dir: string, ids: string[], colA: Column, colB: Colu
     if (!a || !b) throw new Error(`row ${id} missing from one column -- runs are not comparable`);
     const scA = scoreAnswer(a);
     const scB = scoreAnswer(b);
-    const marker = needsYou.has(id) ? " [NEEDS YOU]" : sample.has(id) ? " [SAMPLE]" : "";
+    const marker = graded.has(id) ? " [GRADE ME]" : "";
 
     lines.push(`<a id="${id}"></a>`);
     lines.push(`## ${id} -- ${a.fixtureId} [${a.arm}]${a.probe ? " (probe)" : ""}${marker}`);

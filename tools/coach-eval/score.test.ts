@@ -648,9 +648,36 @@ describe("board-review fixtures reuse [dir] question text/ctx verbatim (Wave E1 
   });
 });
 
-// ---- coach-truth-speed round: report-blinded.md owner priority subset -----
+// ---- coach-truth-speed round: report-blinded.md graded subset (cap-based) --
+//
+// Replaces the prior tie-based rule, which marked 66/96 rows -- both models
+// pass nearly every mechanical axis, so most rows tied and "tie" was not a
+// filter. The new rule is a hard cap of PRIORITY_TARGET_TOTAL (30): every
+// eligible general-arm row, plus a stratified deterministic random draw
+// filling whatever's left from the other two arms.
 
-describe("selectPrioritySubset (owner priority subset)", () => {
+// Builds a realistic-scale fixture set matching the actual run's shape (65
+// board-live + 15 general + 16 board-review = 96), every row eligible
+// (both sides source:"model") unless overridden. Text differs slightly per
+// id so rows aren't byte-identical, but content no longer matters to
+// selection at all -- there is no more tie/scorecard criterion.
+function buildFullScaleRows(): { ids: string[]; rowsA: Map<string, AnswerRow>; rowsB: Map<string, AnswerRow> } {
+  const ids: string[] = [];
+  const rowsA = new Map<string, AnswerRow>();
+  const rowsB = new Map<string, AnswerRow>();
+  const add = (id: string, arm: AnswerRow["arm"]) => {
+    ids.push(id);
+    const tag = arm === "general" ? "general" : "open";
+    rowsA.set(id, mkRow({ id, arm, tag, source: "model", text: `a clean answer for ${id} with no violations at all.` }));
+    rowsB.set(id, mkRow({ id, arm, tag, source: "model", text: `a different clean answer for ${id} with no violations either.` }));
+  };
+  for (let i = 0; i < 65; i++) add(`bl-${i}`, "board-live");
+  for (let i = 0; i < 15; i++) add(`gen-${i}`, "general");
+  for (let i = 0; i < 16; i++) add(`br-${i}`, "board-review");
+  return { ids, rowsA, rowsB };
+}
+
+describe("selectPrioritySubset (owner graded subset, hard cap 30)", () => {
   it("never marks a row where either side is a pipeline failure, even in the general arm (which is otherwise forced)", () => {
     const ids = ["r1", "r2"];
     const rowsA = new Map<string, AnswerRow>([
@@ -662,15 +689,16 @@ describe("selectPrioritySubset (owner priority subset)", () => {
       ["r2", mkRow({ id: "r2", arm: "general", tag: "general", source: "error", text: "" })],
     ]);
     const sel = selectPrioritySubset(ids, rowsA, rowsB);
-    expect(sel.needsYou.has("r1")).toBe(false);
-    expect(sel.sample.has("r1")).toBe(false);
-    // r2 would be forced into NEEDS_YOU by the general-arm rule if eligible --
-    // a pipeline failure on side B must still exclude it entirely.
-    expect(sel.needsYou.has("r2")).toBe(false);
-    expect(sel.sample.has("r2")).toBe(false);
+    expect(sel.graded.has("r1")).toBe(false);
+    expect(sel.general.has("r1")).toBe(false);
+    expect(sel.random.has("r1")).toBe(false);
+    // r2 would be forced into `general` unconditionally if eligible -- a
+    // pipeline failure on side B must still exclude it entirely.
+    expect(sel.graded.has("r2")).toBe(false);
+    expect(sel.general.has("r2")).toBe(false);
   });
 
-  it("marks a general-arm row NEEDS_YOU even when its scorecards do not tie", () => {
+  it("marks every eligible general-arm row unconditionally, regardless of scorecard content", () => {
     const ids = ["gen-01"];
     const rowsA = new Map<string, AnswerRow>([
       ["gen-01", mkRow({ id: "gen-01", arm: "general", tag: "general", source: "model", text: "clean answer here." })],
@@ -679,89 +707,71 @@ describe("selectPrioritySubset (owner priority subset)", () => {
       ["gen-01", mkRow({ id: "gen-01", arm: "general", tag: "general", source: "model", text: "let's leverage this position for a strong follow-up." })],
     ]);
     const sel = selectPrioritySubset(ids, rowsA, rowsB);
-    expect(sel.needsYou.has("gen-01")).toBe(true);
+    expect(sel.general.has("gen-01")).toBe(true);
+    expect(sel.graded.has("gen-01")).toBe(true);
   });
 
-  it("marks a non-general row NEEDS_YOU when both scorecards tie", () => {
-    const ids = ["open-01"];
-    const text = "move your knight to f6. it keeps your king safer.";
-    const rowsA = new Map<string, AnswerRow>([["open-01", mkRow({ id: "open-01", source: "model", text })]]);
-    const rowsB = new Map<string, AnswerRow>([["open-01", mkRow({ id: "open-01", source: "model", text })]]);
+  it("at real-run scale (65 board-live + 15 general + 16 board-review), marks exactly 30 total, all 15 general, and both other arms in the random draw", () => {
+    const { ids, rowsA, rowsB } = buildFullScaleRows();
     const sel = selectPrioritySubset(ids, rowsA, rowsB);
-    expect(sel.needsYou.has("open-01")).toBe(true);
+
+    expect(sel.graded.size).toBe(PRIORITY_TARGET_TOTAL);
+    expect(sel.graded.size).toBe(30);
+
+    // All 15 eligible general rows marked, none dropped.
+    expect(sel.general.size).toBe(15);
+    for (let i = 0; i < 15; i++) expect(sel.general.has(`gen-${i}`)).toBe(true);
+
+    // The remaining 15 slots are the stratified random draw; both other
+    // arms must appear (neither crowds the other out).
+    expect(sel.random.size).toBe(15);
+    const blCount = [...sel.random].filter((id) => id.startsWith("bl-")).length;
+    const brCount = [...sel.random].filter((id) => id.startsWith("br-")).length;
+    expect(blCount).toBeGreaterThan(0);
+    expect(brCount).toBeGreaterThan(0);
+    expect(blCount + brCount).toBe(15);
+    // Roughly proportional to pool size (65 vs 16) -- board-live's share
+    // should clearly outweigh board-review's, not just barely.
+    expect(blCount).toBeGreaterThan(brCount);
+
+    // general and random never overlap; graded is exactly their union.
+    for (const id of sel.random) expect(sel.general.has(id)).toBe(false);
+    expect(sel.graded.size).toBe(sel.general.size + sel.random.size);
   });
 
-  it("does not mark a non-general row whose scorecards differ", () => {
-    const ids = ["open-02"];
-    const rowsA = new Map<string, AnswerRow>([
-      ["open-02", mkRow({ id: "open-02", source: "model", text: "a clean board-live answer with no violations at all." })],
-    ]);
-    const rowsB = new Map<string, AnswerRow>([
-      ["open-02", mkRow({ id: "open-02", source: "model", text: "let's leverage this position for a strong follow-up." })],
-    ]);
+  it("is deterministic across two independent calls on identical (but separately constructed) input", () => {
+    const built1 = buildFullScaleRows();
+    const built2 = buildFullScaleRows();
+    const sel1 = selectPrioritySubset(built1.ids, built1.rowsA, built1.rowsB);
+    const sel2 = selectPrioritySubset(built2.ids, built2.rowsA, built2.rowsB);
+
+    expect([...sel1.graded].sort()).toEqual([...sel2.graded].sort());
+    expect([...sel1.general].sort()).toEqual([...sel2.general].sort());
+    expect([...sel1.random].sort()).toEqual([...sel2.random].sort());
+  });
+
+  it("never selects a pipeline-failure row, even when it would otherwise be sampled or forced", () => {
+    const { ids, rowsA, rowsB } = buildFullScaleRows();
+    // Knock out one general row and several board-live/board-review rows as
+    // pipeline failures on side B.
+    rowsB.set("gen-0", mkRow({ id: "gen-0", arm: "general", tag: "general", source: "template", cause: "timeout", text: "keep it on the board." }));
+    for (const id of ["bl-0", "bl-1", "br-0"]) {
+      rowsB.set(id, mkRow({ id, arm: id.startsWith("bl-") ? "board-live" : "board-review", source: "error", text: "" }));
+    }
     const sel = selectPrioritySubset(ids, rowsA, rowsB);
-    expect(sel.needsYou.has("open-02")).toBe(false);
-  });
 
-  it("is deterministic across two independent calls on identical input, and draws a real SAMPLE when NEEDS_YOU is a minority", () => {
-    const ids: string[] = [];
-    const rowsA1 = new Map<string, AnswerRow>();
-    const rowsB1 = new Map<string, AnswerRow>();
-    const rowsA2 = new Map<string, AnswerRow>();
-    const rowsB2 = new Map<string, AnswerRow>();
-
-    // 5 tied board-live rows -> forced NEEDS_YOU via tie.
-    for (let i = 0; i < 5; i++) {
-      const id = `tie-${i}`;
-      ids.push(id);
-      const text = `a clean tied answer number ${i} with no violations at all.`;
-      rowsA1.set(id, mkRow({ id, source: "model", text }));
-      rowsB1.set(id, mkRow({ id, source: "model", text }));
-      rowsA2.set(id, mkRow({ id, source: "model", text }));
-      rowsB2.set(id, mkRow({ id, source: "model", text }));
+    expect(sel.graded.has("gen-0")).toBe(false);
+    expect(sel.general.has("gen-0")).toBe(false);
+    for (const id of ["bl-0", "bl-1", "br-0"]) {
+      expect(sel.graded.has(id)).toBe(false);
+      expect(sel.random.has(id)).toBe(false);
     }
-    // 35 non-tied, non-general, eligible rows -> the SAMPLE pool.
-    for (let i = 0; i < 35; i++) {
-      const id = `diff-${i}`;
-      ids.push(id);
-      const textA = `a clean untied answer number ${i} with no violations at all.`;
-      const textB = "let's leverage this position for a strong follow-up."; // ai-ism FAIL -- differs from A
-      rowsA1.set(id, mkRow({ id, source: "model", text: textA }));
-      rowsB1.set(id, mkRow({ id, source: "model", text: textB }));
-      rowsA2.set(id, mkRow({ id, source: "model", text: textA }));
-      rowsB2.set(id, mkRow({ id, source: "model", text: textB }));
-    }
-    // 5 pipeline-failure rows -- must never appear in either marker.
-    for (let i = 0; i < 5; i++) {
-      const id = `fail-${i}`;
-      ids.push(id);
-      rowsA1.set(id, mkRow({ id, source: "model", text: "a clean answer with no violations." }));
-      rowsB1.set(id, mkRow({ id, source: "template", cause: "backend-down", text: "keep it on the board." }));
-      rowsA2.set(id, mkRow({ id, source: "model", text: "a clean answer with no violations." }));
-      rowsB2.set(id, mkRow({ id, source: "template", cause: "backend-down", text: "keep it on the board." }));
-    }
-
-    const sel1 = selectPrioritySubset(ids, rowsA1, rowsB1);
-    const sel2 = selectPrioritySubset(ids, rowsA2, rowsB2);
-
-    expect(sel1.needsYou.size).toBe(5);
-    expect([...sel1.needsYou].sort()).toEqual([...sel2.needsYou].sort());
-    expect([...sel1.sample].sort()).toEqual([...sel2.sample].sort());
-
-    // NEEDS_YOU is a minority here (5) -- SAMPLE should draw up to the target.
-    expect(sel1.sample.size).toBe(Math.min(35, PRIORITY_TARGET_TOTAL - 5));
-    expect(sel1.sample.size).toBeGreaterThan(0);
-
-    // No pipeline-failure id is ever selected by either marker.
-    for (let i = 0; i < 5; i++) {
-      const id = `fail-${i}`;
-      expect(sel1.needsYou.has(id)).toBe(false);
-      expect(sel1.sample.has(id)).toBe(false);
-    }
-
-    // NEEDS_YOU and SAMPLE never overlap.
-    for (const id of sel1.sample) {
-      expect(sel1.needsYou.has(id)).toBe(false);
-    }
+    // general is "every eligible general row", not "up to 15" -- gen-0's
+    // loss shrinks general to 14. The vacated cap slot is picked up by the
+    // random draw instead (there's still ample eligible pool in the other
+    // two arms), so the grand total still reaches the hard cap.
+    expect(sel.general.size).toBe(14);
+    expect(sel.random.size).toBe(PRIORITY_TARGET_TOTAL - 14);
+    expect(sel.graded.size).toBe(PRIORITY_TARGET_TOTAL);
   });
 });
