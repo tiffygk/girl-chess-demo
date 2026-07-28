@@ -416,6 +416,12 @@ export function DebriefPage({
     gameSans,
     turningLines,
     classifications,
+    // Visual gate 2026-07-28: without this a highlighted ply where she had
+    // mate in one rendered as "not-an-error" and printed "this cost you
+    // nothing" -- classifyMoves grades by deltaP and a missed mate in a won
+    // position moves it by ~0, so the classification ladder alone can never
+    // see it. The missed-win point is the only fact that can.
+    turningPoints,
   });
   return (
     <div className="debrief pop-in">

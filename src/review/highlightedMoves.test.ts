@@ -88,6 +88,44 @@ describe("buildHighlightedRows", () => {
     expect(rows[0].note).toMatch(/blunder/);
   });
 
+  // Visual gate 2026-07-28, real game 150: the highlighted row for the ply
+  // where she had mate in one printed "you just didn't pick the best move
+  // here. queen to h8, checkmate was the stronger move, and this cost you
+  // nothing." -- directly under a debrief bullet saying the win took 18 more
+  // moves. Structural, not stale data: severityFor read only
+  // moves.classification, and classifyMoves grades by deltaP, so mate-in-1 ->
+  // mate-in-3 is deltaP ~ 0 and can never earn a tier. The missed-win fact
+  // already existed for that exact ply; nothing consulted it.
+  it("a missed forced mate is its own severity and never says it cost nothing", () => {
+    const rows = buildHighlightedRows({
+      highlightedPlies: [17],
+      gameSans: sansWhere(17, "Re1"),
+      turningLines: lineWhere(17, { bestSan: "Nd5" }),
+      classifications: [], // deltaP ~ 0: the annotator records no error here
+      turningPoints: [
+        { ply: 17, kind: "missed-win", mateIn: 1, missedCount: 3 } as never,
+      ],
+    });
+    expect(rows[0].verdict).toBe("could be better");
+    expect(rows[0].severity).toBe("missed-win");
+    expect(rows[0].note).not.toMatch(/cost you nothing/);
+    expect(rows[0].note).not.toMatch(/didn't pick the best move/);
+    expect(rows[0].note).toMatch(/checkmate/);
+  });
+
+  it("a missed win at a DIFFERENT ply does not bleed onto this row", () => {
+    const rows = buildHighlightedRows({
+      highlightedPlies: [17],
+      gameSans: sansWhere(17, "Re1"),
+      turningLines: lineWhere(17, { bestSan: "Nd5" }),
+      classifications: [],
+      turningPoints: [
+        { ply: 11, kind: "missed-win", mateIn: 1, missedCount: 1 } as never,
+      ],
+    });
+    expect(rows[0].severity).toBe("not-an-error");
+  });
+
   it("returns no rows when nothing was highlighted", () => {
     expect(buildHighlightedRows({ highlightedPlies: [], gameSans: [], turningLines: [] })).toEqual([]);
   });
