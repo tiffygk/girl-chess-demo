@@ -24,7 +24,7 @@
 import fs from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
-import { scoreAnswer, summarizePipeline, TEMPLATE_RATE_PASS_MAX, type AnswerRow, type Scorecard } from "./score";
+import { scoreAnswer, summarizePipeline, TEMPLATE_RATE_PASS_MAX, type AnswerRow, type Scorecard, type AxisResult } from "./score";
 import type { QuestionTag, Arm } from "./fixtures";
 import { parseArgs } from "./util";
 
@@ -254,6 +254,94 @@ export function filterFilesByArm(files: RepFile[], arm: Arm): RepFile[] {
   return files.map((f) => ({ ...f, rows: f.rows.filter((r) => r.arm === arm) }));
 }
 
+// ---- priority subset selection (owner triage) -----------------------------
+//
+// The owner cannot hand-grade all ~96 questions in report-blinded.md. This
+// picks a much smaller subset actually worth her read and marks it so she can
+// jump straight there; everything else stays in the file but is optional.
+//
+// HARD CONSTRAINT: every criterion here is symmetric wrt column A/B -- it
+// only reads row.source ("model" required on BOTH sides or the row is
+// skipped entirely), row.arm, and pass/fail scorecards. Never add a
+// criterion that can only be evaluated by knowing which column is
+// sonnet/opus, faster, or longer -- that would quietly unblind the read.
+
+// Target grand total (NEEDS_YOU + SAMPLE) when NEEDS_YOU is a small minority
+// -- the expected case. If NEEDS_YOU alone already reaches or exceeds this,
+// SAMPLE clamps to 0 rather than un-marking anything already selected (see
+// selectPrioritySubset below) -- the target is a ceiling on additional
+// sampling, not a hard cap on NEEDS_YOU.
+export const PRIORITY_TARGET_TOTAL = 30;
+
+// Fixed literal -- NOT Date.now()/argv/mtime-derived -- so "re-running
+// render produces the identical selection" holds. Mirrors audit-sample.ts's
+// Numerical Recipes LCG convention; that file's lcg/lcgShuffle aren't
+// exported (they're seeded per (iter, axisIndex) for a different sampling
+// job), so this is its own small copy of the same pattern, not an import.
+const SAMPLE_SEED = 20_260_727;
+
+function lcg(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 0x100000000;
+  };
+}
+
+function lcgShuffle<T>(arr: T[], seed: number): T[] {
+  const rand = lcg(seed);
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Same pass/fail on every axis applicable to BOTH scorecards. An axis absent
+// from one/both sides (e.g. pendingAwareness on a non-pending question) is
+// skipped, never treated as a mismatch. Symmetric: scorecardsTie(a,b) ===
+// scorecardsTie(b,a) -- order/column-independent by construction.
+function scorecardsTie(a: Scorecard, b: Scorecard): boolean {
+  const axisPairs: [AxisResult | undefined, AxisResult | undefined][] = [
+    [a.completeness, b.completeness],
+    [a.length, b.length],
+    [a.jargon, b.jargon],
+    [a.aiIsmCasing, b.aiIsmCasing],
+    [a.pendingAwareness, b.pendingAwareness],
+  ];
+  return axisPairs.every(([av, bv]) => av === undefined || bv === undefined || av.pass === bv.pass);
+}
+
+export interface PrioritySelection {
+  needsYou: Set<string>;
+  sample: Set<string>;
+}
+
+// Exported for score.test.ts: (1) determinism across repeat calls on
+// identical input, (2) the guarantee that a pipeline-failure row (source
+// !== "model" on either side -- template/timeout/error) is never selectable
+// by either marker, since it never even enters `eligible`.
+export function selectPrioritySubset(ids: string[], rowsA: Map<string, AnswerRow>, rowsB: Map<string, AnswerRow>): PrioritySelection {
+  const eligible: string[] = [];
+  const needsYou = new Set<string>();
+  for (const id of ids) {
+    const a = rowsA.get(id);
+    const b = rowsB.get(id);
+    if (!a || !b) continue;
+    if (a.source !== "model" || b.source !== "model") continue; // pipeline failure on either side -- nothing to compare, never selectable
+    eligible.push(id);
+    const tie = scorecardsTie(scoreAnswer(a), scoreAnswer(b));
+    // Owner's live hypothesis (Opus-for-general-questions) -- every eligible
+    // general-arm row is priority regardless of whether it happens to tie.
+    if (tie || a.arm === "general") needsYou.add(id);
+  }
+  const remaining = eligible.filter((id) => !needsYou.has(id));
+  const sampleSize = Math.max(0, Math.min(remaining.length, PRIORITY_TARGET_TOTAL - needsYou.size));
+  const sample = new Set(lcgShuffle(remaining, SAMPLE_SEED).slice(0, sampleSize));
+  return { needsYou, sample };
+}
+
 // ---- blinded report (rep 1 only, unchanged behavior) ---------------------
 
 interface Column {
@@ -291,7 +379,29 @@ function renderScorecard(sc: Scorecard): string {
   return parts.join(" | ");
 }
 
+// arm counts for a marked-id set, e.g. "board-live 12, general 15,
+// board-review 4" -- purely a count-by-arm summary, never anything that
+// distinguishes column A from column B.
+function armCountsLabel(ids: Set<string>, colA: Column, colB: Column): string {
+  const counts: Partial<Record<Arm, number>> = {};
+  for (const id of ids) {
+    const row = colA.rows.get(id) ?? colB.rows.get(id);
+    if (!row) continue;
+    counts[row.arm] = (counts[row.arm] ?? 0) + 1;
+  }
+  const parts = (["board-live", "general", "board-review"] as Arm[]).filter((arm) => counts[arm]).map((arm) => `${arm} ${counts[arm]}`);
+  return parts.length > 0 ? parts.join(", ") : "none";
+}
+
 function writeBlindedReport(dir: string, ids: string[], colA: Column, colB: Column) {
+  const { needsYou, sample } = selectPrioritySubset(ids, colA.rows, colB.rows);
+  const markedCount = needsYou.size + sample.size;
+  const unmarkedCount = ids.length - markedCount;
+  const sampleZeroNote =
+    sample.size === 0
+      ? " (0 drawn this run -- [NEEDS YOU] alone already met or exceeded the target, and/or no eligible rows remained to draw from)"
+      : "";
+
   const lines: string[] = [
     "# coach eval -- blinded side-by-side (rep 1)",
     "",
@@ -301,9 +411,29 @@ function writeBlindedReport(dir: string, ids: string[], colA: Column, colB: Colu
     "",
     "mechanical scorecards judge voice/format/pipeline-health only. they",
     "cannot judge chess correctness or usefulness -- that is what the owner",
-    "preference/consequence columns below are for.",
+    "preference/consequence/why columns below are for.",
+    "",
+    `**${markedCount} of ${ids.length} questions below are marked -- the remaining ${unmarkedCount} are unmarked and OPTIONAL.** ` +
+      "please read every marked question in full; read the rest only if you have time.",
+    "",
+    "- **[NEEDS YOU]** -- both answers are model-generated (a pipeline failure on either side is never marked) and their " +
+      "mechanical scorecards tie (same pass/fail on every axis that applies to both), OR the question is in the " +
+      "general-questions arm (the owner's live opus-for-general-questions hypothesis, only 15 questions total) -- the " +
+      `mechanical instrument cannot discriminate here, so your read is the only signal. (${needsYou.size} rows: ${armCountsLabel(needsYou, colA, colB)})`,
+    "- **[SAMPLE]** -- a deterministic pseudo-random draw (fixed seed, reproducible on re-render) of the remaining " +
+      `eligible rows, topping the marked total out at ~${PRIORITY_TARGET_TOTAL} -- included so the graded set isn't ` +
+      `purely mechanical-ties, which would itself be a selection artifact. (${sample.size} rows: ${armCountsLabel(sample, colA, colB)})${sampleZeroNote}`,
     "",
   ];
+
+  if (markedCount > 0) {
+    lines.push("## jump to marked questions", "");
+    for (const id of ids) {
+      if (needsYou.has(id)) lines.push(`- [${id}](#${id}) [NEEDS YOU]`);
+      else if (sample.has(id)) lines.push(`- [${id}](#${id}) [SAMPLE]`);
+    }
+    lines.push("");
+  }
 
   for (const id of ids) {
     const a = colA.rows.get(id);
@@ -311,8 +441,10 @@ function writeBlindedReport(dir: string, ids: string[], colA: Column, colB: Colu
     if (!a || !b) throw new Error(`row ${id} missing from one column -- runs are not comparable`);
     const scA = scoreAnswer(a);
     const scB = scoreAnswer(b);
+    const marker = needsYou.has(id) ? " [NEEDS YOU]" : sample.has(id) ? " [SAMPLE]" : "";
 
-    lines.push(`## ${id} -- ${a.fixtureId} [${a.arm}]${a.probe ? " (probe)" : ""}`);
+    lines.push(`<a id="${id}"></a>`);
+    lines.push(`## ${id} -- ${a.fixtureId} [${a.arm}]${a.probe ? " (probe)" : ""}${marker}`);
     lines.push("");
     lines.push(`**question:** ${a.question}`);
     lines.push("");
@@ -331,6 +463,8 @@ function writeBlindedReport(dir: string, ids: string[], colA: Column, colB: Colu
     lines.push("**owner: preference (A/B/tie):** ");
     lines.push("");
     lines.push("**owner: explains the consequence (y/n):** ");
+    lines.push("");
+    lines.push("**owner: why? (what made the better one better, or why it's a tie):** ");
     lines.push("");
     lines.push("---");
     lines.push("");
