@@ -157,6 +157,21 @@ function buildDidWell(
     const punish = fb.playedSan ? describedOrRaw(fb.playedSan, fenBeforePly(gameSans, fb.playerPly)) : undefined;
     return punish ? `you punished it. your ${punish} on move ${n} made her pay.` : `you punished it on move ${n}.`;
   }
+  // Controller ruling (2026-07-27, Wave C1): buildWhatMayHaveHappened no
+  // longer carries the congratulation for a followed ODD-ply point (her own
+  // turning point) — its counterfactual line now simply disappears instead
+  // (see below), which left that parity with no congratulation anywhere.
+  // didWell is the right home for it: same "you found it" phrasing, just
+  // moved under the label that actually names a positive moment instead of
+  // the counterfactual "what may have happened" label the owner reported as
+  // confusing when it congratulated her.
+  if (fb?.followed && line && line.ply % 2 !== 0) {
+    const n = moveNumberForPly(fb.playerPly);
+    const played = fb.playedSan ? describedOrRaw(fb.playedSan, fenBeforePly(gameSans, fb.playerPly)) : undefined;
+    return played
+      ? `you found it. your ${played} was the top move here.`
+      : `you found it. your move ${n} was the top move here.`;
+  }
   return undefined;
 }
 
@@ -216,20 +231,21 @@ function buildWhatMayHaveHappened(
   fb: FollowedBest | undefined
 ): string | undefined {
   if (!line) return undefined;
-  const pv = line.pvSans.length > 0 ? line.pvSans : line.bestSan ? [line.bestSan] : [];
-  if (pv.length === 0) return undefined;
-  const [first] = pv;
-  const described = seedFen ? describeSanMove(first, seedFen) : null;
-  // Coach truth-speed round (2026-07-27): the owner's playtest report was
+  // Controller ruling (2026-07-27, Wave C1): the owner's playtest report was
   // exactly this — she DID play the recommended move (queen f6, checkmate)
   // and the debrief still asked "what may have happened if instead...",
   // forcing her to go check the chat to find out whether she'd already done
   // it. When followedBest confirms she played it, the counterfactual is
-  // false on its face and must not be shown — a congratulation naming the
-  // move replaces it instead.
-  if (fb?.followed) {
-    return described ? `you found it. your ${described} was the top move here.` : `you found it. ${first} was the top move here.`;
-  }
+  // false on its face — this now goes silent rather than swap in a
+  // congratulation under the literal "what may have happened:" label, which
+  // is a counterfactual label and was itself part of the confusion the owner
+  // reported. The congratulation now lives in buildDidWell instead (both
+  // parities), under a label that actually names a positive moment.
+  if (fb?.followed) return undefined;
+  const pv = line.pvSans.length > 0 ? line.pvSans : line.bestSan ? [line.bestSan] : [];
+  if (pv.length === 0) return undefined;
+  const [first] = pv;
+  const described = seedFen ? describeSanMove(first, seedFen) : null;
   if (described) return `if instead your ${described}.`;
   return `if instead ${first} had been played here.`;
 }

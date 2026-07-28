@@ -20,7 +20,7 @@
 
 import type { GameListEntry, MoveClassification, TurningPoint, TurningLine, SummaryMove } from "../game/api";
 import { moveNumberForPly } from "./debriefLesson";
-import { debriefBullets, type DebriefBullet } from "./debriefBullets";
+import { debriefBullets, affordancesForBullet, type DebriefBullet } from "./debriefBullets";
 // Increment 3.91 (Task 4): the four-part note, rendered under a turning-
 // point card once its own "replay" has been clicked (see `active` below).
 // Pure/deterministic module — see turningPointNote.ts's header for why it
@@ -163,7 +163,7 @@ function TurningPointCard({
         <>
           {note.didWell && <p className="debrief-card-punish">did well: {note.didWell}</p>}
           {note.couldImprove && <p className="debrief-card-punish">could improve: {note.couldImprove}</p>}
-          <p className="debrief-card-punish">next time: {note.nextTime}</p>
+          {note.nextTime && <p className="debrief-card-punish">next time: {note.nextTime}</p>}
           {note.whatMayHaveHappened && (
             <p className="debrief-card-punish">what may have happened: {note.whatMayHaveHappened}</p>
           )}
@@ -183,10 +183,23 @@ const BULLET_SECTION_ORDER: DebriefBullet["section"][] = ["done well", "could be
 function DebriefBulletList({
   bullets,
   onRewind,
+  onTryLine,
+  onAskAbout,
   exploring,
 }: {
   bullets: DebriefBullet[];
   onRewind: (ply: number) => void;
+  // Coach truth-speed round (Wave C1, 2026-07-27): a bullet earns the SAME
+  // three affordances a TurningPointCard already has (replay/try the line/
+  // ask about this) — the owner's report was that a "could be better" note
+  // had none of them, just like every other note. Bullets are NOT promoted
+  // to cards: a classification-fallback bullet only ever carries
+  // {ply, classification} (debriefBullets.ts), and inventing rank/deltaP/
+  // lowConfidence/kind to make one look like a card would both fabricate
+  // fields no fact supports and double-render the same ply as both a bullet
+  // and a card.
+  onTryLine: (ply: number) => void;
+  onAskAbout: (ply: number) => void;
   // Increment 3.91 (Task 6): same "the live board can't be yanked out from
   // under itself" rule as TurningPointCard's replay/try-line buttons.
   exploring: boolean;
@@ -199,25 +212,51 @@ function DebriefBulletList({
         return (
           <div className="debrief-bullet-section" key={section}>
             <span className="debrief-bullet-kicker">{section}</span>
-            {items.map((b, i) => (
-              <div className="debrief-bullet" key={i}>
-                <p className="debrief-bullet-text">{b.text}</p>
-                <div className="debrief-bullet-foot">
-                  <span className="debrief-bullet-tag">
-                    {b.phase} · {b.category}
-                  </span>
-                  {b.ply != null && (
-                    <button
-                      className="small debrief-replay-btn"
-                      disabled={exploring}
-                      onClick={() => onRewind(b.ply!)}
-                    >
-                      replay
-                    </button>
-                  )}
+            {items.map((b, i) => {
+              // Coach truth-speed round (Wave C1): consumes wave A1's own
+              // exported gate rather than re-deriving "does this bullet have
+              // a ply" locally — one source of truth for the affordance
+              // gate, same discipline the rest of this file follows for
+              // other shared facts.
+              const aff = affordancesForBullet(b);
+              return (
+                <div className="debrief-bullet" key={i}>
+                  <p className="debrief-bullet-text">{b.text}</p>
+                  <div className="debrief-bullet-foot">
+                    <span className="debrief-bullet-tag">
+                      {b.phase} · {b.category}
+                    </span>
+                    {aff.replay && (
+                      <button
+                        className="small debrief-replay-btn"
+                        disabled={exploring}
+                        onClick={() => onRewind(b.ply!)}
+                      >
+                        replay
+                      </button>
+                    )}
+                    {aff.tryLine && (
+                      <button
+                        className="small debrief-tryline-btn"
+                        disabled={exploring}
+                        onClick={() => onTryLine(b.ply!)}
+                      >
+                        try the line
+                      </button>
+                    )}
+                    {aff.ask && (
+                      <button
+                        className="small debrief-ask-btn"
+                        disabled={exploring}
+                        onClick={() => onAskAbout(b.ply!)}
+                      >
+                        ask about this
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         );
       })}
@@ -283,6 +322,11 @@ export interface DebriefPageProps {
   // Increment 3.95, Task 7: threaded straight through to every
   // TurningPointCard — see that prop's own comment.
   onAskAboutTurningPoint: (point: TurningPoint) => void;
+  // Coach truth-speed round (Wave C1, 2026-07-27): a bullet's own "ask about
+  // this" — GamePage looks up a real TurningPoint by ply first, falling back
+  // to a synthetic focus built from the ply's MoveClassification when no
+  // TurningPoint exists there (see GamePage's handleAskAboutPly).
+  onAskAboutPly: (ply: number) => void;
 }
 
 export function DebriefPage({
@@ -302,6 +346,7 @@ export function DebriefPage({
   onTryLine,
   onExitExplore,
   onAskAboutTurningPoint,
+  onAskAboutPly,
 }: DebriefPageProps) {
   const bullets = debriefBullets({
     turningPoints,
@@ -354,7 +399,13 @@ export function DebriefPage({
           </button>
         </div>
       )}
-      <DebriefBulletList bullets={bullets} onRewind={onRewind} exploring={!!exploring} />
+      <DebriefBulletList
+        bullets={bullets}
+        onRewind={onRewind}
+        onTryLine={onTryLine}
+        onAskAbout={onAskAboutPly}
+        exploring={!!exploring}
+      />
       {turningPoints.length > 0 && (
         <div className="debrief-cards">
           {turningPoints.map((point) => (
