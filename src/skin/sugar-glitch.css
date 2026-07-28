@@ -887,6 +887,18 @@
 .gc-app .sq.tp-played { box-shadow: inset 0 0 0 3px rgba(35,229,255,.55), inset 0 0 10px rgba(35,229,255,.3); }
 .gc-app .sq.tp-best { box-shadow: inset 0 0 0 3px rgba(76,175,140,.7), inset 0 0 10px rgba(76,175,140,.35); }
 .gc-app .sq.tp-threat { box-shadow: inset 0 0 0 3px rgba(255,61,166,.6), inset 0 0 10px rgba(255,61,166,.35); }
+/* Coach truth-speed round (visual wave, 2026-07-27): "found" — she played
+   the engine's pick. Green best-ring confirmed by a thin cyan edge just
+   outside it (cyan band 0-2px, green band 2-5px, soft green fill), mirroring
+   the found-arrow's green-body/cyan-outline layering. Affirmation, not a
+   fourth color: only the existing cyan + green tokens, no magenta, no mint,
+   no glitch. */
+.gc-app .sq.tp-found {
+  box-shadow:
+    inset 0 0 0 2px rgba(35,229,255,.65),
+    inset 0 0 0 5px rgba(76,175,140,.75),
+    inset 0 0 12px rgba(76,175,140,.3);
+}
 
 .gc-app .board-arrows {
   position: absolute;
@@ -911,6 +923,22 @@
 .gc-app .board-arrows .arrow-best polygon { stroke: rgb(76,175,140); fill: rgb(76,175,140); }
 .gc-app .board-arrows .arrow-threat line,
 .gc-app .board-arrows .arrow-threat polygon { stroke: #FF3DA6; fill: #FF3DA6; }
+/* Coach truth-speed round (visual wave, 2026-07-27): the "found" arrow —
+   her played move IS the recommended move, so one arrow carries both
+   voices: the green best-arrow body over a crisp cyan outline (a wider
+   cyan stroke drawn under the green, Board.tsx renders the .halo underlay
+   first). Sharp two-tone, no blur/glow/glitch — this is a machine statement
+   of agreement, and it must read as affirmation, never alarm. Reuses the
+   existing #23E5FF + rgb(76,175,140) tokens only. */
+.gc-app .board-arrows .arrow-found line,
+.gc-app .board-arrows .arrow-found polygon { stroke: rgb(76,175,140); fill: rgb(76,175,140); }
+.gc-app .board-arrows .arrow-found line.halo { stroke: #23E5FF; stroke-width: 3.2; }
+.gc-app .board-arrows .arrow-found polygon.halo {
+  fill: #23E5FF;
+  stroke: #23E5FF;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
 
 /* check ring — sits under the piece sprite (.pieces layer paints over .squares) */
 .gc-app .sq.check-ring {

@@ -977,6 +977,18 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 const g = arrowGeometry(arrow.from, arrow.to);
                 return (
                   <g key={`${arrow.from}-${arrow.to}-${arrow.color}-${i}`} className={`arrow arrow-${arrow.color}`}>
+                    {arrow.color === "found" && (
+                      // Coach truth-speed round (visual wave, 2026-07-27):
+                      // "found" = she played exactly the recommended move.
+                      // Rendered as the green best-arrow CONFIRMED by her
+                      // cyan — a crisp cyan outline drawn under the green
+                      // body (wider stroke, same geometry), never a blur or
+                      // glow. Reuses the existing cyan/green tokens only.
+                      <>
+                        <line className="halo" x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} />
+                        <polygon className="halo" points={g.headPoints} />
+                      </>
+                    )}
                     <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} />
                     <polygon points={g.headPoints} />
                   </g>
