@@ -68,8 +68,22 @@ export function MoveList({ sans, currentPly, onSelect, disabled, highlightedPlie
         </button>
       </div>
       <div className="debrief-movelist-rows" role="list" aria-label="full move list">
-        {rows.map((row) => (
-          <div className="debrief-movelist-row" key={row.moveNumber} role="listitem">
+        {rows.map((row) => {
+          // Highlight-a-move (Task 4): the machine's record of her flag —
+          // the ROW wears the flat cyan statement (tint + inset rule) and a
+          // closing chip; the ply button keeps its candy recipe untouched
+          // (it still jumps the board) and gains the same 7px dot she
+          // filled live, via CSS. Only her plies can be highlighted, but
+          // both seats are checked rather than assuming.
+          const rowHighlighted =
+            (row.white != null && highlightedPlies?.has(row.white.ply)) ||
+            (row.black != null && highlightedPlies?.has(row.black.ply));
+          return (
+          <div
+            className={"debrief-movelist-row" + (rowHighlighted ? " highlighted-row" : "")}
+            key={row.moveNumber}
+            role="listitem"
+          >
             <span className="debrief-movelist-num">{row.moveNumber}.</span>
             {row.white && (
               <button
@@ -99,8 +113,10 @@ export function MoveList({ sans, currentPly, onSelect, disabled, highlightedPlie
                 {row.black.san}
               </button>
             )}
+            {rowHighlighted && <span className="debrief-movelist-hl-chip">highlighted</span>}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
