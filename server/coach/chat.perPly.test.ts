@@ -283,3 +283,29 @@ describe("perPlyForModel — ply-scoping (B4b)", () => {
     expect(capturedPrompt).toContain('"bestSan":"Nc6"');
   });
 });
+
+// Missed-win round (2026-07-28): shared real-game fixture (game 150,
+// 2026-07-28, her real 91-ply win). Repeated per repo convention.
+const GAME150_SANS = [
+  "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+  "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+  "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+  "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+","Kg6","Nh8+","Kh7",
+  "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
+  "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
+  "Qh6+","Kd5","Be7","Kc4","Qc6#",
+].map((san, i) => ({ ply: i + 1, san }));
+
+describe("derivePhase — nearly-bare side (missed-win round, 2026-07-28)", () => {
+  it("reads a nearly-bare board as endgame regardless of total piece count (game 150 ply 55)", () => {
+    const gameMoves = GAME150_SANS; // shared fixture from the plan header
+    const perPly: ChatPerPlyInput[] = [5, 21, 55].map((ply) => ({
+      ply, san: gameMoves[ply - 1].san, evalCp: null, evalMate: null, bestSan: null, pvSans: [],
+    }));
+    const facts = assembleChatFactList(gameMoves, {}, [], perPly);
+    const phases = Object.fromEntries(facts.perPlyAnalysis!.map((p) => [p.ply, p.phase]));
+    expect(phases[5]).toBe("opening");
+    expect(phases[21]).toBe("middlegame"); // black still has pieces at ply 21
+    expect(phases[55]).toBe("endgame");    // 17 pieces on the board, but black is bare
+  });
+});
