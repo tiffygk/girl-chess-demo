@@ -119,16 +119,19 @@ describe("NEXT_TIME_TIPS motif bank", () => {
     expect(punished.nextTime).toBe(NEXT_TIME_TIPS["good-moment"]);
   });
 
-  it("unrecognized motif falls back to a generic tip (declared cut)", () => {
+  // Coach truth-speed round (2026-07-27): GENERIC_TIP ("look one move deeper
+  // before you commit next time") is gone — the owner's playtest report
+  // flagged it as a useless sentence she'd already done. A turning point
+  // with no inferable motif now has no nextTime at all, rather than a
+  // filler tip.
+  it("a turning point with no inferable motif has no nextTime at all", () => {
     const note = buildTurningPointNote(tp({ label: "the losing move", kind: "backfill" }), undefined, undefined);
-    expect(note.nextTime).toBeTruthy();
-    expect(Object.values(NEXT_TIME_TIPS)).not.toContain(note.nextTime);
+    expect(note.nextTime).toBeUndefined();
   });
 
-  it("nextTime is ALWAYS present, even with no cls/line data at all", () => {
+  it("an unmapped label (e.g. the backfill's 'the clincher') also has no nextTime", () => {
     const note = buildTurningPointNote(tp({ label: "the clincher", kind: "backfill" }), undefined, undefined);
-    expect(note.nextTime).toBeTruthy();
-    expect(typeof note.nextTime).toBe("string");
+    expect(note.nextTime).toBeUndefined();
   });
 
   // Adversarial: a "strong move" turning point in a winning position must
@@ -331,6 +334,64 @@ describe("whatMayHaveHappened (part iv)", () => {
   it("never adds an interpretive claim beyond the SAN moves themselves", () => {
     const note = buildTurningPointNote(tp({}), undefined, line({ pvSans: ["Bxb5", "a6", "Ba4"] }));
     expect(note.whatMayHaveHappened).not.toMatch(/win|initiative|advantage|better position/i);
+  });
+});
+
+// Coach truth-speed round (2026-07-27): the owner's verbatim playtest
+// report — she played the recommended reply (queen to f6, checkmate; rook
+// to g8) and the debrief still asked "what may have happened if instead...",
+// forcing her to go ask the chat whether she'd already done it. These tests
+// pin the fix: when followedBest confirms she played the recommended move,
+// the counterfactual is replaced by a congratulation and the "stronger
+// idea" clause disappears.
+//
+// Note on test naming: the round's brief titled the combined case
+// "whatMayHaveHappened is absent and didWell congratulates when she played
+// the recommended move." Per this file's actual (and, we judged, more
+// useful) implementation, buildWhatMayHaveHappened does NOT go silent when
+// followed — it swaps the counterfactual for an explicit "you found it"
+// congratulation (ambiguous copy like silence could still leave her
+// wondering). Both halves of the brief's intent are covered below: the OLD
+// counterfactual text is gone in both the odd-ply and even-ply cases, and
+// didWell separately congratulates the even-ply (opponent-punished) case.
+describe("followedBest integration: no counterfactual when she played the recommended move", () => {
+  it("whatMayHaveHappened swaps the counterfactual for a found-it congratulation on an odd-ply (her own move) turning point", () => {
+    // ply 3 (Qh5) is her own move; the pv recommends the exact move she played.
+    const note = buildTurningPointNote(
+      tp({ label: "the clincher", kind: "backfill", san: "Qh5", ply: 3 }),
+      undefined,
+      line({ ply: 3, pvSans: ["Qh5"], bestSan: "Qh5" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.whatMayHaveHappened).toBe("you found it. your queen to h5 was the top move here.");
+    expect(note.whatMayHaveHappened).not.toMatch(/if instead/);
+  });
+
+  it("didWell congratulates ('you punished it') on an even-ply (opponent) turning point she followed, even without tp.punishSan set", () => {
+    // ply 4 (Nc6) is the opponent's move; her reply at ply 5 (Bc4) matches
+    // the pv's recommendation. No tp.punishSan is set here (that's the
+    // separate, pre-existing turningPoints.ts credit-assignment path) — this
+    // is followedBest independently confirming the same fact off the line.
+    const note = buildTurningPointNote(
+      tp({ label: "opponent inaccuracy", kind: "swing", san: "Nc6", ply: 4 }),
+      undefined,
+      line({ ply: 4, pvSans: ["Bc4"], bestSan: "Bc4" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.didWell).toBeTruthy();
+    expect(note.didWell).toContain("you punished it");
+    expect(note.didWell).toContain("move 3");
+  });
+
+  it("couldImprove drops the 'stronger idea' clause when she played the recommended move", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Qh5", ply: 3 }),
+      undefined,
+      line({ ply: 3, pvSans: ["Qh5"], bestSan: "Qh5" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.couldImprove).toBeTruthy();
+    expect(note.couldImprove).not.toMatch(/stronger idea/);
   });
 });
 

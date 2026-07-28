@@ -12,8 +12,8 @@
 // guess.
 
 import { describe, it, expect } from "vitest";
-import { debriefBullets } from "./debriefBullets";
-import type { TurningPoint, MoveClassification } from "../game/api";
+import { debriefBullets, affordancesForBullet } from "./debriefBullets";
+import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from "../game/api";
 
 const OLD_PLATITUDE = "a draw. solid, careful, nothing hung.";
 
@@ -552,5 +552,95 @@ describe("plain English via gameSans (Task 3)", () => {
     });
     expect(bullets[0].text).toContain("queen to h5");
     expect(bullets[0].text).not.toContain("Qh5");
+  });
+});
+
+// Coach truth-speed round (2026-07-27): owner playtest report fixes.
+describe("phase coherence (2026-07-27 owner report: watch-next-time's phase must match the ply its text names)", () => {
+  it("a 60-ply game whose only slips are in the opening tags the watch-next-time bullet 'opening', not 'endgame'", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 8, san: "Nb6", label: "mistake", deltaP: -0.1 })],
+      classifications: [],
+      result: null,
+      totalPlies: 60,
+    });
+    const watch = bullets.find((b) => b.section === "watch next time")!;
+    expect(watch.phase).toBe("opening");
+    expect(watch.ply).toBe(8);
+  });
+});
+
+describe("article grammar (2026-07-27): 'an inaccuracy', never 'a inaccuracy'", () => {
+  it("a classification-fallback inaccuracy bullet reads 'an inaccuracy', not 'a inaccuracy'", () => {
+    const bullets = debriefBullets({
+      turningPoints: [],
+      classifications: [{ ply: 20, classification: "inaccuracy" }],
+      result: null,
+      totalPlies: 60,
+    });
+    const cbb = bullets.find((b) => b.section === "could be better")!;
+    expect(cbb.text).toContain("an inaccuracy");
+    expect(cbb.text).not.toContain("a inaccuracy");
+  });
+});
+
+describe("followedBest suppression (2026-07-27 owner report): a could-be-better candidate she actually played gets re-sectioned", () => {
+  const SCHOLARS_MATE_SANS: SummaryMove[] = [
+    { ply: 1, san: "e4" },
+    { ply: 2, san: "e5" },
+    { ply: 3, san: "Qh5" },
+    { ply: 4, san: "Nc6" },
+    { ply: 5, san: "Bc4" },
+    { ply: 6, san: "Nf6" },
+  ];
+
+  it("suppresses the nudge and re-sections to done well when followedBest confirms she played the recommended move", () => {
+    const line: TurningLine = { ply: 3, pvSans: ["Qh5"], bestSan: "Qh5" };
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 3, san: "Qh5", label: "blunder", deltaP: -0.1 })],
+      classifications: [],
+      result: null,
+      totalPlies: 6,
+      gameSans: SCHOLARS_MATE_SANS,
+      turningLines: [line],
+    });
+    const followedBullet = bullets.find((b) => b.ply === 3)!;
+    expect(followedBullet.section).toBe("done well");
+    expect(followedBullet.text).not.toContain("blunder");
+    expect(followedBullet.text).toContain("nice find");
+  });
+
+  it("backward compatible: without turningLines, the same candidate stays a could-be-better nudge", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 3, san: "Qh5", label: "blunder", deltaP: -0.1 })],
+      classifications: [],
+      result: null,
+      totalPlies: 6,
+      gameSans: SCHOLARS_MATE_SANS,
+    });
+    const bullet = bullets.find((b) => b.ply === 3)!;
+    expect(bullet.section).toBe("could be better");
+  });
+});
+
+describe("affordancesForBullet (2026-07-27, a later wave's UI consumer)", () => {
+  it("every bullet with a ply offers all three affordances", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 30, san: "Qxf7", label: "blunder", deltaP: -0.3 })],
+      classifications: [],
+      result: null,
+      totalPlies: 60,
+    });
+    for (const b of bullets) {
+      const aff = affordancesForBullet(b);
+      if (b.ply != null) {
+        expect(aff).toEqual({ replay: true, tryLine: true, ask: true });
+      } else {
+        expect(aff).toEqual({ replay: false, tryLine: false, ask: false });
+      }
+    }
+    // At least one bullet in this fixture has a ply, so the true branch
+    // above is actually exercised.
+    expect(bullets.some((b) => b.ply != null)).toBe(true);
   });
 });

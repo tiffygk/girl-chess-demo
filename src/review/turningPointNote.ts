@@ -24,6 +24,12 @@ import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from 
 // already share (seedPly = ply - (ply % 2)).
 import { fenAtPly } from "./Rewind";
 import { deriveOpportunity } from "./opportunity";
+// Coach truth-speed round (2026-07-27): the single source of truth for "did
+// she actually play the recommended move" — see followedBest.ts's header
+// for the full odd/even-ply comparison rule this replaces ad hoc guessing
+// with.
+import { followedBest } from "./followedBest";
+import type { FollowedBest } from "./followedBest";
 // Debrief Plain-English Notation round (Task 2): every raw-SAN mention in
 // the note (the played move, the punish, the stronger idea, the pv's first
 // move) now routes through the shared plain-English renderer whenever a fen
@@ -34,7 +40,12 @@ import { describeSanMove } from "../game/describeSanMove";
 export interface TurningPointNote {
   didWell?: string; // (i)   present when the point is a good moment / good defense
   couldImprove?: string; // (ii)  the played move vs the better idea, from label/classification
-  nextTime: string; // (iii) motif-keyed template tip (always present; generic fallback allowed)
+  // (iii) motif-keyed template tip. Coach truth-speed round (2026-07-27):
+  // the owner reported the old generic fallback ("look one move deeper
+  // before you commit next time") as a useless sentence she'd already done.
+  // GENERIC_TIP is gone; nextTime is now optional and only set when
+  // inferMotif actually resolves a real motif — absent, never a filler.
+  nextTime?: string;
   whatMayHaveHappened?: string; // (iv)  the pv line phrased plainly, present when bestSan/pvSans exist
   opportunity?: string; // (v)   what the pv's replay proves it opens up — present when line+gameSans exist and the pv replays at all
 }
@@ -95,11 +106,6 @@ export const NEXT_TIME_TIPS: Record<Motif, string> = {
     "this move gave back the most ground here. before you commit, check every forcing reply she has: her checks, her captures, her threats.",
 };
 
-// Declared cut (plan Task 3): a turning point whose motif doesn't match the
-// fixed bank above (no engine call, no invented chess claim) gets this
-// generic fallback rather than nothing.
-const GENERIC_TIP = "look one move deeper before you commit next time.";
-
 // Motif inference is read-only off TurningPoint.label/kind/missedPunish —
 // never an engine call, never a guess beyond what those fields already say.
 // Order matters: kind === "episode" is the one reliable king-pressure
@@ -117,7 +123,12 @@ function inferMotif(tp: TurningPoint): Motif | undefined {
   return undefined;
 }
 
-function buildDidWell(tp: TurningPoint, gameSans?: SummaryMove[]): string | undefined {
+function buildDidWell(
+  tp: TurningPoint,
+  gameSans: SummaryMove[] | undefined,
+  line: TurningLine | undefined,
+  fb: FollowedBest | undefined
+): string | undefined {
   if (tp.kind === "episode") {
     const n = moveNumberForPly(tp.ply);
     return `you held up under real pressure starting around move ${n}. that composure is a skill.`;
@@ -134,6 +145,17 @@ function buildDidWell(tp: TurningPoint, gameSans?: SummaryMove[]): string | unde
     // ply+1.
     const punish = describedOrRaw(tp.punishSan, fenBeforePly(gameSans, tp.ply + 1));
     return `you punished her slip on move ${n} with ${punish}.`;
+  }
+  // Coach truth-speed round (2026-07-27): the case above only fires when
+  // turningPoints.ts's own attachPunishSuffix already recorded tp.punishSan.
+  // followedBest is a second, independently-measured confirmation off the
+  // TurningLine itself (her actual reply at ply+1 vs the pv's recommended
+  // move) — it catches an opponent turning point (even tp.ply) she punished
+  // that the branch above didn't already credit.
+  if (fb?.followed && line && line.ply % 2 === 0) {
+    const n = moveNumberForPly(fb.playerPly);
+    const punish = fb.playedSan ? describedOrRaw(fb.playedSan, fenBeforePly(gameSans, fb.playerPly)) : undefined;
+    return punish ? `you punished it. your ${punish} on move ${n} made her pay.` : `you punished it on move ${n}.`;
   }
   return undefined;
 }
@@ -157,7 +179,8 @@ function buildCouldImprove(
   cls: MoveClassification | undefined,
   line: TurningLine | undefined,
   gameSans: SummaryMove[] | undefined,
-  seedFen: string | undefined
+  seedFen: string | undefined,
+  fb: FollowedBest | undefined
 ): string | undefined {
   const played = describedOrRaw(tp.san, fenBeforePly(gameSans, tp.ply));
   if (tp.missedPunish) {
@@ -167,8 +190,13 @@ function buildCouldImprove(
   const label = cls?.classification ?? tp.label;
   const nudge = IMPROVE_NUDGE[label];
   if (!nudge) return undefined;
-  const bestClause =
-    line?.bestSan && line.bestSan !== tp.san ? ` ${describedOrRaw(line.bestSan, seedFen)} was the stronger idea.` : "";
+  // Coach truth-speed round (2026-07-27): the "stronger idea" clause used to
+  // compare line.bestSan against tp.san directly — the exact comparison the
+  // round's measured ground truth flags as never correct for an even-ply
+  // (opponent) turning point. followedBest already resolves the right
+  // comparison (her own move at odd tp.ply, her REPLY at ply+1 for even
+  // tp.ply) once, so the guard here is simply "didn't follow it".
+  const bestClause = line?.bestSan && !fb?.followed ? ` ${describedOrRaw(line.bestSan, seedFen)} was the stronger idea.` : "";
   // "an inaccuracy" vs "a blunder/mistake" — pure article grammar, not a
   // copy retune (2026-07-19 visual gate).
   const article = /^[aeiou]/.test(label) ? "an" : "a";
@@ -182,12 +210,26 @@ function buildCouldImprove(
 // "this opens up" clause (opportunity, below), so nothing is lost by
 // dropping it here. No fen available degrades to the existing single-move
 // raw-SAN fallback text, never to nothing.
-function buildWhatMayHaveHappened(line: TurningLine | undefined, seedFen: string | undefined): string | undefined {
+function buildWhatMayHaveHappened(
+  line: TurningLine | undefined,
+  seedFen: string | undefined,
+  fb: FollowedBest | undefined
+): string | undefined {
   if (!line) return undefined;
   const pv = line.pvSans.length > 0 ? line.pvSans : line.bestSan ? [line.bestSan] : [];
   if (pv.length === 0) return undefined;
   const [first] = pv;
   const described = seedFen ? describeSanMove(first, seedFen) : null;
+  // Coach truth-speed round (2026-07-27): the owner's playtest report was
+  // exactly this — she DID play the recommended move (queen f6, checkmate)
+  // and the debrief still asked "what may have happened if instead...",
+  // forcing her to go check the chat to find out whether she'd already done
+  // it. When followedBest confirms she played it, the counterfactual is
+  // false on its face and must not be shown — a congratulation naming the
+  // move replaces it instead.
+  if (fb?.followed) {
+    return described ? `you found it. your ${described} was the top move here.` : `you found it. ${first} was the top move here.`;
+  }
   if (described) return `if instead your ${described}.`;
   return `if instead ${first} had been played here.`;
 }
@@ -221,14 +263,14 @@ export function buildTurningPointNote(
 ): TurningPointNote {
   const motif = inferMotif(tp);
   const seedFen = seedFenForLine(line, gameSans);
-  const note: TurningPointNote = {
-    nextTime: motif ? NEXT_TIME_TIPS[motif] : GENERIC_TIP,
-  };
-  const didWell = buildDidWell(tp, gameSans);
+  const fb = followedBest(line, gameSans);
+  const note: TurningPointNote = {};
+  if (motif) note.nextTime = NEXT_TIME_TIPS[motif];
+  const didWell = buildDidWell(tp, gameSans, line, fb);
   if (didWell) note.didWell = didWell;
-  const couldImprove = buildCouldImprove(tp, cls, line, gameSans, seedFen);
+  const couldImprove = buildCouldImprove(tp, cls, line, gameSans, seedFen, fb);
   if (couldImprove) note.couldImprove = couldImprove;
-  const whatMayHaveHappened = buildWhatMayHaveHappened(line, seedFen);
+  const whatMayHaveHappened = buildWhatMayHaveHappened(line, seedFen, fb);
   if (whatMayHaveHappened) note.whatMayHaveHappened = whatMayHaveHappened;
   const opportunity = opportunityForLine(line, gameSans);
   if (opportunity) note.opportunity = opportunity;
