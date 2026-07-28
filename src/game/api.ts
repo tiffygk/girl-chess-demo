@@ -195,6 +195,13 @@ export function reportMode(sessionId: number, mode: string, seconds: number): Pr
   return postJson(`/session/${sessionId}/mode`, { mode, seconds });
 }
 
+// Highlight-a-move: the player flags a move (her own, up to three back) she
+// wasn't sure about, during live play. Persisted immediately (moves.highlighted)
+// so the highlight survives a reload -- it is db state, not React state.
+export function highlightMove(gameId: number, ply: number, highlighted: boolean): Promise<{ ok: boolean }> {
+  return postJson(`/game/${gameId}/move/${ply}/highlight`, { highlighted });
+}
+
 // Stateless: the server validates against a clone and never advances the
 // game (retract is purely client-side — nothing to undo on the server).
 // `mode` (C3): trace-tagging only — omit for the ordinary pre-move
@@ -515,6 +522,10 @@ export interface MoveClassification {
 export interface SummaryMove {
   ply: number;
   san: string;
+  // Highlight-a-move: set when the player flagged this ply during live
+  // play. Optional so any pre-existing summary caller (fixture, snapshot)
+  // that doesn't supply it keeps compiling unchanged.
+  highlighted?: boolean;
 }
 
 export interface SummaryResponse {

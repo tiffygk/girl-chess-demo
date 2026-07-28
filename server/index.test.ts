@@ -363,11 +363,34 @@ describe("api", () => {
     expect(Array.isArray(summary.body.turningPoints)).toBe(true);
     expect(Array.isArray(summary.body.classifications)).toBe(true);
     // Increment 3c: `moves` (ply/san, for the debrief's client-side rewind
-    // seam) rides alongside the existing arrays.
+    // seam) rides alongside the existing arrays. Highlight-a-move (Task 1)
+    // widens each row with `highlighted` (false when never flagged).
     expect(Array.isArray(summary.body.moves)).toBe(true);
     expect(summary.body.moves.length).toBeGreaterThanOrEqual(1);
-    expect(summary.body.moves[0]).toEqual({ ply: 1, san: expect.any(String) });
+    expect(summary.body.moves[0]).toEqual({ ply: 1, san: expect.any(String), highlighted: false });
   }, 20000);
+
+  // Highlight-a-move (Task 1): POST /api/game/:id/move/:ply/highlight
+  // persists a per-move flag, readable straight back off /summary.
+  it("highlights a move via POST /api/game/:id/move/:ply/highlight, reflected in the summary", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(app).post(`/api/game/${g.body.gameId}/move`)
+      .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
+
+    const r = await request(app).post(`/api/game/${g.body.gameId}/move/1/highlight`)
+      .send({ highlighted: true }).expect(200);
+    expect(r.body).toEqual({ ok: true });
+
+    const summary = await request(app).get(`/api/game/${g.body.gameId}/summary`).expect(200);
+    expect(summary.body.moves.find((m: any) => m.ply === 1)?.highlighted).toBe(true);
+  }, 20000);
+
+  it("rejects a highlight request with a non-boolean `highlighted`", async () => {
+    const r = await request(app).post("/api/game/1/move/1/highlight").send({ highlighted: "yes" }).expect(400);
+    expect(r.body.error).toMatch(/boolean/);
+  });
 
   it("returns an empty-but-ok summary for a nonexistent game (compute-on-read fallback)", async () => {
     const r = await request(app).get("/api/game/999999/summary").expect(200);
