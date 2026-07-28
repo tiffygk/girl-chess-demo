@@ -29,9 +29,13 @@ export interface MoveListProps {
    *  live, the same rule the turning-point cards' own buttons already
    *  follow (the live board can't be yanked out from under itself). */
   disabled?: boolean;
+  /** Highlight-a-move: plies she flagged during live play, so the recap can
+   *  spot them even outside the (collapsed-by-default) study ledger. Empty
+   *  by default so every pre-existing caller keeps compiling unchanged. */
+  highlightedPlies?: Set<number>;
 }
 
-export function MoveList({ sans, currentPly, onSelect, disabled }: MoveListProps) {
+export function MoveList({ sans, currentPly, onSelect, disabled, highlightedPlies }: MoveListProps) {
   const rows = groupMoves(sans);
   if (rows.length === 0) return null;
 
@@ -73,7 +77,8 @@ export function MoveList({ sans, currentPly, onSelect, disabled }: MoveListProps
                 disabled={disabled}
                 className={
                   "small debrief-movelist-move debrief-movelist-you" +
-                  (shownPly === row.white.ply ? " active" : "")
+                  (shownPly === row.white.ply ? " active" : "") +
+                  (highlightedPlies?.has(row.white.ply) ? " highlighted" : "")
                 }
                 onClick={() => onSelect(row.white!.ply)}
               >
@@ -86,7 +91,8 @@ export function MoveList({ sans, currentPly, onSelect, disabled }: MoveListProps
                 disabled={disabled}
                 className={
                   "small debrief-movelist-move debrief-movelist-mallow" +
-                  (shownPly === row.black.ply ? " active" : "")
+                  (shownPly === row.black.ply ? " active" : "") +
+                  (highlightedPlies?.has(row.black.ply) ? " highlighted" : "")
                 }
                 onClick={() => onSelect(row.black!.ply)}
               >

@@ -105,3 +105,34 @@ describe("DebriefPage (real component render, Wave F review fix): followedBest r
     expect(html.slice(couldBeBetterIdx)).toContain("check what");
   });
 });
+
+// Highlight-a-move (Task 4): a highlighted ply gets a distinguishing class
+// on its move-list button in the recap, so she can spot it while scrubbing
+// the whole game, not just inside the (possibly collapsed) study ledger.
+describe("DebriefPage: highlighted plies in the move recap", () => {
+  it("adds the highlighted class to exactly the move-list button for a highlighted ply", () => {
+    const gameSans: SummaryMove[] = [
+      { ply: 1, san: "e4" },
+      { ply: 2, san: "e5" },
+      { ply: 3, san: "Qh5", highlighted: true },
+      { ply: 4, san: "Nc6" },
+    ];
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ gameSans, totalPlies: 4, turningPoints: [] })} />
+    );
+    // The highlighted ply's own button carries the class...
+    const qh5Idx = html.indexOf(">Qh5<");
+    expect(qh5Idx).toBeGreaterThan(-1);
+    const qh5ButtonStart = html.lastIndexOf("<button", qh5Idx);
+    expect(html.slice(qh5ButtonStart, qh5Idx)).toContain("highlighted");
+    // ...and no other move-list button does.
+    const e4Idx = html.indexOf(">e4<");
+    const e4ButtonStart = html.lastIndexOf("<button", e4Idx);
+    expect(html.slice(e4ButtonStart, e4Idx)).not.toContain("highlighted");
+  });
+
+  it("adds no highlighted class when nothing was flagged", () => {
+    const html = renderToStaticMarkup(<DebriefPage {...baseProps({ turningPoints: [] })} />);
+    expect(html).not.toContain("highlighted");
+  });
+});
