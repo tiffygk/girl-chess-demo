@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { chatWithCoach, rateTrace, type ChatContext } from "./api";
+import { chatWithCoach, streamChatWithCoach, rateTrace, type ChatContext, type ChatResponse } from "./api";
 import { anchorForFocus, focusKey, shouldInjectAnchor, type ThreadEntry } from "./chatThread";
 
 // Increment 3.9, Task 4 (F19): thumbs up/down with feedback capture on any
@@ -174,6 +174,16 @@ export function CoachChat({
   const [messages, setMessages] = useState<ThreadEntry[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
+  // B-stream (2026-07-27, coach-truth-speed round): the in-flight coach
+  // reply's EPHEMERAL streaming state -- deliberately NOT a ThreadEntry.
+  // It only ever exists between "send" and the terminal done/error frame (or
+  // the JSON fallback's own resolution), at which point it is cleared and a
+  // real settled ThreadEntry is pushed into `messages`, same shape as
+  // before this wave (thumbs/chip only ever render on a settled message).
+  // `muted` is the D-task "let me redo that" state a `redraft` frame puts
+  // the bubble into; the FIRST delta that arrives after a redraft replaces
+  // this bubble's text rather than appending to it (see send() below).
+  const [streamDraft, setStreamDraft] = useState<{ text: string; muted: boolean } | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const requestTokenRef = useRef(0);
   const openSignalRef = useRef(openSignal);
@@ -191,6 +201,7 @@ export function CoachChat({
     setMessages([]);
     setDraft("");
     setPending(false);
+    setStreamDraft(null);
     setOpen(false);
     lastInjectedKeyRef.current = null;
   }, [gameId]);
@@ -198,7 +209,7 @@ export function CoachChat({
   useEffect(() => {
     if (!listRef.current) return;
     listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [messages, pending, open]);
+  }, [messages, pending, streamDraft, open]);
 
   // Task 7: an "ask about this" click bumps openSignal — this only reacts to
   // a genuine CHANGE (the ref, not a dependency-array staleness check, is
@@ -238,29 +249,73 @@ export function CoachChat({
     setPending(true);
     setMessages((prev) => [...prev, { kind: "message", role: "user", text }]);
     setDraft("");
-    chatWithCoach(gameId, { message: text, context: buildContext(), backendPref })
-      .then((res) => {
-        if (requestTokenRef.current !== token) return; // superseded — drop it
-        // Minor fix (task-reviewer): `res.text != null` rather than
-        // truthiness — an empty-string reply is a real (if odd) reply, not
-        // a failure, and shouldn't fall through to the fallback copy.
-        if (res.ok && res.text != null) {
-          setMessages((prev) => [
-            ...prev,
-            { kind: "message", role: "coach", text: res.text!, cause: res.cause, traceId: res.traceId },
-          ]);
-        } else {
-          setMessages((prev) => [...prev, { kind: "message", role: "coach", text: FALLBACK_TEXT }]);
-        }
-      })
-      .catch(() => {
-        if (requestTokenRef.current !== token) return;
+    setStreamDraft(null);
+    const context = buildContext();
+
+    // Shared terminal handling for BOTH the streaming path's done/error
+    // frames and the JSON-fallback promise's resolve/reject -- one settled
+    // ThreadEntry either way, same shape chat had before this wave (thumbs/
+    // chip only ever attach here, never to the ephemeral streamDraft).
+    const settle = (res: ChatResponse | null) => {
+      if (requestTokenRef.current !== token) return; // superseded — drop it
+      setStreamDraft(null);
+      // Minor fix (task-reviewer, pre-existing): `res.text != null` rather
+      // than truthiness — an empty-string reply is a real (if odd) reply,
+      // not a failure, and shouldn't fall through to the fallback copy.
+      if (res && res.ok && res.text != null) {
+        setMessages((prev) => [
+          ...prev,
+          { kind: "message", role: "coach", text: res.text!, cause: res.cause, traceId: res.traceId },
+        ]);
+      } else {
         setMessages((prev) => [...prev, { kind: "message", role: "coach", text: FALLBACK_TEXT }]);
-      })
-      .finally(() => {
+      }
+      setPending(false);
+    };
+
+    // Fall back to the existing JSON endpoint's exact pre-this-wave promise
+    // chain -- reserved for a stream that failed to OPEN at all (see
+    // streamChatWithCoach's own doc comment), so a transport problem
+    // degrades to today's behavior rather than to nothing.
+    const jsonFallback = () => {
+      chatWithCoach(gameId, { message: text, context, backendPref })
+        .then((res) => settle(res))
+        .catch(() => settle(null));
+    };
+
+    // True from the moment a `redraft` frame lands until the NEXT delta
+    // arrives -- that next delta replaces the muted draft's text rather than
+    // appending to it (spec: "the regen streams over the same bubble,
+    // replacing rather than appending"). Plain closure var, not React state:
+    // every callback below fires sequentially off the same read loop in
+    // api.ts, never concurrently, so there is no race to guard against.
+    let awaitingReplacement = false;
+
+    streamChatWithCoach(gameId, { message: text, context, backendPref }, {
+      onDelta: (delta) => {
         if (requestTokenRef.current !== token) return;
-        setPending(false);
-      });
+        setStreamDraft((prev) => {
+          if (awaitingReplacement) {
+            awaitingReplacement = false;
+            return { text: delta, muted: false };
+          }
+          return { text: (prev?.text ?? "") + delta, muted: false };
+        });
+      },
+      onRedraft: () => {
+        if (requestTokenRef.current !== token) return;
+        awaitingReplacement = true;
+        setStreamDraft((prev) => ({ text: prev?.text ?? "", muted: true }));
+      },
+      onDone: (res) => settle(res),
+      onError: (res) => settle(res),
+    }).catch(() => {
+      // streamChatWithCoach only ever rejects when the stream failed to
+      // open at all (see its own doc comment) -- anything past that point
+      // resolves via onError above instead.
+      if (requestTokenRef.current !== token) return;
+      jsonFallback();
+    });
   };
 
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -382,7 +437,23 @@ export function CoachChat({
               </div>
             );
           })}
-          {pending && (
+          {/* B-stream: "cookie is thinking…" stays up until the first delta
+              lands (streamDraft is still null at that point); once text
+              starts streaming in, this swaps to the draft bubble below --
+              same mount point, never two bubbles at once. Reuses the
+              existing .chat-thinking class (not a new one) for the
+              dimmed/italic draft treatment the brief calls for: skin/**
+              already styles `.chat-thinking .chat-bubble-text` exactly that
+              way, and this wave does not touch src/skin/** (a parallel wave
+              owns it). No thumbs, no chip on either bubble — those only
+              ever attach to a settled ThreadEntry in `messages` above. */}
+          {pending && streamDraft && (
+            <div className="chat-bubble chat-bubble-coach chat-thinking pop-in">
+              <p className="chat-bubble-text">{streamDraft.text}</p>
+              {streamDraft.muted && <p className="chat-bubble-text">let me redo that</p>}
+            </div>
+          )}
+          {pending && !streamDraft && (
             <div className="chat-bubble chat-bubble-coach chat-thinking pop-in">
               <p className="chat-bubble-text">cookie is thinking…</p>
             </div>

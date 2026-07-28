@@ -5,6 +5,14 @@ export interface CoachBackend {
   name: string;
   available(): Promise<boolean>;
   generate(prompt: string, timeoutMs: number): Promise<string>;
+  // B-stream (2026-07-27, coach-truth-speed round): additive, optional --
+  // ollama.ts/claude-cli.ts/the template backend need zero edits and stay
+  // exactly as fast/tested as before. Only agent-sdk.ts implements it. The
+  // deltas onDelta receives are ADVISORY rendering only -- the returned
+  // Promise<string> is still the single terminal-result authority chat.ts
+  // validates against; a caller must never assemble its own return value by
+  // concatenating deltas (see agent-sdk.ts's generateStream for why).
+  generateStream?(prompt: string, timeoutMs: number, onDelta: (text: string) => void): Promise<string>;
 }
 
 // Selected by GameManager's probe-once-and-cache backend selection (see

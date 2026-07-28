@@ -918,7 +918,15 @@ export async function chat(
   // opinion about WHY the budget is what it is, only about spending it
   // correctly. Reserve this object for a later wave's `intent?:`/`onDelta?:`
   // (streaming) -- that is why it is an object and not a bare number.
-  opts?: { budgetMs?: number }
+  // B-stream (2026-07-27): onDelta is the streaming hook this comment
+  // reserved space for. Additive/optional -- every existing call site
+  // (chat.test.ts and its siblings, manager.ts pre-this-wave) omits it and
+  // gets exactly today's behavior. onRedraft is a second, equally optional
+  // hook: fired exactly once, right when the one-regen attempt actually
+  // begins (survives the MIN_ATTEMPT_MS budget check below) -- the signal
+  // the SSE route needs to emit its own `redraft` frame, without this
+  // function's attempt loop being duplicated or exposed any other way.
+  opts?: { budgetMs?: number; onDelta?: (text: string) => void; onRedraft?: () => void }
 ): Promise<{
   text: string;
   source: "model" | "template";
@@ -958,10 +966,19 @@ export async function chat(
       // guaranteed to die mid-flight. Skip straight to the template instead.
       const remaining = deadline - Date.now();
       if (remaining < MIN_ATTEMPT_MS) break;
+      opts?.onRedraft?.();
     }
     const timeoutMs = Math.max(0, deadline - Date.now());
     try {
-      attemptOutput = await backend.generate(attemptPrompt, timeoutMs);
+      // B-stream: one ternary, no duplicated attempt loop. Streaming is used
+      // only when the backend actually implements it AND the caller asked
+      // for deltas -- every other caller (every pre-this-wave test, narrate's
+      // own callers, a non-streaming backend) takes the untouched generate()
+      // path.
+      attemptOutput =
+        backend.generateStream && opts?.onDelta
+          ? await backend.generateStream(attemptPrompt, timeoutMs, opts.onDelta)
+          : await backend.generate(attemptPrompt, timeoutMs);
     } catch (err) {
       // Backend error/timeout at any attempt short-circuits straight to the
       // template below -- never worth a second network/process call,

@@ -172,6 +172,51 @@ async function runQuery(prompt: string, abortController: AbortController): Promi
   return result.trim();
 }
 
+// B-stream (2026-07-27, coach-truth-speed round): the streaming sibling of
+// runQuery above. `includePartialMessages: true` is added ONLY to the
+// options object this function builds -- buildOptions/runQuery/generate stay
+// byte-identical, so the non-streaming path cannot regress. A `stream_event`
+// message wraps the SDK's own raw Anthropic stream event
+// (SDKPartialAssistantMessage.event: BetaRawMessageStreamEvent); the only
+// shape this backend renders live is a text delta on the (single, maxTurns:1)
+// content block -- content_block_delta + delta.type "text_delta" -- every
+// other event type (message_start/stop, content_block_start/stop, thinking/
+// signature/citation/input-json deltas) is silently ignored, exactly the
+// same "only text deltas are advisory rendering" cut ollama/claude-cli never
+// had to make because neither streams at all.
+// The terminal `result.result` on the "result" message is still the ONLY
+// source for the returned string -- deltas are never concatenated into it.
+// This is deliberate, not an oversight: the deltas are provisional token
+// fragments the model can still revise before the turn ends, and chat.ts's
+// validateChat must always validate the same authoritative text the caller
+// ends up persisting/rendering as final, never a hand-assembled echo of what
+// was streamed.
+async function runQueryStream(
+  prompt: string,
+  abortController: AbortController,
+  onDelta: (text: string) => void
+): Promise<string> {
+  let result = "";
+  const stream = query({
+    prompt,
+    options: { ...buildOptions(abortController), includePartialMessages: true },
+  }) as AsyncGenerator<SDKMessage, void>;
+  for await (const message of stream) {
+    if (message.type === "stream_event") {
+      const event = message.event;
+      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        onDelta(event.delta.text);
+      }
+      continue;
+    }
+    if (message.type === "result") {
+      if (message.subtype === "success") result = message.result;
+      else throw new Error(`agent-sdk result error: ${JSON.stringify(message)}`);
+    }
+  }
+  return result.trim();
+}
+
 // Warm coach backend (F17 sibling to claude-cli/ollama): in-process via
 // @anthropic-ai/claude-agent-sdk instead of spawning a fresh `claude`
 // process per call. Bounded exactly like ollama.ts -- AbortController +
@@ -210,6 +255,25 @@ export const agentSdkBackend: CoachBackend = {
     });
     try {
       return await Promise.race([runQuery(prompt, controller), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+  // B-stream: identical AbortController + Promise.race bounding as generate()
+  // above (same reject message shape -- "timed out" -- so chat.ts's
+  // isTimeoutError classification is unchanged for the streaming path too),
+  // delegating only to runQueryStream instead of runQuery.
+  async generateStream(prompt, timeoutMs, onDelta) {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error(`agent-sdk generate timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([runQueryStream(prompt, controller, onDelta), timeout]);
     } finally {
       clearTimeout(timer);
     }

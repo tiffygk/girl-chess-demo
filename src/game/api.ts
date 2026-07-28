@@ -1,4 +1,5 @@
 // Typed client for the girl-chess API (server/index.ts).
+import { initChatStream, pushChunk } from "./chatStream";
 
 export interface NewSessionResponse {
   sessionId: number;
@@ -386,6 +387,64 @@ export function chatWithCoach(
   body: { message: string; context: ChatContext; backendPref?: string }
 ): Promise<ChatResponse> {
   return postJson(`/game/${gameId}/chat`, body);
+}
+
+// B-stream (2026-07-27, coach-truth-speed round): the SSE-over-POST sibling
+// of chatWithCoach above, hitting the new /chat/stream route (server/
+// index.ts). All the actual fetch/ReadableStream plumbing lives here, not in
+// chatStream.ts (which stays a pure, DOM-free frame parser) and not in
+// CoachChat.tsx (which only wires these callbacks into its own bubble
+// state) -- same "network I/O lives in api.ts" convention every other
+// function in this file already follows.
+export interface ChatStreamHandlers {
+  onDelta?: (text: string) => void;
+  onRedraft?: () => void;
+  onDone?: (res: ChatResponse) => void;
+  onError?: (res: ChatResponse) => void;
+}
+
+// Throws ONLY when the stream fails to OPEN at all (the fetch itself
+// rejects, or the response is non-ok / carries no body) -- that is the one
+// case CoachChat.tsx is meant to catch and degrade to the plain JSON
+// endpoint for (see this wave's brief: "a transport problem degrades to
+// today's behavior rather than to nothing"). Once reading has begun, a
+// dropped connection resolves via handlers.onError with a synthetic
+// {ok:false} envelope rather than rethrowing -- re-opening a fresh JSON
+// request at that point would just duplicate whatever partial draft is
+// already rendered, which the brief never asks for.
+export async function streamChatWithCoach(
+  gameId: number,
+  body: { message: string; context: ChatContext; backendPref?: string },
+  handlers: ChatStreamHandlers
+): Promise<void> {
+  const res = await fetch(`/api/game/${gameId}/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`chat stream failed to open (status ${res.status})`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let state = initChatStream();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const { frames, next } = pushChunk(state, decoder.decode(value, { stream: true }));
+      state = next;
+      for (const f of frames) {
+        if (f.event === "delta") handlers.onDelta?.(f.data.text);
+        else if (f.event === "redraft") handlers.onRedraft?.();
+        else if (f.event === "done") handlers.onDone?.(f.data);
+        else if (f.event === "error") handlers.onError?.(f.data);
+      }
+    }
+  } catch {
+    handlers.onError?.({ ok: false, error: "internal" });
+  }
 }
 
 // Increment 3.9, Task 4 (F19): thumbs up/down with optional one-line
