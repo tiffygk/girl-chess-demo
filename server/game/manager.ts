@@ -891,15 +891,32 @@ export class GameManager {
     // Task 3 (R1a, fact-gap round): moveRows already carries the judge's
     // persisted eval_cp/eval_mate/best_move(uci)/pv(space-joined uci) per
     // ply -- convert best_move/pv to SAN by replaying the SAME way
-    // getTurningLines does (reusing pvLine below, no new logic), from the
-    // position right after each ply (fenAfter), which is exactly what
-    // attachEval evaluated. Read-only over already-persisted rows -- no
-    // evaluator call.
+    // getTurningLines does (reusing pvLine below, no new logic).
+    //
+    // 2026-07-28 (off-by-one fix, coach-truth-speed round): a ply's OWN
+    // best_move/pv is the eval of the position AFTER that ply was played
+    // (see record()'s fenAfter/attachEval pairing above -- attachEval(ply)
+    // persists fenAfter(ply)'s eval), so it names the best move for
+    // whoever is to move NEXT, i.e. ply+1 -- not an alternative to the
+    // move just played at ply. The old code attached each row's own
+    // best_move/pv to its OWN ply, which named the best REPLY to that move,
+    // not the best move INSTEAD of it. Proven against real game 150: the
+    // persisted eval for ply 54 (Kh6) has best_move a8h8 (Qh8#, an
+    // immediate mate) -- that is the best move for ply 55 (White's Nf7+),
+    // not for ply 54 itself (a Black move; Qh8# is a White queen move and
+    // could never have been "instead of Kh6"). Fix: track the PRIOR row's
+    // eval and attach it to the CURRENT ply, replayed from fenBefore (the
+    // position the current ply's own move was chosen from, which is
+    // exactly what the prior ply's attachEval evaluated as its fenAfter).
+    // Ply 1 has no prior row, so its bestSan/pvSans are an honest gap
+    // (null/[]) rather than a guess -- there is no ply-0 eval to draw from.
     const perPlyChess = new Chess();
+    let priorEval: { bestMove: string | null; pv: string | null } | undefined;
     const perPlyAnalysis = moveRows.map((r: any) => {
+      const fenBefore = perPlyChess.fen();
       const mv = perPlyChess.move(r.san);
-      const fenAfter = perPlyChess.fen();
-      const { pvSans, bestSan } = this.pvLine(fenAfter, { bestMove: r.best_move ?? null, pv: r.pv ?? null });
+      const { pvSans, bestSan } = this.pvLine(fenBefore, priorEval);
+      priorEval = { bestMove: r.best_move ?? null, pv: r.pv ?? null };
       return {
         ply: r.ply as number,
         san: mv.san,
