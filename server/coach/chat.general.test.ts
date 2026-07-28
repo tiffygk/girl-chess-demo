@@ -4,6 +4,7 @@ import {
   assembleChatFactList, validateChat, validateChatGeneral, chat, GENERAL_MAX_WORDS,
 } from "./chat";
 import type { CoachBackend } from "./backends/types";
+import { getPersona } from "./index";
 
 // Wave D (coach-truth-speed round): the general-chess route -- her
 // thumbs-down on trace 93 ("will only answer about moves i already did, not
@@ -230,5 +231,35 @@ describe("coach/chat.ts general-chess route (Wave D, coach-truth-speed round)", 
       expect(capturedPrompt).toContain('"followedBest":true');
       expect(capturedPrompt).toContain('"playedNextSan":"Qh5"');
     });
+  });
+});
+
+// Eval-instrument-repair round (2026-07-28), Task 4. Concision moved OUT of
+// the score and INTO the prompt. The harness used to fail answers over a hard
+// word count; the owner's grades showed that cap ran opposite to her judgment
+// (median preferred answer 95 words vs 71 rejected, 18 of 22 decisive picks
+// over the old 45-word cap). So the persona now ASKS for the fewest words that
+// still answer the question, and names a soft landing zone rather than a hard
+// count the model must satisfy.
+describe("concision is an instruction, not a hard word count (2026-07-28)", () => {
+  it("the chat system prompt asks for concision without naming a hard word count", () => {
+    const p = getPersona().chatSystemPrompt;
+    expect(p).toMatch(/concise|fewest words/i);
+    expect(p).not.toMatch(/45 words/);
+  });
+
+  it("no coach prompt fragment still imposes a hard sentence or word ceiling", () => {
+    const persona = getPersona();
+    const fragments = [persona.chatSystemPrompt, persona.chatGeneralPrompt ?? ""].join("\n");
+    // "one to three short sentences" and "up to about 120 words" were the two
+    // real hard counts in the persona -- the plan's "45 words" never actually
+    // appeared there; that number lived only in the harness.
+    expect(fragments).not.toMatch(/one to three short sentences/i);
+    expect(fragments).not.toMatch(/up to about \d+ words/i);
+  });
+
+  it("still asks for the fewest words, so removing the cap is not a licence to pad", () => {
+    expect(getPersona().chatSystemPrompt).toMatch(/fewest words/i);
+    expect(getPersona().chatSystemPrompt).toMatch(/never to pad/i);
   });
 });

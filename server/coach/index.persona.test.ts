@@ -177,10 +177,22 @@ describe("persona voice rewrite (R2 Task 2)", () => {
     expect(persona.chatSystemPrompt).toContain("never name a move as raw notation");
   });
 
-  it("sets the one-to-three-sentence length rule", () => {
+  // Was "sets the one-to-three-sentence length rule" (R2 Task 2). Superseded
+  // 2026-07-28: the owner graded 30 blinded rows and the answers she preferred
+  // ran consistently longer than any hard count the persona or the harness
+  // imposed (median 95 words preferred vs 71 rejected). Concision is now asked
+  // for as intent -- the fewest words that still answer -- with a soft
+  // 100-word landing zone and an explicit "never to pad", rather than a
+  // sentence ceiling the model must satisfy. Kept as the guard pointing the
+  // other way: if a hard count creeps back into the shared voice block or the
+  // chat prompt, this fails.
+  it("asks for concision as intent, not as a hard sentence or word count", () => {
     const persona = parseRealCoachMd();
-    expect(persona.voice).toContain("one to three short sentences");
-    expect(persona.chatSystemPrompt).toContain("one to three short sentences");
+    expect(persona.voice).toContain("fewest words");
+    expect(persona.voice).toContain("never to pad");
+    expect(persona.voice).not.toContain("one to three short sentences");
+    expect(persona.chatSystemPrompt).toContain("fewest words");
+    expect(persona.chatSystemPrompt).not.toContain("one to three short sentences");
   });
 
   it("directs the coach to explain the consequence concretely", () => {
