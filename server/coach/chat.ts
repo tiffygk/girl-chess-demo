@@ -892,6 +892,25 @@ const PER_PLY_PV_MODEL_LIMIT = 6;
 const RECENT_PLY_WINDOW = 12;
 const FOCUS_PLY_RADIUS = 2;
 
+// Union-review finding 2 (whole-branch review, coach-truth-speed round,
+// 2026-07-28): the per-ply projection below carried no side marker at all,
+// and coach.md's chat section told the model the story reads as "your move
+// then her reply" -- but odd plies are the player's own move and even
+// plies are mallow's (the player is always white, the same fixed mapping
+// derivePositionFacts uses), and that alternation is invisible from a
+// single collapsed ply's shape once it's pulled out of game order (a
+// turning-point lookup, a "what about move 24" follow-up, a collapsed ply
+// carrying only its own `then`). Real game 150 ply 24 -- an even, mallow
+// ply -- shipped {"san":"Nc6","bestSan":"Re8","then":"you win the rook"}
+// with nothing marking whose move `san` was, so a coach reading it
+// literally could attribute mallow's move to the player.
+// checkSideAttributionClaims can't catch this: it only adjudicates the
+// CURRENT legalSans, never who-owns-which-ply. Fixed at the fact layer
+// (this field), not by asking the model to compute ply parity itself.
+function sideForPly(ply: number): "you" | "mallow" {
+  return ply % 2 === 1 ? "you" : "mallow";
+}
+
 function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
   const perPlyAnalysis = facts.perPlyAnalysis;
   if (!perPlyAnalysis) return undefined;
@@ -927,6 +946,7 @@ function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
 
   return perPlyAnalysis.map((p) => {
     const read = readForPly(p.ply, p.evalCp, p.evalMate);
+    const side = sideForPly(p.ply);
     if (!fullDetailPlies.has(p.ply)) {
       // Collapsed plies: then only where she deviated from best -- the
       // "what did i miss" set (62/91 plies on real game 150; +363 tokens
@@ -934,12 +954,13 @@ function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
       // where she played the best move has nothing missed to explain.
       const deviated = p.bestSan !== null && p.bestSan !== p.san;
       return deviated && p.then
-        ? { ply: p.ply, san: p.san, bestSan: p.bestSan, read, then: p.then }
-        : { ply: p.ply, san: p.san, bestSan: p.bestSan, read };
+        ? { ply: p.ply, san: p.san, side, bestSan: p.bestSan, read, then: p.then }
+        : { ply: p.ply, san: p.san, side, bestSan: p.bestSan, read };
     }
     return {
       ply: p.ply,
       san: p.san,
+      side,
       bestSan: p.bestSan,
       phase: p.phase,
       pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
