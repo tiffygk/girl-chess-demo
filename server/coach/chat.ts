@@ -798,7 +798,7 @@ const PER_PLY_PV_MODEL_LIMIT = 2;
 // so the trace JSON stays complete for the Lab) but not to SEND to the
 // model at full detail for every ply of a long game -- most of it is
 // completely irrelevant to whatever she actually asked. Full detail
-// (bestSan/pvSans/phase, alongside san/read) goes only to plies in the
+// (pvSans/phase, alongside san/bestSan/read) goes only to plies in the
 // union of: turning-point plies (she can ask about any of them), the
 // focused moment +/- FOCUS_PLY_RADIUS (a "why this move" follow-up usually
 // means a move or two of surrounding context, not just the one ply), the
@@ -807,10 +807,21 @@ const PER_PLY_PV_MODEL_LIMIT = 2;
 // full detail" reason, even though in practice RECENT_PLY_WINDOW already
 // covers it since a pending move can only exist at the live tip), and the
 // last RECENT_PLY_WINDOW plies (ordinary "how did I just do" chat, which is
-// the common case). Every other ply collapses to {ply, san, read} -- still
-// enough to answer "what did I play and how did it go" for the whole game,
-// just without the extra bestSan/pvSans/phase weight. Estimated effect
-// alongside (c)'s indent drop, on a 60-ply game: ~2.7k tokens -> ~1.4k.
+// the common case). Every other ply collapses to {ply, san, bestSan, read}
+// -- still enough to answer "what did I play, how did it go, and what
+// should I have played instead" for the whole game, just without the
+// pvSans/phase weight.
+//
+// B4c (2026-07-28, coach-truth-speed round, regression fix): B4b's original
+// collapse dropped bestSan too, alongside pvSans/phase. That shipped a
+// regression the same morning it landed (005b050): the owner asked about
+// move 27/28 in a 91-ply game -- ~37 plies back, well outside
+// RECENT_PLY_WINDOW -- and the coach had no bestSan for that ply at all, so
+// it honestly (but wrongly, from her point of view) said it couldn't name
+// the better move. bestSan is one short token per ply; restoring it on
+// every collapsed ply is a small fraction of what dropping pvSans/phase
+// still saves (measured on a real 91-ply game: see chat.ts's own change
+// notes / the round's report for the before/after character count).
 const RECENT_PLY_WINDOW = 12;
 const FOCUS_PLY_RADIUS = 2;
 
@@ -833,7 +844,7 @@ function perPlyForModel(facts: ChatFactList) {
 
   return perPlyAnalysis.map((p) => {
     const read = readForPly(p.ply, p.evalCp, p.evalMate);
-    if (!fullDetailPlies.has(p.ply)) return { ply: p.ply, san: p.san, read };
+    if (!fullDetailPlies.has(p.ply)) return { ply: p.ply, san: p.san, bestSan: p.bestSan, read };
     return {
       ply: p.ply,
       san: p.san,

@@ -228,9 +228,9 @@ describe("perPlyForModel — ply-scoping (B4b)", () => {
     expect(capturedPrompt).toContain('"pvSans":["Nf3","Nc6"]');
   });
 
-  it("an ordinary early ply outside every window collapses to ply/san/read", async () => {
+  it("an ordinary early ply outside every window collapses to ply/san/bestSan/read -- pvSans/phase still dropped", async () => {
     const perPly: ChatPerPlyInput[] = [
-      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "COLLAPSE-CHECK", pvSans: ["COLLAPSE-PV"] },
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "KEEP-BESTSAN", pvSans: ["DROP-PV"] },
       { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
     ];
     const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
@@ -245,7 +245,41 @@ describe("perPlyForModel — ply-scoping (B4b)", () => {
     await chat("how did the opening go?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
 
     expect(capturedPrompt).toContain('"ply":3');
-    expect(capturedPrompt).not.toContain("COLLAPSE-CHECK");
-    expect(capturedPrompt).not.toContain("COLLAPSE-PV");
+    // B4c (2026-07-28, coach-truth-speed round, regression fix): a collapsed
+    // ply must still carry bestSan -- dropping it entirely (the shipped
+    // regression) meant a question about any ply outside the last
+    // RECENT_PLY_WINDOW plies could never be answered with a concrete better
+    // move (owner's game-150 thumbs-down: asked about ply 27/28 in a 91-ply
+    // game, ~37 plies back, and the coach could not say). pvSans/phase are
+    // still the ONLY things dropped on collapse -- that's the actual token
+    // saving this round's B4b banked, and this test guards it doesn't quietly
+    // widen back out.
+    expect(capturedPrompt).toContain('"bestSan":"KEEP-BESTSAN"');
+    expect(capturedPrompt).not.toContain("DROP-PV");
+    expect(capturedPrompt).not.toMatch(/"phase":"(opening|middlegame|endgame)"[^}]*"ply":3/);
+  });
+
+  it("a ply outside the recent window still carries bestSan (token-shape guard against re-dropping it)", async () => {
+    // Deliberately identical setup to the collapse test above, phrased as
+    // its own named case per the round's required test list -- a future
+    // change that special-cases away bestSan again fails THIS test even if
+    // the collapse test above is edited or removed.
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
+      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "e4 opens things up nicely for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("what should you have played at move 3 instead?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"ply":3');
+    expect(capturedPrompt).toContain('"bestSan":"Nc6"');
   });
 });

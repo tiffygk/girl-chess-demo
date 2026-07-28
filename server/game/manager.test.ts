@@ -1227,10 +1227,20 @@ describe("GameManager", () => {
     it("converts stored UCI best_move/pv to SAN and includes it in the fact JSON sent to the backend", async () => {
       const gameId = createGame(sessionId, "maia-1100");
       recordMove({ gameId, ply: 1, san: "e4", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 2, san: "Nc6", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
       // Realistic shape (see the turning-lines block's own comment above):
       // attachEval(ply) persists the eval of fenAfter(ply) -- here, the
       // position right after white's e4, black to move. Black's best reply
       // e7e5 followed by white's g1f3 is a legal continuation from there.
+      //
+      // 2026-07-28 (off-by-one fix, coach-truth-speed round): this eval
+      // describes the position black is choosing FROM at ply 2, so its
+      // bestSan/pvSans belong on ply 2's row (the move she could have
+      // played INSTEAD of the actually-played Nc6), never on ply 1's own
+      // row (the move e4 she'd already played when this eval was computed).
+      // The old code attached it to ply 1 -- see manager.ts's pvLine call
+      // site and this round's HANDOFF for the real game-150 proof this was
+      // wrong (a black reply mislabeled as the alternative to a white move).
       attachEval(gameId, 1, { cp: 20, mate: null, bestMove: "e7e5", pv: ["e7e5", "g1f3"] });
 
       let capturedPrompt = "";
@@ -1256,12 +1266,90 @@ describe("GameManager", () => {
       expect(result.ok).toBe(true);
 
       expect(capturedPrompt).toContain('"perPlyAnalysis"');
-      expect(capturedPrompt).toContain('"bestSan":"e5"');
+      // bestSan/pvSans land on ply 2 (Nc6's row) -- the move she could have
+      // played instead of Nc6 -- not on ply 1 (e4's own row).
+      expect(capturedPrompt).toContain('"ply":2,"san":"Nc6","bestSan":"e5"');
       expect(capturedPrompt).toContain('"phase":"opening"');
       // pv converted from UCI (e7e5, g1f3) to SAN (e5, Nf3) via the same
       // replay discipline pvLine/getTurningLines already use.
       expect(capturedPrompt).toContain('"e5"');
       expect(capturedPrompt).toContain('"Nf3"');
+      // Ply 1 has no PRIOR persisted eval to draw a "what instead" answer
+      // from (there is no ply-0 row) -- an honest gap, not a guess.
+      expect(capturedPrompt).toContain('"ply":1,"san":"e4","bestSan":null');
+    }, 20000);
+  });
+
+  // 2026-07-28 (coach-truth-speed round): the off-by-one bug, pinned against
+  // REAL game-150 rows (data/girlchess.db, read-only queried during
+  // diagnosis, replayed here as a hardcoded fixture so the test never
+  // depends on the mutable live db). Verified independently before writing
+  // this test -- the owner's own illustrative ply numbers in the round brief
+  // didn't survive replay against the real rows (see the round's report),
+  // so this test asserts what chess.js and the persisted best_move/pv
+  // actually prove, not the brief's paraphrase:
+  //
+  // - ply 54 (Kh6) is BLACK's move (mallow) -- verified via chess.js replay,
+  //   fenBefore(54) has "b" to move. The persisted eval for ply 53 (h4, the
+  //   move immediately before it) has best_move g7h7 -- from fenBefore(54),
+  //   that is Kh7 (the black king retreating one square differently). That
+  //   is ply 54's correct bestSan: the move she (well, mallow) could have
+  //   played instead of Kh6.
+  // - ply 55 (Nf7+) is WHITE's move (the player). The persisted eval for
+  //   ply 54 (Kh6, the move immediately before it) has best_move a8h8 --
+  //   from fenBefore(55) (== fenAfter(54)), that is Qh8#, an immediate mate.
+  //   That is ply 55's correct bestSan.
+  //
+  // The OLD (buggy) code attached ply 53's own best_move (g7h7, replayed at
+  // fenAfter(53)) to ply 53 giving a nonsense same-ply best-move-after-the-
+  // opponent's-turn reading, and specifically attached ply 54's own
+  // best_move (a8h8 -> Qh8#) to PLY 54 -- confidently telling her that at
+  // move 54 (a BLACK move) she should have played a WHITE queen mate. This
+  // test pins the corrected attribution: Qh8# belongs to ply 55, Kh7 to
+  // ply 54, matching whose move it actually was.
+  describe("chat: perPlyAnalysis bestSan attribution off-by-one (2026-07-28 fix)", () => {
+    it("bestSan on a ply is the best move AT that ply (from the PRIOR ply's persisted eval), never the reply after it", async () => {
+      const gameId = createGame(sessionId, "maia-1100");
+      const GAME_150_SANS: string[] = [
+        "d4", "d5", "c3", "c6", "b3", "e6", "e3", "Nf6", "Bd2", "Be7", "Bd3", "Bd7", "Nf3", "O-O", "O-O",
+        "c5", "dxc5", "Bxc5", "b4", "Qe7", "bxc5", "Qxc5", "Qb3", "Nc6", "c4", "Nh5", "cxd5", "Ne7", "Bb4",
+        "Ba4", "Qxa4", "Qc6", "dxc6", "f5", "Bxe7", "Rfe8", "cxb7", "g5", "bxa8=Q", "Rxa8", "Bxg5", "Nf4",
+        "exf4", "Rc8", "Qxa7", "Ra8", "Qxa8+", "Kg7", "Ne5", "h6", "Be7", "h5", "h4", "Kh6", "Nf7+",
+      ];
+      expect(GAME_150_SANS.length).toBe(55);
+      for (let i = 0; i < GAME_150_SANS.length; i++) {
+        recordMove({ gameId, ply: i + 1, san: GAME_150_SANS[i], uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      }
+      // Real persisted best_move/pv for plies 53 and 54 (data/girlchess.db,
+      // game 150). pv is stored space-joined UCI on the real row; attachEval
+      // takes an array and joins it the same way.
+      attachEval(gameId, 53, { cp: -2, mate: null, bestMove: "g7h7", pv: ["g7h7", "e7f6", "h7h6", "a8h8"] });
+      attachEval(gameId, 54, { cp: 1, mate: null, bestMove: "a8h8", pv: ["a8h8"] });
+
+      let capturedPrompt = "";
+      gm.setCoachBackendForTesting(
+        {
+          name: "capture-fake",
+          async available() {
+            return true;
+          },
+          async generate(prompt: string) {
+            capturedPrompt = prompt;
+            return "let's look at moves 54 and 55.";
+          },
+        },
+        "claude"
+      );
+
+      const result = await gm.chat(gameId, {
+        message: "what should I have played at move 27 or 28?",
+        context: { mode: "review" },
+        backendPref: "claude",
+      });
+      expect(result.ok).toBe(true);
+
+      expect(capturedPrompt).toContain('"ply":54,"san":"Kh6","bestSan":"Kh7"');
+      expect(capturedPrompt).toContain('"ply":55,"san":"Nf7+","bestSan":"Qh8#"');
     }, 20000);
   });
 });
