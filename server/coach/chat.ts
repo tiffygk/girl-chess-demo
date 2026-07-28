@@ -484,11 +484,22 @@ export function assembleChatFactList(
     sans.add(t.san);
     if (t.punishSan) sans.add(t.punishSan);
   }
-  // Missed-win round (2026-07-28): every per-ply bestSan/pvSans the model is
-  // HANDED (restored by 46f641a, replay-verified server-side from fenBefore)
-  // must also be SPEAKABLE — without this fold, a reply echoing its own fact
-  // list's "Qh8#" as literal SAN gets zapped by validateChat and burns the
-  // one regen. Only replay-verified engine lines join here, never a claim.
+  // Missed-win round (2026-07-28): folds every per-ply bestSan/pvSans the
+  // model is HANDED (restored by 46f641a, replay-verified server-side from
+  // fenBefore) into the allow-list. Only replay-verified engine lines join
+  // here, never a claim.
+  //
+  // Union review 2026-07-28 correction: this fold does NOT make those moves
+  // speakable, which is what an earlier version of this comment claimed.
+  // checkVoice rejects EVERY non-bare-square SAN-shaped token independently
+  // of allowedSans (see chat.ts:671 and the both-routes pins in
+  // chat.general.test.ts), so a reply echoing "Qh8#" as literal notation is
+  // still zapped -- by the voice rule, not by this list. The fold is kept
+  // because allowedSans is the truth-membership record for SAN a future
+  // non-voice path may consult, and it costs no prompt tokens (allowedSans
+  // is stripped from the model-facing facts at factsForModel). It is
+  // currently redundant with checkVoice. Do not cite it as a speakability
+  // mechanism.
   for (const p of perPly ?? []) {
     if (p.bestSan) sans.add(p.bestSan);
     for (const s of p.pvSans) sans.add(s);
