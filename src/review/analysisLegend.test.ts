@@ -11,11 +11,12 @@ import type { ArrowColor } from "../game/reviewArrows";
 import gamePageSrc from "../game/GamePage.tsx?raw";
 import debriefPageSrc from "./DebriefPage.tsx?raw";
 import analysisLegendRailSrc from "./AnalysisLegendRail.tsx?raw";
+import reviewArrowsSrc from "../game/reviewArrows.ts?raw";
 
 describe("analysisLegend.ts row model (D1 cipher rail)", () => {
-  it("has exactly six rows, four solid then two dashed", () => {
-    expect(LEGEND_ROWS).toHaveLength(6);
-    expect(LEGEND_SOLID_ROWS).toHaveLength(4);
+  it("has exactly five rows, three solid then two dashed", () => {
+    expect(LEGEND_ROWS).toHaveLength(5);
+    expect(LEGEND_SOLID_ROWS).toHaveLength(3);
     expect(LEGEND_DASHED_ROWS).toHaveLength(2);
     expect(LEGEND_ROWS).toEqual([...LEGEND_SOLID_ROWS, ...LEGEND_DASHED_ROWS]);
   });
@@ -25,10 +26,28 @@ describe("analysisLegend.ts row model (D1 cipher rail)", () => {
     for (const row of LEGEND_DASHED_ROWS) expect(row.style).toBe("dashed");
   });
 
-  it("covers every ArrowColor exactly once (no missing/extra/duplicate state)", () => {
-    const expectedKinds: ArrowColor[] = ["played", "best", "threat", "found", "mallow", "mallow-best"];
+  // Owner ruling 2026-07-28: the legend documents every state the app can
+  // actually DRAW -- not every value the ArrowColor union happens to carry.
+  // "threat" (#FF3DA6 solid) is in the union but is emitted by nothing, in
+  // review or in live play: it went dead when solid=happened/dashed=didn't
+  // became the rule, since a punishment mallow did NOT play must be dashed.
+  // A row for an unrenderable state teaches a colour the player then waits
+  // for and never sees.
+  it("covers every DRAWABLE ArrowColor exactly once (no missing/extra/duplicate state)", () => {
+    const expectedKinds: ArrowColor[] = ["played", "best", "found", "mallow", "mallow-best"];
     expect(new Set(LEGEND_ROWS.map((r) => r.kind))).toEqual(new Set(expectedKinds));
     expect(LEGEND_ROWS.map((r) => r.kind)).toHaveLength(new Set(LEGEND_ROWS.map((r) => r.kind)).size);
+  });
+
+  // The other half of that ruling, and the half that can rot silently: the
+  // row above is only correct while "threat" stays unemitted. If some future
+  // wave starts drawing a real live alarm again, this fails and whoever did
+  // it has to put the row back rather than shipping an undocumented colour.
+  it("no arrow producer emits 'threat' -- if one ever does, the legend owes it a row", () => {
+    for (const src of [reviewArrowsSrc, gamePageSrc, debriefPageSrc]) {
+      expect(src).not.toMatch(/color:\s*["']threat["']/);
+      expect(src).not.toMatch(/kind:\s*["']threat["']/);
+    }
   });
 
   // Pinned to the REAL shipped arrow CSS (src/skin/sugar-glitch.css, commit
@@ -58,9 +77,14 @@ describe("analysisLegend.ts row model (D1 cipher rail)", () => {
       played: "your move",
       found: "you found the best move",
       mallow: "mallow's move",
-      threat: "a real threat",
       best: "you should've",
-      "mallow-best": "mallow should've",
+      // Owner ruling 2026-07-28. This arrow is threatForPly -- the refutation
+      // of the move SHE PLAYED (manager.ts:520), i.e. how mallow could have
+      // punished it. "mallow should've" named whose move it was; she reads
+      // the arrow for what it means to HER. It is NOT "what the recommended
+      // move protects against" (nothing derives that), so the label has to
+      // stay anchored to her move, which is exactly what it says.
+      "mallow-best": "what your move allowed",
     });
   });
 });

@@ -16,13 +16,20 @@
 // it comes only from moves.classification (MoveClassification), never
 // re-derived from deltaP -- classifications.ts alone owns those thresholds.
 
-import type { SummaryMove, TurningLine, MoveClassification } from "../game/api";
+import type { SummaryMove, TurningLine, MoveClassification, TurningPoint } from "../game/api";
 import { fenAtPly } from "./Rewind";
 import { describeSanMove } from "../game/describeSanMove";
 import { followedBest } from "./followedBest";
 
 export type Verdict = "done well" | "could be better";
-export type Severity = "not-an-error" | "inaccuracy" | "mistake" | "blunder";
+// "missed-win" added 2026-07-28 after the visual gate caught a missed mate in
+// one rendering as "not-an-error" and printing "this cost you nothing".
+// It is deliberately NOT one of the owner's original four tiers (didn't pick
+// the best move / inaccuracy / mistake / blunder) because it is not a deltaP
+// grade at all: mate-in-1 -> mate-in-3 is deltaP ~ 0, so the classification
+// ladder can never see it, however the thresholds are tuned. It comes from
+// the missed-win turning point instead.
+export type Severity = "not-an-error" | "missed-win" | "inaccuracy" | "mistake" | "blunder";
 
 export interface HighlightedRow {
   ply: number;
@@ -39,6 +46,10 @@ export interface BuildHighlightedRowsInput {
   gameSans: SummaryMove[];
   turningLines: TurningLine[];
   classifications?: MoveClassification[];
+  // Optional so existing callers compile. Only kind === "missed-win" points
+  // are read, and only to raise severity -- this module never re-derives a
+  // grade of its own from them.
+  turningPoints?: TurningPoint[];
 }
 
 function moveNumberForPly(ply: number): number {
@@ -77,12 +88,26 @@ const DONE_WELL_NOTE = "nothing here was a mistake. trust the instinct that made
 // classification at all).
 const SEVERITY_LINE: Record<Severity, (best: string) => string> = {
   "not-an-error": (best) => `you just didn't pick the best move here. ${best} was the stronger move, and this cost you nothing.`,
+  // Never "cost you nothing" -- a forced mate walked past is the most
+  // expensive thing on this list, even when the eval barely moves because the
+  // position was already won. Deliberately does not scold: the debrief's own
+  // missed-win bullet carries the count and how much longer the win took.
+  "missed-win": (best) => `you had checkmate here. ${best} was mate on the spot, and the game went on without it.`,
   inaccuracy: (best) => `this was an inaccuracy. ${best} would have held more of your edge.`,
   mistake: (best) => `this was a mistake. ${best} was the move the position needed.`,
   blunder: (best) => `this was a blunder. ${best} would have kept the game where it was.`,
 };
 
-function severityFor(ply: number, classifications: MoveClassification[]): Severity {
+function severityFor(
+  ply: number,
+  classifications: MoveClassification[],
+  turningPoints: TurningPoint[]
+): Severity {
+  // Checked FIRST and ply-scoped: a forced mate she walked past outranks any
+  // deltaP grade, and is invisible to the classification ladder besides (see
+  // the Severity type's comment). Nothing else about the point is trusted --
+  // only that one exists at this exact ply.
+  if (turningPoints.some((t) => t.kind === "missed-win" && t.ply === ply)) return "missed-win";
   const classification = classifications.find((c) => c.ply === ply)?.classification;
   if (classification === "inaccuracy" || classification === "mistake" || classification === "blunder") {
     return classification;
@@ -91,7 +116,7 @@ function severityFor(ply: number, classifications: MoveClassification[]): Severi
 }
 
 export function buildHighlightedRows(input: BuildHighlightedRowsInput): HighlightedRow[] {
-  const { highlightedPlies, gameSans, turningLines, classifications = [] } = input;
+  const { highlightedPlies, gameSans, turningLines, classifications = [], turningPoints = [] } = input;
   const rows: HighlightedRow[] = [];
 
   for (const ply of highlightedPlies) {
@@ -103,13 +128,23 @@ export function buildHighlightedRows(input: BuildHighlightedRowsInput): Highligh
     // fb is only undefined when there's no line, no bestSan on it, or the
     // ply falls outside the game -- none of those PROVE a better move
     // existed, so the honest default is "done well" (see file header).
-    const verdict: Verdict = fb && !fb.followed ? "could be better" : "done well";
-    const severity = severityFor(ply, classifications);
+    const severity = severityFor(ply, classifications, turningPoints);
+    // A missed forced mate is never "done well", whatever followedBest can or
+    // cannot prove. Without this, a missed-win ply that happens to carry no
+    // TurningLine would fall through to DONE_WELL_NOTE and congratulate her
+    // for walking past mate -- the exact failure mode this round exists to
+    // end, one layer down from where it was found.
+    const verdict: Verdict =
+      severity === "missed-win" || (fb && !fb.followed) ? "could be better" : "done well";
 
     let note: string;
     if (verdict === "could be better" && fb?.bestSan) {
       const best = describedOrRaw(fb.bestSan, seedFenForLine(line, gameSans));
       note = SEVERITY_LINE[severity](best);
+    } else if (severity === "missed-win") {
+      // Missed win with no line on record: still say what happened, just
+      // without naming a move we cannot prove.
+      note = "you had checkmate here and the game went on without it.";
     } else {
       note = DONE_WELL_NOTE;
     }

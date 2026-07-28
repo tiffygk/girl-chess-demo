@@ -34,20 +34,35 @@ export interface LegendRow {
 const CYAN = "#23E5FF"; // your move -- .arrow-played
 const GREEN = "rgb(76,175,140)"; // engine's counsel -- .arrow-best / .arrow-found body
 const ROSE = "#C22B7E"; // mallow -- .arrow-mallow / .arrow-mallow-best
-const ALARM = "#FF3DA6"; // real threat only -- .arrow-threat
 
 // "solid -- it happened" cluster. Order matches the mockup/spec panel.
+//
+// The solid #FF3DA6 "a real threat" row was REMOVED 2026-07-28 (owner ruling,
+// prompted by the visual gate). Nothing in the app emits a threat-coloured
+// arrow any more, in review OR in live play -- grep for a producer returns
+// none. It went dead the moment solid=happened/dashed=didn't became the rule,
+// because a punishment mallow did NOT play has to be dashed under it. A
+// legend row for a state that cannot render is worse than no row: it teaches
+// a colour the player will never see and then leaves her waiting for it.
+// #FF3DA6 stays reserved in the palette as the only alarm colour.
 export const LEGEND_SOLID_ROWS: LegendRow[] = [
   { kind: "played", label: "your move", style: "solid", color: CYAN },
   { kind: "found", label: "you found the best move", style: "solid", color: GREEN, haloColor: CYAN },
   { kind: "mallow", label: "mallow's move", style: "solid", color: ROSE },
-  { kind: "threat", label: "a real threat", style: "solid", color: ALARM },
 ];
 
 // "dashed -- it didn't" cluster.
+//
+// "what your move allowed" (owner ruling 2026-07-28): this arrow is
+// threatForPly -- the refutation of the move SHE PLAYED, i.e. how mallow
+// could have punished it (manager.ts:520). The old label "mallow should've"
+// named whose move it is; the owner reads the arrow for what it MEANS to her,
+// and asked for the label to say that. Note this is NOT "what the recommended
+// move protects against" -- nothing in the codebase derives that, and the two
+// only usually coincide. The label must stay true to the refutation.
 export const LEGEND_DASHED_ROWS: LegendRow[] = [
   { kind: "best", label: "you should've", style: "dashed", color: GREEN },
-  { kind: "mallow-best", label: "mallow should've", style: "dashed", color: ROSE },
+  { kind: "mallow-best", label: "what your move allowed", style: "dashed", color: ROSE },
 ];
 
 // All six, solid cluster first -- the order the rail actually renders in.
