@@ -23,4 +23,14 @@ describe("groupMoves", () => {
   it("handles a single move", () => {
     expect(groupMoves(["e4"])).toEqual([{ moveNumber: 1, white: { san: "e4", ply: 1 } }]);
   });
+
+  // Highlight-a-move (Task 4): a highlighted ply is located by matching its
+  // ply against a row's white/black entry, so the grouping must keep ply
+  // identity on every row -- confirmed already true above, pinned here
+  // explicitly since MoveListNav's highlight styling depends on it.
+  it("groupMoves keeps ply identity so a highlighted ply can be located", () => {
+    const rows = groupMoves(["d4", "d5", "c4"]);
+    expect(rows[0].white?.ply).toBe(1);
+    expect(rows[1].white?.ply).toBe(3);
+  });
 });

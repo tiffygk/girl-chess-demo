@@ -381,6 +381,10 @@ export function DebriefPage({
   // directly via opportunityForLine.
   const exploreLine = exploring?.ply != null ? turningLines.find((l) => l.ply === exploring.ply) : undefined;
   const exploreOpportunity = exploreLine ? opportunityForLine(exploreLine, gameSans) : undefined;
+  // Highlight-a-move (Task 4): derived straight off gameSans (the summary
+  // Task 1 widened), same "no new prop" pattern the rest of this component
+  // already uses for gameSans-derived data.
+  const highlightedPlies = new Set(gameSans.filter((m) => m.highlighted).map((m) => m.ply));
   return (
     <div className="debrief pop-in">
       <AnalysisLegend />
@@ -445,6 +449,7 @@ export function DebriefPage({
         currentPly={rewindPly}
         onSelect={onRewind}
         disabled={!!exploring}
+        highlightedPlies={highlightedPlies}
       />
       <div className="debrief-footer">
         {rewindPly != null && !exploring && (
