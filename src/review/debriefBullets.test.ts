@@ -659,6 +659,104 @@ describe("affordancesForBullet (2026-07-27, a later wave's UI consumer)", () => 
   });
 });
 
+describe("missed-win bullets", () => {
+  const missedTp = {
+    rank: 3 as const, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0,
+    lowConfidence: false, kind: "missed-win" as const, mateIn: 1, missedCount: 5,
+  };
+  const line55 = { ply: 55, pvSans: ["Qh8#"], bestSan: "Qh8#" };
+
+  it("forces a could-be-better bullet that names the move, the cost, and the repeats (game 150)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedTp],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toBe(
+      "move 28: you had checkmate in one. your queen to h8 was mate on the spot, and the win took 18 more moves to land. this happened 5 times this game."
+    );
+    expect(b.category).toBe("endgame technique");
+    expect(b.phase).toBe("endgame");
+    expect(b.ply).toBe(55);
+  });
+
+  it("says the mate never landed when the game ended without one (adjudication shape)", () => {
+    // Same real game truncated before the mating move: last san is Kc4, no '#'.
+    const truncated = GAME150_SANS.slice(0, 90);
+    const bullets = debriefBullets({
+      turningPoints: [{ ...missedTp, missedCount: 1 }],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 90,
+      gameSans: truncated,
+      turningLines: [line55],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toBe(
+      "move 28: you had checkmate in one. your queen to h8 was mate on the spot, but the game ended 17 moves later without it."
+    );
+  });
+
+  it("outranks the cap: a missed win plus two ordinary mistakes still shows the missed win first", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        missedTp,
+        { rank: 1, ply: 21, san: "bxc5", label: "mistake", deltaP: -0.2, lowConfidence: false, kind: "swing" as const },
+        { rank: 2, ply: 31, san: "Qxa4", label: "blunder", deltaP: -0.3, lowConfidence: false, kind: "swing" as const },
+      ],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const cbb = bullets.filter((x) => x.section === "could be better");
+    expect(cbb).toHaveLength(2); // cap holds
+    expect(cbb[0].ply).toBe(55); // forced first
+  });
+
+  it("makes both no-finding fallbacks unreachable when a missed win exists", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedTp], // no HER_NEG labels, no classifications: old code fell through twice
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const texts = bullets.map((b) => b.text).join(" | ");
+    expect(texts).not.toContain("no clear mistakes to flag here");
+    expect(texts).not.toContain("no repeat pattern showed up");
+    const wn = bullets.find((b) => b.section === "watch next time")!;
+    expect(wn.text).toBe(
+      "you had checkmate on the board 5 times and played past it. when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move."
+    );
+    expect(wn.category).toBe("endgame technique");
+  });
+
+  it("keeps the episode bullet alongside the missed-win watch bullet (game 149 shape)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        { ...missedTp, missedCount: 1 },
+        { rank: 4, ply: 30, san: "Qxh3", label: "king pressure", deltaP: -0.05, lowConfidence: false, kind: "episode" as const, plyEnd: 40 },
+      ],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const wn = bullets.filter((b) => b.section === "watch next time");
+    expect(wn).toHaveLength(2);
+    expect(wn[0].text).toContain("you had checkmate on the board");
+    expect(wn[1].text).toContain("pieces camped on your king");
+  });
+});
+
 describe("nearly-bare-side phase override (missed-win round, 2026-07-28)", () => {
   it("a bullet at a nearly-bare-board ply reads endgame even when the tail rule would say middlegame", () => {
     const bullets = debriefBullets({
