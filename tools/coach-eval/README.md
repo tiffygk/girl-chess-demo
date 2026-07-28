@@ -24,9 +24,23 @@ this harness measures all three shapes that decision creates:
 
 | arm | what it exercises | length budget | wall-clock budget | question count |
 |---|---|---|---|---|
-| `board-live` | the original v2/v3 arm — a live game, a board/move question | 45 words / 3 sentences (20/2 for affirmation) — `STANDARD_WORD_LIMIT`/`STANDARD_SENTENCE_LIMIT` in `score.ts` | `CHAT_TIMEOUT_MS` (45s) | 65 (frozen, byte-identical to v2/v3) |
-| `general` | a next-game-strategy question, never about this position (owner's real refused question is `gen-01`, verbatim) | `GENERAL_MAX_WORDS` (120 words, imported from `server/coach/chat.ts` — never a second hardcoded copy) | `CHAT_TIMEOUT_MS` (45s; these fixtures are live games) | 15 |
-| `board-review` | a board/move question, but against a FINISHED game — exercises `status:"finished"` + the `outcome` fact and the longer review budget | same `GENERAL_MAX_WORDS` budget as `general` (chat.ts applies the same one-to-three-sentences-can-run-longer rule to any finished-game chat, not just off-topic ones) | `CHAT_REVIEW_BUDGET_MS` (90s) | 16 (one per `board-live`'s `[dir]` question, same text + fixture, so the live-vs-review delta is attributable to the budget/outcome fact alone) |
+| `board-live` | the original v2/v3 arm — a live game, a board/move question | `LENGTH_MAX_WORDS` (150 words, one cap for every arm; 20 for affirmation rows) in `score.ts` | `CHAT_TIMEOUT_MS` (45s) | 65 (frozen, byte-identical to v2/v3) |
+| `general` | a next-game-strategy question, never about this position (owner's real refused question is `gen-01`, verbatim) | same `LENGTH_MAX_WORDS` (150) hard cap | `CHAT_TIMEOUT_MS` (45s; these fixtures are live games) | 15 |
+| `board-review` | a board/move question, but against a FINISHED game — exercises `status:"finished"` + the `outcome` fact and the longer review budget | same `LENGTH_MAX_WORDS` (150) hard cap | `CHAT_REVIEW_BUDGET_MS` (90s) | 16 (one per `board-live`'s `[dir]` question, same text + fixture, so the live-vs-review delta is attributable to the budget/outcome fact alone) |
+
+**The length budget was retuned on 2026-07-28** (eval-instrument-repair
+round). It used to be 45 words / 3 sentences on `board-live` and 120 words on
+the other two arms. The owner then graded all 30 blinded rows, and joining her
+grades to the raw answers showed the axis ran opposite to her judgment: the
+median answer she PREFERRED was 95 words against 71 for the one she rejected,
+and 18 of her 22 decisive picks were over the old 45-word cap. So the axis was
+failing her favourite answers. It is now one 150-word hard cap on every arm (a
+wall-of-text guard, clear of her longest preferred answer at 129 words), plus
+an informational `underTarget` rate against a 100-word concision target that
+is reported and never scored. `decide.ts` also raised `LENGTH_DECISIVE_DELTA`
+from 5 to 20 points, so length may no longer pick a winner on a small gap.
+Concision is now asked for in the prompt (`personas/coach.md`), not punished
+in the score.
 
 **`board-review`'s `status`/`outcome` facts are a harness-synthesized
 wrapper** (`run.ts`'s `boardReviewOutcome`), not the real db result for games
@@ -258,8 +272,8 @@ fixtures.ts     pinned contexts C1-C5; board-live's 65-question set + PD/AF pend
                 Wave E1 adds GENERAL_QUESTIONS (15, gen-*) and BOARD_REVIEW_QUESTIONS (16, rev-*, reusing [dir]'s text/ctx)
 run.ts          cli entry: executes one model over all three arms (or one, via --arm); --warmup/--rep; writes raw-<model>[-rep<K>].json
                 incrementally; routes every question through classifyIntent + the finished/live budget split, same as manager.ts
-score.ts        mechanical checks (axes 1-6), imports server/coach/voiceRules.ts + GENERAL_MAX_WORDS (server/coach/chat.ts);
-                checkLength(text, isAffirmation, arm) picks board-live's 45w/3s vs general/board-review's GENERAL_MAX_WORDS budget
+score.ts        mechanical checks (axes 1-6), imports server/coach/voiceRules.ts; checkLength(text, isAffirmation, arm) applies ONE
+                hard cap (LENGTH_MAX_WORDS 150) on every arm and reports underTarget against CONCISION_TARGET_WORDS (100), which never scores
 render.ts       multi-rep discovery + PER-ARM aggregation; summary.json (unblinded, arm-keyed) + blinded trio; exports
                 medianOf/aggregateAxis/buildModelSummary/filterFilesByArm
 decide.ts       mechanical model recommendation, PER ARM, incl. a p90-latency deciding axis for general/board-review; emits a

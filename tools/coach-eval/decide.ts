@@ -26,7 +26,18 @@ import type { Arm } from "./fixtures";
 // D4 thresholds (rate units, 0..1). These are the decision rule; changing
 // them changes the recommendation, so they live in exactly one place.
 export const JARGON_DECISIVE_DELTA = 0.03;
-export const LENGTH_DECISIVE_DELTA = 0.05;
+// Eval-instrument-repair round (2026-07-28): raised 0.05 -> 0.20. Length was
+// the axis that had actually been picking a winner on this data (v3's
+// board-live decision read `decidedBy: "length"`, sonnet 48% vs opus 20%),
+// and the owner's grades then showed the budget it scored against ran
+// OPPOSITE to her judgment -- 18 of her 22 decisive picks were answers that
+// axis was failing. score.ts's checkLength is retuned so it no longer
+// measures the wrong thing; this constant is the second half of the fix: even
+// correctly measured, a few points of length-compliance is noise on an axis
+// this weakly tied to quality, so it may only decide on a genuinely large
+// (>=20 point) gap with disjoint rep ranges, and only after both reliability
+// axes and jargon have declined to decide.
+export const LENGTH_DECISIVE_DELTA = 0.2;
 export const PENDING_DECISIVE_DELTA = 0.15;
 export const DEFAULT_MODEL = "sonnet" as const;
 
@@ -190,6 +201,15 @@ export interface ArmDecisionInputs extends DecideInputs {
   // erroring, not because either axis is arm-specific.
   p90LatencyMs?: DecidePair;
   timeoutRate?: DecidePair;
+  // INFORMATIONAL ONLY (eval-instrument-repair round, 2026-07-28): the share
+  // of answers under score.ts's CONCISION_TARGET_WORDS. Carried here so it is
+  // echoed into decision.json's `inputs` alongside the axes that did the
+  // deciding -- a reader can see the concision picture without it having
+  // influenced the outcome. decideArm/decideModel MUST NEVER read this field.
+  // Concision is asked for in the prompt (personas/coach.md), not scored, and
+  // the owner's own grades put her preferred answers ABOVE the target as often
+  // as below it. A test asserts a 90-point gap here changes nothing.
+  underTargetRate?: DecidePair;
 }
 
 export interface ArmDecision extends Decision {
@@ -286,6 +306,9 @@ function armDecisionInputsFrom(_arm: Arm, sonnet: ArmSummary["sonnet"], opus: Ar
     pendingAudited,
     p90LatencyMs: pairFrom(sonnet.latencyAgg.p90, opus.latencyAgg.p90),
     timeoutRate: pairFrom(sonnet.pipelineAgg.timeoutRate, opus.pipelineAgg.timeoutRate),
+    // Echoed into decision.json for the reader; never consulted. See the
+    // field's comment on ArmDecisionInputs.
+    underTargetRate: pairFrom(sonnet.axes.underTarget, opus.axes.underTarget),
   };
 }
 
