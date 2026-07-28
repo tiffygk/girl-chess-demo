@@ -100,7 +100,10 @@ describe("turningLineArrows", () => {
     expect(arrows).toHaveLength(2);
   });
 
-  it("threat arrow still renders alongside the rest, unaffected by followedBest", () => {
+  it("the persisted refutation renders as 'mallow-best' (dashed hypothetical), unaffected by followedBest", () => {
+    // Owner ruling (2026-07-27/28): line.threat is mallow's RECOMMENDED
+    // move — a hypothetical — and must never wear the solid alarm "threat"
+    // colour that made her read it as a move that actually happened.
     const l = line({
       ply: 10,
       playedFromTo: { from: "e2", to: "e4" },
@@ -108,7 +111,83 @@ describe("turningLineArrows", () => {
       threat: { from: "d8", to: "h4" },
     });
     const arrows = turningLineArrows(l);
-    expect(arrows).toContainEqual({ from: "d8", to: "h4", color: "threat" });
+    expect(arrows).toContainEqual({ from: "d8", to: "h4", color: "mallow-best" });
+    expect(arrows.some((a) => a.color === "threat")).toBe(false);
+  });
+
+  // Owner replay report (2026-07-27/28): "It showed my recommended move and
+  // Malo's recommended move. Then it showed my actual move but not Malo's
+  // actual move." The three tests below are that report's regression guards.
+  describe("four-state ruling: mallow's actual + recommended on a her-ply card", () => {
+    // 1. e4 e5 2. g4 d5 — her inaccuracy at ply 3 (g4), mallow's actual
+    // reply at ply 4 (d7→d5), mallow's recommended refutation d8→h4 (Qh4).
+    const sans = [
+      { ply: 1, san: "e4" },
+      { ply: 2, san: "e5" },
+      { ply: 3, san: "g4" },
+      { ply: 4, san: "d5" },
+    ];
+    const herPlyLine = () =>
+      line({
+        ply: 3,
+        playedFromTo: { from: "g2", to: "g4" },
+        bestFromTo: { from: "d2", to: "d4" },
+        threat: { from: "d8", to: "h4" },
+      });
+    const notFollowed = () =>
+      fb({ seedPly: 2, playerPly: 3, playedFromTo: { from: "g2", to: "g4" }, followed: false });
+
+    it("mallow's ACTUAL move appears on a her-ply turning line, derived from the game sans", () => {
+      const arrows = turningLineArrows(herPlyLine(), notFollowed(), sans);
+      expect(arrows).toContainEqual({ from: "d7", to: "d5", color: "mallow" });
+    });
+
+    it("mallow's recommended and mallow's actual are DIFFERENT ArrowColors", () => {
+      const arrows = turningLineArrows(herPlyLine(), notFollowed(), sans);
+      const actual = arrows.find((a) => a.from === "d7" && a.to === "d5");
+      const recommended = arrows.find((a) => a.from === "d8" && a.to === "h4");
+      expect(actual?.color).toBe("mallow");
+      expect(recommended?.color).toBe("mallow-best");
+      expect(actual?.color).not.toBe(recommended?.color);
+    });
+
+    it("no arrow ever uses the alarm colour 'threat' (#FF3DA6) for these hypotheticals — either parity", () => {
+      const herPly = turningLineArrows(herPlyLine(), notFollowed(), sans);
+      const oppPly = turningLineArrows(
+        line({
+          ply: 2,
+          playedFromTo: { from: "e7", to: "e5" },
+          bestFromTo: { from: "d8", to: "h4" },
+          threat: { from: "d1", to: "h5" },
+        }),
+        fb({ seedPly: 2, playerPly: 3, playedFromTo: { from: "g2", to: "g4" }, followed: false }),
+        sans
+      );
+      expect([...herPly, ...oppPly].some((a) => a.color === "threat")).toBe(false);
+    });
+
+    it("game ended on her move: mallow's actual cannot be resolved, so nothing is drawn (never a guess)", () => {
+      const truncated = sans.slice(0, 3); // ends at her g4 — no reply exists
+      const arrows = turningLineArrows(herPlyLine(), notFollowed(), truncated);
+      expect(arrows.some((a) => a.color === "mallow")).toBe(false);
+      // her own arrows are untouched by the missing reply
+      expect(arrows).toContainEqual({ from: "g2", to: "g4", color: "played" });
+      expect(arrows).toContainEqual({ from: "d2", to: "d4", color: "best" });
+    });
+
+    it("mallow actually played the recommended refutation: one SOLID 'mallow' arrow, no coincident dashed twin", () => {
+      // A dashed line drawn over an identical solid one just reads solid —
+      // collapse to the honest single arrow, same discipline as "found".
+      const l = line({
+        ply: 3,
+        playedFromTo: { from: "g2", to: "g4" },
+        bestFromTo: { from: "d2", to: "d4" },
+        threat: { from: "d7", to: "d5" }, // recommendation = what she then played
+      });
+      const arrows = turningLineArrows(l, notFollowed(), sans);
+      expect(arrows).toContainEqual({ from: "d7", to: "d5", color: "mallow" });
+      expect(arrows.some((a) => a.color === "mallow-best")).toBe(false);
+    });
   });
 
   it("with no fb (no gameSans to replay from), degrades to the pre-existing played+best+threat set", () => {

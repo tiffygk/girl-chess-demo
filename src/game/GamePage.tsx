@@ -1298,7 +1298,12 @@ export function GamePage() {
     (line: TurningLine | undefined, ply: number): { from: string; to: string; color: ArrowColor }[] => {
       if (!activeReviewMoves) return [];
       const fb = followedBest(line, activeReviewMoves);
-      const arrows = line ? turningLineArrows(line, fb) : [];
+      // activeReviewMoves rides along so a her-ply card can draw mallow's
+      // ACTUAL reply (ply + 1) — owner replay report 2026-07-27/28: her
+      // recommended, mallow's recommended, and her actual move all rendered,
+      // but mallow's actual never did, so the only arrow on mallow's half of
+      // the board depicted a move that never happened.
+      const arrows = line ? turningLineArrows(line, fb, activeReviewMoves) : [];
       // Review fix (Wave F, 2026-07-27, finding 7): "mallow" added to the
       // guard alongside "played"/"found". An opponent-ply line with no `fb`
       // (e.g. mallow's slip was the game's last move -- no reply exists to

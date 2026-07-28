@@ -31,8 +31,8 @@
 //     (Board.tsx:843, first-match-wins) silently drops one of the two square
 //     washes — a single arrow is the correct, honest render of "these are
 //     the same move."
-import type { TurningLine } from "./api";
-import type { FollowedBest } from "../review/followedBest";
+import type { TurningLine, SummaryMove } from "./api";
+import { playedArrowForPly, type FollowedBest } from "../review/followedBest";
 
 // "found" is new this round — the single-arrow dedup colour above. Board.tsx
 // and GamePage.tsx's own ArrowColor alias both need this widened union too
@@ -48,7 +48,20 @@ import type { FollowedBest } from "../review/followedBest";
 // a new hex — see sugar-glitch.css's .arrow-mallow), rendered visually
 // distinct from the solid alarm-magenta .arrow-threat so "mallow moved here"
 // can never read as "you are being threatened."
-export type ArrowColor = "played" | "best" | "threat" | "found" | "mallow";
+//
+// "mallow-best" (owner ruling, 2026-07-27/28 replay report): mallow's
+// RECOMMENDED move — the persisted refutation line.threat carries (see
+// manager.ts threatForPly: "what mallow could have played to punish this").
+// It used to render as "threat" (#FF3DA6 solid), and the owner read the
+// solid alarm arrow as a move that actually happened ("it showed Malo
+// making a move with the pink arrow that didn't actually happen"). The
+// ruling: SOLID = it happened, DASHED = it didn't, on BOTH sides of the
+// board. So mallow's recommended is #C22B7E dashed (same closed-palette hex
+// as her actual "mallow" arrow, hypothetical style), and #FF3DA6 stays
+// reserved for genuine alarms only — turningLineArrows no longer emits
+// "threat" at all; the value remains in the union for a real live-alarm
+// consumer, never for a hypothetical.
+export type ArrowColor = "played" | "best" | "threat" | "found" | "mallow" | "mallow-best";
 
 export interface ReviewArrow {
   from: string;
@@ -63,11 +76,27 @@ export interface ReviewHighlight {
 
 // `fb` is optional so a caller with no gameSans (nothing to replay
 // followedBest from) still gets the pre-existing, pre-this-round arrow set
-// (played + best + threat, no reply, no dedup) rather than a crash or a
-// guess.
-export function turningLineArrows(line: TurningLine, fb?: FollowedBest): ReviewArrow[] {
+// (played + best + mallow-recommended, no reply, no dedup) rather than a
+// crash or a guess. `gameSans` is optional for the same reason and feeds
+// exactly one thing: mallow's ACTUAL reply on a her-ply card (owner replay
+// report, 2026-07-27/28 — "it showed my actual move but not Malo's actual
+// move", so the only arrow on mallow's half depicted a hypothetical).
+// Endpoint math is playedArrowForPly (followedBest.ts) — never re-derived
+// here; a reply that cannot be resolved (game ended on her move, replay
+// broke) draws nothing rather than guessing.
+export function turningLineArrows(
+  line: TurningLine,
+  fb?: FollowedBest,
+  gameSans?: SummaryMove[]
+): ReviewArrow[] {
   const arrows: ReviewArrow[] = [];
   const isOpponentPly = line.ply % 2 === 0;
+
+  // Her-ply card: mallow's actual reply lives at line.ply + 1 (she is white,
+  // odd plies; mallow answers on the next, even ply). On an opponent-ply
+  // card mallow's actual move IS line.playedFromTo below — nothing extra.
+  const mallowReply =
+    !isOpponentPly && gameSans ? playedArrowForPly(gameSans, line.ply + 1) : undefined;
 
   if (isOpponentPly) {
     // The opponent's own move at line.ply is always its own, distinct arrow
@@ -103,7 +132,22 @@ export function turningLineArrows(line: TurningLine, fb?: FollowedBest): ReviewA
     if (line.bestFromTo) arrows.push({ ...line.bestFromTo, color: "best" });
   }
 
-  if (line.threat) arrows.push({ ...line.threat, color: "threat" });
+  // Mallow's ACTUAL reply — solid, "it happened" (colour "mallow", same as
+  // her own move on an opponent-ply card: one colour per actor, style
+  // carries the happened/hypothetical split).
+  if (mallowReply) arrows.push({ ...mallowReply, color: "mallow" });
+
+  // Mallow's RECOMMENDED move (the persisted refutation) — dashed
+  // "mallow-best", never the solid alarm "threat" (owner ruling; see the
+  // union comment above). When her actual reply IS the recommended one, the
+  // two arrows would be coincident (a dashed line over an identical solid
+  // one just reads solid) — collapse to the solid actual alone, same
+  // honest-single-arrow discipline as the "found" dedup.
+  if (line.threat) {
+    const coincides =
+      mallowReply && mallowReply.from === line.threat.from && mallowReply.to === line.threat.to;
+    if (!coincides) arrows.push({ ...line.threat, color: "mallow-best" });
+  }
   return arrows;
 }
 

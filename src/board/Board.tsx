@@ -153,13 +153,17 @@ interface BoardProps {
   // an opponent-ply turning line's own move, now distinct from her "played"
   // cyan reply. Data-only change here too; see sugar-glitch.css's
   // .arrow-mallow/.tp-mallow for the actual colour.
-  arrows?: { from: string; to: string; color: "played" | "best" | "threat" | "found" | "mallow" }[];
+  // Owner ruling (2026-07-27/28): "mallow-best" added -- mallow's
+  // RECOMMENDED move, dashed #C22B7E, never the solid alarm "threat". The
+  // style axis is now uniform: solid = it happened (played/found/mallow/
+  // threat), dashed = it didn't (best/mallow-best). CSS owns the strokes.
+  arrows?: { from: string; to: string; color: "played" | "best" | "threat" | "found" | "mallow" | "mallow-best" }[];
   /**
    * Increment 3.91 (Task 1): companion square wash for the arrows above —
    * reuses the existing square-name-class pass on `.sq` (below) with new
    * `.tp-played`/`.tp-best`/`.tp-threat` classes, same render-only contract.
    */
-  highlightSquares?: { square: string; kind: "played" | "best" | "threat" | "found" | "mallow" }[];
+  highlightSquares?: { square: string; kind: "played" | "best" | "threat" | "found" | "mallow" | "mallow-best" }[];
 }
 
 // ambient decorative jitter squares, same indices as the demo — staggered

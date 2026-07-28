@@ -907,6 +907,13 @@
    Thinner ring than tp-threat's alarm band so it reads as "her voice," not
    "you are being threatened." */
 .gc-app .sq.tp-mallow { box-shadow: inset 0 0 0 2px rgba(194,43,126,.55), inset 0 0 8px rgba(194,43,126,.25); }
+/* Owner ruling (2026-07-27/28): "mallow-best" — the square wash under
+   mallow's RECOMMENDED (dashed, hypothetical) arrow. Same #C22B7E family as
+   tp-mallow but fainter and with no inner fill, so a should've square
+   whispers where an actually-moved square states. Box-shadow cannot dash;
+   the arrow carries the happened/hypothetical style, the wash only echoes
+   the actor's colour. */
+.gc-app .sq.tp-mallow-best { box-shadow: inset 0 0 0 2px rgba(194,43,126,.3); }
 
 .gc-app .board-arrows {
   position: absolute;
@@ -925,10 +932,18 @@
   stroke-linecap: round;
   fill: none;
 }
+/* Owner ruling (2026-07-27/28 replay report): SOLID = it happened, DASHED =
+   it didn't, applied on BOTH sides of the board. Solid: played (her actual,
+   cyan), found (her actual = recommended), mallow (mallow's actual), threat
+   (a genuine alarm — #FF3DA6 is reserved for real alarms ONLY, never a
+   hypothetical). Dashed: best (her "you should've", green) and mallow-best
+   (mallow's "should've", #C22B7E). One dash pattern for both dashed arrows
+   so "dashed" reads as a single hypothetical style, not two new colours. */
 .gc-app .board-arrows .arrow-played line,
 .gc-app .board-arrows .arrow-played polygon { stroke: #23E5FF; fill: #23E5FF; }
 .gc-app .board-arrows .arrow-best line,
 .gc-app .board-arrows .arrow-best polygon { stroke: rgb(76,175,140); fill: rgb(76,175,140); }
+.gc-app .board-arrows .arrow-best line { stroke-dasharray: 2.7 1.9; }
 .gc-app .board-arrows .arrow-threat line,
 .gc-app .board-arrows .arrow-threat polygon { stroke: #FF3DA6; fill: #FF3DA6; }
 /* Coach truth-speed round (visual wave, 2026-07-27): the "found" arrow —
@@ -947,16 +962,22 @@
   stroke-width: 1.6;
   stroke-linejoin: round;
 }
-/* Review fix (Wave F, 2026-07-27, review.md finding 7): "mallow" — her own
-   move on an opponent-ply turning line, previously the same solid cyan
-   .arrow-played her reply also uses, so the owner "could not tell them
-   apart." Reuses #C22B7E, her own existing deeper magenta/pink (not the
-   solid alarm #FF3DA6 .arrow-threat uses, and no new hex), rendered dashed
-   and slightly thinner than the solid arrows so "mallow moved here" reads
-   distinctly from "you are being threatened" even at a glance. */
+/* "mallow" — mallow's ACTUAL move (either side's card). Reuses #C22B7E, her
+   own existing deeper magenta/pink (not the solid alarm #FF3DA6
+   .arrow-threat uses, and no new hex). SOLID per the owner's ruling — it
+   happened (Wave F first shipped this dashed; the ruling flipped it: dashes
+   now mean hypothetical, and a dashed actual-move would lie). Deep rose vs
+   the hot alarm magenta keeps "mallow moved here" distinct from "you are
+   being threatened" at a glance. */
 .gc-app .board-arrows .arrow-mallow line,
 .gc-app .board-arrows .arrow-mallow polygon { stroke: #C22B7E; fill: #C22B7E; }
-.gc-app .board-arrows .arrow-mallow line { stroke-width: 1.3; stroke-dasharray: 3 2.5; }
+/* "mallow-best" — mallow's RECOMMENDED move ("mallow should've"), the
+   hypothetical the owner mistook for a real move while it wore solid alarm
+   #FF3DA6. Same #C22B7E as her actual (one colour per actor), dashed with
+   the same pattern as .arrow-best (one hypothetical style, both sides). */
+.gc-app .board-arrows .arrow-mallow-best line,
+.gc-app .board-arrows .arrow-mallow-best polygon { stroke: #C22B7E; fill: #C22B7E; }
+.gc-app .board-arrows .arrow-mallow-best line { stroke-dasharray: 2.7 1.9; }
 
 /* check ring — sits under the piece sprite (.pieces layer paints over .squares) */
 .gc-app .sq.check-ring {
