@@ -7,6 +7,7 @@ import {
   pvUciToSan,
   pendingMoveContext,
 } from "./chatFocus";
+import type { SummaryMove, TurningLine } from "./api";
 
 describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", () => {
   describe("hintFocusContext", () => {
@@ -199,7 +200,7 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
   describe("turningPointFocusContext", () => {
     it("carries the point's own fields plus the matching line's bestSan/pvSans", () => {
       const point = { ply: 12, san: "Nxe5", label: "blunder", punishSan: "Qxe5" };
-      const line = { bestSan: "Nf3", pvSans: ["Nf3", "Bg7", "O-O"] };
+      const line: TurningLine = { ply: 12, bestSan: "Nf3", pvSans: ["Nf3", "Bg7", "O-O"] };
       expect(turningPointFocusContext(point, line)).toEqual({
         ply: 12,
         san: "Nxe5",
@@ -207,6 +208,8 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
         punishSan: "Qxe5",
         bestSan: "Nf3",
         pvSans: ["Nf3", "Bg7", "O-O"],
+        playedNextSan: undefined,
+        followedBest: false,
       });
     });
 
@@ -219,7 +222,51 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
         punishSan: undefined,
         bestSan: undefined,
         pvSans: undefined,
+        playedNextSan: undefined,
+        followedBest: false,
       });
+    });
+
+    // Task 3 (Wave D, deferred from A1): followedBest/playedNextSan default
+    // to false/undefined (never guessed) when the caller has no gameSans to
+    // check against -- every pre-this-wave call site (GamePage.tsx, not yet
+    // updated to pass gameSans) still compiles and behaves exactly as above.
+    it("defaults followedBest to false and playedNextSan to undefined when no gameSans is supplied", () => {
+      const point = { ply: 3, san: "Qh5", label: "strong move", punishSan: undefined };
+      const line: TurningLine = { ply: 3, pvSans: ["Qh5"] };
+      const result = turningPointFocusContext(point, line);
+      expect(result.followedBest).toBe(false);
+      expect(result.playedNextSan).toBeUndefined();
+    });
+
+    // Scholar's Mate up to black's losing 6th-ply move -- same real,
+    // independently-checkable fixture followedBest.test.ts uses.
+    // 1.e4 e5 2.Qh5 Nc6 3.Bc4 Nf6??
+    const SCHOLARS_MATE_SANS: SummaryMove[] = [
+      { ply: 1, san: "e4" },
+      { ply: 2, san: "e5" },
+      { ply: 3, san: "Qh5" },
+      { ply: 4, san: "Nc6" },
+      { ply: 5, san: "Bc4" },
+      { ply: 6, san: "Nf6" },
+    ];
+
+    it("a focused turning point she played carries followedBest true and its played san is allowed", () => {
+      // ply 3 (Qh5) is HER move (odd ply); the line's pv recommends exactly
+      // what she played, so followedBest() reports followed:true.
+      const point = { ply: 3, san: "Qh5", label: "strong move", punishSan: undefined };
+      const line: TurningLine = { ply: 3, pvSans: ["Qh5"] };
+      const result = turningPointFocusContext(point, line, SCHOLARS_MATE_SANS);
+      expect(result.followedBest).toBe(true);
+      expect(result.playedNextSan).toBe("Qh5");
+    });
+
+    it("a focused turning point she did NOT play carries followedBest false with her actual played san", () => {
+      const point = { ply: 3, san: "Qh5", label: "blunder", punishSan: undefined };
+      const line: TurningLine = { ply: 3, pvSans: ["Nf3"] };
+      const result = turningPointFocusContext(point, line, SCHOLARS_MATE_SANS);
+      expect(result.followedBest).toBe(false);
+      expect(result.playedNextSan).toBe("Qh5");
     });
   });
 
@@ -326,7 +373,7 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
   describe("real call-site pairing (Task 7 follow-up #2): ask-about-this sets rewindPly=ply too", () => {
     it("a card clicked directly from the debrief landing (rewindPly was null) keeps its focus, bestSan included, once handleAskAboutTurningPoint's own rewindPly=point.ply write lands first", () => {
       const point = { ply: 15, san: "O-O", label: "blunder", punishSan: undefined };
-      const line = { bestSan: "Nxd4", pvSans: ["Nxd4", "Qd7", "Nc2"] };
+      const line: TurningLine = { ply: 15, bestSan: "Nxd4", pvSans: ["Nxd4", "Qd7", "Nc2"] };
       const focus = { turningPointFocus: turningPointFocusContext(point, line) };
 
       // The click sets rewindPly to the card's own ply IN ADDITION to the
@@ -346,7 +393,7 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
 
     it("regression guard: the SAME focus is dropped if rewindPly were left null (the bug this follow-up fixes)", () => {
       const point = { ply: 15, san: "O-O", label: "blunder", punishSan: undefined };
-      const line = { bestSan: "Nxd4", pvSans: ["Nxd4", "Qd7", "Nc2"] };
+      const line: TurningLine = { ply: 15, bestSan: "Nxd4", pvSans: ["Nxd4", "Qd7", "Nc2"] };
       const focus = { turningPointFocus: turningPointFocusContext(point, line) };
 
       const result = reconcileChatFocus(focus, {

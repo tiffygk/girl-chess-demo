@@ -129,6 +129,13 @@ interface Persona {
   // rather than overloading the narrate() shapes above.
   chatSystemPrompt: string;
   chatTemplates: Record<string, string>;
+  // Task 2 (Wave D, coach-truth-speed round): a THIRD chat system-prompt
+  // fragment, parsed from "## chat" > "### general questions" -- used ONLY
+  // by the general-chess route (server/coach/chat.ts's buildChatPrompt),
+  // appended after chatSystemPrompt rather than folded into it, so the
+  // board route's own prompt (chatSystemPrompt alone) is provably
+  // unaffected by this section's existence.
+  chatGeneralPrompt: string;
 }
 
 // No yaml dep: `## heading` splits the file into top-level sections,
@@ -185,6 +192,11 @@ export function parsePersona(md: string): Persona {
     recommendationTemplates: parseTemplateList(sub["recommendation"] ?? ""),
     chatSystemPrompt: withVoice((chatSub["system prompt"] ?? "").trim()),
     chatTemplates: parseTemplateList(chatSub["templates"] ?? ""),
+    // Task 2 (Wave D): deliberately NOT run through withVoice -- the shared
+    // voice block is already prepended once, ahead of chatSystemPrompt, when
+    // buildChatPrompt joins the two for the general route; prepending it a
+    // second time here would duplicate it in that route's prompt only.
+    chatGeneralPrompt: (chatSub["general questions"] ?? "").trim(),
   };
 }
 
