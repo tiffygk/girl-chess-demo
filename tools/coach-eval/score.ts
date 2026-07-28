@@ -205,6 +205,15 @@ export interface PipelineSummary {
   p90LatencyMs: number;
 }
 
+// Rows this pipeline actually produces (server/coach/chat.ts's return type,
+// verified 2026-07-28): `source` is only ever "model" | "template" | "error"
+// in practice -- chat()/narrate() emit source:"template" for EVERY pipeline
+// fallback (backend-down, timeout, validation-failed, off-topic,
+// templates-only) and record the REAL reason in `cause`; run.ts's own
+// try/catch is the one thing that produces source:"error" (a harness-level
+// exception, not a model-reported outcome). AnswerRow's `source` type still
+// carries a "timeout" literal, but nothing in production ever sets it.
+
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   if (sorted.length === 1) return sorted[0];
@@ -220,10 +229,20 @@ function percentile(sorted: number[], p: number): number {
 // part 5's "per-question latency deltas are non-findings"). Median uses
 // standard interpolated-percentile-at-0.5 (average of the two middle values
 // on an even-length set).
-export function summarizePipeline(rows: { source: string; regenCount: number; latencyMs: number }[]): PipelineSummary {
+//
+// Bug fix (coach-truth-speed round, controller-verified 2026-07-28):
+// timeoutCount used to filter on `r.source === "timeout"`, a value real rows
+// never carry (see the PipelineSummary comment above) -- every timeout is a
+// source:"template" row with cause:"timeout", so the old filter always
+// returned 0 and render.ts's timeoutRate silently reported 0/0 for every
+// rep. Root-cause fix: read `cause`, which is where the real reason lives.
+// A timeout row is ALWAYS also a template row (it's a subset, not a fourth
+// disjoint bucket) -- callers summing template+timeout+error for a total
+// failure count must not add timeoutCount a second time.
+export function summarizePipeline(rows: { source: string; cause?: string; regenCount: number; latencyMs: number }[]): PipelineSummary {
   const total = rows.length;
   const templateCount = rows.filter((r) => r.source === "template").length;
-  const timeoutCount = rows.filter((r) => r.source === "timeout").length;
+  const timeoutCount = rows.filter((r) => r.cause === "timeout" || r.source === "timeout").length;
   const errorCount = rows.filter((r) => r.source === "error").length;
   const templateRate = total === 0 ? 0 : templateCount / total;
   const regenCounts = rows.map((r) => r.regenCount);

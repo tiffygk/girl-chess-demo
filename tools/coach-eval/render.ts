@@ -80,10 +80,16 @@ export interface ModelSummary {
   // latency series, in the same {median,min,max,perRep} shape as a voice
   // axis (reuses aggregateAxis rather than a second aggregation function --
   // a ms value aggregates the same way a 0..1 rate does). This is the shape
-  // decide.ts's new p90-latency deciding axis reads for the review/general
-  // arms (a model that cannot answer inside its wall-clock budget is
-  // useless there regardless of prose quality).
+  // decide.ts's new p90-latency deciding axis reads for EVERY arm (Bug 2
+  // fix: board-live -- where the owner actually sits waiting mid-game --
+  // was wrongly excluded from this in the prior wave; a model that cannot
+  // answer inside its wall-clock budget is useless regardless of prose
+  // quality, and that is truest of all in board-live).
   latencyAgg: { median: AxisAgg; p90: AxisAgg };
+  // Bug 2: cross-rep aggregation of the pipeline's own timeout rate, same
+  // AxisAgg shape -- decide.ts's new timeout-rate deciding axis (every arm,
+  // reliability outranks every voice/length axis) reads this.
+  pipelineAgg: { timeoutRate: AxisAgg };
 }
 export interface ArmSummary {
   sonnet: ModelSummary;
@@ -174,6 +180,7 @@ export function buildModelSummary(files: RepFile[]): ModelSummary {
   const perRepPipeline: PerRepPipeline[] = [];
   const medianSeries: RepAxis[] = [];
   const p90Series: RepAxis[] = [];
+  const timeoutRateSeries: RepAxis[] = [];
   const allRows: AnswerRow[] = [];
   for (const f of sorted) {
     allRows.push(...f.rows);
@@ -195,6 +202,7 @@ export function buildModelSummary(files: RepFile[]): ModelSummary {
     // n: 0 rows this rep (arm-filtered to empty) means null, not a bogus 0ms.
     medianSeries.push({ rep: f.rep, rate: pipe.total === 0 ? null : pipe.medianLatencyMs, n: pipe.total });
     p90Series.push({ rep: f.rep, rate: pipe.total === 0 ? null : pipe.p90LatencyMs, n: pipe.total });
+    timeoutRateSeries.push({ rep: f.rep, rate: pipe.total === 0 ? null : timeoutRate, n: pipe.total });
   }
   const pooled = summarizePipeline(allRows);
   const pooledTimeoutRate = pooled.total === 0 ? 0 : pooled.timeoutCount / pooled.total;
@@ -215,12 +223,24 @@ export function buildModelSummary(files: RepFile[]): ModelSummary {
         medianLatencyMs: pooled.medianLatencyMs,
         p90LatencyMs: pooled.p90LatencyMs,
         totalRows: pooled.total,
-        failureRows: pooled.templateCount + pooled.timeoutCount + pooled.errorCount,
+        // Bug-1 fix: timeoutCount is a SUBSET of templateCount (every real
+        // timeout row carries source:"template"/cause:"timeout" -- see
+        // score.ts's summarizePipeline comment), not a fourth disjoint
+        // bucket, so it must not be added again here or failureRows would
+        // double-count and exceed totalRows.
+        failureRows: pooled.templateCount + pooled.errorCount,
       },
     },
     latencyAgg: {
       median: aggregateAxis(medianSeries),
       p90: aggregateAxis(p90Series),
+    },
+    pipelineAgg: {
+      // Bug 2 (deciding axis): cross-rep median/min/max of each rep's own
+      // timeout rate, same {median,min,max,perRep} shape latencyAgg already
+      // uses -- decide.ts's new timeout-rate deciding axis (every arm) reads
+      // this, with the same disjoint-rep-ranges discipline as jargon/length.
+      timeoutRate: aggregateAxis(timeoutRateSeries),
     },
   };
 }
