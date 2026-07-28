@@ -5,7 +5,14 @@
 // coverage, same reasoning as hintFlow.ts/moveFlow.ts being their own
 // modules rather than inlined React state logic.
 import { Chess } from "chess.js";
-import type { ChatContext, TurningLine, TurningPoint } from "./api";
+import type { ChatContext, SummaryMove, TurningLine, TurningPoint } from "./api";
+// Task 3 (Wave D, coach-truth-speed round, deferred from A1): the single
+// source of truth for "did she actually play the recommended move" --
+// already used by reviewArrows.ts/debriefBullets.ts/turningPointNote.ts.
+// Imported (never re-derived) so chat can never disagree with the debrief
+// about this fact -- the owner's game-146 question this closes: "did I
+// actually do the move it recommended, or did I not?"
+import { followedBest } from "../review/followedBest";
 
 // Task 4 (R1b): HintFacts.pv is UCI (the engine's own reported line);
 // chat.ts's hintFocus fold needs SAN. Converts by REPLAYING from fen, the
@@ -83,11 +90,22 @@ export function hintFocusContext(
  * (see getTurningLines' header in server/game/manager.ts). This is the pair
  * that assembleChatFactList folds into allowedSans server-side, which is
  * what actually lets the coach name the best line for this moment.
+ *
+ * Task 3 (Wave D, deferred from A1): `gameSans` is optional and additive --
+ * every pre-this-wave caller that omits it still gets exactly the shape
+ * above, with `followedBest: false` and `playedNextSan: undefined` (never
+ * guessed at without the game to check against). When supplied, `followed
+ * Best`/`playedNextSan` are derived from the SAME followedBest() reviewArrows
+ * /debriefBullets/turningPointNote already use, never re-derived here -- so
+ * a chat answer and the debrief note can never disagree about whether she
+ * played the recommended move.
  */
 export function turningPointFocusContext(
   point: Pick<TurningPoint, "ply" | "san" | "label" | "punishSan">,
-  line: Pick<TurningLine, "bestSan" | "pvSans"> | undefined
+  line: TurningLine | undefined,
+  gameSans?: SummaryMove[]
 ): NonNullable<ChatContext["turningPointFocus"]> {
+  const fb = gameSans ? followedBest(line, gameSans) : undefined;
   return {
     ply: point.ply,
     san: point.san,
@@ -95,6 +113,8 @@ export function turningPointFocusContext(
     punishSan: point.punishSan,
     bestSan: line?.bestSan,
     pvSans: line?.pvSans,
+    playedNextSan: fb?.playedSan,
+    followedBest: fb?.followed ?? false,
   };
 }
 

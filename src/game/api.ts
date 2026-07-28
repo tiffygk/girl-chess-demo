@@ -339,6 +339,14 @@ export interface ChatContext {
     punishSan?: string;
     bestSan?: string;
     pvSans?: string[];
+    // Task 3 (Wave D, coach-truth-speed round): mirrors
+    // server/coach/chat.ts's ChatContext.turningPointFocus verbatim -- see
+    // that file's own comment. Populated by chatFocus.ts's
+    // turningPointFocusContext via src/review/followedBest.ts's
+    // followedBest(), the single source of truth reviewArrows.ts/
+    // debriefBullets.ts/turningPointNote.ts already use for this same fact.
+    playedNextSan?: string;
+    followedBest?: boolean;
   };
   // Task 1 (R2, pending-move context threading): mirrors
   // server/coach/chat.ts's ChatContext.pendingMove verbatim -- see

@@ -6,6 +6,7 @@ import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims } from "./placementClaims";
 import { insertAdviceTrace } from "../store/db";
+import { isOffTopic, type ChatIntent } from "./intent";
 
 // F16 (this-game grounding chat): a second, independent narration surface
 // alongside narrate() in ./index.ts. Same shape (persona prompt + fact JSON
@@ -47,6 +48,13 @@ export const CHAT_TIMEOUT_MS = 45000;
 export const CHAT_REVIEW_BUDGET_MS = 90000;
 export const MIN_ATTEMPT_MS = 8000;
 export const CHAT_MAX_LEN = 500;
+// Task 2 (Wave D, coach-truth-speed round): the persona's "one to three
+// short sentences" rule is a LIVE-NUDGE budget -- it must not gag a real
+// post-game strategy answer on the new general-chess route. Named (rather
+// than inlined into personas/coach.md's prose alone) so coach-eval can read
+// the exact same number this prompt asks for, instead of a hardcoded guess
+// baked into the eval harness.
+export const GENERAL_MAX_WORDS = 120;
 
 export interface ChatContext {
   mode: "live" | "review";
@@ -90,6 +98,21 @@ export interface ChatContext {
     // the one piece that actually changes what the coach is allowed to say.
     bestSan?: string;
     pvSans?: string[];
+    // Task 3 (Wave D, deferred from A1): the same fact reviewArrows.ts/
+    // debriefBullets.ts/turningPointNote.ts already compute via
+    // src/review/followedBest.ts's followedBest() -- threaded into chat so
+    // the coach's answer and the debrief note can never disagree about
+    // whether she actually played the recommended move. Owner's game-146
+    // question this closes: "did I actually do the move it recommended, or
+    // did I not?" playedNextSan is the move she actually played at the
+    // relevant ply (her own move for an odd tp.ply, her REPLY for an even/
+    // opponent tp.ply -- see followedBest.ts's header comment);
+    // followedBest is whether that move matches the line's own
+    // recommendation. Both optional: absent whenever the client has no
+    // gameSans to compute them from (see chatFocus.ts's
+    // turningPointFocusContext).
+    playedNextSan?: string;
+    followedBest?: boolean;
   };
   // Task 1 (R2, pending-move context threading): the move she's picked up
   // and placed on the board but has NOT confirmed -- src/game/GamePage.tsx's
@@ -431,6 +454,11 @@ export function assembleChatFactList(
   // validation in validateChat below is untouched by this fold.
   if (ctx.turningPointFocus?.bestSan) sans.add(ctx.turningPointFocus.bestSan);
   for (const s of ctx.turningPointFocus?.pvSans ?? []) sans.add(s);
+  // Task 3 (Wave D): the move she actually played at the focused turning
+  // point -- without this, the coach's own true statement of what she did
+  // ("you played Qf6") could be rejected as an unsanctioned move whenever it
+  // differs from the line's own bestSan/pvSans.
+  if (ctx.turningPointFocus?.playedNextSan) sans.add(ctx.turningPointFocus.playedNextSan);
   // Task 4 fold (R1b): identical reasoning, for the hint ladder's own focus
   // -- without this, a hint follow-up asking "why is that the move?" could
   // never legally name the move the hint itself is about.
@@ -648,6 +676,58 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
   return { ok: true };
 }
 
+// Task 2 (Wave D): whether the REPLY itself makes a claim about the
+// position -- names a SAN-shaped token or a bare square. Reused as the gate
+// for the three position-claim checkers in validateChatGeneral below: "if
+// it makes no positional claim there is nothing to check" (the brief's own
+// words). Same SAN_RE the board route's own validateChat scans with.
+function replyReferencesPosition(text: string): boolean {
+  return (text.match(SAN_RE) ?? []).length > 0;
+}
+
+// Task 2 (Wave D, general-chess route): validateChat's sibling for the
+// general route -- kept as a SEPARATE function rather than an intent branch
+// inside validateChat itself, so validateChat (and therefore the board
+// route) stays byte-for-byte unchanged by this wave ("board route: change
+// nothing").
+//
+// Skips the SAN-allowlist check entirely: a general answer legitimately
+// names moves that were never played in this game -- "consider castling
+// early" is a true, useful answer to a general question, and validateChat's
+// allowedSans membership check would wrongly flag it as a fabricated move.
+//
+// Keeps checkVoice unconditionally: voice rules are about HOW cookie talks
+// (no raw notation, no engine/eval/centipawn jargon, no signed numbers), not
+// about what she may discuss.
+//
+// The three position-claim checkers (defense/side-attribution/placement)
+// only run when the reply itself references the position
+// (replyReferencesPosition above) -- a pure-principle answer with no move
+// or square in it has nothing for them to check against.
+export function validateChatGeneral(
+  text: string,
+  facts: ChatFactList
+): { ok: true } | { ok: false; violations: string[] } {
+  const violations: string[] = [];
+
+  if (replyReferencesPosition(text)) {
+    const currentDefense = checkDefenseClaims(text, facts.currentFen);
+    if (facts.focusPosition) {
+      const focusDefense = new Set(checkDefenseClaims(text, facts.focusPosition.fen));
+      violations.push(...currentDefense.filter((v) => focusDefense.has(v)));
+    } else {
+      violations.push(...currentDefense);
+    }
+    violations.push(...checkSideAttributionClaims(text, facts));
+    violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
+  }
+
+  violations.push(...checkVoice(text));
+
+  if (violations.length > 0) return { ok: false, violations };
+  return { ok: true };
+}
+
 // ---- prompt assembly ------------------------------------------------------
 
 function stripThreatUci(t: ThreatFacts): Omit<ThreatFacts, "refutationUci"> {
@@ -817,20 +897,53 @@ function factsForModel(facts: ChatFactList) {
   };
 }
 
+// Task 2 (Wave D, general-chess route): the general route's own compact
+// projection -- deliberately NOT factsForModel's shape. A general question
+// isn't about the live position, so occupancy/legalSans/contested (this
+// moment's heaviest, most position-specific facts) and the whole per-ply
+// block (a full line-by-line analysis) buy nothing here but latency -- this
+// IS the single largest latency win available on this route (per the
+// brief). What's left is enough for cookie to ground a real chess answer in
+// HER actual game when a genuine connection exists, without inventing one:
+// the played move list, the finished-game outcome fact, and the
+// already-curated turning points (cheap to carry -- no per-ply weight).
+function generalFactsForModel(facts: ChatFactList) {
+  return {
+    status: facts.status,
+    outcome: facts.outcome,
+    gameSans: facts.gameSans,
+    turningPoints: facts.turningPoints,
+  };
+}
+
 function formatHistory(history: { role: "user" | "coach"; text: string }[]): string {
   if (history.length === 0) return "";
   const lines = history.map((h) => `${h.role === "user" ? "player" : "coach"}: ${h.text}`);
   return ["", "conversation so far:", ...lines].join("\n");
 }
 
+// Task 2 (Wave D): intent picks BOTH halves of the prompt -- which system
+// prompt fragment and which fact projection -- so "board route: change
+// nothing" holds exactly: an undefined/"board" intent takes the identical
+// path (persona.chatSystemPrompt alone, factsForModel(facts)) this function
+// always took before this wave. "general" appends persona.chatGeneralPrompt
+// (a separate, owner-editable section of personas/coach.md -- see
+// server/coach/index.ts's Persona type) after the shared chat system prompt,
+// and swaps in generalFactsForModel's compact projection.
 function buildChatPrompt(
   facts: ChatFactList,
   history: { role: "user" | "coach"; text: string }[],
   userMessage: string,
-  persona: ReturnType<typeof getPersona>
+  persona: ReturnType<typeof getPersona>,
+  intent: ChatIntent
 ): string {
+  const systemPrompt =
+    intent === "general"
+      ? [persona.chatSystemPrompt, persona.chatGeneralPrompt].filter(Boolean).join("\n\n")
+      : persona.chatSystemPrompt;
+  const factsPayload = intent === "general" ? generalFactsForModel(facts) : factsForModel(facts);
   return [
-    persona.chatSystemPrompt,
+    systemPrompt,
     "",
     "fact list (json):",
     // B4c (2026-07-27, coach-truth-speed round): dropped the 2-space indent
@@ -838,7 +951,7 @@ function buildChatPrompt(
     // characters, and prompt size is what (b)'s ply-scoping is also
     // fighting. No indentation/newlines to strip means no information loss,
     // just no pretty-printing a model doesn't need.
-    JSON.stringify(factsForModel(facts)),
+    JSON.stringify(factsPayload),
     formatHistory(history),
     "",
     `player: ${userMessage}`,
@@ -926,7 +1039,11 @@ export async function chat(
   // begins (survives the MIN_ATTEMPT_MS budget check below) -- the signal
   // the SSE route needs to emit its own `redraft` frame, without this
   // function's attempt loop being duplicated or exposed any other way.
-  opts?: { budgetMs?: number; onDelta?: (text: string) => void; onRedraft?: () => void }
+  // Task 2 (Wave D): intent is the last field this comment reserved space
+  // for. Additive/optional, defaulting to "board" -- every existing call
+  // site (chat.test.ts and its siblings, manager.ts pre-this-wave) omits it
+  // and gets exactly today's behavior (full facts, full validateChat).
+  opts?: { budgetMs?: number; intent?: ChatIntent; onDelta?: (text: string) => void; onRedraft?: () => void }
 ): Promise<{
   text: string;
   source: "model" | "template";
@@ -942,7 +1059,38 @@ export async function chat(
   // budgetMs plus a second full timeout.
   const deadline = start + budgetMs;
   const persona = getPersona();
-  const basePrompt = buildChatPrompt(facts, history, userMessage, persona);
+  const intent: ChatIntent = opts?.intent ?? "board";
+
+  // Task 2 (Wave D): "keep the bar high, a chess question is never
+  // off-topic" -- isOffTopic is a much narrower net than "no positional
+  // signal" (which is exactly what routes a message to "general" already):
+  // it only catches a message with NO chess relevance whatsoever. Checked
+  // before any prompt is built or backend called, and skips the whole
+  // attempt loop -- there is nothing for a model to answer here, and no
+  // budget worth spending finding that out. Still writes exactly one
+  // advice_traces row, same discipline as every other exit from this
+  // function.
+  if (isOffTopic(userMessage)) {
+    const text =
+      persona.chatTemplates.redirect ??
+      "keep it on the board. ask me about a move from this game and i'll break it down.";
+    const traceId = insertAdviceTrace({
+      gameId: trace.gameId,
+      ply: trace.ply,
+      kind: "chat",
+      factsJson: JSON.stringify(facts),
+      prompt: "",
+      output: text,
+      source: "template",
+      backend: backend.name,
+      validated: false,
+      regenCount: 0,
+      latencyMs: Date.now() - start,
+    });
+    return { text, source: "template", cause: "off-topic", traceId };
+  }
+
+  const basePrompt = buildChatPrompt(facts, history, userMessage, persona, intent);
 
   let attemptPrompt = basePrompt;
   let attemptOutput = "";
@@ -989,7 +1137,16 @@ export async function chat(
     }
 
     const trimmed = attemptOutput.trim();
-    const result = trimmed.length > 0 ? validateChat(attemptOutput, facts) : ({ ok: false, violations: [] } as const);
+    // Task 2 (Wave D): the general route validates with validateChatGeneral
+    // (no SAN-allowlist check) instead of validateChat -- everything else
+    // about this loop (regen, corrective suffix, template fallback) is
+    // shared between both routes untouched.
+    const result =
+      trimmed.length > 0
+        ? intent === "general"
+          ? validateChatGeneral(attemptOutput, facts)
+          : validateChat(attemptOutput, facts)
+        : ({ ok: false, violations: [] } as const);
     if (result.ok) {
       modelText = trimmed;
       break;

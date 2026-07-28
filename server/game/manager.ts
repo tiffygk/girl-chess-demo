@@ -28,6 +28,12 @@ import {
   CHAT_TIMEOUT_MS, CHAT_REVIEW_BUDGET_MS,
   type ChatContext, type ChatOutcome,
 } from "../coach/chat";
+// Wave D (coach-truth-speed round): the deterministic board/general router --
+// computed here, server-side, from the user's own message text plus whether
+// she opened chat from a specific on-screen moment (hasFocus below), never
+// left to the model to decide (the owner's explicit choice; see intent.ts's
+// header for why).
+import { classifyIntent } from "../coach/intent";
 import { claudeCliBackend } from "../coach/backends/claude-cli";
 import { ollamaBackend } from "../coach/backends/ollama";
 import { agentSdkBackend } from "../coach/backends/agent-sdk";
@@ -927,8 +933,16 @@ export class GameManager {
     // body.context.mode, which is a client claim this method already
     // distrusts for the outcome fact.
     const budgetMs = finished ? CHAT_REVIEW_BUDGET_MS : CHAT_TIMEOUT_MS;
+    // Wave D: hasFocus mirrors chatFocus.ts's own reconciled focus state --
+    // she opened chat from a specific on-screen moment (the hint ladder or a
+    // turning-point card) whenever either focus field is present on the
+    // context this request carries. That alone routes "board" regardless of
+    // the message text (classifyIntent's own top-priority rule).
+    const hasFocus = !!(body.context.hintFocus || body.context.turningPointFocus);
+    const intent = classifyIntent(message, hasFocus);
     const result = await chatWithCoach(message, history, facts, backend, { gameId, ply, kind: "chat" }, {
       budgetMs,
+      intent,
       onDelta: streamOpts?.onDelta,
       onRedraft: streamOpts?.onRedraft,
     });
