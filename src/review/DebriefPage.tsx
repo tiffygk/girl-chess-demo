@@ -199,12 +199,20 @@ const BULLET_SECTION_ORDER: DebriefBullet["section"][] = ["done well", "could be
 
 function DebriefBulletList({
   bullets,
+  turningLines,
   onRewind,
   onTryLine,
   onAskAbout,
   exploring,
 }: {
   bullets: DebriefBullet[];
+  // Union-review fix (2026-07-28, finding 3): threaded through to
+  // affordancesForBullet so "try the line" only renders when a matching
+  // TurningLine actually names a better move than what she played -- see
+  // that function's own comment (debriefBullets.ts) for the two symptoms
+  // this closes (a done-well bullet with nothing better to try, and a
+  // classification-fallback ply with no line to seed a sandbox from).
+  turningLines: TurningLine[];
   onRewind: (ply: number) => void;
   // Coach truth-speed round (Wave C1, 2026-07-27): a bullet earns the SAME
   // three affordances a TurningPointCard already has (replay/try the line/
@@ -235,7 +243,7 @@ function DebriefBulletList({
               // a ply" locally — one source of truth for the affordance
               // gate, same discipline the rest of this file follows for
               // other shared facts.
-              const aff = affordancesForBullet(b);
+              const aff = affordancesForBullet(b, turningLines);
               return (
                 <div className="debrief-bullet" key={i}>
                   <p className="debrief-bullet-text">{b.text}</p>
@@ -439,6 +447,7 @@ export function DebriefPage({
       )}
       <DebriefBulletList
         bullets={bullets}
+        turningLines={turningLines}
         onRewind={onRewind}
         onTryLine={onTryLine}
         onAskAbout={onAskAboutPly}

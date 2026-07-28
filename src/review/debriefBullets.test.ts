@@ -638,17 +638,23 @@ describe("followedBest suppression (2026-07-27 owner report): a could-be-better 
 });
 
 describe("affordancesForBullet (2026-07-27, a later wave's UI consumer)", () => {
-  it("every bullet with a ply offers all three affordances", () => {
+  it("replay and ask are available on every bullet with a ply; tryLine additionally needs a matching TurningLine with a real better move on record", () => {
     const bullets = debriefBullets({
       turningPoints: [tp({ ply: 30, san: "Qxf7", label: "blunder", deltaP: -0.3 })],
       classifications: [],
       result: null,
       totalPlies: 60,
+      turningLines: [
+        { ply: 30, pvSans: ["Nf3"], bestSan: "Nf3", bestFromTo: { from: "g1", to: "f3" }, playedFromTo: { from: "d1", to: "f7" } },
+      ],
     });
     for (const b of bullets) {
-      const aff = affordancesForBullet(b);
+      const aff = affordancesForBullet(b, [
+        { ply: 30, pvSans: ["Nf3"], bestSan: "Nf3", bestFromTo: { from: "g1", to: "f3" }, playedFromTo: { from: "d1", to: "f7" } },
+      ]);
       if (b.ply != null) {
-        expect(aff).toEqual({ replay: true, tryLine: true, ask: true });
+        expect(aff.replay).toBe(true);
+        expect(aff.ask).toBe(true);
       } else {
         expect(aff).toEqual({ replay: false, tryLine: false, ask: false });
       }
@@ -656,6 +662,77 @@ describe("affordancesForBullet (2026-07-27, a later wave's UI consumer)", () => 
     // At least one bullet in this fixture has a ply, so the true branch
     // above is actually exercised.
     expect(bullets.some((b) => b.ply != null)).toBe(true);
+    // The ply-30 bullet's matching line names a DIFFERENT move than what
+    // was actually played (g1-f3 vs d1-f7) -- a real better line exists, so
+    // tryLine is offered.
+    const bullet30 = bullets.find((b) => b.ply === 30)!;
+    expect(
+      affordancesForBullet(bullet30, [
+        { ply: 30, pvSans: ["Nf3"], bestSan: "Nf3", bestFromTo: { from: "g1", to: "f3" }, playedFromTo: { from: "d1", to: "f7" } },
+      ]).tryLine
+    ).toBe(true);
+  });
+
+  it("union-review finding 3: without turningLines threaded in at all, tryLine is absent (no way to confirm a better line exists -- same gap guidingArrow's own null already documents for a classification-fallback ply, src/game/explore.ts)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 30, san: "Qxf7", label: "blunder", deltaP: -0.3 })],
+      classifications: [],
+      result: null,
+      totalPlies: 60,
+    });
+    const bullet = bullets.find((b) => b.ply === 30)!;
+    expect(affordancesForBullet(bullet).tryLine).toBe(false);
+    expect(affordancesForBullet(bullet).replay).toBe(true);
+    expect(affordancesForBullet(bullet).ask).toBe(true);
+  });
+
+  it("union-review finding 3: a classification-fallback ply with no matching TurningLine gets no tryLine, even when other lines are present", () => {
+    const bullets = debriefBullets({
+      turningPoints: [],
+      classifications: [{ ply: 20, classification: "inaccuracy" }],
+      result: null,
+      totalPlies: 60,
+      turningLines: [
+        // A line for a DIFFERENT ply -- proves the lookup is ply-scoped,
+        // not "any line present at all".
+        { ply: 55, pvSans: ["Qh8#"], bestSan: "Qh8#", bestFromTo: { from: "h6", to: "h8" }, playedFromTo: { from: "e5", to: "f7" } },
+      ],
+    });
+    const bullet = bullets.find((b) => b.ply === 20)!;
+    expect(
+      affordancesForBullet(bullet, [
+        { ply: 55, pvSans: ["Qh8#"], bestSan: "Qh8#", bestFromTo: { from: "h6", to: "h8" }, playedFromTo: { from: "e5", to: "f7" } },
+      ]).tryLine
+    ).toBe(false);
+  });
+
+  it("union-review finding 3: a done-well bullet whose matching line's best move IS what she played gets no tryLine -- there is no other line to try", () => {
+    // followedGoodText's own shape: she was re-sectioned to done well
+    // because she played the recommended move. The matching TurningLine's
+    // bestFromTo therefore replays to the SAME squares as playedFromTo.
+    const line: TurningLine = {
+      ply: 3,
+      pvSans: ["Qh5"],
+      bestSan: "Qh5",
+      bestFromTo: { from: "d1", to: "h5" },
+      playedFromTo: { from: "d1", to: "h5" },
+    };
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 3, san: "Qh5", label: "blunder", deltaP: -0.1 })],
+      classifications: [],
+      result: null,
+      totalPlies: 6,
+      gameSans: [
+        { ply: 1, san: "e4" }, { ply: 2, san: "e5" }, { ply: 3, san: "Qh5" },
+        { ply: 4, san: "Nc6" }, { ply: 5, san: "Bc4" }, { ply: 6, san: "Nf6" },
+      ],
+      turningLines: [line],
+    });
+    const followedBullet = bullets.find((b) => b.ply === 3)!;
+    expect(followedBullet.section).toBe("done well"); // sanity: this is the followedGoodText shape
+    expect(affordancesForBullet(followedBullet, [line]).tryLine).toBe(false);
+    expect(affordancesForBullet(followedBullet, [line]).replay).toBe(true);
+    expect(affordancesForBullet(followedBullet, [line]).ask).toBe(true);
   });
 });
 

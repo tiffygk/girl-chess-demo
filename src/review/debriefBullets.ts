@@ -621,7 +621,39 @@ export function debriefBullets(input: DebriefBulletsInput): DebriefBullet[] {
 // open the "try the line" sandbox seeded there, or ask cookie about the
 // moment). A bullet without a ply has nothing to rewind/seed/anchor to, so
 // none of the three apply.
-export function affordancesForBullet(b: DebriefBullet): { replay: boolean; tryLine: boolean; ask: boolean } {
+//
+// Union-review fix (2026-07-28, finding 3): tryLine used to fire off `has`
+// alone, same as replay/ask -- but "try the line" only means something when
+// a DIFFERENT, better move is actually on record for this ply. That broke
+// two ways in practice: a done-well bullet built from followedGoodText (she
+// already played the recommended move -- there IS no other line to try)
+// still showed the button, and a classification-fallback ply (no matching
+// TurningPoint, only the broader `classifications` list -- see
+// buildCouldBeBetter's clsNeg loop) had no TurningLine to seed a sandbox
+// from at all, so src/game/explore.ts's guidingArrow silently rendered
+// null underneath a button that claimed there was a line to try.
+// turningLines is optional and additive (every existing call site that
+// doesn't pass it keeps working, just with tryLine now correctly false
+// rather than a bare guess) -- same "caller derives, this function only
+// consults" discipline the rest of this module follows for turningLines.
+// The comparison is geometric (bestFromTo vs playedFromTo, both already
+// replay-derived by manager.ts's getTurningLines) rather than a SAN string
+// compare: DebriefBullet carries no "san actually played" field of its own,
+// and TurningLine's playedFromTo is the one fact already on hand that pins
+// down what really happened at this ply.
+function sameSquares(
+  a: { from: string; to: string } | undefined,
+  b: { from: string; to: string } | undefined
+): boolean {
+  return !!a && !!b && a.from === b.from && a.to === b.to;
+}
+
+export function affordancesForBullet(
+  b: DebriefBullet,
+  turningLines?: TurningLine[]
+): { replay: boolean; tryLine: boolean; ask: boolean } {
   const has = b.ply != null;
-  return { replay: has, tryLine: has, ask: has };
+  const line = has ? turningLines?.find((l) => l.ply === b.ply) : undefined;
+  const betterLineExists = !!line?.bestFromTo && !sameSquares(line.bestFromTo, line.playedFromTo);
+  return { replay: has, tryLine: has && betterLineExists, ask: has };
 }
