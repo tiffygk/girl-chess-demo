@@ -9,7 +9,16 @@ import {
   summarizePipeline,
   type AnswerRow,
 } from "./score";
-import { medianOf, aggregateAxis, buildModelSummary, filterFilesByArm, type RepAxis, type RepFile } from "./render";
+import {
+  medianOf,
+  aggregateAxis,
+  buildModelSummary,
+  filterFilesByArm,
+  selectPrioritySubset,
+  PRIORITY_TARGET_TOTAL,
+  type RepAxis,
+  type RepFile,
+} from "./render";
 import {
   decideModel,
   decideArm,
@@ -635,6 +644,124 @@ describe("board-review fixtures reuse [dir] question text/ctx verbatim (Wave E1 
     for (const q of BOARD_REVIEW_QUESTIONS) {
       expect(q.arm).toBe("board-review");
       expect(q.tag).toBe("dir");
+    }
+  });
+});
+
+// ---- coach-truth-speed round: report-blinded.md owner priority subset -----
+
+describe("selectPrioritySubset (owner priority subset)", () => {
+  it("never marks a row where either side is a pipeline failure, even in the general arm (which is otherwise forced)", () => {
+    const ids = ["r1", "r2"];
+    const rowsA = new Map<string, AnswerRow>([
+      ["r1", mkRow({ id: "r1", source: "model", text: "a clean board-live answer with no violations." })],
+      ["r2", mkRow({ id: "r2", arm: "general", tag: "general", source: "model", text: "a clean general answer." })],
+    ]);
+    const rowsB = new Map<string, AnswerRow>([
+      ["r1", mkRow({ id: "r1", source: "template", cause: "timeout", text: "keep it on the board." })],
+      ["r2", mkRow({ id: "r2", arm: "general", tag: "general", source: "error", text: "" })],
+    ]);
+    const sel = selectPrioritySubset(ids, rowsA, rowsB);
+    expect(sel.needsYou.has("r1")).toBe(false);
+    expect(sel.sample.has("r1")).toBe(false);
+    // r2 would be forced into NEEDS_YOU by the general-arm rule if eligible --
+    // a pipeline failure on side B must still exclude it entirely.
+    expect(sel.needsYou.has("r2")).toBe(false);
+    expect(sel.sample.has("r2")).toBe(false);
+  });
+
+  it("marks a general-arm row NEEDS_YOU even when its scorecards do not tie", () => {
+    const ids = ["gen-01"];
+    const rowsA = new Map<string, AnswerRow>([
+      ["gen-01", mkRow({ id: "gen-01", arm: "general", tag: "general", source: "model", text: "clean answer here." })],
+    ]);
+    const rowsB = new Map<string, AnswerRow>([
+      ["gen-01", mkRow({ id: "gen-01", arm: "general", tag: "general", source: "model", text: "let's leverage this position for a strong follow-up." })],
+    ]);
+    const sel = selectPrioritySubset(ids, rowsA, rowsB);
+    expect(sel.needsYou.has("gen-01")).toBe(true);
+  });
+
+  it("marks a non-general row NEEDS_YOU when both scorecards tie", () => {
+    const ids = ["open-01"];
+    const text = "move your knight to f6. it keeps your king safer.";
+    const rowsA = new Map<string, AnswerRow>([["open-01", mkRow({ id: "open-01", source: "model", text })]]);
+    const rowsB = new Map<string, AnswerRow>([["open-01", mkRow({ id: "open-01", source: "model", text })]]);
+    const sel = selectPrioritySubset(ids, rowsA, rowsB);
+    expect(sel.needsYou.has("open-01")).toBe(true);
+  });
+
+  it("does not mark a non-general row whose scorecards differ", () => {
+    const ids = ["open-02"];
+    const rowsA = new Map<string, AnswerRow>([
+      ["open-02", mkRow({ id: "open-02", source: "model", text: "a clean board-live answer with no violations at all." })],
+    ]);
+    const rowsB = new Map<string, AnswerRow>([
+      ["open-02", mkRow({ id: "open-02", source: "model", text: "let's leverage this position for a strong follow-up." })],
+    ]);
+    const sel = selectPrioritySubset(ids, rowsA, rowsB);
+    expect(sel.needsYou.has("open-02")).toBe(false);
+  });
+
+  it("is deterministic across two independent calls on identical input, and draws a real SAMPLE when NEEDS_YOU is a minority", () => {
+    const ids: string[] = [];
+    const rowsA1 = new Map<string, AnswerRow>();
+    const rowsB1 = new Map<string, AnswerRow>();
+    const rowsA2 = new Map<string, AnswerRow>();
+    const rowsB2 = new Map<string, AnswerRow>();
+
+    // 5 tied board-live rows -> forced NEEDS_YOU via tie.
+    for (let i = 0; i < 5; i++) {
+      const id = `tie-${i}`;
+      ids.push(id);
+      const text = `a clean tied answer number ${i} with no violations at all.`;
+      rowsA1.set(id, mkRow({ id, source: "model", text }));
+      rowsB1.set(id, mkRow({ id, source: "model", text }));
+      rowsA2.set(id, mkRow({ id, source: "model", text }));
+      rowsB2.set(id, mkRow({ id, source: "model", text }));
+    }
+    // 35 non-tied, non-general, eligible rows -> the SAMPLE pool.
+    for (let i = 0; i < 35; i++) {
+      const id = `diff-${i}`;
+      ids.push(id);
+      const textA = `a clean untied answer number ${i} with no violations at all.`;
+      const textB = "let's leverage this position for a strong follow-up."; // ai-ism FAIL -- differs from A
+      rowsA1.set(id, mkRow({ id, source: "model", text: textA }));
+      rowsB1.set(id, mkRow({ id, source: "model", text: textB }));
+      rowsA2.set(id, mkRow({ id, source: "model", text: textA }));
+      rowsB2.set(id, mkRow({ id, source: "model", text: textB }));
+    }
+    // 5 pipeline-failure rows -- must never appear in either marker.
+    for (let i = 0; i < 5; i++) {
+      const id = `fail-${i}`;
+      ids.push(id);
+      rowsA1.set(id, mkRow({ id, source: "model", text: "a clean answer with no violations." }));
+      rowsB1.set(id, mkRow({ id, source: "template", cause: "backend-down", text: "keep it on the board." }));
+      rowsA2.set(id, mkRow({ id, source: "model", text: "a clean answer with no violations." }));
+      rowsB2.set(id, mkRow({ id, source: "template", cause: "backend-down", text: "keep it on the board." }));
+    }
+
+    const sel1 = selectPrioritySubset(ids, rowsA1, rowsB1);
+    const sel2 = selectPrioritySubset(ids, rowsA2, rowsB2);
+
+    expect(sel1.needsYou.size).toBe(5);
+    expect([...sel1.needsYou].sort()).toEqual([...sel2.needsYou].sort());
+    expect([...sel1.sample].sort()).toEqual([...sel2.sample].sort());
+
+    // NEEDS_YOU is a minority here (5) -- SAMPLE should draw up to the target.
+    expect(sel1.sample.size).toBe(Math.min(35, PRIORITY_TARGET_TOTAL - 5));
+    expect(sel1.sample.size).toBeGreaterThan(0);
+
+    // No pipeline-failure id is ever selected by either marker.
+    for (let i = 0; i < 5; i++) {
+      const id = `fail-${i}`;
+      expect(sel1.needsYou.has(id)).toBe(false);
+      expect(sel1.sample.has(id)).toBe(false);
+    }
+
+    // NEEDS_YOU and SAMPLE never overlap.
+    for (const id of sel1.sample) {
+      expect(sel1.needsYou.has(id)).toBe(false);
     }
   });
 });
