@@ -4,6 +4,8 @@ import {
   countSentences,
   checkCompleteness,
   checkLength,
+  LENGTH_MAX_WORDS,
+  CONCISION_TARGET_WORDS,
   checkPendingAwareness,
   scoreAnswer,
   summarizePipeline,
@@ -15,6 +17,7 @@ import {
   buildModelSummary,
   filterFilesByArm,
   selectPrioritySubset,
+  resolveBlinding,
   PRIORITY_TARGET_TOTAL,
   type RepAxis,
   type RepFile,
@@ -25,8 +28,10 @@ import {
   decideAcrossArms,
   DEFAULT_MODEL,
   TIMEOUT_RATE_DECISIVE_DELTA,
+  LENGTH_DECISIVE_DELTA,
   type DecideInputs,
   type ArmDecision,
+  type ArmDecisionInputs,
 } from "./decide";
 import { GENERAL_QUESTIONS, BOARD_REVIEW_QUESTIONS } from "./fixtures";
 import { classifyIntent } from "../../server/coach/intent";
@@ -71,57 +76,85 @@ describe("checkCompleteness", () => {
   });
 });
 
+// Eval-instrument-repair round (2026-07-28): a text of exactly `n` words,
+// ending in sentence-final punctuation so the length axis is the only thing
+// under test.
+function words(n: number): string {
+  return Array.from({ length: n - 1 }, () => "word").join(" ") + " word.";
+}
+
 describe("checkLength", () => {
-  it("passes a short standard answer within 45 words / 3 sentences", () => {
+  it("builds an n-word helper text (guards the helper itself)", () => {
+    expect(countWords(words(97))).toBe(97);
+    expect(countWords(words(1))).toBe(1);
+  });
+
+  it("passes a short standard answer", () => {
     const text = "move your knight to f6. it develops a piece and keeps your king safe.";
     const result = checkLength(text, false);
     expect(result.pass).toBe(true);
+    expect(result.underTarget).toBe(true);
   });
-  it("fails a standard answer over 45 words", () => {
-    const longText = Array.from({ length: 50 }, () => "word").join(" ") + ".";
-    expect(checkLength(longText, false).pass).toBe(false);
+
+  // The owner graded all 30 blinded rows on 2026-07-28: the median answer she
+  // PREFERRED was 95 words and 18 of her 22 decisive picks were over the old
+  // 45-word cap. The cap was scoring her favourite answers as failures, so it
+  // ran opposite to owner judgment on the one axis that had been deciding.
+  it("a 97-word answer passes length (around the owner's median preferred answer)", () => {
+    const r = checkLength(words(97), false, "general");
+    expect(r.pass).toBe(true);
+    expect(r.underTarget).toBe(true);
   });
-  it("fails a standard answer over 3 sentences", () => {
-    const text = "one. two. three. four.";
-    expect(checkLength(text, false).pass).toBe(false);
+
+  it("a 97-word board-live answer also passes -- the 45-word cap is gone from every arm", () => {
+    const r = checkLength(words(97), false, "board-live");
+    expect(r.pass).toBe(true);
   });
-  it("applies the tighter affirmation budget (<=20 words, <=2 sentences)", () => {
-    const text = Array.from({ length: 21 }, () => "word").join(" ") + ".";
+
+  it("a 140-word answer passes but is flagged as over the concision target", () => {
+    const r = checkLength(words(140), false, "general");
+    expect(r.pass).toBe(true);
+    expect(r.underTarget).toBe(false);
+  });
+
+  it("a 180-word answer fails the hard cap", () => {
+    expect(checkLength(words(180), false, "general").pass).toBe(false);
+    expect(checkLength(words(180), false, "board-live").pass).toBe(false);
+  });
+
+  it("exposes the cap and the target as named constants, not inline numbers", () => {
+    expect(LENGTH_MAX_WORDS).toBe(150);
+    expect(CONCISION_TARGET_WORDS).toBe(100);
+    expect(checkLength(words(LENGTH_MAX_WORDS), false, "general").pass).toBe(true);
+    expect(checkLength(words(LENGTH_MAX_WORDS + 1), false, "general").pass).toBe(false);
+    expect(checkLength(words(CONCISION_TARGET_WORDS), false, "general").underTarget).toBe(true);
+    expect(checkLength(words(CONCISION_TARGET_WORDS + 1), false, "general").underTarget).toBe(false);
+  });
+
+  // The sentence cap is deleted outright, not relaxed: no owner-preferred
+  // answer failed on sentence count, and it was a second confound stacked on
+  // the same axis as the word count.
+  it("never gates on sentence count -- a many-sentence reply under the word cap passes on every arm", () => {
+    const text = Array.from({ length: 10 }, (_, i) => `sentence number ${i}`).join(". ") + ".";
+    expect(checkLength(text, false, "board-live").pass).toBe(true);
+    expect(checkLength(text, false, "general").pass).toBe(true);
+    expect(checkLength(text, false, "board-review").pass).toBe(true);
+    expect(checkLength("one. two. three. four.", false).pass).toBe(true);
+  });
+
+  it("keeps the tighter affirmation word budget (<=20 words), which no graded answer contested", () => {
+    const text = words(21);
     expect(checkLength(text, true).pass).toBe(false);
-    expect(checkLength(text, false).pass).toBe(true); // same text passes the looser standard budget
+    expect(checkLength(text, false).pass).toBe(true); // same text passes the standard budget
+    expect(checkLength(words(20), true).pass).toBe(true);
+    expect(checkLength(words(20), true).underTarget).toBe(true);
   });
 
-  // Wave E1: per-arm budget selection (Task 2). board-live's default arg
-  // keeps the old two-tier board-live behavior above untouched; general and
-  // board-review both read GENERAL_MAX_WORDS (imported from
-  // server/coach/chat.ts, never a second hardcoded number).
-  describe("per-arm budget (Wave E1)", () => {
-    it("defaults to board-live (45w/3s) when arm is omitted -- pre-existing call sites are unaffected", () => {
-      const text = Array.from({ length: 50 }, () => "word").join(" ") + ".";
-      expect(checkLength(text, false).pass).toBe(false);
-      expect(checkLength(text, false, "board-live").pass).toBe(false);
-    });
-
-    it("general and board-review pass a reply over the board-live 45-word cap but under GENERAL_MAX_WORDS", () => {
-      const words = 80;
-      expect(words).toBeGreaterThan(45);
-      expect(words).toBeLessThan(GENERAL_MAX_WORDS);
-      const text = Array.from({ length: words }, () => "word").join(" ") + ".";
-      expect(checkLength(text, false, "board-live").pass).toBe(false);
-      expect(checkLength(text, false, "general").pass).toBe(true);
-      expect(checkLength(text, false, "board-review").pass).toBe(true);
-    });
-
-    it("general/board-review still fail once GENERAL_MAX_WORDS is exceeded", () => {
-      const text = Array.from({ length: GENERAL_MAX_WORDS + 5 }, () => "word").join(" ") + ".";
-      expect(checkLength(text, false, "general").pass).toBe(false);
-      expect(checkLength(text, false, "board-review").pass).toBe(false);
-    });
-
-    it("general/board-review do not gate on sentence count -- a many-sentence reply under the word cap still passes", () => {
-      const text = Array.from({ length: 10 }, (_, i) => `sentence number ${i}`).join(". ") + ".";
-      expect(checkLength(text, false, "general").pass).toBe(true);
-    });
+  it("applies one cap across every arm -- the old per-arm split is gone", () => {
+    for (const arm of ["board-live", "general", "board-review"] as const) {
+      expect(checkLength(words(GENERAL_MAX_WORDS + 5), false, arm).pass).toBe(true);
+      expect(checkLength(words(160), false, arm).pass).toBe(false);
+    }
   });
 });
 
@@ -239,19 +272,31 @@ describe("scoreAnswer", () => {
     expect(scoreAnswer(longAffirmation).length?.pass).toBe(false);
   });
 
-  // Wave E1: scoreAnswer reads row.arm (not just row.tag) to pick the length
-  // budget -- a general/board-review row over 45 words but under
-  // GENERAL_MAX_WORDS must pass, where the SAME text on a board-live row
-  // must fail. Regression guard for the exact "arm decides the budget, not
-  // tag" wiring Task 2 asks for.
-  it("scores length against the row's own arm, not just its tag", () => {
+  // Was (Wave E1): "a general/board-review row over 45 words but under
+  // GENERAL_MAX_WORDS passes where the SAME text on board-live fails".
+  // Superseded 2026-07-28: one hard cap now applies to every arm, so the arm
+  // must NOT change the verdict. Kept (rather than deleted) as the regression
+  // guard pointing the other way -- if a per-arm budget ever creeps back in,
+  // this fails.
+  it("scores length identically across arms -- the per-arm budget split is gone", () => {
     const text = Array.from({ length: 80 }, () => "word").join(" ") + ".";
     const boardLiveRow = mkRow({ arm: "board-live", tag: "open", text });
     const generalRow = mkRow({ arm: "general", tag: "general", text });
     const boardReviewRow = mkRow({ arm: "board-review", tag: "dir", text });
-    expect(scoreAnswer(boardLiveRow).length?.pass).toBe(false);
+    expect(scoreAnswer(boardLiveRow).length?.pass).toBe(true);
     expect(scoreAnswer(generalRow).length?.pass).toBe(true);
     expect(scoreAnswer(boardReviewRow).length?.pass).toBe(true);
+    // 80 words is under the concision target on every arm, and the row's own
+    // arm still reaches the axis (reported, not scored).
+    expect(scoreAnswer(boardLiveRow).length?.underTarget).toBe(true);
+    expect(scoreAnswer(generalRow).length?.detail).toContain("arm general");
+  });
+
+  it("reports underTarget on the length axis without letting it change pass/fail", () => {
+    const over = mkRow({ arm: "general", tag: "general", text: Array.from({ length: 130 }, () => "word").join(" ") + "." });
+    const sc = scoreAnswer(over);
+    expect(sc.length?.pass).toBe(true);
+    expect(sc.length?.underTarget).toBe(false);
   });
 });
 
@@ -360,6 +405,34 @@ describe("aggregateAxis", () => {
   });
 });
 
+// Eval-instrument-repair round (2026-07-28). The owner has GRADED a blinded
+// report by its A/B column labels. render.ts used to pick that assignment with
+// a fresh Math.random() on EVERY invocation, so simply re-rendering a run to
+// pick up a scoring fix would silently swap the columns and orphan her grades
+// -- the grades would still exist but would no longer say which model won.
+// A run directory's blinding is therefore sticky: written once, reused
+// forever after.
+describe("resolveBlinding", () => {
+  it("reuses an existing unblinding key instead of re-randomizing", () => {
+    const r = resolveBlinding({ A: "sonnet", B: "opus" }, () => 0.99);
+    expect(r.modelAIsSonnet).toBe(true);
+    expect(r.reused).toBe(true);
+    const flipped = resolveBlinding({ A: "opus", B: "sonnet" }, () => 0.01);
+    expect(flipped.modelAIsSonnet).toBe(false);
+    expect(flipped.reused).toBe(true);
+  });
+
+  it("randomizes only when no key exists yet", () => {
+    expect(resolveBlinding(null, () => 0.1)).toEqual({ modelAIsSonnet: true, reused: false });
+    expect(resolveBlinding(null, () => 0.9)).toEqual({ modelAIsSonnet: false, reused: false });
+  });
+
+  it("re-randomizes rather than trusting a malformed key", () => {
+    expect(resolveBlinding({ A: "sonnet", B: "sonnet" }, () => 0.9).reused).toBe(false);
+    expect(resolveBlinding({ A: "banana" } as unknown as { A: string; B: string }, () => 0.9).reused).toBe(false);
+  });
+});
+
 describe("decideModel", () => {
   const pair = (
     sMed: number,
@@ -421,6 +494,57 @@ describe("decideModel", () => {
     expect(d.decidedBy).toBe("default");
     expect(DEFAULT_MODEL).toBe("sonnet");
     expect(d.reasoning.toLowerCase()).toContain("sonnet");
+  });
+
+  // Eval-instrument-repair round (2026-07-28). The length axis was the one
+  // that had actually been picking a winner on this data, on a budget the
+  // owner's own grades ran opposite to. It is retuned (score.ts) AND demoted
+  // here: it now needs a 20-point median gap, not 5, before it may decide.
+  describe("length is demoted (2026-07-28)", () => {
+    it("requires a 20-point median gap -- a small-but-disjoint length gap no longer decides", () => {
+      const inputs: DecideInputs = {
+        jargon: flat,
+        // 10-point median gap, rep ranges disjoint: decisive under the old
+        // 5-point delta, noise under the new one.
+        length: pair(0.5, 0.48, 0.52, 0.6, 0.58, 0.62),
+        pending: flat,
+        pendingAudited: false,
+      };
+      const d = decideModel(inputs);
+      expect(d.decidedBy).toBe("default");
+      expect(d.winner).toBe("tie-keep-default");
+    });
+
+    it("still decides on a genuinely large, disjoint length gap", () => {
+      const inputs: DecideInputs = {
+        jargon: flat,
+        length: pair(0.3, 0.28, 0.32, 0.7, 0.68, 0.72),
+        pending: flat,
+        pendingAudited: false,
+      };
+      const d = decideModel(inputs);
+      expect(d.decidedBy).toBe("length");
+      expect(d.winner).toBe("opus");
+    });
+
+    it("pins the delta constant so the bar cannot be quietly loosened", () => {
+      expect(LENGTH_DECISIVE_DELTA).toBe(0.2);
+    });
+
+    it("never lets the informational sub-target rate decide, however lopsided", () => {
+      const inputs: ArmDecisionInputs = {
+        jargon: flat,
+        length: flat,
+        pending: flat,
+        pendingAudited: false,
+        // A 90-point gap on the concision-target rate. decideArm must not
+        // read this field at all -- it is reported, never consulted.
+        underTargetRate: pair(0.05, 0.03, 0.07, 0.95, 0.93, 0.97),
+      };
+      const d = decideArm("general", inputs);
+      expect(d.decidedBy).toBe("default");
+      expect(d.winner).toBe("tie-keep-default");
+    });
   });
 });
 

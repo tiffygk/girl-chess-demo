@@ -8,12 +8,14 @@
 // re-running the model).
 
 import { checkVoice, SENTENCE_END_RE } from "../../server/coach/voiceRules";
-// Wave E1: GENERAL_MAX_WORDS is imported, never hardcoded a second time --
-// per the skill's "share the enforcer's own regexes/budgets with the eval as
-// one source of truth so they can't drift" rule. It is the exact word budget
-// server/coach/personas/coach.md's "### general questions" section (via
-// chat.ts's buildChatPrompt) asks the model for.
-import { GENERAL_MAX_WORDS } from "../../server/coach/chat";
+// Note (eval-instrument-repair round, 2026-07-28): this module used to import
+// GENERAL_MAX_WORDS from server/coach/chat.ts as the general/board-review
+// length budget, under the skill's "share the enforcer's own budgets with the
+// eval so they can't drift" rule. That import is gone because the budget it
+// backed is gone: the harness no longer scores an answer against the word
+// count the prompt asks for at all (see checkLength below and Task 4's persona
+// change -- concision is now an instruction, not a scored penalty), so there
+// is no longer a second copy of anything to drift.
 import { PIECE_WORDS, type QuestionTag, type Arm } from "./fixtures";
 
 export interface PendingRef {
@@ -59,7 +61,10 @@ export interface Scorecard {
   pipelineFailure: boolean;
   cause?: string;
   completeness?: AxisResult;
-  length?: AxisResult;
+  // `underTarget` rides along on the length axis so render.ts can report the
+  // sub-CONCISION_TARGET_WORDS rate as an informational column. It is NOT a
+  // pass/fail and decideArm never reads it.
+  length?: AxisResult & { underTarget: boolean };
   jargon?: AxisResult;
   aiIsmCasing?: AxisResult;
   // Present only when the row carries a pending move (PD1-10, AF1-3/AF5).
@@ -89,49 +94,74 @@ export function checkCompleteness(text: string): AxisResult {
   return { pass, detail: pass ? "ends cleanly" : `does not end in sentence-final punctuation: "${tail}"` };
 }
 
-// Axis 2: standard <= 45 words / <= 3 sentences; affirmation cases (tag
-// "affirmation") <= 20 words / <= 2 sentences (methodology part 4).
-export const STANDARD_WORD_LIMIT = 45;
-export const STANDARD_SENTENCE_LIMIT = 3;
+// Axis 2 (retuned, eval-instrument-repair round 2026-07-28). The old budget
+// was 45 words / 3 sentences for board-live and GENERAL_MAX_WORDS (120) for
+// general/board-review. The owner then graded all 30 blinded rows, and the
+// join of her grades to the raw answers showed the axis was measuring the
+// wrong thing:
+//
+//   median words, answer she PREFERRED   95   (plan's estimate: 97)
+//   median words, answer she rejected    71
+//   preferred answers over the 45w cap   18 of 22 decisive picks (82%)
+//   longest answer she preferred        129 words
+//
+// So the axis ran OPPOSITE to owner judgment: the answers she liked best were
+// the ones it was failing. That is a wrong instrument, not a mis-set
+// threshold, and (per the coach-eval skill) a wrong instrument must not be
+// allowed to decide anything.
+//
+// The replacement is one cap for every arm, plus a purely informational
+// concision target:
+//   LENGTH_MAX_WORDS      hard fail above this -- an actual wall-of-text
+//                         guard, set well clear of her longest preferred
+//                         answer (129) so no answer of the kind she likes
+//                         can fail it.
+//   CONCISION_TARGET_WORDS reported as `underTarget`, NEVER a pass/fail and
+//                         never consulted by decideArm -- concision is now
+//                         asked for in the prompt (personas/coach.md), not
+//                         punished in the score.
+//
+// The sentence cap is deleted outright rather than relaxed: no owner-preferred
+// answer failed on sentence count, and it was a second confound stacked on the
+// same axis as the word count. countSentences survives (it is still reported
+// in `detail` and unit-tested) but no longer gates anything.
+export const LENGTH_MAX_WORDS = 150; // hard fail above this
+export const CONCISION_TARGET_WORDS = 100; // informational only, never decides
+// Short-affirmation rows ("is this ok", "quick check, this ok") keep their own
+// tight word budget -- untouched by this round, because none of the owner's
+// graded picks contested it.
 export const AFFIRMATION_WORD_LIMIT = 20;
-export const AFFIRMATION_SENTENCE_LIMIT = 2;
-// Wave E1: the general/board-review arms' budget is GENERAL_MAX_WORDS (120),
-// imported above from server/coach/chat.ts -- the exact number the general
-// route's own prompt asks for (personas/coach.md's "### general questions"
-// section: "up to about 120 words"). That section states NO sentence cap
-// ("these answers can run longer than the usual one to three sentences") --
-// so unlike the board-live budgets above, there is no real enforcer sentence
-// rule to mirror here. GENERAL_SENTENCE_LIMIT is a harness-only, generous,
-// owner-calibratable ceiling (not a mirrored prompt rule) so a wall of one
-// 120-word run-on sentence still fails something -- it does NOT gate length
-// on its own; only the word count does, per the enforcer's actual budget.
-export const GENERAL_SENTENCE_LIMIT = 8;
 
-// Wave E1: `arm` picks the budget (board-live keeps the original 45w/3s or
-// 20w/2s-affirmation split, unchanged; general/board-review use the
-// GENERAL_MAX_WORDS budget). Defaulted to "board-live" so every pre-existing
-// call site (score.test.ts's original assertions) compiles and behaves
-// exactly as before without passing the new argument.
+// `arm` no longer picks a budget (one cap now applies everywhere) -- it is
+// kept in the signature so every call site reads the same, it is reported in
+// `detail` for auditability, and a future genuinely-arm-specific budget has an
+// obvious place to land.
 export function checkLength(
   text: string,
   isAffirmation: boolean,
   arm: Arm = "board-live"
-): AxisResult & { words: number; sentences: number } {
+): AxisResult & { words: number; sentences: number; underTarget: boolean } {
   const words = countWords(text);
   const sentences = countSentences(text);
-  if (arm === "general" || arm === "board-review") {
-    const pass = words <= GENERAL_MAX_WORDS;
+  if (isAffirmation) {
     return {
-      pass,
+      pass: words <= AFFIRMATION_WORD_LIMIT,
       words,
       sentences,
-      detail: `${words} words, ${sentences} sentences (limit ${GENERAL_MAX_WORDS}w, no enforced sentence cap for this arm; ${GENERAL_SENTENCE_LIMIT}s is informational only)`,
+      underTarget: true,
+      detail: `${words} words, ${sentences} sentences (affirmation budget ${AFFIRMATION_WORD_LIMIT}w, no sentence cap; arm ${arm})`,
     };
   }
-  const wordLimit = isAffirmation ? AFFIRMATION_WORD_LIMIT : STANDARD_WORD_LIMIT;
-  const sentenceLimit = isAffirmation ? AFFIRMATION_SENTENCE_LIMIT : STANDARD_SENTENCE_LIMIT;
-  const pass = words <= wordLimit && sentences <= sentenceLimit;
-  return { pass, words, sentences, detail: `${words} words, ${sentences} sentences (limit ${wordLimit}w/${sentenceLimit}s)` };
+  const underTarget = words <= CONCISION_TARGET_WORDS;
+  return {
+    pass: words <= LENGTH_MAX_WORDS,
+    words,
+    sentences,
+    underTarget,
+    detail:
+      `${words} words, ${sentences} sentences (hard cap ${LENGTH_MAX_WORDS}w, no sentence cap; arm ${arm}; ` +
+      `${underTarget ? "under" : "over"} the ${CONCISION_TARGET_WORDS}w concision target, informational only)`,
+  };
 }
 
 // Axis 5 (the r2 headline metric). Base formula from methodology part 4:

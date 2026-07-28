@@ -24,7 +24,7 @@
 import fs from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
-import { scoreAnswer, summarizePipeline, TEMPLATE_RATE_PASS_MAX, type AnswerRow, type Scorecard } from "./score";
+import { scoreAnswer, summarizePipeline, TEMPLATE_RATE_PASS_MAX, LENGTH_MAX_WORDS, CONCISION_TARGET_WORDS, type AnswerRow, type Scorecard } from "./score";
 import type { QuestionTag, Arm } from "./fixtures";
 import { parseArgs } from "./util";
 
@@ -51,6 +51,12 @@ interface AxesAgg {
   jargon: AxisAgg;
   aiIsmCasing: AxisAgg;
   pendingAwareness: AxisAgg;
+  // INFORMATIONAL ONLY (eval-instrument-repair round, 2026-07-28): share of
+  // model answers at or under score.ts's CONCISION_TARGET_WORDS. It sits in
+  // this record so it is reported per arm in summary.json and in the metrics
+  // file, but decide.ts is forbidden from consulting it -- see decide.ts's
+  // ArmDecisionInputs.underTargetRate comment and its test.
+  underTarget: AxisAgg;
 }
 interface PerRepPipeline {
   rep: number;
@@ -156,7 +162,7 @@ function discover(dir: string): RepFile[] {
 
 // ---- per-axis rate over one rep's rows (model-source only) ---------------
 
-const AXIS_KEYS = ["completeness", "length", "jargon", "aiIsmCasing", "pendingAwareness"] as const;
+const AXIS_KEYS = ["completeness", "length", "jargon", "aiIsmCasing", "pendingAwareness", "underTarget"] as const;
 type AxisKey = (typeof AXIS_KEYS)[number];
 const AXIS_PICKS: Record<AxisKey, (sc: Scorecard) => { pass: boolean } | undefined> = {
   completeness: (sc) => sc.completeness,
@@ -164,6 +170,9 @@ const AXIS_PICKS: Record<AxisKey, (sc: Scorecard) => { pass: boolean } | undefin
   jargon: (sc) => sc.jargon,
   aiIsmCasing: (sc) => sc.aiIsmCasing,
   pendingAwareness: (sc) => sc.pendingAwareness,
+  // Reuses the same rate machinery as a real axis, but "pass" here means
+  // "at or under the concision target" -- a description, not a grade.
+  underTarget: (sc) => (sc.length ? { pass: sc.length.underTarget } : undefined),
 };
 
 function axisRateAndN(rows: AnswerRow[], pick: (sc: Scorecard) => { pass: boolean } | undefined): { rate: number | null; n: number } {
@@ -176,7 +185,7 @@ function axisRateAndN(rows: AnswerRow[], pick: (sc: Scorecard) => { pass: boolea
 // Exported for score.test.ts's per-arm aggregation / p90-computation tests.
 export function buildModelSummary(files: RepFile[]): ModelSummary {
   const sorted = [...files].sort((a, b) => a.rep - b.rep);
-  const perRepAxes: Record<AxisKey, RepAxis[]> = { completeness: [], length: [], jargon: [], aiIsmCasing: [], pendingAwareness: [] };
+  const perRepAxes: Record<AxisKey, RepAxis[]> = { completeness: [], length: [], jargon: [], aiIsmCasing: [], pendingAwareness: [], underTarget: [] };
   const perRepPipeline: PerRepPipeline[] = [];
   const medianSeries: RepAxis[] = [];
   const p90Series: RepAxis[] = [];
@@ -214,6 +223,7 @@ export function buildModelSummary(files: RepFile[]): ModelSummary {
       jargon: aggregateAxis(perRepAxes.jargon),
       aiIsmCasing: aggregateAxis(perRepAxes.aiIsmCasing),
       pendingAwareness: aggregateAxis(perRepAxes.pendingAwareness),
+      underTarget: aggregateAxis(perRepAxes.underTarget),
     },
     pipeline: {
       perRep: perRepPipeline,
@@ -392,6 +402,44 @@ export function selectPrioritySubset(ids: string[], rowsA: Map<string, AnswerRow
   return { graded, general, random };
 }
 
+// ---- sticky blinding (eval-instrument-repair round, 2026-07-28) ----------
+//
+// The A/B assignment used to be a fresh `Math.random() < 0.5` on every render
+// invocation, with a comment reasoning that re-randomizing was harmless
+// because decide.ts and the dashboard read the model-named summary.json.
+// That reasoning missed the owner: once she has GRADED report-blinded.md by
+// column label -- as she did on 2026-07-28, all 30 rows -- the A/B assignment
+// is no longer a display detail, it is the only key that maps her grades onto
+// a model. Re-rendering to pick up a SCORING fix (which is exactly what this
+// round does, with zero new model calls) would have silently swapped the
+// columns and turned hours of her work into unmappable answers.
+//
+// So a run directory's blinding is written once and reused forever after. A
+// missing or malformed key falls back to a fresh draw, which is the correct
+// behavior for a first render and for a corrupted file alike.
+export interface BlindingKey {
+  A: string;
+  B: string;
+}
+export function resolveBlinding(existing: BlindingKey | null, rand: () => number = Math.random): { modelAIsSonnet: boolean; reused: boolean } {
+  const valid =
+    existing != null &&
+    ((existing.A === "sonnet" && existing.B === "opus") || (existing.A === "opus" && existing.B === "sonnet"));
+  if (valid) return { modelAIsSonnet: existing!.A === "sonnet", reused: true };
+  return { modelAIsSonnet: rand() < 0.5, reused: false };
+}
+
+function readBlindingKey(dir: string): BlindingKey | null {
+  const p = path.join(dir, "unblinding.json");
+  if (!fs.existsSync(p)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, "utf-8"));
+    return { A: parsed.A, B: parsed.B };
+  } catch {
+    return null;
+  }
+}
+
 // ---- blinded report (rep 1 only, unchanged behavior) ---------------------
 
 interface Column {
@@ -561,9 +609,9 @@ interface ColumnAgg {
 // held to, printed at the top of its section -- README's own per-arm
 // budget table is the fuller version of this.
 const ARM_LABEL: Record<Arm, string> = {
-  "board-live": "board-live (live nudge budget: 45 words / 3 sentences, CHAT_TIMEOUT_MS)",
-  general: "general (post-game/general budget: GENERAL_MAX_WORDS words, CHAT_REVIEW_BUDGET_MS or CHAT_TIMEOUT_MS)",
-  "board-review": "board-review (board question, finished game: GENERAL_MAX_WORDS words, CHAT_REVIEW_BUDGET_MS)",
+  "board-live": `board-live (live nudge, ${LENGTH_MAX_WORDS}-word hard cap, CHAT_TIMEOUT_MS)`,
+  general: `general (post-game/general question, ${LENGTH_MAX_WORDS}-word hard cap, CHAT_REVIEW_BUDGET_MS or CHAT_TIMEOUT_MS)`,
+  "board-review": `board-review (board question, finished game, ${LENGTH_MAX_WORDS}-word hard cap, CHAT_REVIEW_BUDGET_MS)`,
 };
 
 function writeArmSection(arm: Arm, A: ColumnAgg, B: ColumnAgg): string[] {
@@ -583,10 +631,22 @@ function writeArmSection(arm: Arm, A: ColumnAgg, B: ColumnAgg): string[] {
     "| axis | A | B |",
     "|---|---|---|",
     `| completeness | ${fmtAgg(sa.axes.completeness)} | ${fmtAgg(sb.axes.completeness)} |`,
-    `| length (this arm's own budget) | ${fmtAgg(sa.axes.length)} | ${fmtAgg(sb.axes.length)} |`,
+    `| length (${LENGTH_MAX_WORDS}-word hard cap, one cap for every arm) | ${fmtAgg(sa.axes.length)} | ${fmtAgg(sb.axes.length)} |`,
     `| jargon (zero-tolerance) | ${fmtAgg(sa.axes.jargon)} | ${fmtAgg(sb.axes.jargon)} |`,
     `| ai-ism / casing (zero-tolerance) | ${fmtAgg(sa.axes.aiIsmCasing)} | ${fmtAgg(sb.axes.aiIsmCasing)} |`,
     `| pending-awareness | ${fmtAgg(sa.axes.pendingAwareness)} | ${fmtAgg(sb.axes.pendingAwareness)} |`,
+    "",
+    "### concision, INFORMATIONAL ONLY -- reported, never scored, never decides",
+    "",
+    "| measure | A | B |",
+    "|---|---|---|",
+    `| share of answers at or under the ${CONCISION_TARGET_WORDS}-word concision target | ${fmtAgg(sa.axes.underTarget)} | ${fmtAgg(sb.axes.underTarget)} |`,
+    "",
+    "this row is a description of answer length, not a grade. the owner graded",
+    "all 30 blinded rows on 2026-07-28 and the median answer she PREFERRED was",
+    "95 words against 71 for the one she rejected, with 18 of 22 decisive picks",
+    "over the old 45-word cap -- so a lower number here is not better, and",
+    "decide.ts is forbidden from reading it.",
     "",
     "### pipeline health -- pooled across reps, THIS ARM ONLY (never pooled across arms)",
     "",
@@ -737,11 +797,16 @@ async function main() {
   const sonnetById = new Map(sonnetRep1.map((r) => [r.id, r]));
   const opusById = new Map(opusRep1.map((r) => [r.id, r]));
 
-  // Fixed ONCE for this render invocation and written to unblinding.json
-  // immediately -- both blinded files derive from this single assignment.
-  // Re-renders during the audit loop re-randomize blinding; harmless, since
-  // decide.ts + the dashboard read the model-named summary.json (design D5).
-  const modelAIsSonnet = Math.random() < 0.5;
+  // Sticky: reused from this directory's existing unblinding.json if one is
+  // there, drawn fresh only on a first render. See resolveBlinding above --
+  // re-randomizing would orphan any grades the owner has already written
+  // against the A/B columns.
+  const { modelAIsSonnet, reused } = resolveBlinding(readBlindingKey(resolvedDir));
+  console.log(
+    reused
+      ? `[coach-eval] reusing this run's existing blinding key (A=${modelAIsSonnet ? "sonnet" : "opus"}) -- any grades already written against these columns stay valid`
+      : `[coach-eval] no existing blinding key in this directory; drew a fresh one (A=${modelAIsSonnet ? "sonnet" : "opus"})`
+  );
   const colA: Column = { label: "A", rows: modelAIsSonnet ? sonnetById : opusById };
   const colB: Column = { label: "B", rows: modelAIsSonnet ? opusById : sonnetById };
 
