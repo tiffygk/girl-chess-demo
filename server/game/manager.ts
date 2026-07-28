@@ -90,7 +90,14 @@ interface CachedBackend {
 // (v1's only other way a decisive game with no end_reason ends). Read-only
 // over already-persisted columns -- no engine call, no re-derivation of
 // game state.
-function deriveChatOutcome(
+//
+// Exported 2026-07-28 (eval-instrument-repair round) so tools/coach-eval's
+// board-review arm derives its finished-game outcome through the SAME
+// function the product uses, against its own scratch db copy, instead of the
+// fabricated `1-0 by resignation` wrapper it used to synthesize. Still called
+// from exactly one place in production (chatAbout below); the export exists
+// for the harness, not for a second runtime call site.
+export function deriveChatOutcome(
   result: string | null,
   endReason: string | null,
   lastSan: string | undefined,

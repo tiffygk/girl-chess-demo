@@ -43,7 +43,19 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Chess } from "chess.js";
-import { openDb, getGame, getGameMoves } from "../../server/store/db";
+import { openDb, getGame, getGameMoves, getTurningPoints } from "../../server/store/db";
+// The product's own finished-game outcome derivation -- imported, never
+// reimplemented (see reviewFacts below).
+import { deriveChatOutcome } from "../../server/game/manager";
+
+// Shape of a turning_points row as getTurningPoints returns it; mirrors the
+// cast manager.ts's chatAbout does on the same query.
+interface TurningPointRow {
+  ply: number;
+  san: string;
+  label: string;
+  punish_san: string | null;
+}
 import type { ChatContext, ChatPerPlyInput, ChatOutcome } from "../../server/coach/chat";
 // Wave E1: CHAT_TIMEOUT_MS/CHAT_REVIEW_BUDGET_MS are the SAME constants
 // manager.ts's own budgetMs = finished ? CHAT_REVIEW_BUDGET_MS :
@@ -275,17 +287,34 @@ function buildContext(
   return { mode: question.arm === "board-review" ? "review" : "live" };
 }
 
-// Wave E1: the board-review arm's synthesized "finished game" wrapper.
-// Deliberately the SAME outcome for every board-review row regardless of
-// fixture -- this is a harness artifact that exercises the status:"finished"
-// + CHAT_REVIEW_BUDGET_MS plumbing, NOT the real db result for games
-// 130/134 at that ply (those games continue well past every C1-C5 fixture).
-// Never read this as a product finding about those real games (skill rule
-// 6: a rig artifact is not a root cause) -- it exists purely so the coach's
-// prompt genuinely carries a status/outcome fact it would otherwise never
-// see in this harness's mid-game fixtures.
-function boardReviewOutcome(fixture: Fixture): ChatOutcome {
-  return { result: "1-0", winner: "you", how: "resignation", finalPly: fixture.ply };
+// The board-review arm's finished-game facts, read from the db (eval-
+// instrument-repair round, 2026-07-28). This REPLACES `boardReviewOutcome`,
+// which synthesized the same fabricated `1-0 by resignation` for every row
+// regardless of fixture, against games that were still in progress at the
+// pinned ply. The coach then correctly discussed a resignation that never
+// happened, and the owner -- grading the blinded read -- threw the whole arm
+// out as unjudgeable.
+//
+// deriveChatOutcome is IMPORTED from server/game/manager.ts, not reimplemented
+// here: the arm's whole point is to exercise the same finished-game path the
+// app takes, so it must read games.result/end_reason exactly the way chatAbout
+// does, including the "decisive result, null end_reason, last san has no #"
+// resignation disambiguation. Same for turningPoints, which manager.ts passes
+// only for a finished game -- omitting them here (as this file used to) meant
+// the arm's fact list was missing something every real review chat carries.
+function reviewFacts(fixture: Fixture, sans: { ply: number; san: string }[]): { status: "finished"; outcome?: ChatOutcome } {
+  const game = getGame(fixture.gameId) as { result: string | null; end_reason?: string | null } | undefined;
+  if (!game) throw new Error(`review fixture ${fixture.id} references game ${fixture.gameId}, which is not in the scratch db`);
+  if (!game.result) {
+    throw new Error(
+      `review fixture ${fixture.id} points at game ${fixture.gameId}, which has NO result in the db -- the board-review arm ` +
+        `must only ever run against genuinely finished games (this is the exact defect the 2026-07-28 rebuild removed). Aborting.`
+    );
+  }
+  return {
+    status: "finished",
+    outcome: deriveChatOutcome(game.result, game.end_reason ?? null, sans[sans.length - 1]?.san, sans.length),
+  };
 }
 
 function copyScratchDb(sourcePath: string, destPath: string) {
@@ -357,6 +386,24 @@ async function main() {
       rowsByGame.set(fixture.gameId, getGameMoves(fixture.gameId) as MoveRow[]);
     }
     const rows = rowsByGame.get(fixture.gameId)!;
+    // Review fixtures (2026-07-28): fail fast, at startup, if the game this
+    // fixture claims is finished is not actually finished in the db, or if
+    // the pinned ply is not its real final ply. The whole rebuild of this arm
+    // exists because a fabricated outcome was allowed to stand in for a real
+    // one; the guard against that regressing lives here, against live data,
+    // not only in a unit test against the fixture literals.
+    if (fixture.finished) {
+      const game = getGame(fixture.gameId) as { result: string | null } | undefined;
+      if (!game?.result) {
+        throw new Error(`review fixture ${fixture.id} claims game ${fixture.gameId} is finished, but the db has no result for it`);
+      }
+      if (rows.length !== fixture.ply) {
+        throw new Error(
+          `review fixture ${fixture.id} pins ply ${fixture.ply}, but game ${fixture.gameId} has ${rows.length} plies -- ` +
+            `a review fixture must sit on the game's real FINAL ply`
+        );
+      }
+    }
     const truncated = truncatedMoves(rows, fixture.ply);
     const replay = new Chess();
     for (const m of truncated) replay.move(m.san);
@@ -437,13 +484,20 @@ async function main() {
     const engineBest = ENGINE_BEST_UCI_BY_FIXTURE[fixture.id] ? engineBestForFixture(rows, fixture) : undefined;
     const ctx = buildContext(question, engineBest, wiring);
 
-    // Wave E1: board-review is the only arm whose fixture is wrapped as a
-    // finished game -- same synthesized-outcome discipline as
-    // boardReviewOutcome's own header comment (a harness artifact, not a
-    // real db fact about games 130/134).
+    // board-review is the only arm whose fixture is a finished game, and the
+    // status/outcome/turningPoints facts now all come from the db, mirroring
+    // manager.ts's chatAbout exactly (finished ? real facts : undefined).
     const finished = question.arm === "board-review";
-    const outcomeInfo = finished ? ({ status: "finished" as const, outcome: boardReviewOutcome(fixture) }) : undefined;
-    const facts = assembleChatFactList(gameMoves, ctx, undefined, perPly, outcomeInfo);
+    const outcomeInfo = finished ? reviewFacts(fixture, gameMoves) : undefined;
+    const turningPoints = finished
+      ? getTurningPoints(fixture.gameId).map((r: TurningPointRow) => ({
+          ply: r.ply,
+          san: r.san,
+          label: r.label,
+          punishSan: r.punish_san ?? undefined,
+        }))
+      : undefined;
+    const facts = assembleChatFactList(gameMoves, ctx, turningPoints, perPly, outcomeInfo);
     const trace = { gameId: fixture.gameId, ply: fixture.ply, kind: "chat" };
 
     // Wave E1 (Wave F: ctx shape updated to match classifyIntent's new

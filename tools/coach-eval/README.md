@@ -26,7 +26,7 @@ this harness measures all three shapes that decision creates:
 |---|---|---|---|---|
 | `board-live` | the original v2/v3 arm — a live game, a board/move question | `LENGTH_MAX_WORDS` (150 words, one cap for every arm; 20 for affirmation rows) in `score.ts` | `CHAT_TIMEOUT_MS` (45s) | 65 (frozen, byte-identical to v2/v3) |
 | `general` | a next-game-strategy question, never about this position (owner's real refused question is `gen-01`, verbatim) | same `LENGTH_MAX_WORDS` (150) hard cap | `CHAT_TIMEOUT_MS` (45s; these fixtures are live games) | 15 |
-| `board-review` | a board/move question, but against a FINISHED game — exercises `status:"finished"` + the `outcome` fact and the longer review budget | same `LENGTH_MAX_WORDS` (150) hard cap | `CHAT_REVIEW_BUDGET_MS` (90s) | 16 (one per `board-live`'s `[dir]` question, same text + fixture, so the live-vs-review delta is attributable to the budget/outcome fact alone) |
+| `board-review` | a board/move question about a FINISHED game — exercises `status:"finished"` + the real `outcome` fact and the longer review budget | same `LENGTH_MAX_WORDS` (150) hard cap | `CHAT_REVIEW_BUDGET_MS` (90s) | 16 (`rev-01`…`rev-16`, rebuilt 2026-07-28 against real finished games 147/150/149 — see below) |
 
 **The length budget was retuned on 2026-07-28** (eval-instrument-repair
 round). It used to be 45 words / 3 sentences on `board-live` and 120 words on
@@ -42,12 +42,38 @@ from 5 to 20 points, so length may no longer pick a winner on a small gap.
 Concision is now asked for in the prompt (`personas/coach.md`), not punished
 in the score.
 
-**`board-review`'s `status`/`outcome` facts are a harness-synthesized
-wrapper** (`run.ts`'s `boardReviewOutcome`), not the real db result for games
-130/134 at that ply (those games continue well past every `C1`-`C5`
-fixture) — it exists purely to exercise the finished-game plumbing. Never
-read it as a product finding about those real games (skill rule 6: a rig
-artifact is not a root cause).
+**`board-review` was rebuilt on 2026-07-28 and its numbers do not compare
+back to v2/v3.** It used to reuse the live `[dir]` questions against the
+mid-game `C1`-`C5` fixtures with a FABRICATED `1-0 by resignation` outcome
+bolted on at run time (`run.ts`'s `boardReviewOutcome`, now deleted), purely
+so the finished-game plumbing had something to carry. The owner graded the
+blinded read and threw the arm out: *"all of the questions that are about the
+opponent resigning we should just remove because that's synthetic data that
+doesn't make sense and never happened so I can't really judge the answers off
+of them."* Measured against the raw rows, all 16 of 16 `rev-*` rows had at
+least one model discussing that resignation.
+
+The arm now runs against three games that genuinely finished, pinned at their
+real final ply, with the outcome read from `games.result`/`end_reason` through
+`manager.ts`'s own exported `deriveChatOutcome` — the same derivation the app
+uses — and with the real `turning_points` rows a live review chat also
+carries. The fixtures are chosen for outcome range, which the single
+synthetic wrapper never had:
+
+| fixture | game | plies | real outcome |
+|---|---|---|---|
+| `R1` | 147 | 28 | `0-1`, her only loss — mallow mated on g2 |
+| `R2` | 150 | 91 | `1-0` by checkmate, a long win |
+| `R3` | 149 | 144 | `1-0` by **adjudication** — the only shape that exercises `end_reason` |
+
+Note that none of the real games ended in a resignation at all; every one was
+a checkmate or an adjudication. The questions were rewritten rather than
+repointed, because the originals were live-position questions ("what should i
+play next?", "should i castle now?") that make no sense about a finished game
+— each `rev-*` entry in `fixtures.ts` names the question it replaces and why.
+`run.ts` asserts at startup that every review fixture's game really is
+finished and that the pinned ply really is its final ply, so a synthetic
+outcome cannot quietly return.
 
 **Hard constraint, honored by construction, not by discipline:** the
 original 65 `board-live` questions/fixtures are BYTE-IDENTICAL to v2/v3 —
@@ -59,13 +85,21 @@ original ids/wording/order.
 ## What it measures
 
 96 questions total across the three arms above (65 `board-live` + 15
-`general` + 16 `board-review`), against 5 pinned real-game fixtures (C1-C5,
-games 130/134), run through the production `chat()` pipeline unmodified —
+`general` + 16 `board-review`), against 8 pinned real-game fixtures (C1-C5 in
+live games 130/134, R1-R3 in finished games 147/149/150), run through the
+production `chat()` pipeline unmodified —
 same `assembleChatFactList`, same `classifyIntent`-driven routing
 (`validateChat` for the board route, `validateChatGeneral` for the general
 route), same one-regen-then-template fallback. Six mechanical axes, all
-deterministic, no llm judge: completeness, length (per-arm budget, above),
-jargon (incl. raw-SAN-as-move-name), ai-isms/casing, pending-awareness (the
+deterministic, no llm judge: completeness, length (one 150-word cap, above),
+jargon (incl. raw-SAN-as-move-name), ai-isms/casing, **register drift** (new
+2026-07-28 — `voiceRules.ts`'s `REGISTER_DRIFT`, a short precision-over-recall
+list of productivity/business phrases a chess coach should never reach for:
+"compounds", "the whole loop", "buying and selling". Kept as its OWN axis,
+never folded into jargon, or the v2/v3 jargon comparison would silently change
+meaning. Reported only — the list is unvalidated, and the eval skill's rule 3
+is that an unaudited checker never decides, so `decide.ts` refuses to read it
+until it has been hand-audited against a sample), pending-awareness (the
 r2 headline metric, `board-live` only), and regen/template pressure —
 reported PER ARM, never pooled (board-live/general/board-review have
 different budgets; pooling would silently re-derive whichever arm has the
@@ -272,7 +306,7 @@ fixtures.ts     pinned contexts C1-C5; board-live's 65-question set + PD/AF pend
                 Wave E1 adds GENERAL_QUESTIONS (15, gen-*) and BOARD_REVIEW_QUESTIONS (16, rev-*, reusing [dir]'s text/ctx)
 run.ts          cli entry: executes one model over all three arms (or one, via --arm); --warmup/--rep; writes raw-<model>[-rep<K>].json
                 incrementally; routes every question through classifyIntent + the finished/live budget split, same as manager.ts
-score.ts        mechanical checks (axes 1-6), imports server/coach/voiceRules.ts; checkLength(text, isAffirmation, arm) applies ONE
+score.ts        mechanical checks, imports server/coach/voiceRules.ts (checkVoice + checkRegister); checkLength(text, isAffirmation, arm) applies ONE
                 hard cap (LENGTH_MAX_WORDS 150) on every arm and reports underTarget against CONCISION_TARGET_WORDS (100), which never scores
 render.ts       multi-rep discovery + PER-ARM aggregation; summary.json (unblinded, arm-keyed) + blinded trio; exports
                 medianOf/aggregateAxis/buildModelSummary/filterFilesByArm
