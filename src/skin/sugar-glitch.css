@@ -1193,6 +1193,62 @@
   flex-direction: column;
   gap: var(--space-2);
 }
+
+/* D1 "cipher rail" -- the six-state arrow legend, first child of .debrief,
+   above the turning-point cards (owner-approved mockup direction, vault "3
+   visual/Girl Chess — Arrow Legend (mockup, 2026-07-28).html"). Sharp
+   register per the two-axis law -- the machine speaking, not a pressable:
+   chamfered plate, hard flat drop-shadow (never box-shadow under a
+   clip-path), signal type throughout, no border-radius past 4px, no hover-
+   press affordance, no glow, no animation. Analysis/review only by
+   construction: DebriefPage (the sole mount site) never renders during
+   live play -- see analysisLegend.test.ts's gating pins. Closed palette:
+   every colour here is either existing chrome ink (#6952C4 machine /
+   #23A8C7 kicker / #9A8BC9 rule) or one of the six real arrow colours
+   already shipped in .arrow-played/.arrow-best/.arrow-threat/.arrow-found/
+   .arrow-mallow/.arrow-mallow-best above -- no new hex. */
+.gc-app .legend-rail {
+  width: 100%;
+  background: rgba(255,255,255,.94); border: 1.5px solid #9A8BC9;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  filter: drop-shadow(2px 2px 0 rgba(74,59,126,.45));
+  padding: 10px 16px 12px;
+  display: flex; flex-direction: column;
+}
+.gc-app .legend-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #23A8C7;
+}
+/* Density deviation from the mockup (see AnalysisLegendRail.tsx's header):
+   the real .debrief caps at 380px, well under the mockup's 520px-wide demo
+   board -- a 2-column solid cluster overflowed it. Both clusters are a
+   single-column stack here; gap tightened from the mockup's 16px to fit
+   the narrower plate without touching any porter's-numbers geometry. */
+.gc-app .legend-rail .rail-body { display: flex; align-items: flex-start; gap: 12px; margin-top: 7px; }
+.gc-app .legend-rail .cluster-inner { display: flex; flex-direction: column; gap: 4px; }
+.gc-app .legend-rail .cluster-rows.stack { display: flex; flex-direction: column; gap: 2px; }
+.gc-app .legend-rail .cluster-divider {
+  align-self: stretch; height: auto; width: 1px; margin-top: 2px;
+  background: rgba(154,139,201,.5); transform: skewX(-12deg);
+}
+.gc-app .legend-row { display: flex; align-items: center; gap: 8px; height: 22px; white-space: nowrap; }
+.gc-app .legend-label {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 600; font-size: 10.5px;
+  letter-spacing: .03em; text-transform: lowercase; color: #6952C4;
+}
+.gc-app .legend-rail .axis-head { display: flex; align-items: center; gap: 7px; }
+.gc-app .legend-rail .axis-head .word {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px;
+  letter-spacing: .08em; text-transform: lowercase; color: #6952C4;
+}
+/* <=480px: clusters stack, divider drops -- mockup's narrow rendering.
+   Placed after the base rules above (equal specificity, source order
+   decides -- see the chat-corner-thread precedent's own note on this). */
+@media (max-width: 480px) {
+  .gc-app .legend-rail .rail-body { flex-direction: column; gap: 8px; }
+  .gc-app .legend-rail .cluster-divider { display: none; }
+}
+
 /* debrief-v2: three fixed-order bullet sections (done well / could be
    better / watch next time) replace the single lesson sentence as the
    debrief's opening act. Same lavender bubble-prose family as the turning-

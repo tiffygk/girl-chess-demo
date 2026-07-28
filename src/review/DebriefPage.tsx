@@ -47,6 +47,13 @@ import { MoveList } from "./MoveListNav";
 // SAN when the renderer can't place the move.
 import { fenAtPly } from "./Rewind";
 import { describeSanMove, stripRedundantCheckSuffix } from "../game/describeSanMove";
+// D1 "cipher rail" (analysis legend round, 2026-07-28): the six-state arrow
+// key, first child of this block per the owner's approved mockup direction
+// -- see AnalysisLegendRail.tsx's header for the geometry source (and its
+// own note on why the file isn't named AnalysisLegend.tsx) and
+// analysisLegend.test.ts for the gating pin (this component only ever
+// renders inside DebriefPage, which is itself analysis/review-only).
+import { AnalysisLegend } from "./AnalysisLegendRail";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -376,6 +383,7 @@ export function DebriefPage({
   const exploreOpportunity = exploreLine ? opportunityForLine(exploreLine, gameSans) : undefined;
   return (
     <div className="debrief pop-in">
+      <AnalysisLegend />
       {reviewing && (
         <div className="debrief-review-banner">
           <span className="debrief-review-kicker">reviewing</span>
