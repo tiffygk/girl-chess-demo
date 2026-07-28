@@ -33,7 +33,7 @@ import {
   type ArmDecision,
   type ArmDecisionInputs,
 } from "./decide";
-import { GENERAL_QUESTIONS, BOARD_REVIEW_QUESTIONS } from "./fixtures";
+import { GENERAL_QUESTIONS, BOARD_REVIEW_QUESTIONS, FIXTURES, REAL_FINISHED_GAME_IDS, REVIEW_FIXTURE_IDS } from "./fixtures";
 import { classifyIntent } from "../../server/coach/intent";
 import { GENERAL_MAX_WORDS } from "../../server/coach/chat";
 
@@ -762,14 +762,57 @@ describe("general-arm intent routing (Wave E1 Task 1, ctx shape updated Wave F)"
   }
 });
 
-describe("board-review fixtures reuse [dir] question text/ctx verbatim (Wave E1 Task 1)", () => {
-  it("carries the same count as the [dir] bucket and the arm/tag Wave E1 declares", () => {
+// Rebuilt 2026-07-28 (eval-instrument-repair round). Was: "board-review
+// fixtures reuse [dir] question text/ctx verbatim (Wave E1 Task 1)". The arm
+// used to reuse the live [dir] questions against C1-C5 (mid-game positions in
+// games 130/134) with a FABRICATED "1-0 by resignation" outcome bolted on at
+// run time. The owner's verdict after grading: "all of the questions that are
+// about the opponent resigning we should just remove because that's synthetic
+// data that doesn't make sense and never happened so I can't really judge the
+// answers off of them." The arm now runs against games that genuinely
+// finished, with the outcome read from the db.
+describe("board-review runs against real finished games (2026-07-28)", () => {
+  it("declares the arm and never carries a synthesized outcome", () => {
     expect(BOARD_REVIEW_QUESTIONS.length).toBeGreaterThan(0);
     for (const q of BOARD_REVIEW_QUESTIONS) {
       expect(q.arm).toBe("board-review");
-      expect(q.tag).toBe("dir");
+      expect(q.outcomeSource).toBe("db");
     }
   });
+
+  it("references games that actually finished in the owner's db", () => {
+    for (const q of BOARD_REVIEW_QUESTIONS) {
+      expect(REAL_FINISHED_GAME_IDS).toContain(FIXTURES[q.ctx].gameId);
+    }
+  });
+
+  it("pins every board-review fixture at its game's real final ply, flagged finished", () => {
+    for (const id of REVIEW_FIXTURE_IDS) {
+      const f = FIXTURES[id];
+      expect(f.finished).toBe(true);
+      expect(REAL_FINISHED_GAME_IDS).toContain(f.gameId);
+      expect(f.ply).toBeGreaterThan(0);
+    }
+    // Every review question sits on a review fixture, never on a live one.
+    for (const q of BOARD_REVIEW_QUESTIONS) {
+      expect(REVIEW_FIXTURE_IDS).toContain(q.ctx);
+    }
+  });
+
+  it("no live board-live fixture is marked finished -- C1-C5 are mid-game and stay that way", () => {
+    for (const id of ["C1", "C2", "C3", "C4", "C5"] as const) {
+      expect(FIXTURES[id].finished).toBeUndefined();
+    }
+  });
+
+  // The arm exists to measure the BOARD route under the review budget. A
+  // rewritten question that accidentally trips intent.ts's general marker
+  // would measure the general-chess pipeline instead and invalidate the arm.
+  for (const q of BOARD_REVIEW_QUESTIONS) {
+    it(`"${q.id}" still routes to board via classifyIntent: ${JSON.stringify(q.q.slice(0, 60))}`, () => {
+      expect(classifyIntent(q.q, { hasFocus: false, hasPendingMove: false, status: "finished" })).toBe("board");
+    });
+  }
 });
 
 // ---- coach-truth-speed round: report-blinded.md graded subset (cap-based) --

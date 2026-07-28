@@ -22,6 +22,14 @@ export default defineConfig({
       "**/.claude/**",
       "**/girl-chess-eval3/**",
       "**/girl-chess-r2/**",
+      // 2026-07-28: three more worktrees (wt-forward, wt-highlight,
+      // wt-missedwin) were created by parallel round windows during a single
+      // session, and the gate silently went from 1007 tests to 4140 by globbing
+      // into all of them. Naming worktrees one at a time loses that race every
+      // time, so this is a PATTERN, not another literal: any sibling `wt-*`
+      // directory is some other branch's tree, never this one's. Keep new
+      // worktrees on the `wt-` prefix and the gate stays honest by itself.
+      "**/wt-*/**",
     ],
   },
 });
