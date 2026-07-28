@@ -138,22 +138,22 @@ describe("factsForModel — perPlyAnalysis's evalCp/evalMate sanitize into a qua
 
   it("a small even-ply cp edge reads as 'even'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 20, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain('"read": "even"');
+    expect(prompt).toContain('"read":"even"');
   });
 
   it("a moderate even-ply positive cp reads as 'you're a bit better'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 150, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "you're a bit better"`);
+    expect(prompt).toContain(`"read":"you're a bit better"`);
   });
 
   it("a large even-ply positive cp reads as 'you're much better'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 500, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "you're much better"`);
+    expect(prompt).toContain(`"read":"you're much better"`);
   });
 
   it("a large even-ply negative cp reads as 'she's much better'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: -500, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "she's much better"`);
+    expect(prompt).toContain(`"read":"she's much better"`);
   });
 
   it("an ODD-ply negative cp (black's own stored perspective) negates to a white-favorable read", async () => {
@@ -161,17 +161,17 @@ describe("factsForModel — perPlyAnalysis's evalCp/evalMate sanitize into a qua
     // (side-to-move) perspective, so a stored -150 means white (the player)
     // is actually up 150: negation must run before bucketing.
     const prompt = await capturePerPlyPrompt([{ ply: 1, san: "e4", evalCp: -150, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "you're a bit better"`);
+    expect(prompt).toContain(`"read":"you're a bit better"`);
   });
 
   it("an even-ply positive evalMate reads as 'mate for you in N'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: 3, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "mate for you in 3"`);
+    expect(prompt).toContain(`"read":"mate for you in 3"`);
   });
 
   it("an even-ply negative evalMate reads as 'mate against you in N'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: -2, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "mate against you in 2"`);
+    expect(prompt).toContain(`"read":"mate against you in 2"`);
   });
 
   it("an odd-ply evalMate is negated the same way evalCp is", async () => {
@@ -179,11 +179,73 @@ describe("factsForModel — perPlyAnalysis's evalCp/evalMate sanitize into a qua
     // in 4 is wrong framing -- stored is black delivers in -4, i.e. black is
     // BEING mated) -- negating gives white (the player) mates in 4.
     const prompt = await capturePerPlyPrompt([{ ply: 1, san: "e4", evalCp: null, evalMate: -4, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "mate for you in 4"`);
+    expect(prompt).toContain(`"read":"mate for you in 4"`);
   });
 
   it("no persisted eval yet for that ply (both null) reads as a plain no-data statement, never a number", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain('"read": "no read yet"');
+    expect(prompt).toContain('"read":"no read yet"');
+  });
+});
+
+// B4b (2026-07-27, coach-truth-speed round): perPlyForModel's ply-scoping.
+// The whole-game perPlyAnalysis list is still fully CARRIED (assembleChatFactList
+// ships every ply so the trace JSON stays complete for the Lab) but the
+// MODEL-facing projection now ships full detail (bestSan/pvSans/phase,
+// alongside san/read) only for plies in the union of turning-point plies,
+// the focused ply +/- 2, the pending move's own ply, and the last
+// RECENT_PLY_WINDOW (12) plies -- everything else collapses to
+// {ply, san, read}. LONG_GAME (54 plies, imported above) puts ply 3 and
+// ply 5 both well outside the last-12 window (43-54), so a bare recency
+// check alone would collapse both.
+describe("perPlyForModel — ply-scoping (B4b)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  it("a turning point outside the recent window still ships full detail", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 5, san: "h4", evalCp: -20, evalMate: null, bestSan: "Nf3", pvSans: ["Nf3", "Nc6"] },
+      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList(
+      moves(LONG_GAME),
+      {},
+      [{ ply: 5, san: "h4", label: "inaccuracy" }],
+      perPly
+    );
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "h4 grabbed some space for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("how did move 5 go?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"bestSan":"Nf3"');
+    expect(capturedPrompt).toContain('"pvSans":["Nf3","Nc6"]');
+  });
+
+  it("an ordinary early ply outside every window collapses to ply/san/read", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "COLLAPSE-CHECK", pvSans: ["COLLAPSE-PV"] },
+      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "e4 opens things up nicely for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("how did the opening go?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"ply":3');
+    expect(capturedPrompt).not.toContain("COLLAPSE-CHECK");
+    expect(capturedPrompt).not.toContain("COLLAPSE-PV");
   });
 });

@@ -33,6 +33,19 @@ export const CHAT_HISTORY_WINDOW = 8; // messages (4 exchanges), owner-calibrata
 // narrate()'s own budget is deliberately NOT raised with it: that surface
 // speaks unprompted while she plays, where a late reply is worse than none.
 export const CHAT_TIMEOUT_MS = 45000;
+// B1 (2026-07-27, coach-truth-speed round), owner's verbatim ask: "once the
+// game is over, I am no longer waiting on it to make a move... I want it to
+// have a longer timeout so it can answer more in-depth questions." The live
+// budget (CHAT_TIMEOUT_MS) is untouched -- she likes it for live play -- this
+// is a SEPARATE, larger TOTAL budget for review-mode chat (finished games
+// only), selected server-side in manager.ts from the db's own `result`
+// column, never from a client-supplied mode flag. MIN_ATTEMPT_MS is the
+// floor: if less than this remains after attempt 0 fails validation, the
+// regen is skipped entirely rather than started and immediately starved --
+// see chat()'s loop below for the accounting that keeps the worst case
+// exactly budgetMs, never budgetMs + a second full timeout.
+export const CHAT_REVIEW_BUDGET_MS = 90000;
+export const MIN_ATTEMPT_MS = 8000;
 export const CHAT_MAX_LEN = 500;
 
 export interface ChatContext {
@@ -105,6 +118,17 @@ export interface ChatContext {
   };
 }
 
+// B4a: the finished-game outcome fact. `winner`/`how` are plain-language,
+// never a raw result-string parse the model has to do itself; `finalPly` is
+// the game's total ply count, the same number chat's own `ply` trace arg
+// already uses for a finished game.
+export interface ChatOutcome {
+  result: string;
+  winner: "you" | "mallow" | "draw";
+  how: string;
+  finalPly: number;
+}
+
 export interface ChatFactList {
   gameSans: string[]; // every san played, in order
   currentFen: string; // final position (review) / live position (live)
@@ -119,6 +143,16 @@ export interface ChatFactList {
   occupancy: { square: string; pieceKind: string; color: "you" | "mallow" }[]; // from currentFen
   legalSans: string[]; // chess.js .moves() on currentFen
   turningPoints?: { ply: number; san: string; label: string; punishSan?: string }[];
+  // B4a (2026-07-27, coach-truth-speed round): there was no game-over signal
+  // in the prompt at all before this -- the coach would discuss a game she
+  // had already won in present/live tense, because nothing in the fact list
+  // ever said the game was over. `status` is ALWAYS emitted (a live game
+  // must be labeled live, not left to be inferred from outcome's absence);
+  // `outcome` is only ever present alongside status "finished", derived by
+  // the caller (manager.ts) from the db's own `result`/`end_reason` columns,
+  // never guessed from ctx.mode.
+  status: "in-progress" | "finished";
+  outcome?: ChatOutcome;
   context?: ChatContext; // live coach facts when present
   allowedSans: string[]; // gameSans + legalSans + context sans + turning-point sans/punishSans
   // Task 2 (defender grounding): every occupied square currently attacked
@@ -302,7 +336,13 @@ export function assembleChatFactList(
   gameMoves: { ply: number; san: string }[],
   ctx: ChatContext,
   turningPoints?: { ply: number; san: string; label: string; punishSan?: string | null }[],
-  perPly?: ChatPerPlyInput[]
+  perPly?: ChatPerPlyInput[],
+  // B4a: additive optional 5th param, mirrors perPly's own "caller derives,
+  // this function only carries it through" discipline -- manager.ts is the
+  // one place that knows the db's result/end_reason columns. Every existing
+  // caller (every test, every pre-this-round call site) omits it and gets
+  // status "in-progress", outcome undefined -- unchanged behavior.
+  outcomeInfo?: { status: "in-progress" | "finished"; outcome?: ChatOutcome }
 ): ChatFactList {
   const chess = new Chess();
   const ordered = [...gameMoves].sort((a, b) => a.ply - b.ply);
@@ -413,6 +453,8 @@ export function assembleChatFactList(
     legalSans,
     focusPosition,
     turningPoints: tpOut,
+    status: outcomeInfo?.status ?? "in-progress",
+    outcome: outcomeInfo?.outcome,
     // Task 1 (R2): context carries the VERIFIED pendingMove, never the raw
     // client claim -- an illegal/dropped claim must not reach validateChat,
     // factsForModel, or the advice_traces record either.
@@ -658,15 +700,56 @@ function focusForModel(facts: ChatFactList) {
 // "eval". The raw numbers stay on the ChatFactList itself.
 const PER_PLY_PV_MODEL_LIMIT = 2;
 
-function perPlyForModel(perPlyAnalysis: ChatFactList["perPlyAnalysis"]) {
-  return perPlyAnalysis?.map((p) => ({
-    ply: p.ply,
-    san: p.san,
-    bestSan: p.bestSan,
-    phase: p.phase,
-    pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
-    read: readForPly(p.ply, p.evalCp, p.evalMate),
-  }));
+// B4b (2026-07-27, coach-truth-speed round): the whole-game perPlyAnalysis
+// list is affordable to CARRY (assembleChatFactList still ships every ply,
+// so the trace JSON stays complete for the Lab) but not to SEND to the
+// model at full detail for every ply of a long game -- most of it is
+// completely irrelevant to whatever she actually asked. Full detail
+// (bestSan/pvSans/phase, alongside san/read) goes only to plies in the
+// union of: turning-point plies (she can ask about any of them), the
+// focused moment +/- FOCUS_PLY_RADIUS (a "why this move" follow-up usually
+// means a move or two of surrounding context, not just the one ply), the
+// live pending move's own ply (the move she's about to make sits right at
+// the game's current tip -- included for the same "the moment in view gets
+// full detail" reason, even though in practice RECENT_PLY_WINDOW already
+// covers it since a pending move can only exist at the live tip), and the
+// last RECENT_PLY_WINDOW plies (ordinary "how did I just do" chat, which is
+// the common case). Every other ply collapses to {ply, san, read} -- still
+// enough to answer "what did I play and how did it go" for the whole game,
+// just without the extra bestSan/pvSans/phase weight. Estimated effect
+// alongside (c)'s indent drop, on a 60-ply game: ~2.7k tokens -> ~1.4k.
+const RECENT_PLY_WINDOW = 12;
+const FOCUS_PLY_RADIUS = 2;
+
+function perPlyForModel(facts: ChatFactList) {
+  const perPlyAnalysis = facts.perPlyAnalysis;
+  if (!perPlyAnalysis) return undefined;
+
+  const maxPly = perPlyAnalysis.reduce((m, p) => Math.max(m, p.ply), 0);
+  const fullDetailPlies = new Set<number>();
+  for (const tp of facts.turningPoints ?? []) fullDetailPlies.add(tp.ply);
+  if (facts.focusPosition) {
+    for (let d = -FOCUS_PLY_RADIUS; d <= FOCUS_PLY_RADIUS; d++) {
+      fullDetailPlies.add(facts.focusPosition.ply + d);
+    }
+  }
+  if (facts.context?.pendingMove) fullDetailPlies.add(facts.gameSans.length + 1);
+  for (const p of perPlyAnalysis) {
+    if (p.ply > maxPly - RECENT_PLY_WINDOW) fullDetailPlies.add(p.ply);
+  }
+
+  return perPlyAnalysis.map((p) => {
+    const read = readForPly(p.ply, p.evalCp, p.evalMate);
+    if (!fullDetailPlies.has(p.ply)) return { ply: p.ply, san: p.san, read };
+    return {
+      ply: p.ply,
+      san: p.san,
+      bestSan: p.bestSan,
+      phase: p.phase,
+      pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
+      read,
+    };
+  });
 }
 
 // Task 4 (R1b): hintFocus's own threat carries the same refutationUci field
@@ -729,7 +812,7 @@ function factsForModel(facts: ChatFactList) {
     ...rest,
     legalSansBelongTo: facts.toMove,
     focusPosition: focusForModel(facts),
-    perPlyAnalysis: perPlyForModel(perPlyAnalysis),
+    perPlyAnalysis: perPlyForModel(facts),
     context: strippedContext,
   };
 }
@@ -750,7 +833,12 @@ function buildChatPrompt(
     persona.chatSystemPrompt,
     "",
     "fact list (json):",
-    JSON.stringify(factsForModel(facts), null, 2),
+    // B4c (2026-07-27, coach-truth-speed round): dropped the 2-space indent
+    // -- compact JSON carries identical information at ~10-15% fewer
+    // characters, and prompt size is what (b)'s ply-scoping is also
+    // fighting. No indentation/newlines to strip means no information loss,
+    // just no pretty-printing a model doesn't need.
+    JSON.stringify(factsForModel(facts)),
     formatHistory(history),
     "",
     `player: ${userMessage}`,
@@ -794,15 +882,15 @@ function correctiveSuffix(violations: string[]): string {
 // Flow: persona "## chat" system prompt + fact JSON (no uci) + last
 // CHAT_HISTORY_WINDOW messages + the player's message -> generate() ->
 // validateChat -> on violation (including empty output), ONE corrective
-// regeneration -> on second violation or backend error/timeout, the
-// persona's "- redirect:" template. Never throws; always returns text.
-// Writes exactly one advice_traces row (kind "chat") per call that reaches
-// this function -- i.e. per call that passes GameManager.chat's CHAT_MAX_LEN
-// gate; over-length messages are rejected before chat() is ever called, so
-// they write no trace row at all (see manager.ts's chat() method, the sole
-// caller). history is caller-supplied (the server, never the client) so
-// this function itself has no opinion about where history comes from beyond
-// using it verbatim.
+// regeneration -> on second violation, backend error/timeout, or a
+// budget-exhausted skip of the regen, a persona template. Never throws;
+// always returns text. Writes exactly one advice_traces row (kind "chat")
+// per call that reaches this function -- i.e. per call that passes
+// GameManager.chat's CHAT_MAX_LEN gate; over-length messages are rejected
+// before chat() is ever called, so they write no trace row at all (see
+// manager.ts's chat() method, the sole caller). history is caller-supplied
+// (the server, never the client) so this function itself has no opinion
+// about where history comes from beyond using it verbatim.
 // Task 2 (2026-07-22, truthfulness leaks): a rejection whose message
 // indicates the backend just ran out of time is a different fact from the
 // backend actually being down -- the gate measured hard timeouts rendering
@@ -822,14 +910,29 @@ export async function chat(
   history: { role: "user" | "coach"; text: string }[],
   facts: ChatFactList,
   backend: CoachBackend,
-  trace: NarrateTraceContext
+  trace: NarrateTraceContext,
+  // B1 (2026-07-27, coach-truth-speed round): additive optional last param --
+  // every existing call site and test compiles untouched, defaulting to the
+  // live CHAT_TIMEOUT_MS. manager.ts computes budgetMs server-side from the
+  // db's own finished state and passes it here; this function has no
+  // opinion about WHY the budget is what it is, only about spending it
+  // correctly. Reserve this object for a later wave's `intent?:`/`onDelta?:`
+  // (streaming) -- that is why it is an object and not a bare number.
+  opts?: { budgetMs?: number }
 ): Promise<{
   text: string;
   source: "model" | "template";
-  cause?: "backend-down" | "timeout";
+  cause?: "backend-down" | "templates-only" | "timeout" | "validation-failed" | "off-topic";
   traceId: number;
 }> {
   const start = Date.now();
+  const budgetMs = opts?.budgetMs ?? CHAT_TIMEOUT_MS;
+  // The deadline is computed ONCE, from wall-clock start, not re-derived per
+  // attempt -- so the regen attempt spends whatever budget the first attempt
+  // left behind, never a fresh full budget. Worst case (attempt 0 alone
+  // consumes the whole budget and then throws) is exactly budgetMs, never
+  // budgetMs plus a second full timeout.
+  const deadline = start + budgetMs;
   const persona = getPersona();
   const basePrompt = buildChatPrompt(facts, history, userMessage, persona);
 
@@ -837,15 +940,32 @@ export async function chat(
   let attemptOutput = "";
   let regenCount = 0;
   let modelText: string | null = null;
-  let failureCause: "backend-down" | "timeout" | null = null;
+  let failureCause: "backend-down" | "timeout" | "validation-failed" | null = null;
+  // B3a: true the moment ANY attempt's output fails validateChat (including
+  // an empty/whitespace-only reply) without the backend itself throwing.
+  // This is what makes "validation-failed" reachable at all -- before this
+  // round, two failed validations in a row (no exception, just bad prose)
+  // left failureCause null and fell all the way through to the `redirect`
+  // template, which is the exact bug behind her "I did ask about the board"
+  // note (trace 90: a placement-claim validation failure rendered the
+  // off-topic redirect copy).
+  let sawValidationFailure = false;
 
   for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt === 1) {
+      // B1: the regen is only worth starting if enough budget remains for it
+      // to plausibly finish -- otherwise it would just be a second attempt
+      // guaranteed to die mid-flight. Skip straight to the template instead.
+      const remaining = deadline - Date.now();
+      if (remaining < MIN_ATTEMPT_MS) break;
+    }
+    const timeoutMs = Math.max(0, deadline - Date.now());
     try {
-      attemptOutput = await backend.generate(attemptPrompt, CHAT_TIMEOUT_MS);
+      attemptOutput = await backend.generate(attemptPrompt, timeoutMs);
     } catch (err) {
       // Backend error/timeout at any attempt short-circuits straight to the
-      // redirect template below -- never worth a second network/process
-      // call, mirrors narrate()'s discipline exactly.
+      // template below -- never worth a second network/process call,
+      // mirrors narrate()'s discipline exactly.
       attemptOutput = `[backend error] ${err instanceof Error ? err.message : String(err)}`;
       failureCause = isTimeoutError(err) ? "timeout" : "backend-down";
       break;
@@ -857,6 +977,7 @@ export async function chat(
       modelText = trimmed;
       break;
     }
+    sawValidationFailure = true;
     if (attempt === 0) {
       regenCount = 1;
       const violations = "violations" in result && result.violations.length > 0 ? result.violations : ["the previous answer"];
@@ -864,14 +985,26 @@ export async function chat(
     }
   }
 
+  // B3a: a validation failure (rather than a thrown backend error) that
+  // never recovered into a clean model reply gets its own honest cause --
+  // never silently falls through to `failureCause === null`, which is what
+  // used to make the `redirect` template fire for a validation failure.
+  if (!failureCause && modelText === null && sawValidationFailure) {
+    failureCause = "validation-failed";
+  }
+
   const source: "model" | "template" = modelText !== null ? "model" : "template";
-  // Owner playtest 2026-07-22: a timed-out reply was served the REDIRECT
-  // template ("keep it on the board. ask me about a move from this game"),
-  // which tells the player her perfectly on-topic question was off topic.
-  // The three failure modes are different apologies: a slow answer is ours
-  // to own, a down backend is a capability statement, and only a genuine
-  // off-topic ask deserves the redirect. Persona-overridable (add `slow:`
-  // / `down:` under the chat templates in coach.md) with an honest default
+  // Owner playtest 2026-07-22 / B3a (2026-07-27): each failure mode is a
+  // different apology, and none of them may borrow another's copy. A slow
+  // answer is ours to own (`slow`), a down backend is a capability statement
+  // (`down`), a validation failure is an honest "that one came out garbled"
+  // (`garbled`) -- and `redirect` is reserved for a genuine off-topic ask,
+  // which nothing in this function emits: failureCause can only ever be
+  // "backend-down" | "timeout" | "validation-failed" | null here, so the
+  // `redirect` branch below is UNREACHABLE this wave. It stays wired for the
+  // future intent router (the one thing that will ever set an "off-topic"
+  // cause) rather than deleted. Persona-overridable (`slow:` / `down:` /
+  // `garbled:` under the chat templates in coach.md) with an honest default
   // here so the fallback never lies about why it fired.
   const failureTemplate =
     failureCause === "timeout"
@@ -880,8 +1013,11 @@ export async function chat(
       : failureCause === "backend-down"
         ? persona.chatTemplates.down ??
           "i can't reach my thinking right now. try me again in a moment."
-        : persona.chatTemplates.redirect ??
-          "keep it on the board. ask me about a move from this game and i'll break it down.";
+        : failureCause === "validation-failed"
+          ? persona.chatTemplates.garbled ??
+            "i couldn't get that one clean. ask me again and i'll come at it from a different angle."
+          : persona.chatTemplates.redirect ??
+            "keep it on the board. ask me about a move from this game and i'll break it down.";
   const text = modelText ?? failureTemplate;
   const latencyMs = Date.now() - start;
 

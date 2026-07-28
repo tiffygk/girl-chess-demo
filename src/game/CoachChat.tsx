@@ -371,6 +371,13 @@ export function CoachChat({
                     offline chip's exact styling (no new visual treatment,
                     no magenta) with different text, per the brief. */}
                 {m.cause === "timeout" && <span className="chat-offline-chip">slow</span>}
+                {/* B3a (2026-07-27, coach-truth-speed round): a validation
+                    failure is neither offline nor slow -- the reply came
+                    back, it just never came out clean. Same chip styling,
+                    same discipline, own text. "templates-only" and
+                    "off-topic" render no chip at all: a deliberate voice
+                    pick isn't a failure, and nothing emits "off-topic" yet. */}
+                {m.cause === "validation-failed" && <span className="chat-offline-chip">garbled</span>}
                 {m.role === "coach" && m.traceId != null && <ThumbRating traceId={m.traceId} />}
               </div>
             );

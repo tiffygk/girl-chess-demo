@@ -25,7 +25,8 @@ import { classifyMoves } from "../annotator/classifications";
 import { assembleFactList, narrate as narrateFacts } from "../coach";
 import {
   chat as chatWithCoach, assembleChatFactList, CHAT_HISTORY_WINDOW, CHAT_MAX_LEN,
-  type ChatContext,
+  CHAT_TIMEOUT_MS, CHAT_REVIEW_BUDGET_MS,
+  type ChatContext, type ChatOutcome,
 } from "../coach/chat";
 import { claudeCliBackend } from "../coach/backends/claude-cli";
 import { ollamaBackend } from "../coach/backends/ollama";
@@ -69,6 +70,35 @@ export const BACKEND_CACHE_TTL_MS = 30000;
 interface CachedBackend {
   backend: CoachBackend;
   cachedAt: number;
+}
+
+// B4a (2026-07-27, coach-truth-speed round): plain-language derivation of
+// ChatOutcome from the db's own games.result/end_reason columns -- the only
+// two columns finishGame ever writes (see store/db.ts). end_reason is
+// non-null only for the /adjudicate "end the game" button path
+// (decideAdjudication's "adjudicated" | "resigned" | "draw-adjudicated");
+// the older resign()/offerDraw()/natural-gameOver paths all write a null
+// end_reason, so a decisive result with no end_reason is disambiguated by
+// the LAST played san itself: chess.js appends "#" to a checkmating move,
+// so its absence means the game ended by the player's own resign() button
+// (v1's only other way a decisive game with no end_reason ends). Read-only
+// over already-persisted columns -- no engine call, no re-derivation of
+// game state.
+function deriveChatOutcome(
+  result: string | null,
+  endReason: string | null,
+  lastSan: string | undefined,
+  finalPly: number
+): ChatOutcome | undefined {
+  if (!result) return undefined;
+  const winner: "you" | "mallow" | "draw" = result === "1-0" ? "you" : result === "0-1" ? "mallow" : "draw";
+  let how: string;
+  if (endReason === "adjudicated") how = "adjudicated win";
+  else if (endReason === "resigned") how = "adjudicated resignation";
+  else if (endReason === "draw-adjudicated") how = "adjudicated draw";
+  else if (lastSan?.endsWith("#")) how = "checkmate";
+  else how = winner === "draw" ? "draw" : "resignation";
+  return { result, winner, how, finalPly };
 }
 
 export class GameManager {
@@ -821,7 +851,7 @@ export class GameManager {
         ok: true;
         text: string;
         source: "model" | "template";
-        cause?: "backend-down" | "templates-only" | "timeout";
+        cause?: "backend-down" | "templates-only" | "timeout" | "validation-failed" | "off-topic";
         traceId: number;
       }
   > {
@@ -836,6 +866,14 @@ export class GameManager {
     const finished = game.result != null;
     const turningPoints = finished
       ? getTurningPoints(gameId).map((r: any) => ({ ply: r.ply, san: r.san, label: r.label, punishSan: r.punish_san ?? undefined }))
+      : undefined;
+    // B4a (2026-07-27, coach-truth-speed round): the game-over fact, derived
+    // from the db's own result/end_reason columns -- never from
+    // body.context.mode (same "the db is the source of truth" discipline
+    // `finished` above already follows). Absent (undefined) while the game
+    // is still live, so a live chat's fact list carries no outcome at all.
+    const outcome: ChatOutcome | undefined = finished
+      ? deriveChatOutcome(game.result, game.end_reason ?? null, gameMoves[gameMoves.length - 1]?.san, gameMoves.length)
       : undefined;
     // Task 3 (R1a, fact-gap round): moveRows already carries the judge's
     // persisted eval_cp/eval_mate/best_move(uci)/pv(space-joined uci) per
@@ -858,7 +896,10 @@ export class GameManager {
         pvSans,
       };
     });
-    const facts = assembleChatFactList(gameMoves, body.context, turningPoints, perPlyAnalysis);
+    const facts = assembleChatFactList(gameMoves, body.context, turningPoints, perPlyAnalysis, {
+      status: finished ? "finished" : "in-progress",
+      outcome,
+    });
 
     const historyRows = getChatMessages(gameId, CHAT_HISTORY_WINDOW);
     const history = historyRows.map((r: any) => ({ role: r.role as "user" | "coach", text: r.text }));
@@ -871,9 +912,30 @@ export class GameManager {
     // recorded so far" agree while the game is still in progress) -- so one
     // db-derived value covers both, without ever touching `this.games`.
     const ply = gameMoves.length;
-    const result = await chatWithCoach(message, history, facts, backend, { gameId, ply, kind: "chat" });
+    // B1 (2026-07-27, coach-truth-speed round), owner's verbatim ask: once
+    // the game is over she is no longer waiting on a move, so a finished
+    // game gets the longer TOTAL budget for harder review questions; a live
+    // game keeps the budget she already likes. Computed here, server-side,
+    // from the SAME `finished` the outcome fact above uses -- never from
+    // body.context.mode, which is a client claim this method already
+    // distrusts for the outcome fact.
+    const budgetMs = finished ? CHAT_REVIEW_BUDGET_MS : CHAT_TIMEOUT_MS;
+    const result = await chatWithCoach(message, history, facts, backend, { gameId, ply, kind: "chat" }, { budgetMs });
 
-    insertChatMessage({ gameId, role: "coach", text: result.text, traceId: result.traceId });
+    // B3b (2026-07-27, coach-truth-speed round): a failed (template) reply
+    // is no longer persisted into chat_messages -- only a genuine model
+    // answer joins the history CHAT_HISTORY_WINDOW re-feeds the coach next
+    // turn. The advice_trace below still writes unconditionally (the Lab
+    // loses nothing), and the USER's row above already persisted regardless
+    // of what comes back, so an unanswered question still reads honestly as
+    // "asked, no reply yet" rather than vanishing. Measured ground truth
+    // (game 146): a failed reply's own text sometimes echoed back INTO a
+    // later prompt ("that one took me longer than i had", trace 98) because
+    // the coach's own apology was persisted as a real coach turn -- this is
+    // the fix for that doom loop, not just tidiness.
+    if (result.source === "model") {
+      insertChatMessage({ gameId, role: "coach", text: result.text, traceId: result.traceId });
+    }
 
     // Task 8 (inc 3.95, Fix 1), owner-ruled: chat.ts's own cause is always
     // "backend-down" whenever backend.generate() throws — true both for a
@@ -892,7 +954,7 @@ export class GameManager {
     // chat.ts's cause is "backend-down" (a synchronous no-probe throw from
     // noBackend.generate() is never a timeout), so a real timeout is never
     // misreported as a deliberate voice pick either.
-    const cause: "backend-down" | "templates-only" | "timeout" | undefined =
+    const cause: "backend-down" | "templates-only" | "timeout" | "validation-failed" | "off-topic" | undefined =
       result.cause === "backend-down" && body.backendPref === "template" ? "templates-only" : result.cause;
 
     return cause

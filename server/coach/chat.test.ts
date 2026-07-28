@@ -237,9 +237,9 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       await chat("is my bishop on f5 safe?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
 
       expect(capturedPrompt).toContain('"contested"');
-      expect(capturedPrompt).toContain('"square": "f5"');
-      expect(capturedPrompt).toContain('"square": "c8"');
-      expect(capturedPrompt).toContain('"square": "e4"');
+      expect(capturedPrompt).toContain('"square":"f5"');
+      expect(capturedPrompt).toContain('"square":"c8"');
+      expect(capturedPrompt).toContain('"square":"e4"');
     });
   });
 
@@ -377,8 +377,8 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
 
       await chat("whose move is it?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
 
-      expect(capturedPrompt).toContain('"toMove": "mallow"');
-      expect(capturedPrompt).toContain('"legalSansBelongTo": "mallow"');
+      expect(capturedPrompt).toContain('"toMove":"mallow"');
+      expect(capturedPrompt).toContain('"legalSansBelongTo":"mallow"');
     });
   });
 
@@ -551,7 +551,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       await chat("why is this hint going here?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
 
       expect(capturedPrompt).toContain('"hintFocus"');
-      expect(capturedPrompt).toContain('"level": 3');
+      expect(capturedPrompt).toContain('"level":3');
       expect(capturedPrompt).toContain("her knight to f6 opens the door. her bishop takes your rook on d5.");
     });
   });
@@ -679,7 +679,14 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(traces[0].kind).toBe("chat");
     });
 
-    it("(c) inventing an unplayed, illegal san regenerates once, then falls back to the redirect template", async () => {
+    // B3a (2026-07-27, coach-truth-speed round): this used to assert the
+    // `redirect` template ("keep it on the board...") -- that WAS the bug
+    // her "I did ask about the board" note caught (trace 90): a validation
+    // failure (never a real off-topic ask) rendered the off-topic-sounding
+    // redirect copy. Two failed validations in a row now get their own
+    // honest cause/copy ("garbled") instead; `redirect` is reserved for a
+    // genuine off-topic ask, which nothing in this wave emits.
+    it("(c) inventing an unplayed, illegal san regenerates once, then falls back to the garbled template with cause validation-failed", async () => {
       const gameId = seedGame(["e4"]);
       gm.setCoachBackendForTesting(fakeBackend(async () => "Qxh7 wins the game right now."));
 
@@ -687,8 +694,9 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error("unreachable");
       expect(result.source).toBe("template");
+      expect(result.cause).toBe("validation-failed");
       expect(result.text).toBe(
-        "keep it on the board. ask me about a move from this game and i'll break it down."
+        "i couldn't get that one clean. ask me again and i'll come at it from a different angle."
       );
 
       const traces = getAdviceTraces(gameId);
@@ -697,7 +705,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(traces[0].kind).toBe("chat");
     });
 
-    it("(c2) inventing an unplayed, illegal san in LOWERCASE regenerates once, then falls back to the redirect template — the reviewer's probe case", async () => {
+    it("(c2) inventing an unplayed, illegal san in LOWERCASE regenerates once, then falls back to the garbled template — the reviewer's probe case", async () => {
       const gameId = seedGame(["e4"]);
       gm.setCoachBackendForTesting(fakeBackend(async () => "qxh7 wins the game right now."));
 
@@ -705,8 +713,9 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error("unreachable");
       expect(result.source).toBe("template");
+      expect(result.cause).toBe("validation-failed");
       expect(result.text).toBe(
-        "keep it on the board. ask me about a move from this game and i'll break it down."
+        "i couldn't get that one clean. ask me again and i'll come at it from a different angle."
       );
 
       const traces = getAdviceTraces(gameId);

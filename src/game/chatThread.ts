@@ -12,7 +12,11 @@ export type ThreadEntry =
       // Task 2 (2026-07-22, truthfulness leaks): "timeout" is a third
       // cause, distinct from "backend-down" -- see CoachChat.tsx's chip
       // predicate, which reserves the offline chip for backend-down alone.
-      cause?: "backend-down" | "templates-only" | "timeout";
+      // B3a (2026-07-27, coach-truth-speed round): "validation-failed" is a
+      // fourth cause (its own "garbled" chip); "off-topic" is reserved for
+      // the future intent router and nothing emits it yet -- see
+      // src/game/api.ts's ChatResponse.cause for the full union's rationale.
+      cause?: "backend-down" | "templates-only" | "timeout" | "validation-failed" | "off-topic";
       traceId?: number;
     }
   | { kind: "context-anchor"; source: "hint" | "turning-point"; moveNumber: number | null; label: string; text: string }
