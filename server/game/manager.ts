@@ -844,7 +844,14 @@ export class GameManager {
     gameId: number,
     // Task 5 (F17): backendPref threaded through exactly like narrate()
     // above — same pickCoachBackend seam, same per-pref cache.
-    body: { message: string; context: ChatContext; backendPref?: string }
+    body: { message: string; context: ChatContext; backendPref?: string },
+    // B-stream (2026-07-27, coach-truth-speed round): additive optional 3rd
+    // param, so every pre-this-wave caller (index.ts's JSON route, every
+    // manager.test.ts call) is untouched and still gets today's behavior.
+    // Threaded straight through to chatWithCoach's own opts below — this
+    // method has no opinion about SSE at all, only about forwarding the two
+    // hooks to the one place (chat.ts) that actually owns the attempt loop.
+    streamOpts?: { onDelta?: (text: string) => void; onRedraft?: () => void }
   ): Promise<
     | { ok: false; error?: string }
     | {
@@ -920,7 +927,11 @@ export class GameManager {
     // body.context.mode, which is a client claim this method already
     // distrusts for the outcome fact.
     const budgetMs = finished ? CHAT_REVIEW_BUDGET_MS : CHAT_TIMEOUT_MS;
-    const result = await chatWithCoach(message, history, facts, backend, { gameId, ply, kind: "chat" }, { budgetMs });
+    const result = await chatWithCoach(message, history, facts, backend, { gameId, ply, kind: "chat" }, {
+      budgetMs,
+      onDelta: streamOpts?.onDelta,
+      onRedraft: streamOpts?.onRedraft,
+    });
 
     // B3b (2026-07-27, coach-truth-speed round): a failed (template) reply
     // is no longer persisted into chat_messages -- only a genuine model
