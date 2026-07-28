@@ -209,7 +209,7 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
         bestSan: "Nf3",
         pvSans: ["Nf3", "Bg7", "O-O"],
         playedNextSan: undefined,
-        followedBest: false,
+        followedBest: undefined,
       });
     });
 
@@ -223,19 +223,23 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
         bestSan: undefined,
         pvSans: undefined,
         playedNextSan: undefined,
-        followedBest: false,
+        followedBest: undefined,
       });
     });
 
-    // Task 3 (Wave D, deferred from A1): followedBest/playedNextSan default
-    // to false/undefined (never guessed) when the caller has no gameSans to
-    // check against -- every pre-this-wave call site (GamePage.tsx, not yet
-    // updated to pass gameSans) still compiles and behaves exactly as above.
-    it("defaults followedBest to false and playedNextSan to undefined when no gameSans is supplied", () => {
+    // Review fix (Wave F, 2026-07-27, review.md finding 2): followedBest/
+    // playedNextSan default to undefined/undefined (unknown, never guessed)
+    // when the caller has no gameSans to check against. Before this fix,
+    // followedBest coerced to `false` here -- an outright (and, in
+    // production, near-coin-flip-wrong) assertion that she did NOT play the
+    // recommended move, because BOTH real GamePage.tsx call sites omitted
+    // gameSans entirely until this same fix threaded it through. `undefined`
+    // is the only honest value in the absence of the game to check against.
+    it("defaults followedBest to undefined (not false) and playedNextSan to undefined when no gameSans is supplied", () => {
       const point = { ply: 3, san: "Qh5", label: "strong move", punishSan: undefined };
       const line: TurningLine = { ply: 3, pvSans: ["Qh5"] };
       const result = turningPointFocusContext(point, line);
-      expect(result.followedBest).toBe(false);
+      expect(result.followedBest).toBeUndefined();
       expect(result.playedNextSan).toBeUndefined();
     });
 

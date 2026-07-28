@@ -210,8 +210,21 @@ function buildCouldImprove(
   // round's measured ground truth flags as never correct for an even-ply
   // (opponent) turning point. followedBest already resolves the right
   // comparison (her own move at odd tp.ply, her REPLY at ply+1 for even
-  // tp.ply) once, so the guard here is simply "didn't follow it".
-  const bestClause = line?.bestSan && !fb?.followed ? ` ${describedOrRaw(line.bestSan, seedFen)} was the stronger idea.` : "";
+  // tp.ply) once, so the guard here is simply "didn't follow it" WHEN fb is
+  // available.
+  //
+  // Review fix (Wave F, 2026-07-27, review.md finding 6): `fb` is optional
+  // (buildTurningPointNote's own `gameSans` param is optional), and `!fb
+  // ?.followed` treated fb undefined the SAME as fb.followed === false —
+  // i.e. "unknown" read as "didn't follow it". With bestSan === tp.san (the
+  // move she actually played WAS the recommendation) and no gameSans to
+  // resolve followedBest from, this rendered "…was the stronger idea" about
+  // the move she just played — a latent trap (not reachable from DebriefPage
+  // today, which always passes gameSans, but wrong on its own terms). Falls
+  // back to the ORIGINAL direct SAN comparison only when fb is genuinely
+  // unavailable, never assuming not-followed by default.
+  const notFollowed = fb ? !fb.followed : line?.bestSan !== tp.san;
+  const bestClause = line?.bestSan && notFollowed ? ` ${describedOrRaw(line.bestSan, seedFen)} was the stronger idea.` : "";
   // "an inaccuracy" vs "a blunder/mistake" — pure article grammar, not a
   // copy retune (2026-07-19 visual gate).
   const article = /^[aeiou]/.test(label) ? "an" : "a";

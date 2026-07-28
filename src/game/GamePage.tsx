@@ -1299,7 +1299,16 @@ export function GamePage() {
       if (!activeReviewMoves) return [];
       const fb = followedBest(line, activeReviewMoves);
       const arrows = line ? turningLineArrows(line, fb) : [];
-      if (!arrows.some((a) => a.color === "played" || a.color === "found")) {
+      // Review fix (Wave F, 2026-07-27, finding 7): "mallow" added to the
+      // guard alongside "played"/"found". An opponent-ply line with no `fb`
+      // (e.g. mallow's slip was the game's last move -- no reply exists to
+      // resolve followedBest from) still has its own move rendered as
+      // "mallow" by turningLineArrows, unconditionally. Without this,
+      // the fallback below would fire anyway and unshift a SECOND, "played"
+      // (cyan) arrow on the exact same endpoints turningLineArrows already
+      // drew "mallow" (magenta) -- a double-drawn arrow this guard exists
+      // specifically to prevent.
+      if (!arrows.some((a) => a.color === "played" || a.color === "found" || a.color === "mallow")) {
         const played = playedArrowForPly(activeReviewMoves, ply);
         if (played) arrows.unshift({ ...played, color: "played" });
       }
@@ -1418,7 +1427,7 @@ export function GamePage() {
         setReviewArrows(arrows);
         setReviewHighlights(arrowsToHighlights(arrows));
       }
-      setChatFocus({ turningPointFocus: turningPointFocusContext(point, line) });
+      setChatFocus({ turningPointFocus: turningPointFocusContext(point, line, activeReviewMoves ?? undefined) });
       requestChatOpen();
     },
     [activeReviewMoves, turningLines, buildArrowsForPly, requestChatOpen]
@@ -1458,7 +1467,11 @@ export function GamePage() {
         setReviewHighlights(arrowsToHighlights(arrows));
       }
       setChatFocus({
-        turningPointFocus: turningPointFocusContext({ ply, san, label: cls.classification }, line),
+        turningPointFocus: turningPointFocusContext(
+          { ply, san, label: cls.classification },
+          line,
+          activeReviewMoves ?? undefined
+        ),
       });
       requestChatOpen();
     },

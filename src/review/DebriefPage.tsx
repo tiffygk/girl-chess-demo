@@ -358,6 +358,14 @@ export function DebriefPage({
     // render in plain English via fenAtPly, same seam every other debrief
     // module already shares.
     gameSans,
+    // Review fix (Wave F, 2026-07-27, review.md finding 3): DebriefPage
+    // already holds turningLines (used above for the explore banner and
+    // below for arrows), but never passed it here -- so lineForPly always
+    // returned undefined, fb was always undefined, and followedGoodText
+    // could never render: a "could be better" bullet kept nudging her about
+    // a move she actually played correctly. One-line wire-up; the
+    // re-sectioning logic itself (buildCouldBeBetter) was already correct.
+    turningLines,
   });
   // Increment 3.95 (Task 4, Part 1): the try-the-line banner has no
   // TurningPoint/classification to hand buildTurningPointNote — just the

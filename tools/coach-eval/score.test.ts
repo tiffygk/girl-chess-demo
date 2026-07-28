@@ -9,8 +9,11 @@ import {
   summarizePipeline,
   type AnswerRow,
 } from "./score";
-import { medianOf, aggregateAxis, type RepAxis } from "./render";
-import { decideModel, DEFAULT_MODEL, type DecideInputs } from "./decide";
+import { medianOf, aggregateAxis, buildModelSummary, filterFilesByArm, type RepAxis, type RepFile } from "./render";
+import { decideModel, decideArm, decideAcrossArms, DEFAULT_MODEL, type DecideInputs, type ArmDecision } from "./decide";
+import { GENERAL_QUESTIONS, BOARD_REVIEW_QUESTIONS } from "./fixtures";
+import { classifyIntent } from "../../server/coach/intent";
+import { GENERAL_MAX_WORDS } from "../../server/coach/chat";
 
 describe("countWords", () => {
   it("counts whitespace-separated words", () => {
@@ -70,6 +73,39 @@ describe("checkLength", () => {
     expect(checkLength(text, true).pass).toBe(false);
     expect(checkLength(text, false).pass).toBe(true); // same text passes the looser standard budget
   });
+
+  // Wave E1: per-arm budget selection (Task 2). board-live's default arg
+  // keeps the old two-tier board-live behavior above untouched; general and
+  // board-review both read GENERAL_MAX_WORDS (imported from
+  // server/coach/chat.ts, never a second hardcoded number).
+  describe("per-arm budget (Wave E1)", () => {
+    it("defaults to board-live (45w/3s) when arm is omitted -- pre-existing call sites are unaffected", () => {
+      const text = Array.from({ length: 50 }, () => "word").join(" ") + ".";
+      expect(checkLength(text, false).pass).toBe(false);
+      expect(checkLength(text, false, "board-live").pass).toBe(false);
+    });
+
+    it("general and board-review pass a reply over the board-live 45-word cap but under GENERAL_MAX_WORDS", () => {
+      const words = 80;
+      expect(words).toBeGreaterThan(45);
+      expect(words).toBeLessThan(GENERAL_MAX_WORDS);
+      const text = Array.from({ length: words }, () => "word").join(" ") + ".";
+      expect(checkLength(text, false, "board-live").pass).toBe(false);
+      expect(checkLength(text, false, "general").pass).toBe(true);
+      expect(checkLength(text, false, "board-review").pass).toBe(true);
+    });
+
+    it("general/board-review still fail once GENERAL_MAX_WORDS is exceeded", () => {
+      const text = Array.from({ length: GENERAL_MAX_WORDS + 5 }, () => "word").join(" ") + ".";
+      expect(checkLength(text, false, "general").pass).toBe(false);
+      expect(checkLength(text, false, "board-review").pass).toBe(false);
+    });
+
+    it("general/board-review do not gate on sentence count -- a many-sentence reply under the word cap still passes", () => {
+      const text = Array.from({ length: 10 }, (_, i) => `sentence number ${i}`).join(". ") + ".";
+      expect(checkLength(text, false, "general").pass).toBe(true);
+    });
+  });
 });
 
 describe("checkPendingAwareness", () => {
@@ -126,6 +162,7 @@ describe("checkPendingAwareness", () => {
 function mkRow(overrides: Partial<AnswerRow> = {}): AnswerRow {
   return {
     id: "open-01",
+    arm: "board-live",
     fixtureId: "C1",
     question: "what did i do right so far?",
     tag: "open",
@@ -183,6 +220,21 @@ describe("scoreAnswer", () => {
       text: Array.from({ length: 21 }, () => "word").join(" ") + ".",
     });
     expect(scoreAnswer(longAffirmation).length?.pass).toBe(false);
+  });
+
+  // Wave E1: scoreAnswer reads row.arm (not just row.tag) to pick the length
+  // budget -- a general/board-review row over 45 words but under
+  // GENERAL_MAX_WORDS must pass, where the SAME text on a board-live row
+  // must fail. Regression guard for the exact "arm decides the budget, not
+  // tag" wiring Task 2 asks for.
+  it("scores length against the row's own arm, not just its tag", () => {
+    const text = Array.from({ length: 80 }, () => "word").join(" ") + ".";
+    const boardLiveRow = mkRow({ arm: "board-live", tag: "open", text });
+    const generalRow = mkRow({ arm: "general", tag: "general", text });
+    const boardReviewRow = mkRow({ arm: "board-review", tag: "dir", text });
+    expect(scoreAnswer(boardLiveRow).length?.pass).toBe(false);
+    expect(scoreAnswer(generalRow).length?.pass).toBe(true);
+    expect(scoreAnswer(boardReviewRow).length?.pass).toBe(true);
   });
 });
 
@@ -311,5 +363,151 @@ describe("decideModel", () => {
     expect(d.decidedBy).toBe("default");
     expect(DEFAULT_MODEL).toBe("sonnet");
     expect(d.reasoning.toLowerCase()).toContain("sonnet");
+  });
+});
+
+// ---- Wave E1 (coach-truth-speed round) ------------------------------------
+
+describe("per-arm aggregation (buildModelSummary + filterFilesByArm)", () => {
+  // A minimal, typed RepFile -- rows only need the fields scoreAnswer/
+  // summarizePipeline actually read.
+  function mkRepFile(rep: number, rows: AnswerRow[]): RepFile {
+    return { model: "sonnet", rep, path: `raw-sonnet-rep${rep}.json`, mtimeMs: rep, rows };
+  }
+
+  it("filterFilesByArm narrows rows to one arm without touching other reps' data", () => {
+    const files: RepFile[] = [
+      mkRepFile(1, [
+        mkRow({ id: "gen-01", arm: "general", tag: "general" }),
+        mkRow({ id: "open-01", arm: "board-live", tag: "open" }),
+      ]),
+    ];
+    const generalOnly = filterFilesByArm(files, "general");
+    expect(generalOnly[0].rows).toHaveLength(1);
+    expect(generalOnly[0].rows[0].id).toBe("gen-01");
+    // Original untouched (no mutation).
+    expect(files[0].rows).toHaveLength(2);
+  });
+
+  it("buildModelSummary on an arm-filtered view only aggregates that arm's rows", () => {
+    const files: RepFile[] = [
+      mkRepFile(1, [
+        mkRow({ id: "gen-01", arm: "general", tag: "general", text: "let's leverage this position." }), // ai-ism FAIL
+        mkRow({ id: "open-01", arm: "board-live", tag: "open", text: "clean board-live answer, no violations." }),
+      ]),
+    ];
+    const generalSummary = buildModelSummary(filterFilesByArm(files, "general"));
+    // Only the one general row counted -- its ai-ism failure should be the
+    // entire denominator (rate 0), not diluted by the clean board-live row.
+    expect(generalSummary.axes.aiIsmCasing.median).toBe(0);
+    const boardLiveSummary = buildModelSummary(filterFilesByArm(files, "board-live"));
+    expect(boardLiveSummary.axes.aiIsmCasing.median).toBe(1);
+  });
+
+  it("computes a cross-rep p90 latency aggregation (latencyAgg.p90) from per-rep pipeline p90s", () => {
+    const files: RepFile[] = [
+      mkRepFile(1, [mkRow({ arm: "general", tag: "general", latencyMs: 10000 }), mkRow({ arm: "general", tag: "general", latencyMs: 20000 })]),
+      mkRepFile(2, [mkRow({ arm: "general", tag: "general", latencyMs: 30000 }), mkRow({ arm: "general", tag: "general", latencyMs: 40000 })]),
+    ];
+    const summary = buildModelSummary(files);
+    // Two reps -> the cross-rep median of the two reps' own p90s; min/max
+    // span the two reps' p90s. Exact values aren't the point (summarizePipeline's
+    // own percentile math is already unit-tested) -- what this guards is that
+    // latencyAgg.p90 is a REAL per-rep aggregation, not a flat 0/pooled value.
+    expect(summary.latencyAgg.p90.min).not.toBeNull();
+    expect(summary.latencyAgg.p90.max).not.toBeNull();
+    expect(summary.latencyAgg.p90.min!).toBeLessThan(summary.latencyAgg.p90.max!);
+    expect(summary.latencyAgg.p90.perRep).toHaveLength(2);
+  });
+});
+
+describe("decideArm + decideAcrossArms (Wave E1 split decision)", () => {
+  const pair = (sMed: number, sLo: number, sHi: number, oMed: number, oLo: number, oHi: number) => ({
+    sonnet: { median: sMed, min: sLo, max: sHi },
+    opus: { median: oMed, min: oLo, max: oHi },
+  });
+  const flat = pair(0.9, 0.88, 0.92, 0.9, 0.88, 0.92);
+
+  it("board-live's decideArm is byte-identical to decideModel (no p90 axis for that arm)", () => {
+    const inputs = { jargon: pair(0.8, 0.78, 0.82, 0.95, 0.93, 0.97), length: flat, pending: flat, pendingAudited: false };
+    const viaModel = decideModel(inputs);
+    const viaArm = decideArm("board-live", inputs);
+    expect(viaArm.decidedBy).toBe(viaModel.decidedBy);
+    expect(viaArm.winner).toBe(viaModel.winner);
+    expect(viaArm.arm).toBe("board-live");
+  });
+
+  it("general/board-review's p90-latency axis decides FIRST, ahead of jargon, when the gap is decisive and ranges are disjoint", () => {
+    const inputs = {
+      // jargon alone would pick opus -- p90 must still win the arm decision.
+      jargon: pair(0.8, 0.78, 0.82, 0.95, 0.93, 0.97),
+      length: flat,
+      pending: flat,
+      pendingAudited: false,
+      p90LatencyMs: pair(37100, 30000, 40000, 13780, 10000, 16000), // v3's own real gap
+    };
+    const d = decideArm("general", inputs);
+    expect(d.decidedBy).toBe("p90-latency");
+    expect(d.winner).toBe("opus"); // lower p90 wins
+  });
+
+  it("falls through to the jargon/length/pending chain when p90 ranges overlap despite a median gap", () => {
+    const inputs = {
+      jargon: pair(0.8, 0.78, 0.82, 0.95, 0.93, 0.97),
+      length: flat,
+      pending: flat,
+      pendingAudited: false,
+      p90LatencyMs: pair(20000, 10000, 30000, 15000, 8000, 25000), // overlapping ranges
+    };
+    const d = decideArm("general", inputs);
+    expect(d.decidedBy).not.toBe("p90-latency");
+    expect(d.decidedBy).toBe("jargon");
+  });
+
+  it("decideAcrossArms reports a single winner when board and general agree", () => {
+    const boardLive: ArmDecision = { arm: "board-live", winner: "sonnet", decidedBy: "length", reasoning: "x", inputs: { jargon: flat, length: flat, pending: flat, pendingAudited: false } };
+    const general: ArmDecision = { arm: "general", winner: "sonnet", decidedBy: "jargon", reasoning: "x", inputs: { jargon: flat, length: flat, pending: flat, pendingAudited: false } };
+    const { recommendation } = decideAcrossArms({ "board-live": boardLive, general });
+    expect(recommendation).toEqual({ kind: "single", winner: "sonnet" });
+  });
+
+  it("decideAcrossArms reports a per-route split when board and general disagree", () => {
+    const boardLive: ArmDecision = { arm: "board-live", winner: "sonnet", decidedBy: "length", reasoning: "x", inputs: { jargon: flat, length: flat, pending: flat, pendingAudited: false } };
+    const general: ArmDecision = { arm: "general", winner: "opus", decidedBy: "p90-latency", reasoning: "x", inputs: { jargon: flat, length: flat, pending: flat, pendingAudited: false } };
+    const { recommendation } = decideAcrossArms({ "board-live": boardLive, general });
+    expect(recommendation).toEqual({ kind: "split", board: "sonnet", general: "opus" });
+  });
+
+  it("board-review breaks a board-live tie-keep-default when deciding the 'board' route", () => {
+    const boardLive: ArmDecision = { arm: "board-live", winner: "tie-keep-default", decidedBy: "default", reasoning: "x", inputs: { jargon: flat, length: flat, pending: flat, pendingAudited: false } };
+    const boardReview: ArmDecision = { arm: "board-review", winner: "opus", decidedBy: "p90-latency", reasoning: "x", inputs: { jargon: flat, length: flat, pending: flat, pendingAudited: false } };
+    const general: ArmDecision = { arm: "general", winner: "opus", decidedBy: "jargon", reasoning: "x", inputs: { jargon: flat, length: flat, pending: flat, pendingAudited: false } };
+    const { recommendation } = decideAcrossArms({ "board-live": boardLive, "board-review": boardReview, general });
+    expect(recommendation).toEqual({ kind: "single", winner: "opus" });
+  });
+});
+
+describe("general-arm intent routing (Wave E1 Task 1, ctx shape updated Wave F)", () => {
+  // The whole point of the general arm is that it measures the general-chess
+  // route -- a general fixture that silently classifies as "board" would
+  // measure the wrong pipeline and invalidate the arm. hasFocus/hasPendingMove
+  // are always false for these fixtures (none of them carry a hintFocus/
+  // turningPointFocus or a pending move), and status is "in-progress" --
+  // the SAME ctx run.ts actually passes for this arm (finished is only ever
+  // true for the board-review arm; see run.ts's own `finished` variable).
+  for (const q of GENERAL_QUESTIONS) {
+    it(`"${q.id}" routes to general via classifyIntent: ${JSON.stringify(q.q.slice(0, 60))}`, () => {
+      expect(classifyIntent(q.q, { hasFocus: false, hasPendingMove: false, status: "in-progress" })).toBe("general");
+    });
+  }
+});
+
+describe("board-review fixtures reuse [dir] question text/ctx verbatim (Wave E1 Task 1)", () => {
+  it("carries the same count as the [dir] bucket and the arm/tag Wave E1 declares", () => {
+    expect(BOARD_REVIEW_QUESTIONS.length).toBeGreaterThan(0);
+    for (const q of BOARD_REVIEW_QUESTIONS) {
+      expect(q.arm).toBe("board-review");
+      expect(q.tag).toBe("dir");
+    }
   });
 });

@@ -938,8 +938,16 @@ export class GameManager {
     // turning-point card) whenever either focus field is present on the
     // context this request carries. That alone routes "board" regardless of
     // the message text (classifyIntent's own top-priority rule).
+    // Wave F (review fix): hasPendingMove is the SAME signal that was
+    // already being ignored (review.md finding 1's root cause) -- she picked
+    // up a piece and dropped it on the board but hasn't confirmed, which is
+    // just as much "pointing at something" as an open hint/turning-point
+    // card. status is the exact same finished/in-progress value already
+    // derived above for the outcome fact and the review budget, never a
+    // second, independently-computed guess.
     const hasFocus = !!(body.context.hintFocus || body.context.turningPointFocus);
-    const intent = classifyIntent(message, hasFocus);
+    const hasPendingMove = !!body.context.pendingMove;
+    const intent = classifyIntent(message, { hasFocus, hasPendingMove, status: finished ? "finished" : "in-progress" });
     const result = await chatWithCoach(message, history, facts, backend, { gameId, ply, kind: "chat" }, {
       budgetMs,
       intent,
