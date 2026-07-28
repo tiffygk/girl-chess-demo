@@ -164,6 +164,15 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
+  describe("assembleChatFactList — per-ply bestSan/pvSans fold into allowedSans (missed-win round, 2026-07-28)", () => {
+    it("per-ply bestSan and pvSans are allowed sans, so the coach can name the mate it was handed", () => {
+      const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
+      const perPly = [{ ply: 55, san: "Nf7+", evalCp: null, evalMate: -3, bestSan: "Qh8#", pvSans: ["Qh8#"] }];
+      const facts = assembleChatFactList(gameMoves, {}, [], perPly);
+      expect(facts.allowedSans).toContain("Qh8#");
+    });
+  });
+
   // (c2) Task 2 (defender grounding): contested squares -- the coach chat
   // once told a player "the pawn on e4 doesn't guard f5" when white's e4
   // pawn genuinely defends f5 (Bxf5 exf5). assembleChatFactList now computes

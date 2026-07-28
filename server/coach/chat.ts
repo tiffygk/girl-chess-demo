@@ -460,6 +460,15 @@ export function assembleChatFactList(
     sans.add(t.san);
     if (t.punishSan) sans.add(t.punishSan);
   }
+  // Missed-win round (2026-07-28): every per-ply bestSan/pvSans the model is
+  // HANDED (restored by 46f641a, replay-verified server-side from fenBefore)
+  // must also be SPEAKABLE — without this fold, a reply echoing its own fact
+  // list's "Qh8#" as literal SAN gets zapped by validateChat and burns the
+  // one regen. Only replay-verified engine lines join here, never a claim.
+  for (const p of perPly ?? []) {
+    if (p.bestSan) sans.add(p.bestSan);
+    for (const s of p.pvSans) sans.add(s);
+  }
   // Task 7 fold: the turningPoints list above only ever carries a turning
   // point's OWN san/punishSan (the debrief's persisted facts) -- never the
   // best line, so a player asking "what should you have played instead" at
