@@ -10,7 +10,15 @@ import {
   type AnswerRow,
 } from "./score";
 import { medianOf, aggregateAxis, buildModelSummary, filterFilesByArm, type RepAxis, type RepFile } from "./render";
-import { decideModel, decideArm, decideAcrossArms, DEFAULT_MODEL, type DecideInputs, type ArmDecision } from "./decide";
+import {
+  decideModel,
+  decideArm,
+  decideAcrossArms,
+  DEFAULT_MODEL,
+  TIMEOUT_RATE_DECISIVE_DELTA,
+  type DecideInputs,
+  type ArmDecision,
+} from "./decide";
 import { GENERAL_QUESTIONS, BOARD_REVIEW_QUESTIONS } from "./fixtures";
 import { classifyIntent } from "../../server/coach/intent";
 import { GENERAL_MAX_WORDS } from "../../server/coach/chat";
@@ -259,6 +267,47 @@ describe("summarizePipeline", () => {
     expect(summary.templateRate).toBe(0);
     expect(summary.medianLatencyMs).toBe(0);
   });
+
+  // Bug 1 regression (coach-truth-speed round, controller-verified
+  // 2026-07-28): production rows for a real timeout NEVER carry
+  // source:"timeout" -- server/coach/chat.ts's chat() emits
+  // source:"template" for every pipeline fallback and records the real
+  // reason in `cause` ("timeout" | "validation-failed" | "backend-down" |
+  // "off-topic" | "templates-only"). The old summarizePipeline filtered on
+  // `r.source === "timeout"`, a value real rows never have, so
+  // timeoutCount/timeoutRate silently read 0 for every rep even though the
+  // owner's real game had four 45s timeouts. This fixture mirrors the exact
+  // raw-row shape (source:"template", cause:"timeout") this run's
+  // raw-sonnet-rep1.json actually carries for its board-live rows.
+  it("counts a real timeout row (source:template, cause:timeout) toward timeoutCount, not just templateCount", () => {
+    const rows = [
+      { source: "model", regenCount: 0, latencyMs: 4000 },
+      { source: "template", cause: "timeout", regenCount: 0, latencyMs: 45001 },
+      { source: "template", cause: "timeout", regenCount: 0, latencyMs: 45001 },
+      { source: "template", cause: "validation-failed", regenCount: 1, latencyMs: 6000 },
+    ];
+    const summary = summarizePipeline(rows);
+    expect(summary.templateCount).toBe(3); // all three non-model rows
+    expect(summary.timeoutCount).toBe(2); // only the two whose cause is "timeout"
+    expect(summary.timeoutCount).toBeGreaterThan(0);
+    expect(summary.templateRate).toBeCloseTo(0.75);
+  });
+
+  it("does not count a non-timeout pipeline failure (e.g. validation-failed) toward timeoutCount", () => {
+    const rows = [
+      { source: "template", cause: "backend-down", regenCount: 0, latencyMs: 5000 },
+      { source: "template", cause: "off-topic", regenCount: 0, latencyMs: 3000 },
+    ];
+    const summary = summarizePipeline(rows);
+    expect(summary.timeoutCount).toBe(0);
+    expect(summary.templateCount).toBe(2);
+  });
+
+  it("still counts source:'timeout' if that literal is ever actually produced (defensive, not the real-world path)", () => {
+    const rows = [{ source: "timeout", regenCount: 0, latencyMs: 45001 }];
+    const summary = summarizePipeline(rows);
+    expect(summary.timeoutCount).toBe(1);
+  });
 });
 
 describe("medianOf", () => {
@@ -419,6 +468,31 @@ describe("per-arm aggregation (buildModelSummary + filterFilesByArm)", () => {
     expect(summary.latencyAgg.p90.min!).toBeLessThan(summary.latencyAgg.p90.max!);
     expect(summary.latencyAgg.p90.perRep).toHaveLength(2);
   });
+
+  // Bug 1, full path: buildModelSummary's pipelineAgg.timeoutRate must come
+  // out non-zero when the rows it aggregates carry real timeout rows
+  // (source:"template", cause:"timeout") -- the exact raw-row shape this
+  // run's raw-*.json files use. Guards the render.ts layer, not just
+  // summarizePipeline in isolation.
+  it("aggregates a real, non-zero pipelineAgg.timeoutRate from cause:'timeout' rows across reps", () => {
+    const files: RepFile[] = [
+      mkRepFile(1, [
+        mkRow({ arm: "board-live", source: "template", cause: "timeout", latencyMs: 45001 }),
+        mkRow({ arm: "board-live", source: "model", latencyMs: 4000 }),
+        mkRow({ arm: "board-live", source: "model", latencyMs: 4000 }),
+      ]),
+      mkRepFile(2, [
+        mkRow({ arm: "board-live", source: "template", cause: "timeout", latencyMs: 45001 }),
+        mkRow({ arm: "board-live", source: "template", cause: "timeout", latencyMs: 45001 }),
+        mkRow({ arm: "board-live", source: "model", latencyMs: 4000 }),
+      ]),
+    ];
+    const summary = buildModelSummary(files);
+    expect(summary.pipelineAgg.timeoutRate.median).not.toBeNull();
+    expect(summary.pipelineAgg.timeoutRate.median).toBeGreaterThan(0);
+    expect(summary.pipeline.perRep[0].timeoutCount).toBe(1);
+    expect(summary.pipeline.perRep[1].timeoutCount).toBe(2);
+  });
 });
 
 describe("decideArm + decideAcrossArms (Wave E1 split decision)", () => {
@@ -428,13 +502,66 @@ describe("decideArm + decideAcrossArms (Wave E1 split decision)", () => {
   });
   const flat = pair(0.9, 0.88, 0.92, 0.9, 0.88, 0.92);
 
-  it("board-live's decideArm is byte-identical to decideModel (no p90 axis for that arm)", () => {
+  it("board-live's decideArm falls through to decideModel's chain when no p90/timeout pair is supplied", () => {
     const inputs = { jargon: pair(0.8, 0.78, 0.82, 0.95, 0.93, 0.97), length: flat, pending: flat, pendingAudited: false };
     const viaModel = decideModel(inputs);
     const viaArm = decideArm("board-live", inputs);
     expect(viaArm.decidedBy).toBe(viaModel.decidedBy);
     expect(viaArm.winner).toBe(viaModel.winner);
     expect(viaArm.arm).toBe("board-live");
+  });
+
+  // Bug 2 regression: board-live must NOT be structurally excluded from the
+  // p90-latency gate. A prior wave scoped p90 to general/board-review only
+  // (an arm allow-list); this round's fix makes both reliability gates
+  // input-driven for every arm, so board-live decides on p90 exactly like
+  // the other two arms when the gap is decisive and ranges disjoint.
+  it("board-live's p90-latency axis decides FIRST (ahead of jargon) when supplied and decisive -- the exact axis this round's fix restores", () => {
+    const inputs = {
+      jargon: pair(0.8, 0.78, 0.82, 0.95, 0.93, 0.97), // jargon alone would pick opus
+      length: flat,
+      pending: flat,
+      pendingAudited: false,
+      p90LatencyMs: pair(37100, 30000, 40000, 17000, 13000, 20000), // this run's own board-live gap
+    };
+    const d = decideArm("board-live", inputs);
+    expect(d.decidedBy).toBe("p90-latency");
+    expect(d.winner).toBe("opus"); // lower p90 wins
+  });
+
+  // Bug 2 (timeout-rate axis): reliability outranks prose length AND p90
+  // latency -- a model with a decisively worse timeout rate loses even when
+  // its p90/jargon numbers would otherwise favor it.
+  it("timeout-rate decides FIRST, ahead of p90-latency and jargon, for every arm", () => {
+    for (const arm of ["board-live", "general", "board-review"] as const) {
+      const inputs = {
+        jargon: pair(0.8, 0.78, 0.82, 0.95, 0.93, 0.97), // jargon alone would pick opus
+        length: flat,
+        pending: flat,
+        pendingAudited: false,
+        p90LatencyMs: pair(17000, 13000, 20000, 37100, 30000, 40000), // p90 alone would pick sonnet
+        // this run's actual board-live timeout rates (sonnet 14/195, opus 5/195)
+        timeoutRate: pair(0.072, 0.062, 0.108, 0.026, 0.015, 0.031),
+      };
+      const d = decideArm(arm, inputs);
+      expect(d.decidedBy).toBe("timeout-rate");
+      expect(d.winner).toBe("opus"); // lower timeout rate wins
+    }
+  });
+
+  it("timeout-rate falls through to p90-latency when the timeout-rate gap is not decisive (overlapping ranges or < delta)", () => {
+    const inputs = {
+      jargon: flat,
+      length: flat,
+      pending: flat,
+      pendingAudited: false,
+      p90LatencyMs: pair(37100, 30000, 40000, 13780, 10000, 16000),
+      timeoutRate: pair(0.05, 0.02, 0.08, 0.04, 0.01, 0.07), // overlapping ranges, gap < TIMEOUT_RATE_DECISIVE_DELTA
+    };
+    expect(TIMEOUT_RATE_DECISIVE_DELTA).toBeGreaterThan(0);
+    const d = decideArm("general", inputs);
+    expect(d.decidedBy).toBe("p90-latency");
+    expect(d.winner).toBe("opus");
   });
 
   it("general/board-review's p90-latency axis decides FIRST, ahead of jargon, when the gap is decisive and ranges are disjoint", () => {

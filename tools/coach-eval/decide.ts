@@ -48,12 +48,12 @@ export interface DecideInputs {
 
 export interface Decision {
   winner: "sonnet" | "opus" | "tie-keep-default";
-  // Wave E1: "p90-latency" is only ever produced by decideArm (the
-  // general/board-review arms' latency-gate) -- decideModel itself never
-  // returns it, but the field's type must accommodate it since ArmDecision
-  // extends Decision (a sub-interface's property must be assignable to its
-  // base's, so the base type has to be the wider one).
-  decidedBy: "jargon" | "length" | "pending" | "default" | "p90-latency";
+  // "timeout-rate" and "p90-latency" are only ever produced by decideArm --
+  // decideModel itself never returns them, but the field's type must
+  // accommodate both since ArmDecision extends Decision (a sub-interface's
+  // property must be assignable to its base's, so the base type has to be
+  // the wider one).
+  decidedBy: "jargon" | "length" | "pending" | "default" | "p90-latency" | "timeout-rate";
   reasoning: string;
   inputs: DecideInputs;
 }
@@ -120,33 +120,53 @@ function pairFrom(sonnet: AxisAgg, opus: AxisAgg): DecidePair {
   };
 }
 
-// ---- Wave E1 (coach-truth-speed round): per-arm decisions + split ---------
+// ---- per-arm decisions + split (coach-truth-speed round) ------------------
 //
 // The owner's ask this round routes board vs general questions to
 // (potentially) different models (server/coach/intent.ts's classifyIntent
 // now makes that a real, per-message router choice, not just a prompt
 // fragment) -- so "one winner" is no longer guaranteed to be the right
-// shape for the recommendation. decideArm below runs decideModel's existing
-// jargon->length->pending chain UNCHANGED for every arm (so board-live's
-// decision is byte-identical to what v3 would have computed), but for the
-// general/board-review arms it ALSO checks a p90-latency axis FIRST -- a
-// model that blows the 45s/90s wall-clock budget for that arm is useless
-// there regardless of how clean its prose is, which is exactly the axis v3
-// computed but never let decide (see the brief's own citation: v3's p90
-// sonnet 37100ms vs opus 13780ms, sonnet's fat tail, never allowed to
-// override the length-budget verdict).
+// shape for the recommendation.
 //
-// Owner-calibratable, rate-units-vs-ms-units sibling of JARGON/LENGTH/
-// PENDING_DECISIVE_DELTA above: the p90 gap must exceed this AND rep ranges
-// must be disjoint (same D4 discipline) before it is allowed to decide.
+// AXIS PRECEDENCE, explicit, for every arm (board-live, general,
+// board-review alike): timeout-rate -> p90-latency -> jargon -> length ->
+// pending (audited only) -> default. Reliability outranks everything below
+// it because the controller's framing is exactly right: an answer that
+// never arrives has no length, no jargon, no voice to grade. Two
+// reliability axes, ordered by how completely the model failed:
+//   1. timeout-rate: the pipeline gave up entirely and served a template.
+//      This is worse than "arrived late" -- there is no answer at all.
+//   2. p90-latency: the model DID answer, but its tail is slow enough to
+//      blow the arm's own wall-clock budget often enough to matter -- a
+//      real (if late-running) risk of the same "no answer arrived in time"
+//      experience, one notch less severe than an outright fallback.
+// Both were previously excluded from board-live specifically -- a prior
+// wave (Bug 2 in this round's brief) added p90 for general/board-review
+// only, which structurally recreated the exact flaw this round is fixing:
+// board-live is the arm where the owner sits waiting mid-game with the
+// worst tail (sonnet p90 ~37s vs opus ~17s in this run), and it was the one
+// arm this axis could never decide. Both axes now apply to every arm,
+// unconditionally -- driven by whether the input pair is present, not by an
+// arm allow-list, so this class of bug (an axis quietly scoped to "some
+// arms") cannot recur by omission.
+//
+// Owner-calibratable, rate-units-vs-ms-units siblings of JARGON/LENGTH/
+// PENDING_DECISIVE_DELTA above: each gap must exceed its own delta AND rep
+// ranges must be disjoint (same D4 discipline) before that axis is allowed
+// to decide.
 export const P90_LATENCY_DECISIVE_DELTA_MS = 5000;
+// Rate-unit (0..1) delta, same scale as JARGON_DECISIVE_DELTA (0.03 = 3
+// points) -- timeout rate is a reliability axis, not a voice-polish one, so
+// it is held to at least as tight a bar as jargon, not a looser one.
+export const TIMEOUT_RATE_DECISIVE_DELTA = 0.03;
 
-// Same disjoint-range D4 rule as decideAxis, but LOWER median wins (it's a
-// latency axis, not a pass-rate axis) and units are milliseconds.
-function decideLatencyAxis(pair: DecidePair, deltaMs: number): "sonnet" | "opus" | null {
+// Same disjoint-range D4 rule as decideAxis, but LOWER median wins and units
+// are whatever the caller's pair carries (milliseconds for latency, a 0..1
+// rate for timeout-rate) -- the function itself is unit-agnostic.
+function decideLowerIsBetterAxis(pair: DecidePair, delta: number): "sonnet" | "opus" | null {
   const { sonnet: s, opus: o } = pair;
   if (s.median === null || o.median === null || s.min === null || s.max === null || o.min === null || o.max === null) return null;
-  if (Math.abs(s.median - o.median) <= deltaMs) return null;
+  if (Math.abs(s.median - o.median) <= delta) return null;
   if (s.median < o.median) return s.max < o.min ? "sonnet" : null;
   return o.max < s.min ? "opus" : null;
 }
@@ -156,32 +176,53 @@ function fmtPairMs(pair: DecidePair): string {
   return `sonnet ${f(pair.sonnet)} vs opus ${f(pair.opus)}`;
 }
 
+// Per-arm budget label, purely for the reasoning string -- kept as a short
+// noun phrase so it reads cleanly inline in decideArm's sentence below.
+const ARM_BUDGET_LABEL: Record<Arm, string> = {
+  "board-live": "live-nudge budget (CHAT_TIMEOUT_MS, 45s)",
+  general: "budget (CHAT_TIMEOUT_MS live / CHAT_REVIEW_BUDGET_MS in review)",
+  "board-review": "90s review budget (CHAT_REVIEW_BUDGET_MS)",
+};
+
 export interface ArmDecisionInputs extends DecideInputs {
-  // Only meaningful (and only ever checked) for the general/board-review
-  // arms -- see decideArm. Absent for board-live, which keeps its original
-  // three-axis chain untouched.
+  // Populated for every arm (see the precedence note above) -- optional only
+  // so a caller/test that omits one simply skips that gate rather than
+  // erroring, not because either axis is arm-specific.
   p90LatencyMs?: DecidePair;
+  timeoutRate?: DecidePair;
 }
 
 export interface ArmDecision extends Decision {
   arm: Arm;
 }
 
-const LATENCY_GATED_ARMS: ReadonlySet<Arm> = new Set(["general", "board-review"]);
-
 export function decideArm(arm: Arm, inputs: ArmDecisionInputs): ArmDecision {
-  if (LATENCY_GATED_ARMS.has(arm) && inputs.p90LatencyMs) {
-    const p90Winner = decideLatencyAxis(inputs.p90LatencyMs, P90_LATENCY_DECISIVE_DELTA_MS);
+  if (inputs.timeoutRate) {
+    const timeoutWinner = decideLowerIsBetterAxis(inputs.timeoutRate, TIMEOUT_RATE_DECISIVE_DELTA);
+    if (timeoutWinner) {
+      return {
+        arm,
+        winner: timeoutWinner,
+        decidedBy: "timeout-rate",
+        reasoning:
+          `timeout rate decides FIRST for every arm, ahead of p90 latency and every voice/length axis -- a model that ` +
+          `never answers is not redeemed by clean prose or being fast the rest of the time: ${fmtPair(inputs.timeoutRate)}; ` +
+          `gap > ${(TIMEOUT_RATE_DECISIVE_DELTA * 100).toFixed(0)}pp and rep ranges disjoint -> ${timeoutWinner} wins.`,
+        inputs,
+      };
+    }
+  }
+  if (inputs.p90LatencyMs) {
+    const p90Winner = decideLowerIsBetterAxis(inputs.p90LatencyMs, P90_LATENCY_DECISIVE_DELTA_MS);
     if (p90Winner) {
-      const budget = arm === "board-review" ? "90s review (CHAT_REVIEW_BUDGET_MS)" : "budget";
       return {
         arm,
         winner: p90Winner,
         decidedBy: "p90-latency",
         reasoning:
-          `p90 latency decides FIRST for this arm, ahead of jargon/length -- a model that misses the ${budget} ` +
-          `is useless here regardless of prose quality: ${fmtPairMs(inputs.p90LatencyMs)}; gap > ${P90_LATENCY_DECISIVE_DELTA_MS}ms ` +
-          `and rep ranges disjoint -> ${p90Winner} wins.`,
+          `timeout rate a wash (or not decisive); p90 latency decides next, ahead of jargon/length -- a model that answers ` +
+          `but blows the ${ARM_BUDGET_LABEL[arm]} often enough is still unusable here regardless of prose quality: ` +
+          `${fmtPairMs(inputs.p90LatencyMs)}; gap > ${P90_LATENCY_DECISIVE_DELTA_MS}ms and rep ranges disjoint -> ${p90Winner} wins.`,
         inputs,
       };
     }
@@ -234,17 +275,18 @@ export function decideAcrossArms(perArm: Partial<Record<Arm, ArmDecision>>): { r
   };
 }
 
-function armDecisionInputsFrom(arm: Arm, sonnet: ArmSummary["sonnet"], opus: ArmSummary["opus"], pendingAudited: boolean): ArmDecisionInputs {
-  const base: ArmDecisionInputs = {
+// `arm` is unused now that both gates apply unconditionally to every arm --
+// kept as a parameter (rather than dropped) so call sites read the same and
+// a future genuinely-arm-specific gate has an obvious place to branch on it.
+function armDecisionInputsFrom(_arm: Arm, sonnet: ArmSummary["sonnet"], opus: ArmSummary["opus"], pendingAudited: boolean): ArmDecisionInputs {
+  return {
     jargon: pairFrom(sonnet.axes.jargon, opus.axes.jargon),
     length: pairFrom(sonnet.axes.length, opus.axes.length),
     pending: pairFrom(sonnet.axes.pendingAwareness, opus.axes.pendingAwareness),
     pendingAudited,
+    p90LatencyMs: pairFrom(sonnet.latencyAgg.p90, opus.latencyAgg.p90),
+    timeoutRate: pairFrom(sonnet.pipelineAgg.timeoutRate, opus.pipelineAgg.timeoutRate),
   };
-  if (LATENCY_GATED_ARMS.has(arm)) {
-    base.p90LatencyMs = pairFrom(sonnet.latencyAgg.p90, opus.latencyAgg.p90);
-  }
-  return base;
 }
 
 function main() {
