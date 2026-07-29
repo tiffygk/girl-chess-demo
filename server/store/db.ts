@@ -155,6 +155,20 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // stalemate, fifty moves, or called early). Additive/nullable, same
     // convention as every column above.
     { name: "end_kind", addSql: "end_kind TEXT" },
+    // Fix wave (2026-07-29, review-3.md finding 1): mirrors
+    // TurningPoint.anchorKind — set only on kind='unconverted' rows.
+    // "repetition-entry" | "run-start" | NULL (a row with no value here
+    // reads as unproven downstream, the same safe-default discipline as
+    // every nullable column here). Additive column, does NOT bump
+    // TP_ALGO_VERSION (owner's-call-only per this round's hard rule) — this
+    // ships inside the still-v6 shape, so it is populated the same read
+    // that would already write a fresh v6 row (a game with zero rows, or
+    // stale pre-v6 rows, on its next getSummary call — manager.ts's own
+    // heal/backfill branches). It is NOT retroactively backfilled onto an
+    // already-persisted v6 row with no anchor_kind; there should be none in
+    // her history at merge time (this fix ships as part of v6, not after
+    // it), and this is not a mechanism for correcting one if there ever is.
+    { name: "anchor_kind", addSql: "anchor_kind TEXT" },
   ],
   // Increment 3.9 (F16, this-game grounding chat): one row per chat message,
   // player and coach both. Brand-new table (CREATE TABLE IF NOT EXISTS below
@@ -401,6 +415,7 @@ export const insertTurningPoints = (
     mateIn?: number | null;
     missedCount?: number | null;
     endKind?: string | null;
+    anchorKind?: string | null;
   }[],
   algoVersion: number
 ) => {
@@ -409,14 +424,15 @@ export const insertTurningPoints = (
     .get(gameId, algoVersion) as { n: number };
   if (existing.n > 0) return;
   const stmt = db.prepare(
-    `INSERT INTO turning_points(game_id, rank, ply, san, label, punish_san, delta_p, low_confidence, kind, ply_end, missed_punish, algo_version, crossed_advantage, mate_in, missed_count, end_kind)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO turning_points(game_id, rank, ply, san, label, punish_san, delta_p, low_confidence, kind, ply_end, missed_punish, algo_version, crossed_advantage, mate_in, missed_count, end_kind, anchor_kind)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   );
   for (const p of points) {
     stmt.run(
       gameId, p.rank, p.ply, p.san, p.label, p.punishSan ?? null, p.deltaP,
       p.lowConfidence ? 1 : 0, p.kind, p.plyEnd ?? null, p.missedPunish ? 1 : 0, algoVersion,
-      p.crossedAdvantage ? 1 : 0, p.mateIn ?? null, p.missedCount ?? null, p.endKind ?? null
+      p.crossedAdvantage ? 1 : 0, p.mateIn ?? null, p.missedCount ?? null, p.endKind ?? null,
+      p.anchorKind ?? null
     );
   }
 };

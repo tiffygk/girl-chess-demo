@@ -639,4 +639,28 @@ describe("unconverted note (game-151 owner ruling, feedback-unconverted-copy.md)
     );
     expect(note.couldImprove).not.toContain("mate in");
   });
+
+  // review-3.md MEDIUM finding 4: the card tip was documented as "generic
+  // across endKinds" but named repetition unconditionally -- a stalemate or
+  // fifty-move unconverted game showed "treat a repeated position as a stop
+  // sign" on the card while the bullets right next to it correctly said
+  // "the stalemate". No repetition happened in either fixture below; the
+  // tip must not claim one did.
+  it("the card tip follows the ending kind: a stalemate unconverted point does NOT get the repetition-specific tip", () => {
+    const stalemateTp = { ...unconvertedTp, endKind: "stalemate" as const, mateIn: undefined };
+    const note = buildTurningPointNote(stalemateTp, undefined, undefined);
+    expect(note.nextTime).not.toBe(NEXT_TIME_TIPS["unconverted"]);
+    expect(note.nextTime).not.toContain("repeated position");
+    expect(note.nextTime).not.toContain("stop sign");
+  });
+
+  it("a fifty-moves unconverted point also gets the non-repetition tip, and a real repetition still gets the repetition-specific one", () => {
+    const fiftyMovesTp = { ...unconvertedTp, endKind: "fifty moves" as const, mateIn: undefined };
+    const note = buildTurningPointNote(fiftyMovesTp, undefined, undefined);
+    expect(note.nextTime).not.toContain("repeated position");
+
+    const repetitionNote = buildTurningPointNote(unconvertedTp, undefined, undefined);
+    expect(repetitionNote.nextTime).toBe(NEXT_TIME_TIPS["unconverted"]);
+    expect(repetitionNote.nextTime).toContain("repeated position");
+  });
 });

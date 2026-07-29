@@ -272,6 +272,69 @@ describe("P6 (review-2-pass2.md): a degraded unconverted point can never reach T
   });
 });
 
+// Fix wave (2026-07-29, review-3.md HIGH finding 1): the SPEC COMPLIANCE
+// FAIL. mateIn alone told the copy layer "was this proven", but ply itself
+// carries two meanings copy was never told apart -- "the verified turning
+// moment" on the proven path, "just the run's own start" everywhere else.
+// anchorKind is the new field that makes the distinction a stored fact
+// instead of an inference. All three cases below run through the REAL
+// computeTurningPoints, not a hand-typed TurningPoint literal.
+describe("review-3.md finding 1: anchorKind distinguishes a proven turning moment from a run-start marker", () => {
+  it("real game 151's proven anchor (positive control): anchorKind is 'repetition-entry'", () => {
+    const u = computeTurningPoints(game151, "1/2-1/2").find((p) => p.kind === "unconverted")!;
+    expect(u.anchorKind).toBe("repetition-entry");
+  });
+
+  it("a repetition ending whose entries were ALL rejected (rejectedGame151, the P2 fixture above): anchorKind is 'run-start' even though endKind is still 'repetition' -- the ending really was a repetition, but no escape was ever proven anywhere", () => {
+    const u = computeTurningPoints(rejectedGame151, "1/2-1/2").find((p) => p.kind === "unconverted")!;
+    expect(u.endKind).toBe("repetition");
+    expect(u.anchorKind).toBe("run-start");
+  });
+
+  // findRepetitionAnchor is only ever CALLED when endKind === "repetition"
+  // (turningPoints.ts) -- a genuinely non-repetition ending never gets the
+  // chance to prove anything, so it must always read as "run-start". This
+  // uses a legal PREFIX of the winningDraw fixture: the first 4 plies of
+  // the same knight shuffle recur the start position only twice (the
+  // initial position and after 4 plies -- not three times), so chess.js's
+  // own isThreefoldRepetition is false and deriveEndKind correctly calls it
+  // "called early" -- a real, checkable non-repetition ending, not a
+  // synthetic endKind override.
+  it("a genuine non-repetition ending ('called early'): anchorKind is 'run-start'", () => {
+    const calledEarly = winningDraw.slice(0, 4);
+    expect(deriveEndKind(calledEarly)).toBe("called early");
+    const u = computeTurningPoints(calledEarly, "1/2-1/2").find((p) => p.kind === "unconverted");
+    expect(u).toBeDefined();
+    expect(u!.endKind).toBe("called early");
+    expect(u!.anchorKind).toBe("run-start");
+  });
+
+  // Cross-layer, same discipline as the P6 describe block above: real
+  // computeTurningPoints output fed into the real debriefBullets, proving
+  // the copy layer actually respects anchorKind rather than trusting a
+  // read of the gating code. This is the exact reproduction review-3.md
+  // measured: mateIn already guaranteed no false MATE claim on
+  // rejectedGame151 (see P6 above); this proves no false MOVE NUMBER
+  // either, on both done well and could be better.
+  it("real game 151's rejected/run-start anchor (rejectedGame151): neither done well nor could be better names a move number for the (unproven) turning moment", () => {
+    const points = computeTurningPoints(rejectedGame151, "1/2-1/2");
+    const u = points.find((p) => p.kind === "unconverted")!;
+    expect(u.anchorKind).toBe("run-start");
+
+    const bullets = debriefBullets({
+      turningPoints: points,
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const doneWell = bullets.find((b) => b.section === "done well")!;
+    const could = bullets.find((b) => b.section === "could be better")!;
+    expect(doneWell.text).not.toMatch(/to move \d+/);
+    expect(could.text).not.toMatch(/started on move \d+/);
+    expect(could.text).not.toContain("mate in");
+  });
+});
+
 // F1's core mechanism, tested directly (not just through the wiring).
 describe("findRepetitionAnchor", () => {
   it("real game 151: finds ply 43 with mateIn 12", () => {

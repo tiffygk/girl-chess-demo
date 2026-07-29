@@ -519,6 +519,12 @@ export interface TurningPoint {
   // only on kind "unconverted" points. How the game actually ended
   // (repetition, stalemate, fifty moves, called early).
   endKind?: string;
+  // Fix wave (2026-07-29, review-3.md finding 1): mirrors the server
+  // TurningPoint — "repetition-entry" means ply is a proven turning
+  // moment (findRepetitionAnchor verified a stored non-repeating
+  // alternative there); "run-start" means ply is only the first ply of
+  // the held-winning run, never a claim about when the win ended.
+  anchorKind?: "repetition-entry" | "run-start";
 }
 
 export interface MoveClassification {

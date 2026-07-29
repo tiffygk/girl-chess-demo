@@ -374,10 +374,81 @@ function buildDoneWell(
     };
   }
 
+  // Game-151 round (2026-07-29): a win and a draw no longer share one
+  // fallback -- "brought the game home" is not a true claim about a
+  // 1/2-1/2. Owner ruling (feedback-unconverted-copy.md, REVISED COPY
+  // SPEC): the unconverted case names the winning STRETCH and stops -- no
+  // move names (scout-unconverted-data.md (a): the "strong move" field has
+  // fired zero times across all 152 of her games, so naming a move here
+  // would be fabrication), no verdict over the whole game ("outplayed" is
+  // false -- she did not win), no "that part is real" (banned AI-ism).
+  //
+  // Fix wave (2026-07-29, review-3.md HIGH finding 1): checked BEFORE the
+  // episode branch below (MEDIUM finding 2 -- an unconverted draw with a
+  // king-pressure episode used to let the episode's "you held a worse
+  // position" claim preempt this slot entirely, directly contradicting the
+  // could-be-better bullet sitting right under it: "you held a worse
+  // position" next to "you were winning this one" cannot both be true. The
+  // unconverted case is the one she ruled on; it wins the slot.
+  //
+  // The stretch's start is the closest earlier opponent-mistake point, when
+  // one is on record; absent that, the copy names only the end and never
+  // invents a start. `unconvertedTp.ply` means "a real turning moment" ONLY
+  // when anchorKind is "repetition-entry" (findRepetitionAnchor actually
+  // proved a stored, non-repeating alternative existed there) -- on every
+  // other unconverted ending it is "run-start" (see turningPoints.ts's
+  // TurningPoint.anchorKind), the FIRST ply of the held-winning run, never
+  // a claim about when the win ended. Naming it as an end-of-stretch move
+  // number there would be fabrication (review-3.md: "you were winning this
+  // one from move 6 to move 18" when she was winning through move 25) --
+  // this degrades to "onward" instead, true on both paths. A phase clause
+  // is prepended only when trustedPhaseForClause allows it AND only ever on
+  // the START of the stretch (never the same ply watchNextTime's phase
+  // clause below checks -- review-3.md finding 3: checking the identical
+  // ply on both sides is what let "your endgame is working" and "the
+  // endgame is where this one slipped" ship side by side about the same
+  // moment). trustedPhaseForClause can only ever positively prove
+  // "endgame", never "middlegame" (that would need rewriting phaseForPly,
+  // explicitly out of scope -- see that function's header), so checking the
+  // stretch's start here means this clause will essentially never fire; an
+  // honest silence beats fabricating the pair the gate can't prove.
+  const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
+  if (result === "1/2-1/2" && unconvertedTp) {
+    const startPoint = findPrecedingOpponentPoint(unconvertedTp.ply, turningPoints);
+    const proven = unconvertedTp.anchorKind === "repetition-entry";
+    let base: string;
+    if (proven) {
+      const endMove = moveNumberForPly(unconvertedTp.ply);
+      base = startPoint
+        ? `you were winning this one from move ${moveNumberForPly(startPoint.ply)} to move ${endMove}.`
+        : `you were winning this one up to move ${endMove}.`;
+    } else {
+      base = startPoint
+        ? `you were winning this one from move ${moveNumberForPly(startPoint.ply)} onward.`
+        : "you were winning this one.";
+    }
+    // startPoint.ply is always strictly earlier than unconvertedTp.ply
+    // (findPrecedingOpponentPoint's own contract) -- checking the phase
+    // there, and ONLY there, guarantees this clause can never land on the
+    // identical ply watchNextTime's phase clause checks below, which is
+    // what actually eliminates finding 3's contradiction (not merely
+    // reduces its odds). No startPoint means no earlier ply to check at
+    // all, so the clause is omitted rather than falling back onto
+    // unconvertedTp.ply and reopening the same collision.
+    const trustedPhase = startPoint ? trustedPhaseForClause(startPoint.ply, endgamePlies) : undefined;
+    return {
+      section: "done well",
+      text: trustedPhase ? `your ${trustedPhase} is working: ${base}` : base,
+      phase: phaseForPly(unconvertedTp.ply, totalPlies, endgamePlies),
+      category: "conversion",
+      ply: unconvertedTp.ply,
+    };
+  }
+
   if (episode && result !== "0-1") {
     return {
       section: "done well",
-      text: "you held a worse position under real pressure. that is a skill.",
+      text: "you held a worse position under real pressure and got through it.",
       phase: phaseForPly(episode.ply, totalPlies, endgamePlies),
       category: "defense",
       ply: episode.ply,
@@ -390,35 +461,6 @@ function buildDoneWell(
       text: "you kept playing through a hard game. next one starts even.",
       phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
       category: "development",
-    };
-  }
-
-  // Game-151 round (2026-07-29): a win and a draw no longer share one
-  // fallback -- "brought the game home" is not a true claim about a
-  // 1/2-1/2. Owner ruling (feedback-unconverted-copy.md, REVISED COPY
-  // SPEC): the unconverted case names the winning STRETCH and stops -- no
-  // move names (scout-unconverted-data.md (a): the "strong move" field has
-  // fired zero times across all 152 of her games, so naming a move here
-  // would be fabrication), no verdict over the whole game ("outplayed" is
-  // false -- she did not win), no "that part is real" (banned AI-ism). The
-  // stretch's start is the closest earlier opponent-mistake point, when one
-  // is on record; absent that, the copy names only the end and never
-  // invents a start. A phase clause is prepended only when trustedPhaseFor
-  // Clause allows it (see that function's header).
-  const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
-  if (result === "1/2-1/2" && unconvertedTp) {
-    const endMove = moveNumberForPly(unconvertedTp.ply);
-    const startPoint = findPrecedingOpponentPoint(unconvertedTp.ply, turningPoints);
-    const base = startPoint
-      ? `you were winning this one from move ${moveNumberForPly(startPoint.ply)} to move ${endMove}.`
-      : `you were winning this one up to move ${endMove}.`;
-    const trustedPhase = trustedPhaseForClause(unconvertedTp.ply, endgamePlies);
-    return {
-      section: "done well",
-      text: trustedPhase ? `your ${trustedPhase} is working: ${base}` : base,
-      phase: phaseForPly(unconvertedTp.ply, totalPlies, endgamePlies),
-      category: "conversion",
-      ply: unconvertedTp.ply,
     };
   }
 
@@ -447,14 +489,22 @@ function buildDoneWell(
 // repetition that started on move 22 gave your lead back to mallow. you
 // had mate in twelve there instead." Sentence one is hers. Sentence two
 // names the mechanism -- "the repetition that started on move N" -- and is
-// only ever built for a genuine repetition anchor: a stalemate or a
-// fifty-move draw does not "start" on a move the same way, so those
-// degrade to the plainer no-move-number wording rather than invent one.
-// Sentence three (the mate reading, scout-unconverted-data.md (b)) appears
-// ONLY when the annotator's findRepetitionAnchor actually proved a stored,
-// non-repeating alternative existed at this ply (tp.mateIn set) -- a
-// collision-displaced fallback ply, or any non-repetition ending, carries
-// none of that and the sentence is silently dropped, never guessed.
+// only ever built for a genuine, PROVEN repetition anchor (tp.anchorKind
+// === "repetition-entry", turningPoints.ts's findRepetitionAnchor actually
+// verified a stored non-repeating alternative existed at this exact ply):
+// a stalemate or a fifty-move draw does not "start" on a move the same
+// way, so those degrade to the plainer no-move-number wording -- and so
+// does a repetition whose entry point was never proven (review-3.md HIGH
+// finding 1: gating this on endKind === "repetition" alone, without also
+// requiring the proof, printed "the repetition that started on move 18"
+// when the repetition actually started on move 22 -- tp.ply on the
+// unproven path is only ever the held-run's START, reused here as though
+// it were the repetition's own entry ply). Sentence three (the mate
+// reading, scout-unconverted-data.md (b)) appears ONLY when tp.mateIn is
+// set, which -- per turningPoints.ts's own push site -- can only ever be
+// true together with anchorKind === "repetition-entry"; the guard here is
+// spelled out on anchorKind anyway so this function does not depend on
+// that coupling holding forever in another file.
 function unconvertedCouldBeBetterText(tp: TurningPoint): string {
   const how =
     tp.endKind === "repetition"
@@ -464,7 +514,7 @@ function unconvertedCouldBeBetterText(tp: TurningPoint): string {
         : tp.endKind === "fifty moves"
           ? "fifty quiet moves"
           : "the early call";
-  if (tp.endKind === "repetition") {
+  if (tp.endKind === "repetition" && tp.anchorKind === "repetition-entry") {
     const n = moveNumberForPly(tp.ply);
     const mate = tp.mateIn != null && tp.mateIn >= 1 ? ` you had mate in ${numberWord(tp.mateIn)} there instead.` : "";
     return `you were winning this one. ${how} that started on move ${n} gave your lead back to mallow.${mate}`;
