@@ -20,6 +20,7 @@ import {
   type DbCountSnapshot,
 } from "./replay-check";
 import { detectMissedWins } from "../server/annotator/missedWins";
+import { detectUnconverted } from "../server/annotator/unconverted";
 import type { MoveEval } from "../server/annotator/turningPoints";
 
 // A legal 8-ply knight shuffle that repeats the start position three times,
@@ -44,6 +45,31 @@ describe("replay-check invariants", () => {
     expect(unconvertedInvariant(winningDraw, "1-0", [])).toBeNull();
     const level = winningDraw.map((m) => ({ ...m, evalCp: m.evalCp! > 0 ? 10 : -10 }));
     expect(unconvertedInvariant(level, "1/2-1/2", [])).toBeNull();
+  });
+
+  // P1 (review-2-pass2.md MERGE BLOCKER): F6's fix added
+  // UNCONVERTED_MIN_RUN_PLIES to the detector but this invariant never
+  // learned about it -- it still demands a point exist the moment the
+  // FINAL reading alone clears UNCONVERTED_MIN_P, exactly the 1-ply-run
+  // shape the detector now correctly declines to flag. Real game 113
+  // shape: a 4-ply drawn game where only the last stored reading is
+  // bumped above threshold (run length 1, same shape review-2.md measured
+  // on games 113/127/140). Before this fix: un-passable GATE: FAIL with
+  // nothing that can satisfy it (KNOWN_UNCONVERTED_GAMES is empty and its
+  // own comment forbids a refill). After this fix: the invariant applies
+  // the SAME run-length floor as the detector and is satisfiable (silent).
+  it("unconverted: a game-113 shape (4 plies, only the final reading bumped) is a run too short -- the gate must not demand a point the detector correctly declines to emit", () => {
+    const game113Shape: MoveEval[] = [
+      { ply: 1, san: "e4", evalCp: 20, evalMate: null },
+      { ply: 2, san: "e5", evalCp: -20, evalMate: null },
+      { ply: 3, san: "Qh5", evalCp: 30, evalMate: null },
+      { ply: 4, san: "Nc6", evalCp: 900, evalMate: null }, // only the final reading bumped
+    ];
+    // The real detector agrees nothing is owed here (run length 1 < floor).
+    expect(detectUnconverted(game113Shape, "1/2-1/2")).toBeNull();
+    // The gate must be satisfiable with no point present -- this is the
+    // exact un-passable-gate landmine P1 describes.
+    expect(unconvertedInvariant(game113Shape, "1/2-1/2", [])).toBeNull();
   });
   it("missed mate: an m1 walked past with no detector event is a violation; the real detector satisfies it", () => {
     const moves: MoveEval[] = [
