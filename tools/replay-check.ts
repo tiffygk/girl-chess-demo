@@ -65,7 +65,6 @@ import { validateChat, type ChatFactList } from "../server/coach/chat";
 import { checkDebriefOutput, type DebriefFacts, type DebriefOutput } from "../src/review/debriefInvariants";
 import { debriefBullets } from "../src/review/debriefBullets";
 import { buildTurningPointNote } from "../src/review/turningPointNote";
-import { nearlyBarePlies } from "../src/review/phase";
 import type { TurningLine, SummaryMove } from "../src/game/api";
 import { resolveRealDbPath, copyScratchDb, reconstructPvLine } from "./truth-check";
 
@@ -497,7 +496,6 @@ async function main() {
     // src/review/debriefInvariants.ts module the runtime wiring will.
     const turningLines = buildTurningLines(gameId, tps, gameSans);
     const totalPlies = moves.length;
-    const endgamePlies = nearlyBarePlies(gameSans);
 
     const bullets = debriefBullets({
       turningPoints: tps,
@@ -519,7 +517,6 @@ async function main() {
       gameSans,
       turningLines,
       totalPlies,
-      endgamePlies,
     };
     const violations = checkDebriefOutput({ bullets, notes }, facts);
     if (violations.length > 0) {
