@@ -12,14 +12,14 @@
   /* Wave B board sizing — vmin-based so the board dominates a big desktop
      and actually grows with the window, capped so it never overflows a
      shorter viewport (the calc term) or runs away on an ultrawide (the
-     1100px term). The 410px is everything ABOVE and BELOW the board card
-     that isn't the board itself — measured on the real rendered page:
+     1100px term). The 426px is everything ABOVE and BELOW the board card
+     that isn't the board itself -- measured on the real rendered page:
      page top padding (24) + header band (76) + the two player bars
      (58 + 64) + the fixed action-slot (92) + the gap above the status
      line (16) + the status line's own min-height (22) + page bottom
-     padding (40) = 392px, plus ~18px of slack. Because calc(100vh-410) is
+     padding (40) = 392px, plus ~34px of slack. Because calc(100vh-426) is
      always one of the three min() candidates, total page height can never
-     exceed 100vh - 18 regardless of which term wins — the vmin/cap terms
+     exceed 100vh - 34 regardless of which term wins -- the vmin/cap terms
      only ever pull the board SMALLER than that ceiling, never larger.
      The 426px budget is the LIVE-PLAY worst case. Post-game the .postgame
      reactive collapse (see the game-over section) frees chrome below the
@@ -1206,9 +1206,21 @@
    bands fill). The board itself cannot move: --board-size is a fixed
    viewport formula (see :24) that never measures these siblings. */
 .gc-app .game-page.postgame .action-slot { min-height: 0; }
+/* A5 review LOW 1: min-height:0 alone left a 52px floor -- the slot's own
+   16px padding-top plus its always-present .action-slot-judge child's 20px
+   min-height. Zero both, but only when the judge child is genuinely empty
+   (action-slot-controls never renders in postgame -- gameOver gates it off
+   above -- so action-slot-judge is postgame's only possible child); a
+   post-game judge badge still gets its padding and floor. */
+.gc-app .game-page.postgame .action-slot:has(> .action-slot-judge:empty) { padding-top: 0; }
+.gc-app .game-page.postgame .action-slot-judge:empty { min-height: 0; }
 .gc-app .game-page.postgame .coach-hint-band { min-height: 0; }
-.gc-app .game-page.postgame .status-line { min-height: 0; margin-top: 0; }
-.gc-app .game-page.postgame .status-line:empty { display: none; }
+/* A5 review LOW 2: margin-top:0 was unconditional, so a review opened from
+   the pregame branch (status still "finding an opponent...") rendered that
+   text flush against the coach band above. Scope it to :empty, matching
+   the display:none rule already below it. */
+.gc-app .game-page.postgame .status-line { min-height: 0; }
+.gc-app .game-page.postgame .status-line:empty { margin-top: 0; display: none; }
 
 /* win title: the wordmark's layered construction at celebration scale
    (V6, spec §4.10). Draw and loss titles now join the same construction

@@ -24,17 +24,35 @@ describe("reactive post-game collapse (owner ruling 2026-07-29)", () => {
   it("postgame removes the three reservations ONLY -- reactive, nothing hidden while it has content", () => {
     expect(cssSrc).toMatch(/\.game-page\.postgame \.action-slot \{ min-height: 0; \}/);
     expect(cssSrc).toMatch(/\.game-page\.postgame \.coach-hint-band \{ min-height: 0; \}/);
+    // A5 review LOW 2 fix: margin-top:0 moved off the unconditional rule and
+    // onto :empty, so a review opened from the pregame branch (status still
+    // "finding an opponent...") no longer renders flush against the coach
+    // band -- min-height:0 alone stays unconditional.
+    expect(cssSrc).toMatch(/\.game-page\.postgame \.status-line \{ min-height: 0; \}/);
+    // the ONLY display:none is the genuinely-empty status line, and its
+    // margin-top:0 now lives on the same :empty rule as the display:none.
     expect(cssSrc).toMatch(
-      /\.game-page\.postgame \.status-line \{ min-height: 0; margin-top: 0; \}/
+      /\.game-page\.postgame \.status-line:empty \{ margin-top: 0; display: none; \}/
     );
-    // the ONLY display:none is the genuinely-empty status line
-    expect(cssSrc).toMatch(/\.game-page\.postgame \.status-line:empty \{ display: none; \}/);
     // guard: no postgame rule may set display:none on the coach band.
     // (the brief's sketch used [^{]* before the declaration, which can
     // never cross the rule's opening brace and so could never match a
     // real rule; this form inspects the rule body.)
     expect(cssSrc).not.toMatch(
       /\.postgame[^{]*\.coach-hint-band[^{]*\{[^}]*display:\s*none/
+    );
+  });
+  // A5 review LOW 1: min-height:0 on .action-slot alone left a residual
+  // floor -- the slot's own padding-top plus its always-present
+  // .action-slot-judge child's min-height. RED when either the padding
+  // collapse or the judge floor collapse is removed, or when either loses
+  // its :empty guard (which would let it clip a real post-game judge badge).
+  it("the action-slot's residual padding + judge floor collapse to zero, but only when genuinely empty", () => {
+    expect(cssSrc).toMatch(
+      /\.game-page\.postgame \.action-slot:has\(> \.action-slot-judge:empty\) \{ padding-top: 0; \}/
+    );
+    expect(cssSrc).toMatch(
+      /\.game-page\.postgame \.action-slot-judge:empty \{ min-height: 0; \}/
     );
   });
   // RED when a future edit lowers or removes the live-play floors -- the
