@@ -1208,11 +1208,16 @@
 .gc-app .game-page.postgame .action-slot { min-height: 0; }
 /* A5 review LOW 1: min-height:0 alone left a 52px floor -- the slot's own
    16px padding-top plus its always-present .action-slot-judge child's 20px
-   min-height. Zero both, but only when the judge child is genuinely empty
-   (action-slot-controls never renders in postgame -- gameOver gates it off
-   above -- so action-slot-judge is postgame's only possible child); a
-   post-game judge badge still gets its padding and floor. */
-.gc-app .game-page.postgame .action-slot:has(> .action-slot-judge:empty) { padding-top: 0; }
+   min-height. Zero both, but only when the judge child is genuinely empty.
+   A3+A5 re-review F1: action-slot-controls is gated on !gameOver ALONE
+   (GamePage.tsx), not on reviewGame, so it is NOT true that action-slot-judge
+   is postgame's only possible child -- selectPastGame sets reviewGame but
+   never gameId or gameOver, so opening a saved game from the pregame panel
+   turns .postgame on while action-slot-controls still renders the live
+   elo-select / start game / past games row. :not(:has(> .action-slot-controls))
+   keeps the padding reserved whenever that sibling is rendered; a post-game
+   judge badge still gets its padding and floor either way. */
+.gc-app .game-page.postgame .action-slot:has(> .action-slot-judge:empty):not(:has(> .action-slot-controls)) { padding-top: 0; }
 .gc-app .game-page.postgame .action-slot-judge:empty { min-height: 0; }
 .gc-app .game-page.postgame .coach-hint-band { min-height: 0; }
 /* A5 review LOW 2: margin-top:0 was unconditional, so a review opened from
