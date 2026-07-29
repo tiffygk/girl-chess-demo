@@ -138,4 +138,15 @@ describe("debriefLesson", () => {
       "today's lesson: inaccuracy on move 8. small slip, still your game to lose from here."
     );
   });
+
+  it("a missed mate outranks every other lesson, including her own inaccuracies (game 149 shape)", () => {
+    const lesson = debriefLesson(
+      [
+        { rank: 1, ply: 5, san: "a4", label: "inaccuracy", deltaP: -0.09, lowConfidence: false, kind: "swing" },
+        { rank: 2, ply: 65, san: "Re2", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 1, missedCount: 1 },
+      ] as any,
+      "1-0"
+    );
+    expect(lesson).toBe("today's lesson: you had checkmate in one on move 33 and played past it. hunt the finish when you are winning.");
+  });
 });

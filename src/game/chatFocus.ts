@@ -5,7 +5,14 @@
 // coverage, same reasoning as hintFlow.ts/moveFlow.ts being their own
 // modules rather than inlined React state logic.
 import { Chess } from "chess.js";
-import type { ChatContext, TurningLine, TurningPoint } from "./api";
+import type { ChatContext, SummaryMove, TurningLine, TurningPoint } from "./api";
+// Task 3 (Wave D, coach-truth-speed round, deferred from A1): the single
+// source of truth for "did she actually play the recommended move" --
+// already used by reviewArrows.ts/debriefBullets.ts/turningPointNote.ts.
+// Imported (never re-derived) so chat can never disagree with the debrief
+// about this fact -- the owner's game-146 question this closes: "did I
+// actually do the move it recommended, or did I not?"
+import { followedBest } from "../review/followedBest";
 
 // Task 4 (R1b): HintFacts.pv is UCI (the engine's own reported line);
 // chat.ts's hintFocus fold needs SAN. Converts by REPLAYING from fen, the
@@ -83,11 +90,35 @@ export function hintFocusContext(
  * (see getTurningLines' header in server/game/manager.ts). This is the pair
  * that assembleChatFactList folds into allowedSans server-side, which is
  * what actually lets the coach name the best line for this moment.
+ *
+ * Task 3 (Wave D, deferred from A1): `gameSans` is optional and additive --
+ * every pre-this-wave caller that omits it still gets exactly the shape
+ * above, with `followedBest: undefined` and `playedNextSan: undefined`
+ * (unknown, never guessed at without the game to check against). When
+ * supplied, `followedBest`/`playedNextSan` are derived from the SAME
+ * followedBest() reviewArrows/debriefBullets/turningPointNote already use,
+ * never re-derived here -- so a chat answer and the debrief note can never
+ * disagree about whether she played the recommended move.
+ *
+ * Review fix (Wave F, 2026-07-27, review.md finding 2): `followedBest` used
+ * to coerce the absent-gameSans case to `false` via `?? false` -- not
+ * "unknown", an outright assertion that she did NOT play the recommended
+ * move, sent to the model as fact on every real call site (both of which,
+ * at the time, omitted `gameSans` entirely, so this fired on every "ask
+ * about this" click). `false` and "unknown" are never interchangeable here:
+ * the whole reason this field exists is so the coach can answer "did I play
+ * the recommended move or not" truthfully, and a wrong "not" is exactly the
+ * falsehood this seam was built to remove. Now genuinely undefined
+ * (omitted, via `fb?.followed` with no `??` fallback) whenever `gameSans` is
+ * unavailable -- the caller/model must treat absence as unknown, never as a
+ * negative answer.
  */
 export function turningPointFocusContext(
   point: Pick<TurningPoint, "ply" | "san" | "label" | "punishSan">,
-  line: Pick<TurningLine, "bestSan" | "pvSans"> | undefined
+  line: TurningLine | undefined,
+  gameSans?: SummaryMove[]
 ): NonNullable<ChatContext["turningPointFocus"]> {
+  const fb = gameSans ? followedBest(line, gameSans) : undefined;
   return {
     ply: point.ply,
     san: point.san,
@@ -95,6 +126,8 @@ export function turningPointFocusContext(
     punishSan: point.punishSan,
     bestSan: line?.bestSan,
     pvSans: line?.pvSans,
+    playedNextSan: fb?.playedSan,
+    followedBest: fb?.followed,
   };
 }
 

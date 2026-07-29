@@ -1,7 +1,8 @@
 // tools/coach-eval/run.ts
 //
-// CLI entry point: executes ONE model over all 65 fixtures/questions,
-// writing raw json incrementally. Invoke via:
+// CLI entry point: executes ONE model over all fixtures/questions across all
+// three arms (board-live, general, board-review -- Wave E1, coach-truth-
+// speed round), writing raw json incrementally. Invoke via:
 //
 //   npx tsx tools/coach-eval/run.ts --model sonnet --wiring legacy
 //   npx tsx tools/coach-eval/run.ts --model opus   --wiring legacy --out tools/coach-eval/runs/<ts>
@@ -10,7 +11,13 @@
 //   --model sonnet|opus       required
 //   --wiring legacy|threaded  required
 //   --out <dir>               output dir (default: runs/<timestamp>)
+//   --arm <name>              board-live|general|board-review -- run only
+//                             that arm's questions, without disturbing the
+//                             others. Applied AFTER buildQuestionList()'s
+//                             own drift assertion against the full,
+//                             unfiltered TOTAL_QUESTION_COUNT.
 //   --limit N                 smoke-test only: run the first N questions
+//                             (of whatever --arm selected, or all arms)
 //   --warmup N                N throwaway calls through the identical chat()
 //                             path before the scored loop, to burn off
 //                             in-process cold start. Logged to
@@ -36,13 +43,39 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Chess } from "chess.js";
-import { openDb, getGame, getGameMoves } from "../../server/store/db";
-import type { ChatContext, ChatPerPlyInput } from "../../server/coach/chat";
+import { openDb, getGame, getGameMoves, getTurningPoints } from "../../server/store/db";
+// The product's own finished-game outcome derivation -- imported, never
+// reimplemented (see reviewFacts below).
+import { deriveChatOutcome } from "../../server/game/manager";
+
+// Shape of a turning_points row as getTurningPoints returns it; mirrors the
+// cast manager.ts's chatAbout does on the same query.
+interface TurningPointRow {
+  ply: number;
+  san: string;
+  label: string;
+  punish_san: string | null;
+}
+import type { ChatContext, ChatPerPlyInput, ChatOutcome } from "../../server/coach/chat";
+// Wave E1: CHAT_TIMEOUT_MS/CHAT_REVIEW_BUDGET_MS are the SAME constants
+// manager.ts's own budgetMs = finished ? CHAT_REVIEW_BUDGET_MS :
+// CHAT_TIMEOUT_MS derivation uses -- imported, never a second hardcoded
+// copy. Static import is safe here (chat.ts does not import agent-sdk.ts,
+// which is the one module whose module-load-time constant genuinely needs
+// GC_COACH_MODEL set first -- see the dynamic import further down).
+import { CHAT_TIMEOUT_MS, CHAT_REVIEW_BUDGET_MS } from "../../server/coach/chat";
+// classifyIntent is the deterministic board/general router (Wave D). Every
+// question in this harness -- board-live included -- is routed through the
+// SAME function manager.ts calls on every real message, so the harness
+// measures the production routing decision, not an assumed one.
+import { classifyIntent } from "../../server/coach/intent";
 import {
   FIXTURES,
   BASE_QUESTIONS,
   PENDING_QUESTIONS,
   AFFIRMATION_QUESTIONS,
+  GENERAL_QUESTIONS,
+  BOARD_REVIEW_QUESTIONS,
   ENGINE_BEST_UCI_BY_FIXTURE,
   NARR_HINT_LEVEL,
   NARR_HINT_TEXT,
@@ -52,6 +85,7 @@ import {
   type QuestionTag,
   type PendingMove,
   type PendingTier,
+  type Arm,
 } from "./fixtures";
 import type { AnswerRow } from "./score";
 import { parseArgs, sha256File, timestamp } from "./util";
@@ -62,9 +96,15 @@ const REPO_ROOT = path.resolve(TOOL_DIR, "../..");
 type Model = "sonnet" | "opus";
 type Wiring = "legacy" | "threaded";
 
+// Wave E1 fix: opus resolved to the stale "claude-opus-4-8" (Opus 4.8, the
+// PREVIOUS Opus) since v3 -- the owner's ask is explicitly Opus 5 ("since
+// Opus 5 just came out and it is much better than the previous Opus 4.8").
+// A bake-off against the wrong model is worthless; both strings are now the
+// exact, current, un-suffixed model IDs (see claude-api skill / shared/
+// models.md: claude-sonnet-5, claude-opus-5 -- no date suffix on either).
 const MODEL_ENV: Record<Model, string> = {
   sonnet: "claude-sonnet-5",
-  opus: "claude-opus-4-8",
+  opus: "claude-opus-5",
 };
 
 interface MoveRow {
@@ -130,9 +170,12 @@ function engineBestForFixture(rows: MoveRow[], fixture: Fixture): { pvSans: stri
 }
 
 // A single normalized question, whatever bucket it came from -- the shape
-// run.ts's main loop actually iterates.
+// run.ts's main loop actually iterates. Wave E1 adds `arm`, read by main()
+// for the --arm filter, the intent/budget derivation, and written onto every
+// AnswerRow so render.ts/decide.ts can aggregate per arm.
 interface EvalQuestion {
   id: string;
+  arm: Arm;
   tag: QuestionTag;
   q: string;
   ctx: FixtureId;
@@ -142,9 +185,10 @@ interface EvalQuestion {
 }
 
 function buildQuestionList(): EvalQuestion[] {
-  const base: EvalQuestion[] = BASE_QUESTIONS.map((b) => ({ id: b.id, tag: b.tag, q: b.q, ctx: b.ctx, probe: b.probe }));
+  const base: EvalQuestion[] = BASE_QUESTIONS.map((b) => ({ id: b.id, arm: b.arm, tag: b.tag, q: b.q, ctx: b.ctx, probe: b.probe }));
   const pending: EvalQuestion[] = PENDING_QUESTIONS.map((p) => ({
     id: p.id,
+    arm: p.arm,
     tag: p.tag,
     q: p.q,
     ctx: p.ctx,
@@ -154,6 +198,7 @@ function buildQuestionList(): EvalQuestion[] {
   }));
   const affirmation: EvalQuestion[] = AFFIRMATION_QUESTIONS.map((p) => ({
     id: p.id,
+    arm: p.arm,
     tag: p.tag,
     q: p.q,
     ctx: p.ctx,
@@ -161,7 +206,19 @@ function buildQuestionList(): EvalQuestion[] {
     pending: p.pending,
     pendingTier: p.tier,
   }));
-  const all = [...base, ...pending, ...affirmation];
+  // Wave E1 arms: general has no fixture-derived focus/pending at all (bare
+  // context, see buildContext below); board-review reuses [dir]'s bare-
+  // context shape too, just against a synthesized finished-game status.
+  const general: EvalQuestion[] = GENERAL_QUESTIONS.map((g) => ({ id: g.id, arm: g.arm, tag: g.tag, q: g.q, ctx: g.ctx, probe: g.probe }));
+  const boardReview: EvalQuestion[] = BOARD_REVIEW_QUESTIONS.map((r) => ({
+    id: r.id,
+    arm: r.arm,
+    tag: r.tag,
+    q: r.q,
+    ctx: r.ctx,
+    probe: r.probe,
+  }));
+  const all = [...base, ...pending, ...affirmation, ...general, ...boardReview];
   if (all.length !== TOTAL_QUESTION_COUNT) {
     throw new Error(`question list drift: built ${all.length}, fixtures.ts declares ${TOTAL_QUESTION_COUNT}`);
   }
@@ -219,8 +276,45 @@ function buildContext(
     return threaded;
   }
 
-  // open / dir: bare context, no focus.
-  return { mode: "live" };
+  // open / dir / general: bare context, no focus. board-review reuses this
+  // same bare shape (its [dir]-sourced question text carries no focus
+  // either) but reports mode "review" -- purely informational (chat.ts
+  // never branches on ctx.mode; manager.ts derives status/budget from the
+  // db's own finished state, which is why the REAL "finished" signal is
+  // threaded through assembleChatFactList's outcomeInfo param below, not
+  // through this field) -- kept truthful anyway so nothing in the context
+  // object itself lies about which kind of question this is.
+  return { mode: question.arm === "board-review" ? "review" : "live" };
+}
+
+// The board-review arm's finished-game facts, read from the db (eval-
+// instrument-repair round, 2026-07-28). This REPLACES `boardReviewOutcome`,
+// which synthesized the same fabricated `1-0 by resignation` for every row
+// regardless of fixture, against games that were still in progress at the
+// pinned ply. The coach then correctly discussed a resignation that never
+// happened, and the owner -- grading the blinded read -- threw the whole arm
+// out as unjudgeable.
+//
+// deriveChatOutcome is IMPORTED from server/game/manager.ts, not reimplemented
+// here: the arm's whole point is to exercise the same finished-game path the
+// app takes, so it must read games.result/end_reason exactly the way chatAbout
+// does, including the "decisive result, null end_reason, last san has no #"
+// resignation disambiguation. Same for turningPoints, which manager.ts passes
+// only for a finished game -- omitting them here (as this file used to) meant
+// the arm's fact list was missing something every real review chat carries.
+function reviewFacts(fixture: Fixture, sans: { ply: number; san: string }[]): { status: "finished"; outcome?: ChatOutcome } {
+  const game = getGame(fixture.gameId) as { result: string | null; end_reason?: string | null } | undefined;
+  if (!game) throw new Error(`review fixture ${fixture.id} references game ${fixture.gameId}, which is not in the scratch db`);
+  if (!game.result) {
+    throw new Error(
+      `review fixture ${fixture.id} points at game ${fixture.gameId}, which has NO result in the db -- the board-review arm ` +
+        `must only ever run against genuinely finished games (this is the exact defect the 2026-07-28 rebuild removed). Aborting.`
+    );
+  }
+  return {
+    status: "finished",
+    outcome: deriveChatOutcome(game.result, game.end_reason ?? null, sans[sans.length - 1]?.san, sans.length),
+  };
 }
 
 function copyScratchDb(sourcePath: string, destPath: string) {
@@ -292,6 +386,24 @@ async function main() {
       rowsByGame.set(fixture.gameId, getGameMoves(fixture.gameId) as MoveRow[]);
     }
     const rows = rowsByGame.get(fixture.gameId)!;
+    // Review fixtures (2026-07-28): fail fast, at startup, if the game this
+    // fixture claims is finished is not actually finished in the db, or if
+    // the pinned ply is not its real final ply. The whole rebuild of this arm
+    // exists because a fabricated outcome was allowed to stand in for a real
+    // one; the guard against that regressing lives here, against live data,
+    // not only in a unit test against the fixture literals.
+    if (fixture.finished) {
+      const game = getGame(fixture.gameId) as { result: string | null } | undefined;
+      if (!game?.result) {
+        throw new Error(`review fixture ${fixture.id} claims game ${fixture.gameId} is finished, but the db has no result for it`);
+      }
+      if (rows.length !== fixture.ply) {
+        throw new Error(
+          `review fixture ${fixture.id} pins ply ${fixture.ply}, but game ${fixture.gameId} has ${rows.length} plies -- ` +
+            `a review fixture must sit on the game's real FINAL ply`
+        );
+      }
+    }
     const truncated = truncatedMoves(rows, fixture.ply);
     const replay = new Chess();
     for (const m of truncated) replay.move(m.san);
@@ -304,12 +416,30 @@ async function main() {
   }
   console.log(`[coach-eval] all ${Object.keys(FIXTURES).length} fixtures replay-verified against the scratch db`);
 
+  // buildQuestionList()'s own drift assertion runs against the FULL,
+  // unfiltered TOTAL_QUESTION_COUNT -- --arm filters AFTER that check, so a
+  // single-arm re-run can never silently hide a fixture-count drift in one
+  // of the other arms.
+  const allQuestionsUnfiltered = buildQuestionList();
+
+  // Wave E1: --arm <name> re-runs a single arm without disturbing the
+  // others (a fresh --out dir per arm re-run is still the caller's job --
+  // render.ts requires an identical row-id list across the sonnet/opus raw
+  // files it discovers in one directory, so mixing a filtered and an
+  // unfiltered run in the same --out would fail that check, correctly).
+  const armFilter = args.arm as Arm | undefined;
+  const VALID_ARMS: Arm[] = ["board-live", "general", "board-review"];
+  if (armFilter && !VALID_ARMS.includes(armFilter)) {
+    throw new Error(`--arm must be one of ${VALID_ARMS.join("|")} (got ${JSON.stringify(args.arm)})`);
+  }
+  const allQuestions = armFilter ? allQuestionsUnfiltered.filter((q) => q.arm === armFilter) : allQuestionsUnfiltered;
+  if (armFilter) console.log(`[coach-eval] --arm ${armFilter}: running ${allQuestions.length}/${allQuestionsUnfiltered.length} questions (this arm only)`);
+
   // --limit N: run only the first N questions. For cheap wiring smoke
-  // tests only -- a real baseline/post-fix run must always cover all 65
-  // (fixtures.ts's TOTAL_QUESTION_COUNT) or it is not comparable against
-  // the other model's run.
+  // tests only -- a real baseline/post-fix run must always cover all
+  // questions in scope (all arms, or the single --arm-filtered arm) or it
+  // is not comparable against the other model's run.
   const limit = args.limit ? Number.parseInt(args.limit, 10) : undefined;
-  const allQuestions = buildQuestionList();
   const questions = limit && limit > 0 ? allQuestions.slice(0, limit) : allQuestions;
   if (limit) console.log(`[coach-eval] --limit ${limit}: running ${questions.length}/${allQuestions.length} questions (smoke-test mode, not a full run)`);
   fs.mkdirSync(outDir, { recursive: true });
@@ -354,13 +484,47 @@ async function main() {
     const engineBest = ENGINE_BEST_UCI_BY_FIXTURE[fixture.id] ? engineBestForFixture(rows, fixture) : undefined;
     const ctx = buildContext(question, engineBest, wiring);
 
-    const facts = assembleChatFactList(gameMoves, ctx, undefined, perPly);
+    // board-review is the only arm whose fixture is a finished game, and the
+    // status/outcome/turningPoints facts now all come from the db, mirroring
+    // manager.ts's chatAbout exactly (finished ? real facts : undefined).
+    const finished = question.arm === "board-review";
+    const outcomeInfo = finished ? reviewFacts(fixture, gameMoves) : undefined;
+    const turningPoints = finished
+      ? getTurningPoints(fixture.gameId).map((r: TurningPointRow) => ({
+          ply: r.ply,
+          san: r.san,
+          label: r.label,
+          punishSan: r.punish_san ?? undefined,
+        }))
+      : undefined;
+    const facts = assembleChatFactList(gameMoves, ctx, turningPoints, perPly, outcomeInfo);
     const trace = { gameId: fixture.gameId, ply: fixture.ply, kind: "chat" };
+
+    // Wave E1 (Wave F: ctx shape updated to match classifyIntent's new
+    // signature): the SAME decisions manager.ts makes on every real message
+    // -- hasFocus is true only when a hintFocus/turningPointFocus is
+    // attached (only the "narr" tag ever sets one in this harness), and
+    // hasPendingMove reads the SAME `ctx.pendingMove` field manager.ts reads
+    // off body.context (not question.pending directly), so it correctly
+    // stays false under "legacy" wiring, which never sets that field, and
+    // true under "threaded" wiring whenever a pending move exists --
+    // mirroring the real client/server contract instead of a second,
+    // independent guess. budgetMs/status are the SAME db-derived
+    // finished/live split manager.ts uses, never a client claim. Passing
+    // these through chat()'s opts is what actually exercises the general
+    // route's prompt/validator and the review budget -- omitting them (as
+    // this file did before Wave E1) silently always measured the live
+    // "board" path, regardless of arm.
+    const hasFocus = question.tag === "narr";
+    const hasPendingMove = !!ctx.pendingMove;
+    const status: "in-progress" | "finished" = finished ? "finished" : "in-progress";
+    const intent = classifyIntent(question.q, { hasFocus, hasPendingMove, status });
+    const budgetMs = finished ? CHAT_REVIEW_BUDGET_MS : CHAT_TIMEOUT_MS;
 
     const start = Date.now();
     let outcome: { text: string; source: string; cause?: string; traceId?: number };
     try {
-      outcome = await chat(question.q, [], facts, agentSdkBackend, trace);
+      outcome = await chat(question.q, [], facts, agentSdkBackend, trace, { budgetMs, intent });
     } catch (err) {
       outcome = { text: "", source: "error", cause: err instanceof Error ? err.message : String(err) };
     }
@@ -378,6 +542,7 @@ async function main() {
 
     const row: AnswerRow & { model: Model; wiring: Wiring; measuredLatencyMs: number } = {
       id: question.id,
+      arm: question.arm,
       fixtureId: fixture.id,
       question: question.q,
       tag: question.tag,
@@ -398,7 +563,9 @@ async function main() {
     // whole run to a single crash; this rewrites the full array to disk
     // after every answer, which at 65 rows is cheap).
     fs.writeFileSync(rawPath, JSON.stringify(results, null, 2));
-    console.log(`[coach-eval] [${results.length}/${questions.length}] ${question.id} (${fixture.id}) -> ${outcome.source} ${latencyMs}ms regen=${regenCount}`);
+    console.log(
+      `[coach-eval] [${results.length}/${questions.length}] ${question.id} [${question.arm}/${intent}] (${fixture.id}) -> ${outcome.source} ${latencyMs}ms regen=${regenCount}`
+    );
   }
 
   const afterHash = sha256File(realDbPath);

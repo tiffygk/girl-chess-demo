@@ -7,8 +7,16 @@
 // persisted into the raw json, so a scoring-rule fix never requires
 // re-running the model).
 
-import { checkVoice, SENTENCE_END_RE } from "../../server/coach/voiceRules";
-import { PIECE_WORDS, type QuestionTag } from "./fixtures";
+import { checkVoice, checkRegister, SENTENCE_END_RE } from "../../server/coach/voiceRules";
+// Note (eval-instrument-repair round, 2026-07-28): this module used to import
+// GENERAL_MAX_WORDS from server/coach/chat.ts as the general/board-review
+// length budget, under the skill's "share the enforcer's own budgets with the
+// eval so they can't drift" rule. That import is gone because the budget it
+// backed is gone: the harness no longer scores an answer against the word
+// count the prompt asks for at all (see checkLength below and Task 4's persona
+// change -- concision is now an instruction, not a scored penalty), so there
+// is no longer a second copy of anything to drift.
+import { PIECE_WORDS, type QuestionTag, type Arm } from "./fixtures";
 
 export interface PendingRef {
   pieceKind: string;
@@ -25,6 +33,11 @@ export interface AnswerRow {
   fixtureId: string;
   question: string;
   tag: QuestionTag;
+  // Wave E1: which arm this row belongs to -- board-live/general/board-review
+  // decide BOTH the length budget (checkLength below) and how render.ts
+  // aggregates/reports (per arm, never pooled -- see the skill's axis-4/6
+  // rules on pooling hiding the tail).
+  arm: Arm;
   probe: boolean;
   text: string;
   source: "model" | "template" | "timeout" | "error";
@@ -48,9 +61,19 @@ export interface Scorecard {
   pipelineFailure: boolean;
   cause?: string;
   completeness?: AxisResult;
-  length?: AxisResult;
+  // `underTarget` rides along on the length axis so render.ts can report the
+  // sub-CONCISION_TARGET_WORDS rate as an informational column. It is NOT a
+  // pass/fail and decideArm never reads it.
+  length?: AxisResult & { underTarget: boolean };
   jargon?: AxisResult;
   aiIsmCasing?: AxisResult;
+  // A SEPARATE, NEW axis (eval-instrument-repair round, 2026-07-28), never
+  // folded into `jargon` -- folding it in would silently change what the v2/v3
+  // jargon numbers mean and break the only historical comparison this harness
+  // has. Reported, never decisive: voiceRules.ts's REGISTER_DRIFT list is
+  // unvalidated, and the coach-eval skill's rule 3 is that an unaudited
+  // checker never picks a model.
+  registerDrift?: AxisResult;
   // Present only when the row carries a pending move (PD1-10, AF1-3/AF5).
   pendingAwareness?: AxisResult;
 }
@@ -78,20 +101,74 @@ export function checkCompleteness(text: string): AxisResult {
   return { pass, detail: pass ? "ends cleanly" : `does not end in sentence-final punctuation: "${tail}"` };
 }
 
-// Axis 2: standard <= 45 words / <= 3 sentences; affirmation cases (tag
-// "affirmation") <= 20 words / <= 2 sentences (methodology part 4).
-export const STANDARD_WORD_LIMIT = 45;
-export const STANDARD_SENTENCE_LIMIT = 3;
+// Axis 2 (retuned, eval-instrument-repair round 2026-07-28). The old budget
+// was 45 words / 3 sentences for board-live and GENERAL_MAX_WORDS (120) for
+// general/board-review. The owner then graded all 30 blinded rows, and the
+// join of her grades to the raw answers showed the axis was measuring the
+// wrong thing:
+//
+//   median words, answer she PREFERRED   95   (plan's estimate: 97)
+//   median words, answer she rejected    71
+//   preferred answers over the 45w cap   18 of 22 decisive picks (82%)
+//   longest answer she preferred        129 words
+//
+// So the axis ran OPPOSITE to owner judgment: the answers she liked best were
+// the ones it was failing. That is a wrong instrument, not a mis-set
+// threshold, and (per the coach-eval skill) a wrong instrument must not be
+// allowed to decide anything.
+//
+// The replacement is one cap for every arm, plus a purely informational
+// concision target:
+//   LENGTH_MAX_WORDS      hard fail above this -- an actual wall-of-text
+//                         guard, set well clear of her longest preferred
+//                         answer (129) so no answer of the kind she likes
+//                         can fail it.
+//   CONCISION_TARGET_WORDS reported as `underTarget`, NEVER a pass/fail and
+//                         never consulted by decideArm -- concision is now
+//                         asked for in the prompt (personas/coach.md), not
+//                         punished in the score.
+//
+// The sentence cap is deleted outright rather than relaxed: no owner-preferred
+// answer failed on sentence count, and it was a second confound stacked on the
+// same axis as the word count. countSentences survives (it is still reported
+// in `detail` and unit-tested) but no longer gates anything.
+export const LENGTH_MAX_WORDS = 150; // hard fail above this
+export const CONCISION_TARGET_WORDS = 100; // informational only, never decides
+// Short-affirmation rows ("is this ok", "quick check, this ok") keep their own
+// tight word budget -- untouched by this round, because none of the owner's
+// graded picks contested it.
 export const AFFIRMATION_WORD_LIMIT = 20;
-export const AFFIRMATION_SENTENCE_LIMIT = 2;
 
-export function checkLength(text: string, isAffirmation: boolean): AxisResult & { words: number; sentences: number } {
-  const wordLimit = isAffirmation ? AFFIRMATION_WORD_LIMIT : STANDARD_WORD_LIMIT;
-  const sentenceLimit = isAffirmation ? AFFIRMATION_SENTENCE_LIMIT : STANDARD_SENTENCE_LIMIT;
+// `arm` no longer picks a budget (one cap now applies everywhere) -- it is
+// kept in the signature so every call site reads the same, it is reported in
+// `detail` for auditability, and a future genuinely-arm-specific budget has an
+// obvious place to land.
+export function checkLength(
+  text: string,
+  isAffirmation: boolean,
+  arm: Arm = "board-live"
+): AxisResult & { words: number; sentences: number; underTarget: boolean } {
   const words = countWords(text);
   const sentences = countSentences(text);
-  const pass = words <= wordLimit && sentences <= sentenceLimit;
-  return { pass, words, sentences, detail: `${words} words, ${sentences} sentences (limit ${wordLimit}w/${sentenceLimit}s)` };
+  if (isAffirmation) {
+    return {
+      pass: words <= AFFIRMATION_WORD_LIMIT,
+      words,
+      sentences,
+      underTarget: true,
+      detail: `${words} words, ${sentences} sentences (affirmation budget ${AFFIRMATION_WORD_LIMIT}w, no sentence cap; arm ${arm})`,
+    };
+  }
+  const underTarget = words <= CONCISION_TARGET_WORDS;
+  return {
+    pass: words <= LENGTH_MAX_WORDS,
+    words,
+    sentences,
+    underTarget,
+    detail:
+      `${words} words, ${sentences} sentences (hard cap ${LENGTH_MAX_WORDS}w, no sentence cap; arm ${arm}; ` +
+      `${underTarget ? "under" : "over"} the ${CONCISION_TARGET_WORDS}w concision target, informational only)`,
+  };
 }
 
 // Axis 5 (the r2 headline metric). Base formula from methodology part 4:
@@ -129,7 +206,7 @@ export function scoreAnswer(row: AnswerRow): Scorecard {
   }
 
   const completeness = checkCompleteness(row.text);
-  const length = checkLength(row.text, row.tag === "affirmation");
+  const length = checkLength(row.text, row.tag === "affirmation", row.arm);
 
   const voice = checkVoice(row.text);
   const jargonHits = voice.filter((v) => v.axis === "jargon");
@@ -144,6 +221,12 @@ export function scoreAnswer(row: AnswerRow): Scorecard {
     detail: aiIsmHits.length === 0 ? "clean" : aiIsmHits.map((v) => `${v.axis}:${v.id}`).join(", "),
   };
 
+  const registerHits = checkRegister(row.text);
+  const registerDrift: AxisResult = {
+    pass: registerHits.length === 0,
+    detail: registerHits.length === 0 ? "clean" : registerHits.map((p) => `"${p}"`).join(", "),
+  };
+
   const pendingAwareness: AxisResult | undefined = row.pending
     ? (() => {
         const pass = checkPendingAwareness(row.text, row.pending!);
@@ -151,7 +234,7 @@ export function scoreAnswer(row: AnswerRow): Scorecard {
       })()
     : undefined;
 
-  return { pipelineFailure: false, completeness, length, jargon, aiIsmCasing, pendingAwareness };
+  return { pipelineFailure: false, completeness, length, jargon, aiIsmCasing, registerDrift, pendingAwareness };
 }
 
 export interface PipelineSummary {
@@ -164,6 +247,15 @@ export interface PipelineSummary {
   medianLatencyMs: number;
   p90LatencyMs: number;
 }
+
+// Rows this pipeline actually produces (server/coach/chat.ts's return type,
+// verified 2026-07-28): `source` is only ever "model" | "template" | "error"
+// in practice -- chat()/narrate() emit source:"template" for EVERY pipeline
+// fallback (backend-down, timeout, validation-failed, off-topic,
+// templates-only) and record the REAL reason in `cause`; run.ts's own
+// try/catch is the one thing that produces source:"error" (a harness-level
+// exception, not a model-reported outcome). AnswerRow's `source` type still
+// carries a "timeout" literal, but nothing in production ever sets it.
 
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
@@ -180,10 +272,20 @@ function percentile(sorted: number[], p: number): number {
 // part 5's "per-question latency deltas are non-findings"). Median uses
 // standard interpolated-percentile-at-0.5 (average of the two middle values
 // on an even-length set).
-export function summarizePipeline(rows: { source: string; regenCount: number; latencyMs: number }[]): PipelineSummary {
+//
+// Bug fix (coach-truth-speed round, controller-verified 2026-07-28):
+// timeoutCount used to filter on `r.source === "timeout"`, a value real rows
+// never carry (see the PipelineSummary comment above) -- every timeout is a
+// source:"template" row with cause:"timeout", so the old filter always
+// returned 0 and render.ts's timeoutRate silently reported 0/0 for every
+// rep. Root-cause fix: read `cause`, which is where the real reason lives.
+// A timeout row is ALWAYS also a template row (it's a subset, not a fourth
+// disjoint bucket) -- callers summing template+timeout+error for a total
+// failure count must not add timeoutCount a second time.
+export function summarizePipeline(rows: { source: string; cause?: string; regenCount: number; latencyMs: number }[]): PipelineSummary {
   const total = rows.length;
   const templateCount = rows.filter((r) => r.source === "template").length;
-  const timeoutCount = rows.filter((r) => r.source === "timeout").length;
+  const timeoutCount = rows.filter((r) => r.cause === "timeout" || r.source === "timeout").length;
   const errorCount = rows.filter((r) => r.source === "error").length;
   const templateRate = total === 0 ? 0 : templateCount / total;
   const regenCounts = rows.map((r) => r.regenCount);

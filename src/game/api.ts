@@ -1,4 +1,5 @@
 // Typed client for the girl-chess API (server/index.ts).
+import { initChatStream, pushChunk } from "./chatStream";
 
 export interface NewSessionResponse {
   sessionId: number;
@@ -194,6 +195,13 @@ export function reportMode(sessionId: number, mode: string, seconds: number): Pr
   return postJson(`/session/${sessionId}/mode`, { mode, seconds });
 }
 
+// Highlight-a-move: the player flags a move (her own, up to three back) she
+// wasn't sure about, during live play. Persisted immediately (moves.highlighted)
+// so the highlight survives a reload -- it is db state, not React state.
+export function highlightMove(gameId: number, ply: number, highlighted: boolean): Promise<{ ok: boolean }> {
+  return postJson(`/game/${gameId}/move/${ply}/highlight`, { highlighted });
+}
+
 // Stateless: the server validates against a clone and never advances the
 // game (retract is purely client-side — nothing to undo on the server).
 // `mode` (C3): trace-tagging only — omit for the ordinary pre-move
@@ -338,6 +346,14 @@ export interface ChatContext {
     punishSan?: string;
     bestSan?: string;
     pvSans?: string[];
+    // Task 3 (Wave D, coach-truth-speed round): mirrors
+    // server/coach/chat.ts's ChatContext.turningPointFocus verbatim -- see
+    // that file's own comment. Populated by chatFocus.ts's
+    // turningPointFocusContext via src/review/followedBest.ts's
+    // followedBest(), the single source of truth reviewArrows.ts/
+    // debriefBullets.ts/turningPointNote.ts already use for this same fact.
+    playedNextSan?: string;
+    followedBest?: boolean;
   };
   // Task 1 (R2, pending-move context threading): mirrors
   // server/coach/chat.ts's ChatContext.pendingMove verbatim -- see
@@ -366,8 +382,13 @@ export interface ChatResponse {
   // CoachChat.tsx's offline-chip predicate, which renders only for the
   // latter. Task 2 (2026-07-22, truthfulness leaks): "timeout" is a third,
   // distinct cause -- a slow-but-healthy backend, not a down one -- rendered
-  // as its own "slow" chip, never the offline chip.
-  cause?: "backend-down" | "templates-only" | "timeout";
+  // as its own "slow" chip, never the offline chip. B3a (2026-07-27,
+  // coach-truth-speed round): "validation-failed" is a fourth, honest cause
+  // (a reply that never came out clean, rendered as a "garbled" chip) --
+  // this is what makes `redirect`/"off-topic" reachable ONLY by a real
+  // off-topic ask (the future intent router), never by a validation
+  // failure, closing her "I did ask about the board" note.
+  cause?: "backend-down" | "templates-only" | "timeout" | "validation-failed" | "off-topic";
   traceId?: number;
   error?: string;
 }
@@ -381,6 +402,64 @@ export function chatWithCoach(
   body: { message: string; context: ChatContext; backendPref?: string }
 ): Promise<ChatResponse> {
   return postJson(`/game/${gameId}/chat`, body);
+}
+
+// B-stream (2026-07-27, coach-truth-speed round): the SSE-over-POST sibling
+// of chatWithCoach above, hitting the new /chat/stream route (server/
+// index.ts). All the actual fetch/ReadableStream plumbing lives here, not in
+// chatStream.ts (which stays a pure, DOM-free frame parser) and not in
+// CoachChat.tsx (which only wires these callbacks into its own bubble
+// state) -- same "network I/O lives in api.ts" convention every other
+// function in this file already follows.
+export interface ChatStreamHandlers {
+  onDelta?: (text: string) => void;
+  onRedraft?: () => void;
+  onDone?: (res: ChatResponse) => void;
+  onError?: (res: ChatResponse) => void;
+}
+
+// Throws ONLY when the stream fails to OPEN at all (the fetch itself
+// rejects, or the response is non-ok / carries no body) -- that is the one
+// case CoachChat.tsx is meant to catch and degrade to the plain JSON
+// endpoint for (see this wave's brief: "a transport problem degrades to
+// today's behavior rather than to nothing"). Once reading has begun, a
+// dropped connection resolves via handlers.onError with a synthetic
+// {ok:false} envelope rather than rethrowing -- re-opening a fresh JSON
+// request at that point would just duplicate whatever partial draft is
+// already rendered, which the brief never asks for.
+export async function streamChatWithCoach(
+  gameId: number,
+  body: { message: string; context: ChatContext; backendPref?: string },
+  handlers: ChatStreamHandlers
+): Promise<void> {
+  const res = await fetch(`/api/game/${gameId}/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`chat stream failed to open (status ${res.status})`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let state = initChatStream();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const { frames, next } = pushChunk(state, decoder.decode(value, { stream: true }));
+      state = next;
+      for (const f of frames) {
+        if (f.event === "delta") handlers.onDelta?.(f.data.text);
+        else if (f.event === "redraft") handlers.onRedraft?.();
+        else if (f.event === "done") handlers.onDone?.(f.data);
+        else if (f.event === "error") handlers.onError?.(f.data);
+      }
+    }
+  } catch {
+    handlers.onError?.({ ok: false, error: "internal" });
+  }
 }
 
 // Increment 3.9, Task 4 (F19): thumbs up/down with optional one-line
@@ -417,20 +496,25 @@ export function logHint(
 // 4 (the episode card sits after up to 3 swing/backfill cards) — mirrors
 // TP_ALGO_VERSION 2's additive shape exactly.
 export interface TurningPoint {
-  rank: 1 | 2 | 3 | 4;
+  rank: 1 | 2 | 3 | 4 | 5;
   ply: number;
   san: string;
   label: string;
   punishSan?: string;
   deltaP: number;
   lowConfidence: boolean;
-  kind: "swing" | "backfill" | "episode";
+  kind: "swing" | "backfill" | "episode" | "missed-win";
   missedPunish?: boolean;
   plyEnd?: number;
   // 2026-07-22: mirrors server TurningPoint's crossedAdvantage — see that
   // file's comment. Used by debrief copy (debriefBullets.ts/
   // debriefLesson.ts) to grade a mistake/inaccuracy's severity.
   crossedAdvantage?: boolean;
+  // Missed-win round (2026-07-28): mirrors the server TurningPoint — set
+  // only on kind "missed-win" points. mateIn = the forced-mate depth she
+  // had; missedCount = how many times it slipped this game.
+  mateIn?: number;
+  missedCount?: number;
 }
 
 export interface MoveClassification {
@@ -443,6 +527,10 @@ export interface MoveClassification {
 export interface SummaryMove {
   ply: number;
   san: string;
+  // Highlight-a-move: set when the player flagged this ply during live
+  // play. Optional so any pre-existing summary caller (fixture, snapshot)
+  // that doesn't supply it keeps compiling unchanged.
+  highlighted?: boolean;
 }
 
 export interface SummaryResponse {

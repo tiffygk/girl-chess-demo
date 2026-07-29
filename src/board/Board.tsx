@@ -144,13 +144,26 @@ interface BoardProps {
    * in a new SVG layer inside `.board-inner`, sibling of `.squares`/
    * `.pieces`, using `squareCenter` (squareMapping.ts) for geometry.
    */
-  arrows?: { from: string; to: string; color: "played" | "best" | "threat" }[];
+  // Coach truth-speed round (Wave C1, 2026-07-27): "found" added to the
+  // union — a single arrow rendered when she played exactly the recommended
+  // move, replacing what would otherwise be two coincident "played"/"best"
+  // arrows on identical endpoints. Data-only change: the visual wave owns
+  // the actual colour/CSS for this new value.
+  // Review fix (Wave F, 2026-07-27, review.md finding 7): "mallow" added --
+  // an opponent-ply turning line's own move, now distinct from her "played"
+  // cyan reply. Data-only change here too; see sugar-glitch.css's
+  // .arrow-mallow/.tp-mallow for the actual colour.
+  // Owner ruling (2026-07-27/28): "mallow-best" added -- mallow's
+  // RECOMMENDED move, dashed #C22B7E, never the solid alarm "threat". The
+  // style axis is now uniform: solid = it happened (played/found/mallow/
+  // threat), dashed = it didn't (best/mallow-best). CSS owns the strokes.
+  arrows?: { from: string; to: string; color: "played" | "best" | "threat" | "found" | "mallow" | "mallow-best" }[];
   /**
    * Increment 3.91 (Task 1): companion square wash for the arrows above —
    * reuses the existing square-name-class pass on `.sq` (below) with new
    * `.tp-played`/`.tp-best`/`.tp-threat` classes, same render-only contract.
    */
-  highlightSquares?: { square: string; kind: "played" | "best" | "threat" }[];
+  highlightSquares?: { square: string; kind: "played" | "best" | "threat" | "found" | "mallow" | "mallow-best" }[];
 }
 
 // ambient decorative jitter squares, same indices as the demo — staggered
@@ -972,6 +985,18 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
                 const g = arrowGeometry(arrow.from, arrow.to);
                 return (
                   <g key={`${arrow.from}-${arrow.to}-${arrow.color}-${i}`} className={`arrow arrow-${arrow.color}`}>
+                    {arrow.color === "found" && (
+                      // Coach truth-speed round (visual wave, 2026-07-27):
+                      // "found" = she played exactly the recommended move.
+                      // Rendered as the green best-arrow CONFIRMED by her
+                      // cyan — a crisp cyan outline drawn under the green
+                      // body (wider stroke, same geometry), never a blur or
+                      // glow. Reuses the existing cyan/green tokens only.
+                      <>
+                        <line className="halo" x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} />
+                        <polygon className="halo" points={g.headPoints} />
+                      </>
+                    )}
                     <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} />
                     <polygon points={g.headPoints} />
                   </g>

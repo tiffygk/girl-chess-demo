@@ -20,6 +20,19 @@ const SCHOLARS_MATE_SANS: SummaryMove[] = [
   { ply: 6, san: "Nf6" },
 ];
 
+// Missed-win round (2026-07-28): shared real-game fixture (game 150,
+// 2026-07-28, her real 91-ply win). Ply 55 (Nf7+) declined Qh8#. Repeated
+// per repo convention (each test file keeps its own copy).
+const GAME150_SANS: SummaryMove[] = [
+  "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+  "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+  "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+  "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+","Kg6","Nh8+","Kh7",
+  "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
+  "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
+  "Qh6+","Kd5","Be7","Kc4","Qc6#",
+].map((san, i) => ({ ply: i + 1, san }));
+
 function tp(overrides: Partial<TurningPoint>): TurningPoint {
   return {
     rank: 1,
@@ -67,7 +80,7 @@ describe("NEXT_TIME_TIPS motif bank", () => {
   it("has a distinct tip for every declared motif", () => {
     const motifs = Object.keys(NEXT_TIME_TIPS);
     expect(motifs.sort()).toEqual(
-      ["eval-drop", "good-moment", "king-safety", "missed-punish"].sort()
+      ["eval-drop", "good-moment", "king-safety", "missed-punish", "missed-mate"].sort()
     );
     const tips = Object.values(NEXT_TIME_TIPS);
     expect(new Set(tips).size).toBe(tips.length);
@@ -119,16 +132,19 @@ describe("NEXT_TIME_TIPS motif bank", () => {
     expect(punished.nextTime).toBe(NEXT_TIME_TIPS["good-moment"]);
   });
 
-  it("unrecognized motif falls back to a generic tip (declared cut)", () => {
+  // Coach truth-speed round (2026-07-27): GENERIC_TIP ("look one move deeper
+  // before you commit next time") is gone — the owner's playtest report
+  // flagged it as a useless sentence she'd already done. A turning point
+  // with no inferable motif now has no nextTime at all, rather than a
+  // filler tip.
+  it("a turning point with no inferable motif has no nextTime at all", () => {
     const note = buildTurningPointNote(tp({ label: "the losing move", kind: "backfill" }), undefined, undefined);
-    expect(note.nextTime).toBeTruthy();
-    expect(Object.values(NEXT_TIME_TIPS)).not.toContain(note.nextTime);
+    expect(note.nextTime).toBeUndefined();
   });
 
-  it("nextTime is ALWAYS present, even with no cls/line data at all", () => {
+  it("an unmapped label (e.g. the backfill's 'the clincher') also has no nextTime", () => {
     const note = buildTurningPointNote(tp({ label: "the clincher", kind: "backfill" }), undefined, undefined);
-    expect(note.nextTime).toBeTruthy();
-    expect(typeof note.nextTime).toBe("string");
+    expect(note.nextTime).toBeUndefined();
   });
 
   // Adversarial: a "strong move" turning point in a winning position must
@@ -285,6 +301,65 @@ describe("couldImprove (part ii)", () => {
   });
 });
 
+// Highlight-a-move (Task 7): buildTurningPointNote's fields are all
+// optional -- a turning point with a neutral label (e.g. "strong move")
+// and no missedPunish/line-mismatch naturally renders NO couldImprove at
+// all (confirmed by the "is absent for a strong move" test above). But a
+// move she flagged as uncertain must always say something true, not go
+// silent -- the 5th `highlighted` param opts a ply into an honest fallback
+// when the existing logic left couldImprove unset.
+describe("highlighted-move fallback (Task 7)", () => {
+  // A real, independently legal game reaching ply 11 with Qd2 played there
+  // (1.d4 d5 2.Nf3 Nf6 3.Nc3 Nc6 4.Bf4 Bf5 5.e3 e6 6.Qd2) -- verified via
+  // chess.js, same fixture discipline as highlightedMoves.test.ts.
+  const GAME_TO_PLY_11 = ["d4", "d5", "Nf3", "Nf6", "Nc3", "Nc6", "Bf4", "Bf5", "e3", "e6", "Qd2"].map(
+    (san, i) => ({ ply: i + 1, san })
+  );
+
+  it("a highlighted move with no fault affirms the instinct instead of inventing one", () => {
+    const note = buildTurningPointNote(
+      tp({ ply: 11, san: "Qd2", label: "strong move" }),
+      undefined,
+      line({ ply: 11, bestSan: "Qd2" }),
+      GAME_TO_PLY_11,
+      true
+    );
+    expect(note.couldImprove).toMatch(/nothing here was a mistake/);
+    expect(note.couldImprove).not.toMatch(/should have/);
+  });
+
+  it("a highlighted move that missed a stronger idea names it, honestly, instead of staying silent", () => {
+    const note = buildTurningPointNote(
+      tp({ ply: 11, san: "Qd2", label: "strong move" }),
+      undefined,
+      line({ ply: 11, bestSan: "Nd5" }), // a different, hypothetical stronger idea
+      GAME_TO_PLY_11,
+      true
+    );
+    expect(note.couldImprove).toBeTruthy();
+    // Renders in plain English (same convention as the rest of this file's
+    // clauses) since Nd5 is actually legal at the seed position, not raw SAN.
+    expect(note.couldImprove).toContain("knight takes on d5");
+  });
+
+  it("does not touch an existing couldImprove -- the fallback only fills a genuine gap", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Nxe5" }),
+      undefined,
+      undefined,
+      undefined,
+      true
+    );
+    expect(note.couldImprove).toContain("Nxe5");
+    expect(note.couldImprove).not.toMatch(/you highlighted this one/);
+  });
+
+  it("a non-highlighted ply with the same neutral label still has no couldImprove", () => {
+    const note = buildTurningPointNote(tp({ label: "strong move" }), undefined, undefined, undefined, false);
+    expect(note.couldImprove).toBeUndefined();
+  });
+});
+
 describe("whatMayHaveHappened (part iv)", () => {
   it("is absent when there is no line at all", () => {
     const note = buildTurningPointNote(tp({}), undefined, undefined);
@@ -331,6 +406,114 @@ describe("whatMayHaveHappened (part iv)", () => {
   it("never adds an interpretive claim beyond the SAN moves themselves", () => {
     const note = buildTurningPointNote(tp({}), undefined, line({ pvSans: ["Bxb5", "a6", "Ba4"] }));
     expect(note.whatMayHaveHappened).not.toMatch(/win|initiative|advantage|better position/i);
+  });
+});
+
+// Coach truth-speed round (2026-07-27): the owner's verbatim playtest
+// report — she played the recommended reply (queen to f6, checkmate; rook
+// to g8) and the debrief still asked "what may have happened if instead...",
+// forcing her to go ask the chat whether she'd already done it. Controller
+// ruling (post-A1 review): buildWhatMayHaveHappened now goes silent (not a
+// swapped-in congratulation) when followed — the "what may have happened:"
+// label is itself a counterfactual label and putting a congratulation under
+// it was the exact confusion the owner reported. The congratulation moved to
+// buildDidWell instead, for BOTH parities: the pre-existing even-ply
+// ("opponent" turning point she punished) branch, plus a new odd-ply
+// ("her own turning point she got right") branch this wave adds.
+describe("followedBest integration: no counterfactual when she played the recommended move", () => {
+  it("whatMayHaveHappened is absent when she played the recommended move (odd-ply, her own turning point)", () => {
+    // ply 3 (Qh5) is her own move; the pv recommends the exact move she played.
+    const note = buildTurningPointNote(
+      tp({ label: "the clincher", kind: "backfill", san: "Qh5", ply: 3 }),
+      undefined,
+      line({ ply: 3, pvSans: ["Qh5"], bestSan: "Qh5" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.whatMayHaveHappened).toBeUndefined();
+  });
+
+  it("whatMayHaveHappened is absent when she played the recommended reply (even-ply, an opponent turning point)", () => {
+    // ply 4 (Nc6) is the opponent's move; her reply at ply 5 (Bc4) matches
+    // the pv's recommendation.
+    const note = buildTurningPointNote(
+      tp({ label: "opponent inaccuracy", kind: "swing", san: "Nc6", ply: 4 }),
+      undefined,
+      line({ ply: 4, pvSans: ["Bc4"], bestSan: "Bc4" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.whatMayHaveHappened).toBeUndefined();
+  });
+
+  it("didWell congratulates ('you punished it') on an even-ply (opponent) turning point she followed, even without tp.punishSan set", () => {
+    // ply 4 (Nc6) is the opponent's move; her reply at ply 5 (Bc4) matches
+    // the pv's recommendation. No tp.punishSan is set here (that's the
+    // separate, pre-existing turningPoints.ts credit-assignment path) — this
+    // is followedBest independently confirming the same fact off the line.
+    const note = buildTurningPointNote(
+      tp({ label: "opponent inaccuracy", kind: "swing", san: "Nc6", ply: 4 }),
+      undefined,
+      line({ ply: 4, pvSans: ["Bc4"], bestSan: "Bc4" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.didWell).toBeTruthy();
+    expect(note.didWell).toContain("you punished it");
+    expect(note.didWell).toContain("move 3");
+  });
+
+  it("an odd-ply followed turning point still congratulates in didWell", () => {
+    // ply 3 (Qh5) is her own move; the pv recommends the exact move she
+    // played. Not labeled "strong move" (that branch already covers its own
+    // congratulation), so this is the new odd-ply followedBest branch.
+    const note = buildTurningPointNote(
+      tp({ label: "the clincher", kind: "backfill", san: "Qh5", ply: 3 }),
+      undefined,
+      line({ ply: 3, pvSans: ["Qh5"], bestSan: "Qh5" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.didWell).toBeTruthy();
+    expect(note.didWell).toBe("you found it. your queen to h5 was the top move here.");
+  });
+
+  it("couldImprove drops the 'stronger idea' clause when she played the recommended move", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Qh5", ply: 3 }),
+      undefined,
+      line({ ply: 3, pvSans: ["Qh5"], bestSan: "Qh5" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.couldImprove).toBeTruthy();
+    expect(note.couldImprove).not.toMatch(/stronger idea/);
+  });
+
+  // Review fix (Wave F, 2026-07-27, review.md finding 6): buildCouldImprove's
+  // guard went from `line.bestSan !== tp.san` to `!fb?.followed` -- with fb
+  // undefined (gameSans unavailable, so followedBest has nothing to check
+  // against), that reads as "didn't follow it" and renders "…was the
+  // stronger idea" about the move she just played, whenever bestSan happens
+  // to equal tp.san. Not reachable from DebriefPage today (it always passes
+  // gameSans), but wrong on its own terms -- this proves the guard itself is
+  // correct without relying on that caller discipline.
+  it("couldImprove falls back to the direct SAN comparison (and so drops 'stronger idea') when fb is undefined but bestSan equals the played move", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Qh5", ply: 3 }),
+      undefined,
+      line({ ply: 3, pvSans: ["Qh5"], bestSan: "Qh5" })
+      // gameSans omitted entirely -- fb is undefined inside buildCouldImprove.
+    );
+    expect(note.couldImprove).toBeTruthy();
+    expect(note.couldImprove).not.toMatch(/stronger idea/);
+  });
+
+  it("couldImprove still shows 'stronger idea' when fb is undefined and bestSan genuinely differs from the played move", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Nxe5", ply: 3 }),
+      undefined,
+      line({ ply: 3, pvSans: ["Nf3"], bestSan: "Nf3" })
+      // gameSans omitted -- fb undefined, falls back to the direct SAN
+      // comparison, which correctly finds bestSan ("Nf3") !== tp.san ("Nxe5").
+    );
+    expect(note.couldImprove).toBeTruthy();
+    expect(note.couldImprove).toMatch(/stronger idea/);
   });
 });
 
@@ -397,5 +580,31 @@ describe("copy hygiene (lowercase, no em-dash, SAN preserved)", () => {
       undefined
     );
     assertCleanCopy(note.didWell!);
+  });
+});
+
+describe("missed-win note", () => {
+  const missedTp = tp({
+    rank: 3, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0,
+    lowConfidence: false, kind: "missed-win", mateIn: 1, missedCount: 5,
+  });
+  const missedLine = { ply: 55, pvSans: ["Qh8#"], bestSan: "Qh8#" };
+
+  it("names the mate, what she played, and the repeat count", () => {
+    const note = buildTurningPointNote(missedTp, undefined, missedLine, GAME150_SANS);
+    expect(note.couldImprove).toBe(
+      "you had checkmate in one here. your queen to h8 ends it on the spot. you played knight to f7, check instead. this happened 5 times this game."
+    );
+    expect(note.nextTime).toBe(NEXT_TIME_TIPS["missed-mate"]);
+    // The existing counterfactual + opportunity machinery serves this card unchanged:
+    expect(note.whatMayHaveHappened).toBe("if instead your queen to h8, checkmate.");
+    expect(note.opportunity).toContain("mate in 1");
+  });
+
+  it("degrades honestly with no line: states the miss without inventing the move", () => {
+    const note = buildTurningPointNote({ ...missedTp, missedCount: 1 }, undefined, undefined, GAME150_SANS);
+    expect(note.couldImprove).toBe(
+      "you had checkmate in one here. you played knight to f7, check instead."
+    );
   });
 });

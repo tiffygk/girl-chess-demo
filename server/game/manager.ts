@@ -5,11 +5,13 @@ import {
   createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict, getVerdicts,
   getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
   listFinishedGames, insertChatMessage, getChatMessages, getMoveEvalsByPlies,
+  setMoveHighlighted,
 } from "../store/db";
 import { classifyMove, isAdviceLevel, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
 import { computeHint as computeHintFacts, type HintFacts } from "../annotator/hint";
 import { moveEndpoints } from "../annotator/moveEndpoints";
+import { deriveContinuation } from "../annotator/continuation";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
 // Increment 3b: panel-ruled turning points + move classifications. Reads
 // STORED evals only (see persistGameSummary below) — never touches
@@ -25,8 +27,15 @@ import { classifyMoves } from "../annotator/classifications";
 import { assembleFactList, narrate as narrateFacts } from "../coach";
 import {
   chat as chatWithCoach, assembleChatFactList, CHAT_HISTORY_WINDOW, CHAT_MAX_LEN,
-  type ChatContext,
+  CHAT_TIMEOUT_MS, CHAT_REVIEW_BUDGET_MS,
+  type ChatContext, type ChatOutcome,
 } from "../coach/chat";
+// Wave D (coach-truth-speed round): the deterministic board/general router --
+// computed here, server-side, from the user's own message text plus whether
+// she opened chat from a specific on-screen moment (hasFocus below), never
+// left to the model to decide (the owner's explicit choice; see intent.ts's
+// header for why).
+import { classifyIntent } from "../coach/intent";
 import { claudeCliBackend } from "../coach/backends/claude-cli";
 import { ollamaBackend } from "../coach/backends/ollama";
 import { agentSdkBackend } from "../coach/backends/agent-sdk";
@@ -69,6 +78,42 @@ export const BACKEND_CACHE_TTL_MS = 30000;
 interface CachedBackend {
   backend: CoachBackend;
   cachedAt: number;
+}
+
+// B4a (2026-07-27, coach-truth-speed round): plain-language derivation of
+// ChatOutcome from the db's own games.result/end_reason columns -- the only
+// two columns finishGame ever writes (see store/db.ts). end_reason is
+// non-null only for the /adjudicate "end the game" button path
+// (decideAdjudication's "adjudicated" | "resigned" | "draw-adjudicated");
+// the older resign()/offerDraw()/natural-gameOver paths all write a null
+// end_reason, so a decisive result with no end_reason is disambiguated by
+// the LAST played san itself: chess.js appends "#" to a checkmating move,
+// so its absence means the game ended by the player's own resign() button
+// (v1's only other way a decisive game with no end_reason ends). Read-only
+// over already-persisted columns -- no engine call, no re-derivation of
+// game state.
+//
+// Exported 2026-07-28 (eval-instrument-repair round) so tools/coach-eval's
+// board-review arm derives its finished-game outcome through the SAME
+// function the product uses, against its own scratch db copy, instead of the
+// fabricated `1-0 by resignation` wrapper it used to synthesize. Still called
+// from exactly one place in production (chatAbout below); the export exists
+// for the harness, not for a second runtime call site.
+export function deriveChatOutcome(
+  result: string | null,
+  endReason: string | null,
+  lastSan: string | undefined,
+  finalPly: number
+): ChatOutcome | undefined {
+  if (!result) return undefined;
+  const winner: "you" | "mallow" | "draw" = result === "1-0" ? "you" : result === "0-1" ? "mallow" : "draw";
+  let how: string;
+  if (endReason === "adjudicated") how = "adjudicated win";
+  else if (endReason === "resigned") how = "adjudicated resignation";
+  else if (endReason === "draw-adjudicated") how = "adjudicated draw";
+  else if (lastSan?.endsWith("#")) how = "checkmate";
+  else how = winner === "draw" ? "draw" : "resignation";
+  return { result, winner, how, finalPly };
 }
 
 export class GameManager {
@@ -149,6 +194,14 @@ export class GameManager {
     this.coachBackends.set(pref ?? "claude", { backend, cachedAt: this.clock() });
   }
 
+  // Highlight-a-move (Task 1): a plain passthrough to the db accessor. No
+  // validation of gameId/ply here -- the route already checks shape before
+  // calling in, and setMoveHighlighted's UPDATE is a safe no-op against an
+  // unknown (game_id, ply) pair.
+  highlightMove(gameId: number, ply: number, highlighted: boolean): void {
+    setMoveHighlighted(gameId, ply, highlighted);
+  }
+
   private async opponentFor(elo: number): Promise<MaiaOpponent> {
     if (!this.opponents.has(elo)) {
       const o = new MaiaOpponent(elo);
@@ -199,6 +252,7 @@ export class GameManager {
           punishSan: t.punishSan ?? null, deltaP: t.deltaP, lowConfidence: t.lowConfidence, kind: t.kind,
           plyEnd: t.plyEnd ?? null, missedPunish: t.missedPunish ?? false,
           crossedAdvantage: t.crossedAdvantage ?? false,
+          mateIn: t.mateIn ?? null, missedCount: t.missedCount ?? null,
         })),
         TP_ALGO_VERSION
       );
@@ -236,11 +290,11 @@ export class GameManager {
     ok: true;
     turningPoints: TurningPoint[];
     classifications: { ply: number; classification: string }[];
-    moves: { ply: number; san: string }[];
+    moves: { ply: number; san: string; highlighted: boolean }[];
   } {
     let persisted = getTurningPoints(gameId);
     const rows = getGameMoves(gameId);
-    const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san }));
+    const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, highlighted: r.highlighted === 1 }));
 
     const persistedVersion = persisted.length > 0 ? (persisted[0].algo_version ?? 1) : TP_ALGO_VERSION;
     if (persisted.length > 0 && persistedVersion < TP_ALGO_VERSION) {
@@ -254,6 +308,7 @@ export class GameManager {
           punishSan: t.punishSan ?? null, deltaP: t.deltaP, lowConfidence: t.lowConfidence, kind: t.kind,
           plyEnd: t.plyEnd ?? null, missedPunish: t.missedPunish ?? false,
           crossedAdvantage: t.crossedAdvantage ?? false,
+          mateIn: t.mateIn ?? null, missedCount: t.missedCount ?? null,
         })),
         TP_ALGO_VERSION
       );
@@ -269,6 +324,7 @@ export class GameManager {
           lowConfidence: !!r.low_confidence, kind: r.kind,
           plyEnd: r.ply_end ?? undefined, missedPunish: !!r.missed_punish,
           crossedAdvantage: !!r.crossed_advantage,
+          mateIn: r.mate_in ?? undefined, missedCount: r.missed_count ?? undefined,
         })),
         classifications: rows
           .filter((m: any) => m.classification)
@@ -312,6 +368,7 @@ export class GameManager {
           punishSan: t.punishSan ?? null, deltaP: t.deltaP, lowConfidence: t.lowConfidence, kind: t.kind,
           plyEnd: t.plyEnd ?? null, missedPunish: t.missedPunish ?? false,
           crossedAdvantage: t.crossedAdvantage ?? false,
+          mateIn: t.mateIn ?? null, missedCount: t.missedCount ?? null,
         })),
         TP_ALGO_VERSION
       );
@@ -814,14 +871,21 @@ export class GameManager {
     gameId: number,
     // Task 5 (F17): backendPref threaded through exactly like narrate()
     // above — same pickCoachBackend seam, same per-pref cache.
-    body: { message: string; context: ChatContext; backendPref?: string }
+    body: { message: string; context: ChatContext; backendPref?: string },
+    // B-stream (2026-07-27, coach-truth-speed round): additive optional 3rd
+    // param, so every pre-this-wave caller (index.ts's JSON route, every
+    // manager.test.ts call) is untouched and still gets today's behavior.
+    // Threaded straight through to chatWithCoach's own opts below — this
+    // method has no opinion about SSE at all, only about forwarding the two
+    // hooks to the one place (chat.ts) that actually owns the attempt loop.
+    streamOpts?: { onDelta?: (text: string) => void; onRedraft?: () => void }
   ): Promise<
     | { ok: false; error?: string }
     | {
         ok: true;
         text: string;
         source: "model" | "template";
-        cause?: "backend-down" | "templates-only" | "timeout";
+        cause?: "backend-down" | "templates-only" | "timeout" | "validation-failed" | "off-topic";
         traceId: number;
       }
   > {
@@ -837,18 +901,43 @@ export class GameManager {
     const turningPoints = finished
       ? getTurningPoints(gameId).map((r: any) => ({ ply: r.ply, san: r.san, label: r.label, punishSan: r.punish_san ?? undefined }))
       : undefined;
+    // B4a (2026-07-27, coach-truth-speed round): the game-over fact, derived
+    // from the db's own result/end_reason columns -- never from
+    // body.context.mode (same "the db is the source of truth" discipline
+    // `finished` above already follows). Absent (undefined) while the game
+    // is still live, so a live chat's fact list carries no outcome at all.
+    const outcome: ChatOutcome | undefined = finished
+      ? deriveChatOutcome(game.result, game.end_reason ?? null, gameMoves[gameMoves.length - 1]?.san, gameMoves.length)
+      : undefined;
     // Task 3 (R1a, fact-gap round): moveRows already carries the judge's
     // persisted eval_cp/eval_mate/best_move(uci)/pv(space-joined uci) per
     // ply -- convert best_move/pv to SAN by replaying the SAME way
-    // getTurningLines does (reusing pvLine below, no new logic), from the
-    // position right after each ply (fenAfter), which is exactly what
-    // attachEval evaluated. Read-only over already-persisted rows -- no
-    // evaluator call.
+    // getTurningLines does (reusing pvLine below, no new logic).
+    //
+    // 2026-07-28 (off-by-one fix, coach-truth-speed round): a ply's OWN
+    // best_move/pv is the eval of the position AFTER that ply was played
+    // (see record()'s fenAfter/attachEval pairing above -- attachEval(ply)
+    // persists fenAfter(ply)'s eval), so it names the best move for
+    // whoever is to move NEXT, i.e. ply+1 -- not an alternative to the
+    // move just played at ply. The old code attached each row's own
+    // best_move/pv to its OWN ply, which named the best REPLY to that move,
+    // not the best move INSTEAD of it. Proven against real game 150: the
+    // persisted eval for ply 54 (Kh6) has best_move a8h8 (Qh8#, an
+    // immediate mate) -- that is the best move for ply 55 (White's Nf7+),
+    // not for ply 54 itself (a Black move; Qh8# is a White queen move and
+    // could never have been "instead of Kh6"). Fix: track the PRIOR row's
+    // eval and attach it to the CURRENT ply, replayed from fenBefore (the
+    // position the current ply's own move was chosen from, which is
+    // exactly what the prior ply's attachEval evaluated as its fenAfter).
+    // Ply 1 has no prior row, so its bestSan/pvSans are an honest gap
+    // (null/[]) rather than a guess -- there is no ply-0 eval to draw from.
     const perPlyChess = new Chess();
+    let priorEval: { bestMove: string | null; pv: string | null } | undefined;
     const perPlyAnalysis = moveRows.map((r: any) => {
+      const fenBefore = perPlyChess.fen();
       const mv = perPlyChess.move(r.san);
-      const fenAfter = perPlyChess.fen();
-      const { pvSans, bestSan } = this.pvLine(fenAfter, { bestMove: r.best_move ?? null, pv: r.pv ?? null });
+      const { pvSans, bestSan } = this.pvLine(fenBefore, priorEval);
+      priorEval = { bestMove: r.best_move ?? null, pv: r.pv ?? null };
       return {
         ply: r.ply as number,
         san: mv.san,
@@ -856,9 +945,27 @@ export class GameManager {
         evalMate: (r.eval_mate ?? null) as number | null,
         bestSan: bestSan ?? null,
         pvSans,
+        // Forward-prediction round (2026-07-28): the replay-proven claim for
+        // this ply's line -- deterministic, chess.js only, derived from the
+        // exact fenBefore + pvSans pair pvLine just replayed. undefined when
+        // nothing is provable; JSON.stringify drops the key entirely then.
+        then: deriveContinuation(fenBefore, pvSans),
       };
     });
-    const facts = assembleChatFactList(gameMoves, body.context, turningPoints, perPlyAnalysis);
+    // Highlight-a-move (Task 8): straight off the same moveRows Task 1
+    // widened with `highlighted` -- no extra query.
+    const highlightedPlies = moveRows.filter((r: any) => r.highlighted === 1).map((r: any) => r.ply as number);
+    const facts = assembleChatFactList(
+      gameMoves,
+      body.context,
+      turningPoints,
+      perPlyAnalysis,
+      {
+        status: finished ? "finished" : "in-progress",
+        outcome,
+      },
+      highlightedPlies.length > 0 ? highlightedPlies : undefined
+    );
 
     const historyRows = getChatMessages(gameId, CHAT_HISTORY_WINDOW);
     const history = historyRows.map((r: any) => ({ role: r.role as "user" | "coach", text: r.text }));
@@ -871,9 +978,50 @@ export class GameManager {
     // recorded so far" agree while the game is still in progress) -- so one
     // db-derived value covers both, without ever touching `this.games`.
     const ply = gameMoves.length;
-    const result = await chatWithCoach(message, history, facts, backend, { gameId, ply, kind: "chat" });
+    // B1 (2026-07-27, coach-truth-speed round), owner's verbatim ask: once
+    // the game is over she is no longer waiting on a move, so a finished
+    // game gets the longer TOTAL budget for harder review questions; a live
+    // game keeps the budget she already likes. Computed here, server-side,
+    // from the SAME `finished` the outcome fact above uses -- never from
+    // body.context.mode, which is a client claim this method already
+    // distrusts for the outcome fact.
+    const budgetMs = finished ? CHAT_REVIEW_BUDGET_MS : CHAT_TIMEOUT_MS;
+    // Wave D: hasFocus mirrors chatFocus.ts's own reconciled focus state --
+    // she opened chat from a specific on-screen moment (the hint ladder or a
+    // turning-point card) whenever either focus field is present on the
+    // context this request carries. That alone routes "board" regardless of
+    // the message text (classifyIntent's own top-priority rule).
+    // Wave F (review fix): hasPendingMove is the SAME signal that was
+    // already being ignored (review.md finding 1's root cause) -- she picked
+    // up a piece and dropped it on the board but hasn't confirmed, which is
+    // just as much "pointing at something" as an open hint/turning-point
+    // card. status is the exact same finished/in-progress value already
+    // derived above for the outcome fact and the review budget, never a
+    // second, independently-computed guess.
+    const hasFocus = !!(body.context.hintFocus || body.context.turningPointFocus);
+    const hasPendingMove = !!body.context.pendingMove;
+    const intent = classifyIntent(message, { hasFocus, hasPendingMove, status: finished ? "finished" : "in-progress" });
+    const result = await chatWithCoach(message, history, facts, backend, { gameId, ply, kind: "chat" }, {
+      budgetMs,
+      intent,
+      onDelta: streamOpts?.onDelta,
+      onRedraft: streamOpts?.onRedraft,
+    });
 
-    insertChatMessage({ gameId, role: "coach", text: result.text, traceId: result.traceId });
+    // B3b (2026-07-27, coach-truth-speed round): a failed (template) reply
+    // is no longer persisted into chat_messages -- only a genuine model
+    // answer joins the history CHAT_HISTORY_WINDOW re-feeds the coach next
+    // turn. The advice_trace below still writes unconditionally (the Lab
+    // loses nothing), and the USER's row above already persisted regardless
+    // of what comes back, so an unanswered question still reads honestly as
+    // "asked, no reply yet" rather than vanishing. Measured ground truth
+    // (game 146): a failed reply's own text sometimes echoed back INTO a
+    // later prompt ("that one took me longer than i had", trace 98) because
+    // the coach's own apology was persisted as a real coach turn -- this is
+    // the fix for that doom loop, not just tidiness.
+    if (result.source === "model") {
+      insertChatMessage({ gameId, role: "coach", text: result.text, traceId: result.traceId });
+    }
 
     // Task 8 (inc 3.95, Fix 1), owner-ruled: chat.ts's own cause is always
     // "backend-down" whenever backend.generate() throws — true both for a
@@ -892,7 +1040,7 @@ export class GameManager {
     // chat.ts's cause is "backend-down" (a synchronous no-probe throw from
     // noBackend.generate() is never a timeout), so a real timeout is never
     // misreported as a deliberate voice pick either.
-    const cause: "backend-down" | "templates-only" | "timeout" | undefined =
+    const cause: "backend-down" | "templates-only" | "timeout" | "validation-failed" | "off-topic" | undefined =
       result.cause === "backend-down" && body.backendPref === "template" ? "templates-only" : result.cause;
 
     return cause

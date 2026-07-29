@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Piece, type PieceColor, type PieceKind } from "../board/pieces";
 import { pieceValue } from "./captures";
 
@@ -19,6 +20,12 @@ interface PlayerBarProps {
   bark?: string | null;
   /** Rating to surface inside the name plate; null/undefined renders no rating. */
   elo?: number | null;
+  /** Highlight-a-move (Task 3): the bar-pocket slot — a sibling control
+   *  rendered beside the chip (her bar only). Lives here so the popover
+   *  tray's absolute anchor resolves against .player-bar (the bar is
+   *  position: relative), per the D2 mockup's "8px above the bar's right
+   *  edge". Never rendered for mallow's bar. */
+  pocket?: ReactNode;
 }
 
 // Stable keys independent of display position: pairing each captured piece
@@ -44,6 +51,7 @@ export function PlayerBar({
   moveNumber,
   bark,
   elo,
+  pocket,
 }: PlayerBarProps) {
   const label = seat === "mallow" ? "pieces mallow has captured" : "pieces you've captured";
   const sorted = sortedWithKeys(captured);
@@ -97,6 +105,7 @@ export function PlayerBar({
         {materialLead != null && <span className="bar-material-badge">+{materialLead}</span>}
       </div>
       <div className="bar-chip-slot">
+        {pocket}
         {chip && (
           <span
             key={chip}
