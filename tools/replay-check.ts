@@ -47,6 +47,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Chess } from "chess.js";
+import Database from "better-sqlite3";
 import {
   openDb,
   getGameMoves,
@@ -66,11 +67,12 @@ import { debriefBullets } from "../src/review/debriefBullets";
 import { buildTurningPointNote } from "../src/review/turningPointNote";
 import { nearlyBarePlies } from "../src/review/phase";
 import type { TurningLine, SummaryMove } from "../src/game/api";
-import { resolveRealDbPath, copyScratchDb, sha256File, reconstructPvLine } from "./truth-check";
+import { resolveRealDbPath, copyScratchDb, reconstructPvLine } from "./truth-check";
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, "..");
-const REAL_DB_PATH = resolveRealDbPath(REPO_ROOT);
+const dbResolution = resolveRealDbPath(REPO_ROOT);
+const REAL_DB_PATH = dbResolution.path;
 const SCRATCH_DB_PATH = path.join(TOOL_DIR, ".replay-check-scratch", "girlchess.db");
 
 // -- HARD invariant 1 (rca B5, root cause 7 -- the B1 check) ----------------
@@ -135,11 +137,24 @@ export const KNOWN_EM_DASH_TRACES = new Set([46, 94, 123]); // rca F
 // exactly one -- trace 118 -- flags a real pre/post-move adjudication
 // mismatch. See report-1.md for the verbatim run this was read off of.
 export const KNOWN_DEFENSE_CLAIM_TRACES = new Set<number>([118]);
+// Fix-wave F1 (2026-07-29): this was a per-GAME allowlist -- skipping a
+// listed game id from ALL 14 debriefInvariants.ts rules, not just the one
+// rule it is known to break. Concrete failure this caused: once Task 2's
+// unconverted detector landed, game 151 started ALSO firing
+// reassurance-vs-detector and unconverted-silent (see below), and the
+// blanket per-game skip hid both from the gate -- game 151, the one game
+// this whole round is about repairing, had become the LEAST-checked game
+// in the corpus. Per-(game, rule) fixes the granularity: a listed game is
+// still checked by the other 13 rules, and a rule not named here for that
+// game id fails the gate like any other violation.
+//
+// Format: `${gameId}:${rule}`.
+//
 // Task 0's dev-time leg run over her real history: tonight's game 151
-// legitimately fails checkDebriefOutput (win-copy-on-non-win) until Task 2
-// (unconverted detection) and Task 3 (debrief copy) land. Task 3 empties
-// this allowlist for good -- an entry ever added again after that is a
-// regression being hidden, not a known gap being tracked.
+// legitimately fails checkDebriefOutput's win-copy-on-non-win until Task 3
+// (debrief copy) lands. Task 3 empties this allowlist for good -- an entry
+// ever added again after that is a regression being hidden, not a known
+// gap being tracked.
 //
 // Game 140 (measured 2026-07-29, Step 5, reported to the controller -- NOT
 // a silent allowlist add): a genuine SEPARATE pre-existing instance of the
@@ -154,7 +169,30 @@ export const KNOWN_DEFENSE_CLAIM_TRACES = new Set<number>([118]);
 // episode -- true for ANY quiet draw with no swing, not only game 151's.
 // Left here, documented, for Task 3 (or a follow-up) to fix generally and
 // then remove -- see report-1.md for the full finding.
-export const KNOWN_DEBRIEF_VIOLATION_GAMES = new Set([151, 140]);
+//
+// Game 151's second and third entries (measured 2026-07-29, fix wave,
+// after Task 2 landed and emptied KNOWN_UNCONVERTED_GAMES): now that
+// unconverted detection runs in the fresh pipeline, game 151 predictably
+// (the brief's own Step 5 note called this exact rule) also fires
+// reassurance-vs-detector (the debrief's reassurance copy sits next to a
+// never-miss detector firing) and unconverted-silent (the unconverted
+// point at ply 43 has no bullet naming it). Both are the SAME underlying
+// gap Task 3 is fixing, not a new independent defect -- reported here,
+// not silently widened past what is actually true today. All three
+// entries for 151 are Task 3's to clear.
+export const KNOWN_DEBRIEF_VIOLATIONS = new Set<string>([
+  "151:win-copy-on-non-win",
+  "151:reassurance-vs-detector",
+  "151:unconverted-silent",
+  "140:win-copy-on-non-win",
+]);
+
+// True iff (gameId, rule) is a documented, dated, currently-true known gap
+// -- never a bare game id. Exported so tools/replay-check.test.ts can prove
+// a rule NOT on a listed game's allowlist still fails the gate (F1).
+export function isKnownDebriefViolation(gameId: number, rule: string): boolean {
+  return KNOWN_DEBRIEF_VIOLATIONS.has(`${gameId}:${rule}`);
+}
 
 // A trace counts as a would-be regen when validateChat fails on it AND its
 // violations are not all "truth-supplying" -- a classification Task 5
@@ -167,6 +205,35 @@ function isWouldBeRegen(result: { ok: true } | { ok: false; violations: string[]
   return !result.ok;
 }
 export const REGEN_RATE_MAX = 0.15;
+
+// Fix-wave F3 (2026-07-29): `regenCandidates > 0 ? regenCount / regenCandidates
+// : 0` reads an EMPTY denominator as rate 0 -- a perfect score for having
+// checked nothing. The denominator is `kind='chat' AND source='model'`
+// (see the query below); Task 5 is precisely the task likely to change
+// what counts as a model-sourced chat trace, and if its WHERE clause stops
+// matching, this leg silently stops proving anything while still printing
+// PASS. REGEN_MIN_CANDIDATES is a floor, not a baseline -- today's real
+// count is 39; this only trips if the denominator collapses toward zero.
+export const REGEN_MIN_CANDIDATES = 5;
+
+// Pure, exported so tools/replay-check.test.ts can prove an empty or
+// implausibly small denominator fails loudly rather than passing silently.
+export function regenLegOk(
+  candidates: number,
+  count: number
+): { ok: boolean; rate: number; reason?: string } {
+  if (candidates < REGEN_MIN_CANDIDATES) {
+    return {
+      ok: false,
+      rate: candidates > 0 ? count / candidates : 0,
+      reason: `denominator too small (${candidates} < REGEN_MIN_CANDIDATES=${REGEN_MIN_CANDIDATES}) -- an empty or collapsed query must not read as a pass`,
+    };
+  }
+  const rate = count / candidates;
+  return rate <= REGEN_RATE_MAX
+    ? { ok: true, rate }
+    : { ok: false, rate, reason: `rate ${(rate * 100).toFixed(1)}% exceeds REGEN_RATE_MAX ${(REGEN_RATE_MAX * 100).toFixed(0)}%` };
+}
 
 interface RawTurningPointRow {
   rank: 1 | 2 | 3 | 4;
@@ -227,12 +294,58 @@ function buildTurningLines(
   });
 }
 
+// Fix-wave F5 (2026-07-29): a sha256 before/after of her LIVE db throws the
+// moment she plays a move and SQLite folds its write-ahead log into the
+// main file -- no data touched at all, hash moves anyway. gate.ts's own
+// header documents removing exactly this pattern from the owner-db check
+// for the same reason; replay-check reintroduced it. Fixed the same way
+// gate.ts's checkOwnerDb does it and the project's standing rule requires:
+// COUNT games and moves, ask sqlite for its own integrity_check, readonly,
+// never a hash. Counts only ever go UP while she plays -- a real isolation
+// violation (this script writing to, or corrupting, her live db) is a
+// DECREASE or a broken integrity_check, never a same-or-higher count.
+export interface DbCountSnapshot {
+  games: number;
+  moves: number;
+  integrity: string;
+}
+
+export function countDbSnapshot(p: string): DbCountSnapshot {
+  const db = new Database(p, { readonly: true });
+  try {
+    const integrity = (db.pragma("integrity_check") as { integrity_check: string }[])[0]
+      .integrity_check;
+    const games = (db.prepare("SELECT COUNT(*) c FROM games").get() as { c: number }).c;
+    const moves = (db.prepare("SELECT COUNT(*) c FROM moves").get() as { c: number }).c;
+    return { games, moves, integrity };
+  } finally {
+    db.close();
+  }
+}
+
+// Pure, exported for tools/replay-check.test.ts. Returns a reason string
+// (not a throw) so the test can assert on the message without wrapping
+// every case in try/catch.
+export function checkDbIntact(before: DbCountSnapshot, after: DbCountSnapshot): string | undefined {
+  if (after.integrity !== "ok") {
+    return `data/girlchess.db integrity_check returned "${after.integrity}" after this run -- investigate immediately`;
+  }
+  if (after.games < before.games || after.moves < before.moves) {
+    return (
+      `data/girlchess.db lost rows during this run (games ${before.games} -> ${after.games}, ` +
+      `moves ${before.moves} -> ${after.moves}) -- isolation was violated. Investigate immediately; do not trust this run's results.`
+    );
+  }
+  return undefined;
+}
+
 async function main() {
+  console.log(`[replay-check] db source: ${REAL_DB_PATH} (${dbResolution.source})`);
   if (!fs.existsSync(REAL_DB_PATH)) {
     throw new Error(`real db not found at ${REAL_DB_PATH} -- nothing to copy from`);
   }
 
-  const beforeHash = sha256File(REAL_DB_PATH);
+  const beforeSnapshot = countDbSnapshot(REAL_DB_PATH);
   copyScratchDb(REAL_DB_PATH, SCRATCH_DB_PATH);
   console.log(`[replay-check] copied ${REAL_DB_PATH} -> ${SCRATCH_DB_PATH}`);
 
@@ -257,6 +370,13 @@ async function main() {
   let watchParityMallow = 0;
   const watchMirrorCases: number[] = [];
 
+  // F6: "games examined (finished)" was the raw query count, which
+  // includes games that are immediately `continue`d below for having zero
+  // moves -- overstating actual coverage by exactly that many. Track both
+  // explicitly and print them separately.
+  let replayedCount = 0;
+  let skippedZeroMoveCount = 0;
+
   for (const game of games) {
     const gameId = game.id;
     const movesRows = getGameMoves(gameId) as {
@@ -266,7 +386,11 @@ async function main() {
       eval_mate: number | null;
       classification: string | null;
     }[];
-    if (movesRows.length === 0) continue;
+    if (movesRows.length === 0) {
+      skippedZeroMoveCount++;
+      continue;
+    }
+    replayedCount++;
 
     const moves: MoveEval[] = movesRows.map((r) => ({
       ply: r.ply,
@@ -328,8 +452,11 @@ async function main() {
     const violations = checkDebriefOutput({ bullets, notes }, facts);
     if (violations.length > 0) {
       debriefViolationsByGame.set(gameId, violations.map((v) => `${v.rule} (${v.where}): ${v.message}`));
-      if (!KNOWN_DEBRIEF_VIOLATION_GAMES.has(gameId)) {
-        for (const v of violations) {
+      // F1: per-(game, rule), not per-game -- a rule this game id is not
+      // documented to break still fails the gate even if the game id
+      // appears elsewhere in KNOWN_DEBRIEF_VIOLATIONS for a DIFFERENT rule.
+      for (const v of violations) {
+        if (!isKnownDebriefViolation(gameId, v.rule)) {
           debriefViolations.push(`game ${gameId}: ${v.rule} (${v.where}): ${v.message}`);
         }
       }
@@ -403,7 +530,7 @@ async function main() {
     const result = validateChat(row.output, facts);
     if (isWouldBeRegen(result)) regenCount++;
   }
-  const regenRate = regenCandidates > 0 ? regenCount / regenCandidates : 0;
+  const regenLeg = regenLegOk(regenCandidates, regenCount);
 
   // -- WATCH: even/odd verdict-parity join over turning_points x verdicts --
   // Feeds the visual track's Task A6 ledger. Printed only, never failing.
@@ -419,16 +546,19 @@ async function main() {
   }
   void getVerdicts; // imported for the join's own schema shape; the raw SQL above does the actual read
 
-  const afterHash = sha256File(REAL_DB_PATH);
-  if (afterHash !== beforeHash) {
-    throw new Error(
-      `data/girlchess.db changed during this run (sha256 before=${beforeHash} after=${afterHash}) -- isolation was violated. Investigate immediately; do not trust this run's results.`
-    );
+  const afterSnapshot = countDbSnapshot(REAL_DB_PATH);
+  const intactReason = checkDbIntact(beforeSnapshot, afterSnapshot);
+  if (intactReason) {
+    throw new Error(intactReason);
   }
-  console.log(`[replay-check] real db unchanged (sha256 ${afterHash.slice(0, 12)}...)`);
+  console.log(
+    `[replay-check] real db intact (games ${beforeSnapshot.games} -> ${afterSnapshot.games}, moves ${beforeSnapshot.moves} -> ${afterSnapshot.moves}, integrity ${afterSnapshot.integrity})`
+  );
 
   console.log("\n[replay-check] ---- report ----");
   console.log(`games examined (finished): ${games.length}`);
+  console.log(`  replayed: ${replayedCount}`);
+  console.log(`  skipped (zero moves): ${skippedZeroMoveCount}`);
   console.log(`advice_traces examined: ${traceRows.length}`);
 
   console.log(`\nunconverted violations: ${unconvertedViolations.length} (must be 0, KNOWN_UNCONVERTED_GAMES excluded)`);
@@ -443,7 +573,7 @@ async function main() {
   console.log(`\ndefence-claim violations: ${defenseClaimViolations.length} (must be 0, KNOWN_DEFENSE_CLAIM_TRACES excluded)`);
   for (const id of defenseClaimViolations) console.log(`  trace ${id}`);
 
-  console.log(`\ndebrief-output violations: ${debriefViolations.length} (must be 0, KNOWN_DEBRIEF_VIOLATION_GAMES excluded)`);
+  console.log(`\ndebrief-output violations: ${debriefViolations.length} (must be 0, KNOWN_DEBRIEF_VIOLATIONS excluded per game:rule)`);
   for (const v of debriefViolations) console.log(`  ${v}`);
   if (debriefViolationsByGame.size > 0) {
     console.log("debrief-output violations by game (including allowlisted):");
@@ -453,8 +583,9 @@ async function main() {
   }
 
   console.log(
-    `\nwould-be regen rate: ${(regenRate * 100).toFixed(1)}% (${regenCount}/${regenCandidates}) -- must be <= ${(REGEN_RATE_MAX * 100).toFixed(0)}%`
+    `\nwould-be regen rate: ${(regenLeg.rate * 100).toFixed(1)}% (${regenCount}/${regenCandidates}) -- must be <= ${(REGEN_RATE_MAX * 100).toFixed(0)}%, denominator floor ${REGEN_MIN_CANDIDATES}`
   );
+  if (regenLeg.reason) console.log(`  FAIL: ${regenLeg.reason}`);
 
   console.log("\nWATCH (printed only, never asserted):");
   console.log(`  verdict-parity join: her(odd) ${watchParityHer} / mallow(even) ${watchParityMallow}`);
@@ -470,7 +601,7 @@ async function main() {
     emDashViolations.length === 0 &&
     defenseClaimViolations.length === 0 &&
     debriefViolations.length === 0 &&
-    regenRate <= REGEN_RATE_MAX;
+    regenLeg.ok;
 
   console.log(`\n[replay-check] VERDICT: ${ok ? "PASS" : "FAIL"}`);
   process.exit(ok ? 0 : 1);
