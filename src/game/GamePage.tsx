@@ -570,6 +570,18 @@ export function GamePage() {
     };
   }, [gameOver, gameId]);
 
+  // Game-151 round (visual-rca 1): every ending lands on screen. Win/loss
+  // only survived the fold because confetti/storm are fixed-position
+  // overlays; the panel itself is the guarantee now. The 80ms defer lets
+  // the panel mount before the scroll runs.
+  useEffect(() => {
+    if (!gameOver) return;
+    const id = window.setTimeout(() => {
+      document.querySelector(".game-over .result")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+    return () => window.clearTimeout(id);
+  }, [gameOver]);
+
   // Increment 3.91 (Task 4): fetch the persisted per-turning-point PV/best-
   // move lines once per debrief — live-just-finished game or a reviewed
   // past game, same "which debrief is active" id as activeReviewMoves below
@@ -1934,7 +1946,7 @@ export function GamePage() {
   };
 
   return (
-    <div className="game-page">
+    <div className={"game-page" + (gameOver || reviewGame ? " postgame" : "")}>
       {fallback && <div className="fallback-banner">fallback opponents (lc0 unavailable)</div>}
       <header className="header-band">
         <div className="header-lockup">
