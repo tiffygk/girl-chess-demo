@@ -27,16 +27,17 @@
 
 import { Chess } from "chess.js";
 import { detectMissedWins } from "./missedWins";
+import { detectUnconverted } from "./unconverted";
 
 export interface TurningPoint {
-  rank: 1 | 2 | 3 | 4 | 5;
+  rank: 1 | 2 | 3 | 4 | 5 | 6;
   ply: number;
   san: string;
   label: string; // exact lowercase vocabulary from the ruling
   punishSan?: string; // the "you punished with {san}" suffix source, when the guard passes
   deltaP: number; // signed, white perspective
   lowConfidence: boolean; // null-gap > TP_DEDUP_PLIES plies behind this point
-  kind: "swing" | "backfill" | "episode" | "missed-win";
+  kind: "swing" | "backfill" | "episode" | "missed-win" | "unconverted";
   // debrief-v2, dedup fix: set on HER kept swing when the preceding kept
   // point in the same dedup cluster is an opponent-error label and her
   // swing is negative — the "missed punish" shape (she had a winning
@@ -67,6 +68,9 @@ export interface TurningPoint {
   // floor).
   mateIn?: number;
   missedCount?: number;
+  // Game-151 round: set only when kind === "unconverted" -- how the game
+  // actually ended, re-derived from the SANs (see unconverted.ts).
+  endKind?: string;
 }
 
 // debrief-v2: bumped when the turning-point algorithm changes shape in a way
@@ -81,7 +85,10 @@ export interface TurningPoint {
 // v5 = missed-win points (2026-07-28) — a game where she let a forced
 // mate-in-1 slip gains one "missed mate" point on heal, which is exactly
 // what retro-fixes games 149/150's debriefs the next time they're opened.
-export const TP_ALGO_VERSION = 5;
+// v6: game-151 round, unconverted-win point — a game that ended level or
+// lost from a held winning eval (result vs eval, invisible to every
+// delta-based detector above) gains one "unconverted win" point on heal.
+export const TP_ALGO_VERSION = 6;
 
 // Owner-calibratable: cp -> winprob steepness. This is the same constant as
 // chess.com's published win% formula (0.00368208, here to 3 sig figs per
@@ -598,7 +605,7 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   const episode = detectKingPressureEpisode(moves, series);
   if (episode) {
     points.push({
-      rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5,
+      rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5 | 6,
       ply: episode.plyStart,
       plyEnd: episode.plyEnd,
       san: episode.san,
@@ -619,7 +626,7 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
     const anchor = missedEvents.find((e) => !points.some((p) => p.ply === e.ply));
     if (anchor) {
       points.push({
-        rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5,
+        rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5 | 6,
         ply: anchor.ply,
         san: anchor.san,
         label: "missed mate",
@@ -628,6 +635,51 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
         kind: "missed-win",
         mateIn: anchor.mateIn,
         missedCount: missedEvents.length,
+      });
+    }
+  }
+
+  // Game-151 round: result vs eval. A game ending level (or lost) from a
+  // held winning evaluation is invisible to the swing detector by
+  // construction -- detected from the final readings vs the recorded
+  // result, appended as one point per game so every turning-point surface
+  // (cards, arrows, try-the-line, notes, chat full-detail) lights up with
+  // no new plumbing.
+  const unconverted = detectUnconverted(moves, finalResult);
+  if (unconverted) {
+    // Owner ruling #2 (2026-07-29): the bullet must name the moment AND
+    // what she had -- "at move 21 you had mate in nine". Prefer the first
+    // moment SHE faced a forced mate inside the winning run: a row at even
+    // ply e holds the eval of the position she faces at ply e+1 (white to
+    // move there). Falls back to the run start when no mate reading exists.
+    let anchorPly = unconverted.ply;
+    let mateAtAnchor: number | null = null;
+    for (const m of [...moves].sort((a, b) => a.ply - b.ply)) {
+      if (m.ply < unconverted.ply - 1 || m.ply % 2 !== 0) continue;
+      if (m.evalMate != null && m.evalMate >= 1) {
+        anchorPly = m.ply + 1;
+        mateAtAnchor = m.evalMate;
+        break;
+      }
+    }
+    // On collision with an existing point, fall back to the final evaluated
+    // ply (never two cards on one ply -- the missed-win collision rule).
+    if (points.some((p) => p.ply === anchorPly)) {
+      const lastEvaluated = [...moves].reverse().find((m) => m.evalCp != null || m.evalMate != null);
+      anchorPly = lastEvaluated?.ply ?? anchorPly;
+    }
+    if (!points.some((p) => p.ply === anchorPly)) {
+      const anchorSan = moves.find((m) => m.ply === anchorPly)?.san ?? unconverted.san;
+      points.push({
+        rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5 | 6,
+        ply: anchorPly,
+        san: anchorSan,
+        label: "unconverted win",
+        deltaP: 0, // never fabricated to be sortable -- force-slotted downstream
+        lowConfidence: false,
+        kind: "unconverted",
+        endKind: unconverted.endKind,
+        mateIn: mateAtAnchor ?? undefined, // reuses the missed-win column; feeds "you had mate in nine"
       });
     }
   }

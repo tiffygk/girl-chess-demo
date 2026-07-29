@@ -496,14 +496,14 @@ export function logHint(
 // 4 (the episode card sits after up to 3 swing/backfill cards) — mirrors
 // TP_ALGO_VERSION 2's additive shape exactly.
 export interface TurningPoint {
-  rank: 1 | 2 | 3 | 4 | 5;
+  rank: 1 | 2 | 3 | 4 | 5 | 6;
   ply: number;
   san: string;
   label: string;
   punishSan?: string;
   deltaP: number;
   lowConfidence: boolean;
-  kind: "swing" | "backfill" | "episode" | "missed-win";
+  kind: "swing" | "backfill" | "episode" | "missed-win" | "unconverted";
   missedPunish?: boolean;
   plyEnd?: number;
   // 2026-07-22: mirrors server TurningPoint's crossedAdvantage — see that
@@ -515,6 +515,10 @@ export interface TurningPoint {
   // had; missedCount = how many times it slipped this game.
   mateIn?: number;
   missedCount?: number;
+  // Game-151 round (2026-07-29): mirrors the server TurningPoint — set
+  // only on kind "unconverted" points. How the game actually ended
+  // (repetition, stalemate, fifty moves, called early).
+  endKind?: string;
 }
 
 export interface MoveClassification {

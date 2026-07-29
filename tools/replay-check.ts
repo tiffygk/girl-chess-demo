@@ -57,6 +57,7 @@ import {
 import { moveEndpoints } from "../server/annotator/moveEndpoints";
 import { computeTurningPoints, buildDeltaSeries, type MoveEval } from "../server/annotator/turningPoints";
 import { detectMissedWins, MISSED_MATE_DEPTH } from "../server/annotator/missedWins";
+import { UNCONVERTED_MIN_P } from "../server/annotator/unconverted";
 import { classifyMoves } from "../server/annotator/classifications";
 import { checkDefenseClaims, postMoveFen } from "../server/coach/defenseClaims";
 import { validateChat, type ChatFactList } from "../server/coach/chat";
@@ -73,10 +74,11 @@ const REAL_DB_PATH = resolveRealDbPath(REPO_ROOT);
 const SCRATCH_DB_PATH = path.join(TOOL_DIR, ".replay-check-scratch", "girlchess.db");
 
 // -- HARD invariant 1 (rca B5, root cause 7 -- the B1 check) ----------------
-// No finished game may end with final white winprob >= UNCONVERTED_GATE_MIN_P
+// No finished game may end with final white winprob >= UNCONVERTED_MIN_P
 // and a result other than 1-0 without an unconverted turning point
-// explaining it.
-export const UNCONVERTED_GATE_MIN_P = 0.85;
+// explaining it. Task 2 (2026-07-29): the threshold is imported from the
+// detector itself (server/annotator/unconverted.ts), never redeclared here,
+// so the gate and the detector cannot drift onto different numbers.
 
 export function unconvertedInvariant(
   moves: MoveEval[],
@@ -90,7 +92,7 @@ export function unconvertedInvariant(
   for (let i = series.length - 1; i >= 0; i--) {
     if (series[i]) { last = series[i]!; break; }
   }
-  if (!last || last.p < UNCONVERTED_GATE_MIN_P) return null;
+  if (!last || last.p < UNCONVERTED_MIN_P) return null;
   if (points.some((p) => p.kind === "unconverted")) return null;
   return `final winprob ${last.p.toFixed(2)} with result ${result} and no unconverted point`;
 }
@@ -126,7 +128,7 @@ export function missedMateInvariant(moves: MoveEval[], events: { ply: number }[]
 // after this ships -- that is the point. A count baseline would false-fail
 // the moment she plays (new traces appear mid-round) and could mask a new
 // leak.
-export const KNOWN_UNCONVERTED_GAMES = new Set([151]); // the game-151 gap itself. Task 2 REMOVES this entry; it must never grow.
+export const KNOWN_UNCONVERTED_GAMES = new Set<number>([]); // emptied 2026-07-29: the detector ships; any entry ever added here again is a regression being hidden.
 export const KNOWN_EM_DASH_TRACES = new Set([46, 94, 123]); // rca F
 // Measured 2026-07-29 (Step 5): 10 of 123 advice_traces rows carry the
 // pending-move claim shape (context.pendingMove + currentFen); of those,

@@ -59,6 +59,7 @@ describe("toTurningPoint", () => {
       ply_end: null,
       missed_punish: 0,
       crossed_advantage: 1,
+      end_kind: null,
     };
     expect(toTurningPoint(row)).toEqual({
       rank: 1,
@@ -88,6 +89,7 @@ describe("toTurningPoint", () => {
       ply_end: null,
       missed_punish: null,
       crossed_advantage: null,
+      end_kind: null,
     };
     const tp = toTurningPoint(row);
     expect(tp.punishSan).toBeUndefined();
