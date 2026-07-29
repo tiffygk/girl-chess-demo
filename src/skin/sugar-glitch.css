@@ -1242,6 +1242,29 @@
 .gc-app .wt-melt-top { position: relative; clip-path: inset(0 -3px 35% -3px); }
 .gc-app .wt-melt-bottom { position: absolute; inset: 0; clip-path: inset(65% -3px 0 -3px); transform: translateX(2px); }
 
+/* Game-151 round (owner ruling 2026-07-29): draw and loss join the win
+   title's four-layer family with the SAME flicker (winGl1/winGl2 verbatim)
+   -- the flicker is what stops the layered offset from reading as blur; a
+   static offset renders as out-of-focus text (the rejected first draw
+   mockup). Draw front: dim-lav (a draw is neither positive nor negative,
+   so it takes the gray), shadow magenta-dark. Loss front: teal-ink,
+   shadow ink. The two shadows were swapped by the owner at the verdict
+   session (supersedes the plan); the approved mock carries these values.
+   Ghost fringe stays the two player accents on all three -- both players
+   were in the game. */
+.gc-app .draw-title, .gc-app .loss-title {
+  position: relative; display: inline-block;
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 28px;
+  line-height: 1.25;
+}
+.gc-app .dt-layer, .gc-app .lt-layer { position: absolute; inset: 0; pointer-events: none; }
+.gc-app .dt-cyan, .gc-app .lt-cyan { color: #23E5FF; opacity: .8; transform: translate(-2px, 1px); animation: winGl1 3.5s steps(1) infinite; }
+.gc-app .dt-mag, .gc-app .lt-mag { color: #FF3DA6; opacity: .8; transform: translate(2px, -1px); animation: winGl2 3.5s steps(1) infinite; }
+.gc-app .dt-shadow { color: rgba(194,43,126,.25); transform: translateY(2px); }
+.gc-app .lt-shadow { color: rgba(74,59,126,.25); transform: translateY(2px); }
+.gc-app .dt-base { position: relative; z-index: 2; color: #9A8BC9; }
+.gc-app .lt-base { position: relative; z-index: 2; color: #1A7A93; }
+
 /* GameEndPanel's labeled stub sections — the seams increments 3/4 extend.
    Visibly "coming soon": dashed border, muted ink, no shadow (unlike real
    buttons/cards) so they read as placeholders rather than live content. */

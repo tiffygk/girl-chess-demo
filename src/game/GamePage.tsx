@@ -452,7 +452,7 @@ export function GamePage() {
     if (!board) return;
     if (result === "1-0") board.confetti(opts);
     else if (result === "0-1") board.storm(opts);
-    else board.shimmer(opts);
+    else board.shimmer({ ...opts, big: true }); // draw ceremony: 2.8s big variant -- the 1.8s glow was invisible to the owner (visual-rca 1)
   }, []);
 
   const check = useMemo(() => {
