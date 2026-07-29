@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { GameOverInfo } from "./api";
 import type { Takedown } from "./terminal";
+import { RESULT_COPY, resultText } from "./endCopy";
 
 interface StubSection {
   key: string;
@@ -15,16 +16,10 @@ const STUB_SECTIONS: StubSection[] = [
   { key: "streaks", label: "streaks and rating, coming with the dashboard" },
 ];
 
-function resultText(result: string): string {
-  if (result === "1-0") return "you win. mallow melts.";
-  if (result === "0-1") return "mallow wins this one.";
-  return "draw.";
-}
-
-// Win only gets the wordmark's layered glitch construction (celebration
-// scale) — loss and draw stay plain text at the existing 20px .result
-// style. Three of the four layers are aria-hidden so a screen reader
-// still gets a single clean readout from .wt-base.
+// All three endings wear the wordmark's layered glitch construction
+// (owner ruling 2026-07-29) — win keeps its melt shear, draw and loss get
+// flat bases in their own inks. The ghost layers are aria-hidden so a
+// screen reader still gets a single clean readout per title.
 function renderResult(result: string) {
   if (result === "1-0") {
     return (
@@ -47,6 +42,28 @@ function renderResult(result: string) {
             </span>
           </span>
         </span>
+      </span>
+    );
+  }
+  if (result === "1/2-1/2") {
+    const copy = RESULT_COPY["1/2-1/2"];
+    return (
+      <span className="draw-title">
+        <span className="dt-layer dt-cyan" aria-hidden="true">{copy}</span>
+        <span className="dt-layer dt-mag" aria-hidden="true">{copy}</span>
+        <span className="dt-layer dt-shadow" aria-hidden="true">{copy}</span>
+        <span className="dt-base">{copy}</span>
+      </span>
+    );
+  }
+  if (result === "0-1") {
+    const copy = RESULT_COPY["0-1"];
+    return (
+      <span className="loss-title">
+        <span className="lt-layer lt-cyan" aria-hidden="true">{copy}</span>
+        <span className="lt-layer lt-mag" aria-hidden="true">{copy}</span>
+        <span className="lt-layer lt-shadow" aria-hidden="true">{copy}</span>
+        <span className="lt-base">{copy}</span>
       </span>
     );
   }

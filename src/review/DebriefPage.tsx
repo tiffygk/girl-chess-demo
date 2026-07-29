@@ -295,6 +295,23 @@ function DebriefBulletList({
   );
 }
 
+// A6 (rca.md section E / root cause 10, threat-arrow-decision.md): whether
+// the legend's dashed rose "what your move allowed" row should render at
+// all this game. `line.threat` is populated only from a verdicts row keyed
+// on (ply, san) -- and verdicts are written exclusively on HER own
+// candidate moves (followedBest.ts's ply-parity header), so an even-ply
+// (opponent) turning point can never carry one: 0 of 31 in the whole db.
+// Checks the real persisted field directly (`!!l.threat`) rather than a
+// hand-rolled ply-parity guess -- a parity guess would coincide with
+// today's data by accident (verdicts only ever land on odd plies right
+// now) and silently stop discriminating the moment that assumption changes,
+// which is exactly the failure mode this bug class keeps taking. Reversible
+// in one line: delete the `showAllowedRow` prop below (AnalysisLegend's own
+// `showAllowedRow = true` default restores the pre-A6 unconditional row).
+export function computeShowAllowedRow(turningLines: TurningLine[] | undefined): boolean {
+  return turningLines?.some((l) => !!l.threat) ?? false;
+}
+
 export interface DebriefReviewing {
   opponent: string;
   result: string;
@@ -425,7 +442,7 @@ export function DebriefPage({
   });
   return (
     <div className="debrief pop-in">
-      <AnalysisLegend />
+      <AnalysisLegend showAllowedRow={computeShowAllowedRow(turningLines)} />
       {reviewing && (
         <div className="debrief-review-banner">
           <span className="debrief-review-kicker">reviewing</span>
