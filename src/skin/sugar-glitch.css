@@ -12,15 +12,19 @@
   /* Wave B board sizing — vmin-based so the board dominates a big desktop
      and actually grows with the window, capped so it never overflows a
      shorter viewport (the calc term) or runs away on an ultrawide (the
-     1100px term). The 410px is everything ABOVE and BELOW the board card
-     that isn't the board itself — measured on the real rendered page:
+     1100px term). The 426px is everything ABOVE and BELOW the board card
+     that isn't the board itself -- measured on the real rendered page:
      page top padding (24) + header band (76) + the two player bars
      (58 + 64) + the fixed action-slot (92) + the gap above the status
      line (16) + the status line's own min-height (22) + page bottom
-     padding (40) = 392px, plus ~18px of slack. Because calc(100vh-410) is
+     padding (40) = 392px, plus ~34px of slack. Because calc(100vh-426) is
      always one of the three min() candidates, total page height can never
-     exceed 100vh - 18 regardless of which term wins — the vmin/cap terms
-     only ever pull the board SMALLER than that ceiling, never larger. */
+     exceed 100vh - 34 regardless of which term wins -- the vmin/cap terms
+     only ever pull the board SMALLER than that ceiling, never larger.
+     The 426px budget is the LIVE-PLAY worst case. Post-game the .postgame
+     reactive collapse (see the game-over section) frees chrome below the
+     board; the board's own size is already fixed by this formula and
+     never changes at game end. */
   --board-size: min(76vmin, calc(100vh - 426px), 1100px);
   background: linear-gradient(168deg, #F2F7FF 0%, #EFE6FF 55%, #FFE9F6 100%);
   min-height: 100vh;
@@ -1191,9 +1195,42 @@
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 20px;
 }
 
+/* Game-151 round (owner ruling 2026-07-29, REACTIVE): post-game, the three
+   live-play reservations lose their min-height FLOORS -- each element's
+   height becomes content-driven. Genuinely empty -> collapses to zero and
+   the wordmark rides right up under the board; cookie narrating -> the
+   band keeps its natural height and the wordmark sits below it. NOTHING is
+   hidden while it has content; the only display:none is a status line
+   with literally no text. Live play keeps every floor exactly as today
+   (anti-reflow guards -- the board must never jump when the judge/coach
+   bands fill). The board itself cannot move: --board-size is a fixed
+   viewport formula (see :24) that never measures these siblings. */
+.gc-app .game-page.postgame .action-slot { min-height: 0; }
+/* A5 review LOW 1: min-height:0 alone left a 52px floor -- the slot's own
+   16px padding-top plus its always-present .action-slot-judge child's 20px
+   min-height. Zero both, but only when the judge child is genuinely empty.
+   A3+A5 re-review F1: action-slot-controls is gated on !gameOver ALONE
+   (GamePage.tsx), not on reviewGame, so it is NOT true that action-slot-judge
+   is postgame's only possible child -- selectPastGame sets reviewGame but
+   never gameId or gameOver, so opening a saved game from the pregame panel
+   turns .postgame on while action-slot-controls still renders the live
+   elo-select / start game / past games row. :not(:has(> .action-slot-controls))
+   keeps the padding reserved whenever that sibling is rendered; a post-game
+   judge badge still gets its padding and floor either way. */
+.gc-app .game-page.postgame .action-slot:has(> .action-slot-judge:empty):not(:has(> .action-slot-controls)) { padding-top: 0; }
+.gc-app .game-page.postgame .action-slot-judge:empty { min-height: 0; }
+.gc-app .game-page.postgame .coach-hint-band { min-height: 0; }
+/* A5 review LOW 2: margin-top:0 was unconditional, so a review opened from
+   the pregame branch (status still "finding an opponent...") rendered that
+   text flush against the coach band above. Scope it to :empty, matching
+   the display:none rule already below it. */
+.gc-app .game-page.postgame .status-line { min-height: 0; }
+.gc-app .game-page.postgame .status-line:empty { margin-top: 0; display: none; }
+
 /* win title: the wordmark's layered construction at celebration scale
-   (V6, spec §4.10). Win only — loss and draw stay the plain 20px .result
-   above. Copied verbatim from component-library.html 992-1038. */
+   (V6, spec §4.10). Draw and loss titles now join the same construction
+   in their own inks -- see the block below .wt-melt-bottom (owner ruling
+   2026-07-29). Copied verbatim from component-library.html 992-1038. */
 .gc-app .win-title {
   position: relative; display: inline-block;
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 28px;
@@ -1242,6 +1279,32 @@
 .gc-app .wt-melt-top { position: relative; clip-path: inset(0 -3px 35% -3px); }
 .gc-app .wt-melt-bottom { position: absolute; inset: 0; clip-path: inset(65% -3px 0 -3px); transform: translateX(2px); }
 
+/* Game-151 round (owner ruling 2026-07-29): draw and loss join the win
+   title's four-layer family with the SAME flicker (winGl1/winGl2 verbatim)
+   -- the flicker is what stops the layered offset from reading as blur; a
+   static offset renders as out-of-focus text (the rejected first draw
+   mockup). Draw front: dim-lav (a draw is neither positive nor negative,
+   so it takes the gray), shadow magenta-dark. Loss front: teal-ink,
+   shadow ink. The two shadows were swapped by the owner at the verdict
+   session (supersedes the plan); the approved mock carries these values.
+   Ghost fringe stays the two player accents on all three -- both players
+   were in the game. */
+.gc-app .draw-title, .gc-app .loss-title {
+  position: relative; display: inline-block;
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 28px;
+  line-height: 1.25;
+  /* owner ruling 2026-07-29 (post-port): no widowed "over." -- the copy
+     stays one line at 28px; there is room under the board. */
+  white-space: nowrap;
+}
+.gc-app .dt-layer, .gc-app .lt-layer { position: absolute; inset: 0; pointer-events: none; }
+.gc-app .dt-cyan, .gc-app .lt-cyan { color: #23E5FF; opacity: .8; transform: translate(-2px, 1px); animation: winGl1 3.5s steps(1) infinite; }
+.gc-app .dt-mag, .gc-app .lt-mag { color: #FF3DA6; opacity: .8; transform: translate(2px, -1px); animation: winGl2 3.5s steps(1) infinite; }
+.gc-app .dt-shadow { color: rgba(194,43,126,.25); transform: translateY(2px); }
+.gc-app .lt-shadow { color: rgba(74,59,126,.25); transform: translateY(2px); }
+.gc-app .dt-base { position: relative; z-index: 2; color: #9A8BC9; }
+.gc-app .lt-base { position: relative; z-index: 2; color: #1A7A93; }
+
 /* GameEndPanel's labeled stub sections — the seams increments 3/4 extend.
    Visibly "coming soon": dashed border, muted ink, no shadow (unlike real
    buttons/cards) so they read as placeholders rather than live content. */
@@ -1287,7 +1350,7 @@
    construction: DebriefPage (the sole mount site) never renders during
    live play -- see analysisLegend.test.ts's gating pins. Closed palette:
    every colour here is either existing chrome ink (#6952C4 machine /
-   #23A8C7 kicker / #9A8BC9 rule) or one of the six real arrow colours
+   #23A8C7 kicker / #9A8BC9 border / #4A3B7E header) or one of the real arrow colours
    already shipped in .arrow-played/.arrow-best/.arrow-threat/.arrow-found/
    .arrow-mallow/.arrow-mallow-best above -- no new hex. */
 .gc-app .legend-rail {
@@ -1302,35 +1365,25 @@
   font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
   letter-spacing: .14em; text-transform: lowercase; color: #23A8C7;
 }
-/* Density deviation from the mockup (see AnalysisLegendRail.tsx's header):
-   the real .debrief caps at 380px, well under the mockup's 520px-wide demo
-   board -- a 2-column solid cluster overflowed it. Both clusters are a
-   single-column stack here; gap tightened from the mockup's 16px to fit
-   the narrower plate without touching any porter's-numbers geometry. */
-.gc-app .legend-rail .rail-body { display: flex; align-items: flex-start; gap: 12px; margin-top: 7px; }
+/* Game-151 round (visual-rca 3+5): one column at every width. The old
+   side-by-side body needed 417px inside a 380px plate, and the stacking
+   media query watched the VIEWPORT while the constraint was the column --
+   deleted, not patched. Headers promoted a real level up: largest type in
+   the plate, darker ink, full-width solid/dashed rule under each. */
+.gc-app .legend-rail .rail-body { display: flex; flex-direction: column; gap: 14px; margin-top: 7px; }
 .gc-app .legend-rail .cluster-inner { display: flex; flex-direction: column; gap: 4px; }
 .gc-app .legend-rail .cluster-rows.stack { display: flex; flex-direction: column; gap: 2px; }
-.gc-app .legend-rail .cluster-divider {
-  align-self: stretch; height: auto; width: 1px; margin-top: 2px;
-  background: rgba(154,139,201,.5); transform: skewX(-12deg);
-}
 .gc-app .legend-row { display: flex; align-items: center; gap: 8px; height: 22px; white-space: nowrap; }
 .gc-app .legend-label {
   font-family: 'Chakra Petch', sans-serif; font-weight: 600; font-size: 10.5px;
   letter-spacing: .03em; text-transform: lowercase; color: #6952C4;
 }
-.gc-app .legend-rail .axis-head { display: flex; align-items: center; gap: 7px; }
+.gc-app .legend-rail .axis-head { display: flex; flex-direction: column; gap: 3px; }
 .gc-app .legend-rail .axis-head .word {
-  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px;
-  letter-spacing: .08em; text-transform: lowercase; color: #6952C4;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 12px;
+  letter-spacing: .1em; text-transform: lowercase; color: #4A3B7E;
 }
-/* <=480px: clusters stack, divider drops -- mockup's narrow rendering.
-   Placed after the base rules above (equal specificity, source order
-   decides -- see the chat-corner-thread precedent's own note on this). */
-@media (max-width: 480px) {
-  .gc-app .legend-rail .rail-body { flex-direction: column; gap: 8px; }
-  .gc-app .legend-rail .cluster-divider { display: none; }
-}
+.gc-app .legend-rail .axis-rule { width: 100%; display: block; }
 
 /* debrief-v2: three fixed-order bullet sections (done well / could be
    better / watch next time) replace the single lesson sentence as the

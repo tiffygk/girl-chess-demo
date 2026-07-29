@@ -10,6 +10,11 @@ export default defineConfig({
     proxy: { "/api": process.env.VITE_API_TARGET || "http://localhost:3001" },
   },
   test: {
+    // The css source pins (endCopy.test.ts) need the real stylesheet text.
+    // With `css` unset vitest stubs EVERY .css import to an empty string --
+    // even `?raw` -- which silently turns a source-pin regex into a match
+    // against "". css: true makes `?raw` return the actual file contents.
+    css: true,
     // Owner reorg 2026-07-28 moved the repo into the vault and nested the two
     // agent worktrees INSIDE it. Without these excludes vitest globs into them
     // and runs old branches' suites too -- 996 tests became 2555, with 2

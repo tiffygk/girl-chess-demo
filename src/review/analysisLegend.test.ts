@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { LEGEND_ROWS, LEGEND_SOLID_ROWS, LEGEND_DASHED_ROWS } from "./analysisLegend";
 import type { ArrowColor } from "../game/reviewArrows";
+import { computeShowAllowedRow } from "./DebriefPage";
+import type { TurningLine } from "../game/api";
 // Vite's `?raw` import (typed by the `vite/client` ambient types this
 // project's tsconfig.app.json already includes) rather than node:fs -- src/
 // is client bundler code with no Node builtins available under tsc -b's
@@ -12,6 +14,10 @@ import gamePageSrc from "../game/GamePage.tsx?raw";
 import debriefPageSrc from "./DebriefPage.tsx?raw";
 import analysisLegendRailSrc from "./AnalysisLegendRail.tsx?raw";
 import reviewArrowsSrc from "../game/reviewArrows.ts?raw";
+// The stylesheet pin follows endCopy.test.ts's A2 pattern (css?raw with
+// vite.config.ts test.css: true) rather than node:fs -- same bundler-safe
+// reasoning as the ?raw imports above.
+import cssSrc from "../skin/sugar-glitch.css?raw";
 
 describe("analysisLegend.ts row model (D1 cipher rail)", () => {
   it("has exactly five rows, three solid then two dashed", () => {
@@ -77,7 +83,10 @@ describe("analysisLegend.ts row model (D1 cipher rail)", () => {
       played: "your move",
       found: "you found the best move",
       mallow: "mallow's move",
-      best: "you should've",
+      // owner ruling 2026-07-29: the arrow is moves.best_move -- the engine's
+      // recommended move at that moment. noun phrase, parallel to "your move"
+      // / "mallow's move"; "you should've" scolds.
+      best: "recommended move",
       // Owner ruling 2026-07-28. This arrow is threatForPly -- the refutation
       // of the move SHE PLAYED (manager.ts:520), i.e. how mallow could have
       // punished it. "mallow should've" named whose move it was; she reads
@@ -109,8 +118,96 @@ describe("analysis-legend render gating: analysis/review only, never live play",
     expect(gamePageSrc).toMatch(/\{reviewGame && \(\s*<DebriefPage/);
   });
 
+  // A6: updated from the old bare `<AnalysisLegend />` pin to the
+  // prop-carrying form -- see the dedicated "AnalysisLegendRail wiring"
+  // describe block below for the discriminating fixture-level test.
   it("AnalysisLegend is rendered from within DebriefPage.tsx, its only mount site", () => {
-    expect(debriefPageSrc).toMatch(/<AnalysisLegend\s*\/>/);
+    expect(debriefPageSrc).toMatch(/<AnalysisLegend showAllowedRow=\{computeShowAllowedRow\(turningLines\)\}\s*\/>/);
+  });
+});
+
+// A6 (rca.md section E / root cause 10): 0 of 31 even-ply turning points
+// ever carry a verdicts-backed `threat` (verdicts are only ever written on
+// HER own candidate moves -- see threat-arrow-decision.md), so the dashed
+// rose "what your move allowed" row used to promise an arrow that is
+// structurally impossible on 62% of cards. The row is now conditional,
+// gated by AnalysisLegend's own `showAllowedRow` prop (default `true`, so
+// any caller that doesn't pass it -- the one-line revert -- keeps the
+// pre-A6 unconditional row).
+describe("computeShowAllowedRow (rca #10): the dashed rose row only promises what the data can draw", () => {
+  // Real shape from game 151 (rca.md section E): ply 12 is mallow's move
+  // (even), and it is the exact row where a naive implementation and the
+  // correct one disagree. `bestFromTo` is always populated at an even ply
+  // (moves.best_move is read unconditionally) -- that becomes the green
+  // "best" arrow, not a second dashed-rose one. `threat` is undefined
+  // because verdicts are structurally odd-ply-only. So a buggy check like
+  // "does any turningLine exist" or "does bestFromTo exist" says SHOW on
+  // this exact fixture, while the correct check (`!!l.threat`) says HIDE.
+  // Ply 12 is chosen because it is the concrete real game-151 row where the
+  // two answers diverge, not one where they happen to coincide.
+  const evenPlyNoThreat: TurningLine = {
+    ply: 12,
+    bestFromTo: { from: "b2", to: "b4" },
+    bestSan: "b4",
+    pvSans: ["b4"],
+    threat: undefined,
+  };
+  const oddPlyWithThreat: TurningLine = {
+    ply: 7,
+    bestFromTo: { from: "d3", to: "d5" },
+    bestSan: "d5",
+    pvSans: ["d5"],
+    threat: { from: "d3", to: "d5" },
+  };
+  // Review A6 finding 1: the two fixtures above only discriminate
+  // `!!l.bestFromTo` and the "any line exists" guess -- a ply-parity
+  // implementation (`l.ply % 2 === 1`) passes both by accident, since one
+  // fixture is even and the other is odd-with-threat. This fixture is odd
+  // AND threatless, the shape of a verdict join that failed on her own move
+  // (she played something never hovered/judged, so threatForPly's (ply,
+  // san) match returns nothing). Correct answer is hide, same as the
+  // even-ply case; a parity guess says show on ply alone. Without this,
+  // the comment at DebriefPage.tsx:304-307 disavowing "a hand-rolled
+  // ply-parity guess" is not actually enforced by any test.
+  const oddPlyNoThreat: TurningLine = {
+    ply: 9,
+    bestFromTo: { from: "d2", to: "d4" },
+    bestSan: "d4",
+    pvSans: ["d4"],
+    threat: undefined,
+  };
+
+  it("hides the row when every line's bestFromTo is populated but none carries a real threat (game 151's shape)", () => {
+    expect(computeShowAllowedRow([evenPlyNoThreat])).toBe(false);
+  });
+
+  it("hides the row for an odd-ply line whose verdict join failed, not just even-ply ones (rejects a ply-parity guess)", () => {
+    expect(computeShowAllowedRow([oddPlyNoThreat])).toBe(false);
+  });
+
+  it("shows the row the moment any line in the game carries a real threat", () => {
+    expect(computeShowAllowedRow([evenPlyNoThreat, oddPlyWithThreat])).toBe(true);
+  });
+
+  it("hides the row for no lines / undefined turningLines, never guesses true", () => {
+    expect(computeShowAllowedRow([])).toBe(false);
+    expect(computeShowAllowedRow(undefined)).toBe(false);
+  });
+});
+
+describe("AnalysisLegendRail wiring for the conditional row (A6)", () => {
+  it("the dashed-cluster filter keys on showAllowedRow, not a re-derived condition", () => {
+    expect(analysisLegendRailSrc).toMatch(
+      /showAllowedRow\s*\?\s*LEGEND_DASHED_ROWS\s*:\s*LEGEND_DASHED_ROWS\.filter\(\(r\)\s*=>\s*r\.kind !== "mallow-best"\)/
+    );
+  });
+
+  // The row model itself is untouched -- only rendering is conditional.
+  // LEGEND_DASHED_ROWS (what gets filtered) must still carry mallow-best
+  // unconditionally, and the pre-existing "covers every DRAWABLE ArrowColor"
+  // test above (over LEGEND_ROWS) keeps passing without any change.
+  it("LEGEND_DASHED_ROWS itself still contains mallow-best unconditionally", () => {
+    expect(LEGEND_DASHED_ROWS.map((r) => r.kind)).toContain("mallow-best");
   });
 });
 
@@ -134,5 +231,48 @@ describe("AnalysisLegendRail copy hygiene: no em-dash in user-facing text (union
 
   it("the dashed-cluster axis head still reads 'dashed' and still explains what dashed means", () => {
     expect(analysisLegendRailSrc).toMatch(/words="dashed[^"]*it didn't"/);
+  });
+
+  // RED when: AxisHead still renders the old 18x4 row-scale line sample (which
+  // read as a fifth arrow row) or drops the full-width axis-rule that replaced it.
+  // Strengthened per A3 review MEDIUM: the old version only matched a quoted
+  // "width=\"18\" height=\"4\"" literal (evaded by a JSX numeric width={18}
+  // height={4}) and never checked the axis-rule svg's own attributes, so a
+  // regression to the row-scale x2, or a dropped strokeDasharray, stayed green.
+  it("axis heads are headers, not rows: full-width rule, no row-scale sample (visual-rca 5)", () => {
+    expect(analysisLegendRailSrc).toMatch(/axis-rule/);
+    // catches both the old quoted literal and a re-added JSX numeric prop.
+    expect(analysisLegendRailSrc).not.toMatch(/width=(?:"18"|\{18\})\s+height=(?:"4"|\{4\})/);
+    const axisRuleSvg = analysisLegendRailSrc.match(/<svg className="axis-rule"[\s\S]*?<\/svg>/);
+    expect(axisRuleSvg).not.toBeNull();
+    const svgMarkup = axisRuleSvg![0];
+    // (a) the rule spans the header's full width -- not the row-scale stub's x2.
+    expect(svgMarkup).toMatch(/x2="100%"/);
+    // (b) the rule still distinguishes solid ("it happened") from dashed
+    // ("it didn't") -- the legend's entire solid-vs-dashed teaching.
+    expect(svgMarkup).toMatch(/strokeDasharray/);
+  });
+
+  // RED when: the shipped two-column rail-body (or its skewed divider, or the
+  // viewport media query's stacking rule) comes back -- the rebuild is one
+  // column at EVERY width, with the divider deleted, not hidden.
+  // Strengthened per A3 review HIGH: the old single toMatch regex was
+  // satisfied by ANY `.rail-body { ... }` block containing "flex-direction:
+  // column" ANYWHERE in the file, including inside a reintroduced media
+  // query -- it never proved there was only one such block, and it never
+  // proved the base (unqueried) rule was the column one. Now every
+  // `.rail-body { ... }` block is matched, there must be exactly one, and
+  // that one must be column.
+  it("the two-column body and its divider are deleted, not hidden (visual-rca 3)", () => {
+    // sanity (A3 review LOW): prove cssSrc is the real stylesheet, not an
+    // empty string -- if vite.config.ts's `test.css: true` were ever
+    // dropped, cssSrc would be "" and every not.toMatch below would pass
+    // vacuously. A known sentinel selector that must survive any rebuild.
+    expect(cssSrc.length).toBeGreaterThan(0);
+    expect(cssSrc).toMatch(/\.legend-rail/);
+    expect(cssSrc).not.toMatch(/cluster-divider/);
+    const railBodyBlocks = [...cssSrc.matchAll(/\.rail-body\s*\{[^}]*\}/g)];
+    expect(railBodyBlocks).toHaveLength(1);
+    expect(railBodyBlocks[0][0]).toMatch(/flex-direction:\s*column/);
   });
 });
