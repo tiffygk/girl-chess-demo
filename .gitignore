@@ -42,6 +42,8 @@ tools/.truth-check-scratch/
 /wt-highlight/
 /wt-forward/
 /wt-missedwin/
+/wt-truth/
+/wt-visual/
 
 # vite dep-optimizer cache, recreated on every dev start (2026-07-29)
 .vite/
