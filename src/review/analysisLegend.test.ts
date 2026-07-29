@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { LEGEND_ROWS, LEGEND_SOLID_ROWS, LEGEND_DASHED_ROWS } from "./analysisLegend";
 import type { ArrowColor } from "../game/reviewArrows";
 import { computeShowAllowedRow } from "./DebriefPage";
-import type { TurningLine } from "../game/api";
+import type { TurningLine, SummaryMove } from "../game/api";
 // Vite's `?raw` import (typed by the `vite/client` ambient types this
 // project's tsconfig.app.json already includes) rather than node:fs -- src/
 // is client bundler code with no Node builtins available under tsc -b's
@@ -121,8 +121,14 @@ describe("analysis-legend render gating: analysis/review only, never live play",
   // A6: updated from the old bare `<AnalysisLegend />` pin to the
   // prop-carrying form -- see the dedicated "AnalysisLegendRail wiring"
   // describe block below for the discriminating fixture-level test.
+  // Legend card-scope fix (2026-07-29): computeShowAllowedRow gained
+  // gameSans/rewindPly so it can ask the real arrow producer card-scoped;
+  // the call site widened to match (see computeShowAllowedRow's own tests
+  // below for the discriminating behavior this call site now carries).
   it("AnalysisLegend is rendered from within DebriefPage.tsx, its only mount site", () => {
-    expect(debriefPageSrc).toMatch(/<AnalysisLegend showAllowedRow=\{computeShowAllowedRow\(turningLines\)\}\s*\/>/);
+    expect(debriefPageSrc).toMatch(
+      /<AnalysisLegend showAllowedRow=\{computeShowAllowedRow\(turningLines, gameSans, rewindPly\)\}\s*\/>/
+    );
   });
 });
 
@@ -192,6 +198,77 @@ describe("computeShowAllowedRow (rca #10): the dashed rose row only promises wha
   it("hides the row for no lines / undefined turningLines, never guesses true", () => {
     expect(computeShowAllowedRow([])).toBe(false);
     expect(computeShowAllowedRow(undefined)).toBe(false);
+  });
+});
+
+// Legend card-scope fix (2026-07-29, union-review finding 1 / this round's
+// feedback.md): `!!l.threat` was still wrong even after the A6 fix above,
+// because the real arrow producer (turningLineArrows, reviewArrows.ts)
+// applies a SECOND test this function didn't -- it suppresses the mallow-best
+// arrow whenever mallow's ACTUAL reply coincides with the recommended
+// refutation (game 151's ply-43 shape, restated as ply 13 below). A fixture
+// with no gameSans CANNOT distinguish the old body from the new one -- with
+// no gameSans there is no mallowReply, so nothing is ever suppressed and old
+// and new agree by accident. Every fixture here supplies a real,
+// chess.js-replayable gameSans so the coincidence has something to compare.
+//
+// knightShuffleGameSans builds a fully legal move list (each side's kingside
+// knight shuffles g1<->f3 / g8<->f6; every other piece never moves, so
+// nothing else can ever go illegal) long enough to reach ply 50.
+// Verified directly with chess.js before writing these fixtures: all 50
+// plies replay without throwing, and plies 6, 14, and 50 are each black's
+// "Nf6" -- from g8 to f6 -- which is the shape every fixture below leans on.
+function knightShuffleGameSans(totalPlies: number): SummaryMove[] {
+  const moves: SummaryMove[] = [];
+  for (let ply = 1; ply <= totalPlies; ply++) {
+    let san: string;
+    if (ply % 2 === 1) {
+      const m = (ply + 1) / 2;
+      san = m % 2 === 1 ? "Nf3" : "Ng1";
+    } else {
+      const k = ply / 2;
+      san = k % 2 === 1 ? "Nf6" : "Ng8";
+    }
+    moves.push({ ply, san });
+  }
+  return moves;
+}
+
+describe("computeShowAllowedRow card-scope fix (union-review finding 1, feedback.md 2026-07-29)", () => {
+  const gameSans14 = knightShuffleGameSans(14); // ply 14's move is g8->f6
+  const gameSans50 = knightShuffleGameSans(50); // ply 6's AND ply 50's move are both g8->f6
+
+  it("game 151's real shape: a threat coinciding with mallow's actual reply hides the row, game-scoped, even with no card selected (RED against the old `!!l.threat` body, which returns true here)", () => {
+    // her ply (odd) -- threat is mallow's hypothetical punishing reply at
+    // ply 14, and gameSans14's REAL ply-14 move is that exact square pair.
+    const line: TurningLine = { ply: 13, pvSans: [], threat: { from: "g8", to: "f6" } };
+    expect(computeShowAllowedRow([line], gameSans14)).toBe(false);
+  });
+
+  it("a threat that does NOT coincide with mallow's actual reply still shows the row (guard against a 'fix' that just always returns false)", () => {
+    const line: TurningLine = { ply: 13, pvSans: [], threat: { from: "e7", to: "e5" } };
+    expect(computeShowAllowedRow([line], gameSans14)).toBe(true);
+  });
+
+  it("card-scoped: hides the row on the specific card whose line is suppressed, shows it on a different card whose line isn't (RED against a game-scoped-only implementation, which would say true on both since the game has a drawable line)", () => {
+    const drawsLine: TurningLine = { ply: 5, pvSans: [], threat: { from: "e7", to: "e5" } };
+    const suppressedLine: TurningLine = { ply: 49, pvSans: [], threat: { from: "g8", to: "f6" } };
+    const lines = [drawsLine, suppressedLine];
+    expect(computeShowAllowedRow(lines, gameSans50, 49)).toBe(false);
+    expect(computeShowAllowedRow(lines, gameSans50, 5)).toBe(true);
+  });
+
+  it("a rewindPly naming a ply with no TurningLine (MoveList jump to a non-turning-point ply) hides the row and never throws", () => {
+    const line: TurningLine = { ply: 5, pvSans: [], threat: { from: "e7", to: "e5" } };
+    expect(() => computeShowAllowedRow([line], gameSans50, 999)).not.toThrow();
+    expect(computeShowAllowedRow([line], gameSans50, 999)).toBe(false);
+  });
+
+  it("landing state (rewindPly null/omitted) falls back to game-scope: the row shows when the ONLY drawable line sits on a card she has not selected", () => {
+    const drawsLine: TurningLine = { ply: 5, pvSans: [], threat: { from: "e7", to: "e5" } };
+    const suppressedLine: TurningLine = { ply: 49, pvSans: [], threat: { from: "g8", to: "f6" } };
+    expect(computeShowAllowedRow([suppressedLine, drawsLine], gameSans50, null)).toBe(true);
+    expect(computeShowAllowedRow([suppressedLine, drawsLine], gameSans50)).toBe(true); // rewindPly omitted entirely too
   });
 });
 
