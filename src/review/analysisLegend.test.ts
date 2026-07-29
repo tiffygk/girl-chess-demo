@@ -12,6 +12,10 @@ import gamePageSrc from "../game/GamePage.tsx?raw";
 import debriefPageSrc from "./DebriefPage.tsx?raw";
 import analysisLegendRailSrc from "./AnalysisLegendRail.tsx?raw";
 import reviewArrowsSrc from "../game/reviewArrows.ts?raw";
+// The stylesheet pin follows endCopy.test.ts's A2 pattern (css?raw with
+// vite.config.ts test.css: true) rather than node:fs -- same bundler-safe
+// reasoning as the ?raw imports above.
+import cssSrc from "../skin/sugar-glitch.css?raw";
 
 describe("analysisLegend.ts row model (D1 cipher rail)", () => {
   it("has exactly five rows, three solid then two dashed", () => {
@@ -77,7 +81,10 @@ describe("analysisLegend.ts row model (D1 cipher rail)", () => {
       played: "your move",
       found: "you found the best move",
       mallow: "mallow's move",
-      best: "you should've",
+      // owner ruling 2026-07-29: the arrow is moves.best_move -- the engine's
+      // recommended move at that moment. noun phrase, parallel to "your move"
+      // / "mallow's move"; "you should've" scolds.
+      best: "recommended move",
       // Owner ruling 2026-07-28. This arrow is threatForPly -- the refutation
       // of the move SHE PLAYED (manager.ts:520), i.e. how mallow could have
       // punished it. "mallow should've" named whose move it was; she reads
@@ -134,5 +141,20 @@ describe("AnalysisLegendRail copy hygiene: no em-dash in user-facing text (union
 
   it("the dashed-cluster axis head still reads 'dashed' and still explains what dashed means", () => {
     expect(analysisLegendRailSrc).toMatch(/words="dashed[^"]*it didn't"/);
+  });
+
+  // RED when: AxisHead still renders the old 18x4 row-scale line sample (which
+  // read as a fifth arrow row) or drops the full-width axis-rule that replaced it.
+  it("axis heads are headers, not rows: full-width rule, no row-scale sample (visual-rca 5)", () => {
+    expect(analysisLegendRailSrc).toMatch(/axis-rule/);
+    expect(analysisLegendRailSrc).not.toMatch(/width="18" height="4"/);
+  });
+
+  // RED when: the shipped two-column rail-body (or its skewed divider, or the
+  // viewport media query's stacking rule) comes back -- the rebuild is one
+  // column at EVERY width, with the divider deleted, not hidden.
+  it("the two-column body and its divider are deleted, not hidden (visual-rca 3)", () => {
+    expect(cssSrc).not.toMatch(/cluster-divider/);
+    expect(cssSrc).toMatch(/\.rail-body\s*\{[^}]*flex-direction:\s*column/);
   });
 });
