@@ -159,9 +159,30 @@ describe("computeShowAllowedRow (rca #10): the dashed rose row only promises wha
     pvSans: ["d5"],
     threat: { from: "d3", to: "d5" },
   };
+  // Review A6 finding 1: the two fixtures above only discriminate
+  // `!!l.bestFromTo` and the "any line exists" guess -- a ply-parity
+  // implementation (`l.ply % 2 === 1`) passes both by accident, since one
+  // fixture is even and the other is odd-with-threat. This fixture is odd
+  // AND threatless, the shape of a verdict join that failed on her own move
+  // (she played something never hovered/judged, so threatForPly's (ply,
+  // san) match returns nothing). Correct answer is hide, same as the
+  // even-ply case; a parity guess says show on ply alone. Without this,
+  // the comment at DebriefPage.tsx:304-307 disavowing "a hand-rolled
+  // ply-parity guess" is not actually enforced by any test.
+  const oddPlyNoThreat: TurningLine = {
+    ply: 9,
+    bestFromTo: { from: "d2", to: "d4" },
+    bestSan: "d4",
+    pvSans: ["d4"],
+    threat: undefined,
+  };
 
   it("hides the row when every line's bestFromTo is populated but none carries a real threat (game 151's shape)", () => {
     expect(computeShowAllowedRow([evenPlyNoThreat])).toBe(false);
+  });
+
+  it("hides the row for an odd-ply line whose verdict join failed, not just even-ply ones (rejects a ply-parity guess)", () => {
+    expect(computeShowAllowedRow([oddPlyNoThreat])).toBe(false);
   });
 
   it("shows the row the moment any line in the game carries a real threat", () => {
