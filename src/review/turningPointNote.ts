@@ -118,13 +118,35 @@ export const NEXT_TIME_TIPS: Record<Motif, string> = {
   "missed-mate":
     "when you are winning big, hunt the fastest finish first: look at every check you have and count her king's escape squares. a check she cannot answer while her king has nowhere to go is mate.",
   // Game-151 round (2026-07-29): the annotator's unconverted point (Task 2,
-  // commit c1d1905) -- a win that ended level. The debrief bullets carry
-  // the endKind-specific version of this warning; this card-note tip stays
-  // generic across endKinds (repetition is her real game-151 case and the
-  // one her feedback named directly).
+  // commit c1d1905) -- a win that ended level. This is the repetition-
+  // specific wording (her real game-151 case, the one her feedback named
+  // directly). Fix wave (review-3.md MEDIUM finding 4): this entry used to
+  // be the fallback for EVERY endKind -- a stalemate or fifty-move draw
+  // showed "treat a repeated position as a stop sign" on the card even
+  // though no repetition happened, contradicting the bullets right next to
+  // it (which already correctly say "the stalemate"). See nextTimeTipFor
+  // below, which now branches on tp.endKind the way the bullets already do;
+  // this entry stays the record NEXT_TIME_TIPS[unconverted] resolves to
+  // only on the repetition path.
   unconverted:
     "when you are winning, treat a repeated position as a stop sign: find the move that makes new progress before it repeats.",
 };
+
+// Fix wave (2026-07-29, review-3.md MEDIUM finding 4): the card tip is
+// documented as "generic across endKinds" but named repetition
+// unconditionally -- a non-repetition unconverted ending (stalemate, fifty
+// moves, called early) showed a repetition-specific tip that never
+// happened. Mirrors debriefBullets.ts's buildWatchNextTime split (repetition
+// vs everything else) for the same underlying fact, kept as a separate copy
+// here per this file's own header (deliberately never imports from
+// debriefBullets.ts).
+const UNCONVERTED_NON_REPETITION_TIP =
+  "when you are winning, keep looking for the move that finishes it. holding a good position is not the same as winning it.";
+
+function nextTimeTipFor(tp: TurningPoint, motif: Motif): string {
+  if (motif === "unconverted" && tp.endKind !== "repetition") return UNCONVERTED_NON_REPETITION_TIP;
+  return NEXT_TIME_TIPS[motif];
+}
 
 // Motif inference is read-only off TurningPoint.label/kind/missedPunish —
 // never an engine call, never a guess beyond what those fields already say.
@@ -350,7 +372,7 @@ export function buildTurningPointNote(
   const seedFen = seedFenForLine(line, gameSans);
   const fb = followedBest(line, gameSans);
   const note: TurningPointNote = {};
-  if (motif) note.nextTime = NEXT_TIME_TIPS[motif];
+  if (motif) note.nextTime = nextTimeTipFor(tp, motif);
   const didWell = buildDidWell(tp, gameSans, line, fb);
   if (didWell) note.didWell = didWell;
   const couldImprove = buildCouldImprove(tp, cls, line, gameSans, seedFen, fb);

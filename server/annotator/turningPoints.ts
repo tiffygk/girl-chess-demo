@@ -71,6 +71,20 @@ export interface TurningPoint {
   // Game-151 round: set only when kind === "unconverted" -- how the game
   // actually ended, re-derived from the SANs (see unconverted.ts).
   endKind?: string;
+  // Fix wave (2026-07-29, review-3.md HIGH finding 1): the unconverted
+  // point's `ply` carries two structurally different meanings and the copy
+  // layer must never confuse them. "repetition-entry" means ply IS
+  // findRepetitionAnchor's verified escape ply -- a real turning moment
+  // with a stored, non-repeating alternative on record (unconverted.ts).
+  // "run-start" means no escape was ever proven -- every non-repetition
+  // ending (findRepetitionAnchor is never even called for those), a
+  // repetition whose candidate entries all failed to prove one, OR a
+  // collision-displaced fallback ply (see the push site below) -- and ply
+  // is simply the first ply of the terminal held-winning run, parity-fixed
+  // to hers. It is NEVER a claim about when the win ended. Set only when
+  // kind === "unconverted"; same "encode in types, not helpers" lesson as
+  // ply-parity.
+  anchorKind?: "repetition-entry" | "run-start";
 }
 
 // debrief-v2: bumped when the turning-point algorithm changes shape in a way
@@ -667,12 +681,20 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   if (unconverted) {
     let anchorPly: number | null = null;
     let mateAtAnchor: number | null = null;
+    // Fix wave (2026-07-29, review-3.md HIGH finding 1): tracked separately
+    // from anchorPly itself -- anchorPly gets overwritten by the run-start
+    // fallback below when nothing was proven, and once that happens there
+    // is no way left to tell "this ply IS the proven escape" from "this
+    // ply is just where the fallback landed." anchorProven is that
+    // distinction, captured at the moment (if ever) it becomes true.
+    let anchorProven = false;
 
     if (unconverted.endKind === "repetition") {
       const repAnchor = findRepetitionAnchor(moves);
       if (repAnchor) {
         anchorPly = repAnchor.ply;
         mateAtAnchor = repAnchor.mateIn ?? null;
+        anchorProven = true;
       }
     }
     // Non-repetition endings (stalemate, fifty moves, called early), or a
@@ -732,6 +754,14 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
         // collision-displaced fallback ply has no proven alternative on
         // record and must never borrow this one's.
         mateIn: resolvedPly === anchorPly ? mateAtAnchor ?? undefined : undefined,
+        // Fix wave (review-3.md finding 1): "repetition-entry" only when
+        // this exact ply IS the proven escape AND nothing displaced it --
+        // the same condition mateIn already gates on above, spelled out as
+        // its own fact so copy can ask "is this ply a real turning moment"
+        // without inferring it from mateIn's mere presence (a proven
+        // escape backed by a plain cp read, not a mate read, would leave
+        // mateIn unset while the ply is still genuinely proven).
+        anchorKind: resolvedPly === anchorPly && anchorProven ? "repetition-entry" : "run-start",
       });
     }
   }
