@@ -37,7 +37,19 @@ export interface DebriefFacts {
 
 export interface DebriefOutput {
   bullets: DebriefBullet[];
-  notes?: { ply: number; couldImprove?: string; nextTime?: string; didWell?: string; whatMayHaveHappened?: string }[];
+  // review-0.md important 1: the brief's notes shape (couldImprove/nextTime/
+  // didWell/whatMayHaveHappened) was missing `opportunity` -- DebriefPage.tsx
+  // renders a fifth field ("this opens up: ...") built by
+  // turningPointNote.ts's TurningPointNote. Added here so the module reads
+  // the actual shape rendered on her screen, not a guessed one.
+  notes?: {
+    ply: number;
+    couldImprove?: string;
+    nextTime?: string;
+    didWell?: string;
+    whatMayHaveHappened?: string;
+    opportunity?: string;
+  }[];
 }
 
 export interface DebriefViolation {
@@ -66,7 +78,13 @@ const TACTIC_KINDS = ["missed-free-piece", "missed-tactic", "walked-into-fork", 
 // code-built (not model prose), so uppercase-piece SAN is the only form.
 const SAN_RE = /(?:O-O(?:-O)?|[KQRBN][a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|[a-h]x[a-h][1-8](?:=[QRBN])?[+#]?)/g;
 const SQUARE_RE = /[a-h][1-8]/g;
-const REASSURANCE_RE = /no clear mistakes|no repeat pattern|brought the game home/;
+// review-0.md minor 6: scoped to exactly the two phrases the brief spec's
+// reassurance-vs-detector on ("any text contains `no clear mistakes` or `no
+// repeat pattern` while a never-miss detector fired"). "brought the game
+// home" is win-copy-on-non-win's own trigger (checked directly, not through
+// this constant) -- a third alternative here would be dead in this rule and
+// would misdescribe what actually fires it.
+const REASSURANCE_RE = /no clear mistakes|no repeat pattern/;
 
 function kindOf(tp: TurningPoint): string {
   return tp.kind as unknown as string;
@@ -150,6 +168,36 @@ function bulletWhere(b: DebriefBullet, i: number): string {
   return `bullet:${b.section}:${i}`;
 }
 
+function noteWhere(ply: number): string {
+  return `note:${ply}`;
+}
+
+interface TextUnit {
+  text: string;
+  where: string;
+}
+
+// review-0.md important 1: seven of the fourteen rules are worded against
+// the whole DebriefOutput ("any text", "in output", "anywhere"), not just
+// its bullets -- win-copy-on-non-win, reassurance-vs-detector, unknown-san,
+// unknown-square, voice-em-dash, voice-emoji, voice-capital. DebriefPage.tsx
+// renders note prose (didWell/couldImprove/nextTime/whatMayHaveHappened/
+// opportunity, turningPointNote.ts) in the same cards as the bullets, and it
+// is the highest-risk text for exactly the claims these rules check -- so
+// this is the one place both surfaces feed the same rule, each note field
+// tagged with the spec'd "note:<ply>" where.
+function outputTextUnits(output: DebriefOutput): TextUnit[] {
+  const bullets = output.bullets ?? [];
+  const units: TextUnit[] = bullets.map((b, i) => ({ text: b.text, where: bulletWhere(b, i) }));
+  for (const note of output.notes ?? []) {
+    const where = noteWhere(note.ply);
+    for (const field of [note.didWell, note.couldImprove, note.nextTime, note.whatMayHaveHappened, note.opportunity]) {
+      if (field) units.push({ text: field, where });
+    }
+  }
+  return units;
+}
+
 export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): DebriefViolation[] {
   const violations: DebriefViolation[] = [];
   const bullets = output.bullets ?? [];
@@ -158,10 +206,8 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
 
   const neverMissFired = facts.turningPoints.some((tp) => NEVER_MISS_KINDS.includes(kindOf(tp)));
 
-  bullets.forEach((b, i) => {
-    const where = bulletWhere(b, i);
-
-    if (facts.result !== "1-0" && b.text.includes("brought the game home")) {
+  outputTextUnits(output).forEach(({ text, where }) => {
+    if (facts.result !== "1-0" && text.includes("brought the game home")) {
       violations.push({
         kind: "contradiction",
         rule: "win-copy-on-non-win",
@@ -170,7 +216,13 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
       });
     }
 
-    if (neverMissFired && REASSURANCE_RE.test(b.text) && (b.text.includes("no clear mistakes") || b.text.includes("no repeat pattern"))) {
+    // review-0.md minor 6: REASSURANCE_RE's job here is exactly the two
+    // phrases this rule is spec'd on (win-copy-on-non-win owns "brought the
+    // game home" above, via its own direct .includes) -- so the constant is
+    // scoped to match what actually triggers reassurance-vs-detector, and
+    // the guard is just the one regex test, not a second narrower check
+    // that made the regex a no-op.
+    if (neverMissFired && REASSURANCE_RE.test(text)) {
       violations.push({
         kind: "contradiction",
         rule: "reassurance-vs-detector",
@@ -180,6 +232,22 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
     }
   });
 
+  // missed-mate-dismissed: like try-line-on-followed below, this is a
+  // permanent regression guard that is structurally unreachable through the
+  // real bullet builder today (review-0.md minor 3, verified independently
+  // by review) -- documented here rather than broadened, since inventing a
+  // trigger is worse than an honest guard that never fires on real copy:
+  // "keep playing this clean" exists only in debriefBullets.ts:483's
+  // ply-less could-be-better fallback, which itself never runs alongside a
+  // missed-win point (debriefBullets.ts:392 pushes the missed-win bullet
+  // into `out` unconditionally, so the fallback's `out.length === 0` guard
+  // is always false whenever this rule's tp.kind === "missed-win" condition
+  // could hold); "cost you nothing" exists only in highlightedMoves.ts:90's
+  // move-severity copy, which never becomes a DebriefBullet.text at all. If
+  // either producer ever starts emitting one of these strings on a plied
+  // bullet, this rule is what catches it. Its own test (below, in
+  // debriefInvariants.test.ts) drives it through constructed input, not
+  // through the real builder.
   for (const tp of facts.turningPoints) {
     if (kindOf(tp) !== "missed-win") continue;
     bullets.forEach((b, i) => {
@@ -234,9 +302,8 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
   if (facts.turningLines) {
     const validSans = collectValidSans(facts);
     const validSquares = collectValidSquares(facts);
-    bullets.forEach((b, i) => {
-      const where = bulletWhere(b, i);
-      const ranges = sanMatches(b.text);
+    outputTextUnits(output).forEach(({ text, where }) => {
+      const ranges = sanMatches(text);
       for (const { token } of ranges) {
         if (!validSans.has(token)) {
           violations.push({
@@ -247,7 +314,7 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
           });
         }
       }
-      for (const sq of bareSquares(b.text, ranges)) {
+      for (const sq of bareSquares(text, ranges)) {
         if (!validSquares.has(sq)) {
           violations.push({
             kind: "contradiction",
@@ -260,17 +327,16 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
     });
   }
 
-  bullets.forEach((b, i) => {
-    const where = bulletWhere(b, i);
-    if (b.text.includes("—")) {
+  outputTextUnits(output).forEach(({ text, where }) => {
+    if (text.includes("—")) {
       violations.push({ kind: "contradiction", rule: "voice-em-dash", where, message: "em-dash found in bullet text" });
     }
-    if (/\p{Extended_Pictographic}/u.test(b.text)) {
+    if (/\p{Extended_Pictographic}/u.test(text)) {
       violations.push({ kind: "contradiction", rule: "voice-emoji", where, message: "emoji found in bullet text" });
     }
-    const ranges = sanMatches(b.text);
-    for (let idx = 0; idx < b.text.length; idx++) {
-      const ch = b.text[idx];
+    const ranges = sanMatches(text);
+    for (let idx = 0; idx < text.length; idx++) {
+      const ch = text[idx];
       if (ch >= "A" && ch <= "Z") {
         const insideSan = ranges.some((r) => idx >= r.start && idx < r.end);
         if (!insideSan) {
@@ -278,7 +344,7 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
             kind: "contradiction",
             rule: "voice-capital",
             where,
-            message: `capital letter outside a san token in "${b.text}"`,
+            message: `capital letter outside a san token in "${text}"`,
           });
           break;
         }
