@@ -108,15 +108,20 @@ describe("F4 (review-2.md): the gate has power over the anchor, not just existen
 // KNOWN_DEBRIEF_VIOLATIONS and re-running `npx tsx tools/replay-check.ts`
 // flips VERDICT from PASS to FAIL on that exact rule -- see report.)
 describe("F1: debrief allowlist is per (game, rule), not per game", () => {
-  it("a game's documented rule is excused", () => {
-    expect(isKnownDebriefViolation(151, "win-copy-on-non-win")).toBe(true);
-    expect(isKnownDebriefViolation(140, "win-copy-on-non-win")).toBe(true);
-  });
-  it("the SAME game breaking a DIFFERENT, undocumented rule is NOT excused -- this is the false green F1 fixed", () => {
-    // 140 is only ever documented for win-copy-on-non-win. A blanket
-    // per-game skip would excuse this too; the per-(game,rule) form must not.
-    expect(isKnownDebriefViolation(140, "reassurance-vs-detector")).toBe(false);
-    expect(isKnownDebriefViolation(140, "phase-mismatch")).toBe(false);
+  // Truth round (2026-07-29), Task 3: KNOWN_DEBRIEF_VIOLATIONS emptied for
+  // good -- buildDoneWell now guards the draw case generally, verified
+  // against both real games this allowlist used to name (151 and 140).
+  // The per-(game,rule) GRANULARITY this describe block exists to prove is
+  // still live in isKnownDebriefViolation's own implementation (a Set
+  // lookup keyed on "${gameId}:${rule}", not a per-game skip) -- there is
+  // simply nothing left in the Set to exempt, which is the point: an entry
+  // ever added back here again is a regression being hidden, not a known
+  // gap being tracked.
+  it("no game is excused for anything -- the debrief invariants hold on every game in her corpus", () => {
+    expect(isKnownDebriefViolation(151, "win-copy-on-non-win")).toBe(false);
+    expect(isKnownDebriefViolation(151, "reassurance-vs-detector")).toBe(false);
+    expect(isKnownDebriefViolation(151, "unconverted-silent")).toBe(false);
+    expect(isKnownDebriefViolation(140, "win-copy-on-non-win")).toBe(false);
   });
   it("a game with no entries at all is never excused", () => {
     expect(isKnownDebriefViolation(999999, "win-copy-on-non-win")).toBe(false);
@@ -181,13 +186,8 @@ describe("F4: ratchet allowlists are pinned -- growth requires editing this test
   it("KNOWN_DEFENSE_CLAIM_TRACES", () => {
     expect([...KNOWN_DEFENSE_CLAIM_TRACES].sort((a, b) => a - b)).toEqual([118]);
   });
-  it("KNOWN_DEBRIEF_VIOLATIONS (per game:rule)", () => {
-    expect([...KNOWN_DEBRIEF_VIOLATIONS].sort()).toEqual([
-      "140:win-copy-on-non-win",
-      "151:reassurance-vs-detector",
-      "151:unconverted-silent",
-      "151:win-copy-on-non-win",
-    ]);
+  it("KNOWN_DEBRIEF_VIOLATIONS (per game:rule) -- emptied 2026-07-29 (Task 3): the ratchet actually ratcheted", () => {
+    expect([...KNOWN_DEBRIEF_VIOLATIONS].sort()).toEqual([]);
   });
 });
 

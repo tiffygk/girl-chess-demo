@@ -211,12 +211,14 @@ export const KNOWN_DEFENSE_CLAIM_TRACES = new Set<number>([118]);
 // gap Task 3 is fixing, not a new independent defect -- reported here,
 // not silently widened past what is actually true today. All three
 // entries for 151 are Task 3's to clear.
-export const KNOWN_DEBRIEF_VIOLATIONS = new Set<string>([
-  "151:win-copy-on-non-win",
-  "151:reassurance-vs-detector",
-  "151:unconverted-silent",
-  "140:win-copy-on-non-win",
-]);
+//
+// emptied 2026-07-29 (Task 3): the debrief invariants hold on every game;
+// any entry ever added again is a regression being hidden. buildDoneWell
+// now guards the draw case generally (not just games 151/140 by id) --
+// verified against real game 151 (owner ruling, feedback-unconverted-copy.md
+// REVISED COPY SPEC) and real game 140 (the same win-copy-on-non-win bug
+// shape, a plain quiet draw with no unconverted point).
+export const KNOWN_DEBRIEF_VIOLATIONS = new Set<string>([]);
 
 // True iff (gameId, rule) is a documented, dated, currently-true known gap
 // -- never a bare game id. Exported so tools/replay-check.test.ts can prove

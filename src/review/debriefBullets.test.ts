@@ -326,14 +326,190 @@ describe("done well: fallback chain", () => {
     expect(bullets[0].text).toBe("you kept playing through a hard game. next one starts even.");
   });
 
-  it("falls to the generic build-from-here line on a draw/win with nothing else to cite", () => {
+  it("falls to the generic build-from-here line on a win with nothing else to cite", () => {
+    const bullets = debriefBullets({
+      turningPoints: [],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 10,
+    });
+    expect(bullets[0].text).toBe("you brought the game home without a disaster. build from here.");
+  });
+
+  // Truth round (2026-07-29), Task 3: a draw and a win used to share this
+  // exact fallback ("you brought the game home without a disaster" on a
+  // 1/2-1/2 with nothing else to cite is not true -- she did not bring
+  // anything home). Own guard now, own copy.
+  it("falls to the honest 'kept it level' line on a plain draw, never the win fallback", () => {
     const bullets = debriefBullets({
       turningPoints: [],
       classifications: [],
       result: "1/2-1/2",
       totalPlies: 10,
     });
-    expect(bullets[0].text).toBe("you brought the game home without a disaster. build from here.");
+    expect(bullets[0].text).toBe("you kept the game level the whole way. build from here.");
+    expect(bullets[0].text).not.toContain("brought the game home");
+  });
+});
+
+// Truth round (2026-07-29), Task 3: owner ruling, feedback-unconverted-copy.md
+// REVISED COPY SPEC. Supersedes plan Task 3's original strings entirely --
+// "you outplayed her" is false (she didn't win), "that part is real" is a
+// banned AI-ism, and the could-be-better sentence used to repeat itself.
+// Game 151's real numbers (scout-unconverted-data.md): the opponent-mistake
+// swing point at ply 12 (move 6) opens her winning stretch; the annotator's
+// verified repetition anchor sits at ply 43 (move 22) with a stored mate-in-
+// twelve alternative on record (Task 2, commit c1d1905).
+describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverted-copy.md)", () => {
+  const openerPoint: TurningPoint = tp({
+    rank: 1, ply: 12, san: "Ba5", label: "opponent mistake", deltaP: 0.1668, kind: "swing",
+  });
+  const anchorPoint: TurningPoint = tp({
+    rank: 2, ply: 43, san: "Qg5+", label: "unconverted win", deltaP: 0, kind: "unconverted",
+    endKind: "repetition", mateIn: 12,
+  });
+
+  it("done well names the winning stretch by move number and stops -- no move names, no verdict, no AI-ism", () => {
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, anchorPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const doneWell = bullets.find((b) => b.section === "done well")!;
+    expect(doneWell.text).toBe("you were winning this one from move 6 to move 22.");
+    expect(doneWell.ply).toBe(43);
+    expect(doneWell.text).not.toContain("outplayed");
+    expect(doneWell.text).not.toContain("that part is real");
+    expect(doneWell.text).not.toMatch(/Qg5|Ba5|Nf5|Qh4/); // (a) NO: the data never named a strong move of hers
+  });
+
+  it("done well degrades to the plainer 'up to move' wording when there is no preceding opponent-mistake point to anchor the start on", () => {
+    const bullets = debriefBullets({
+      turningPoints: [anchorPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const doneWell = bullets.find((b) => b.section === "done well")!;
+    expect(doneWell.text).toBe("you were winning this one up to move 22.");
+    expect(doneWell.text).not.toContain("from move");
+  });
+
+  it("could be better names the mechanism and the stored mate reading -- her exact three-sentence shape", () => {
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, anchorPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const could = bullets.find((b) => b.section === "could be better")!;
+    expect(could.text).toBe(
+      "you were winning this one. the repetition that started on move 22 gave your lead back to mallow. you had mate in twelve there instead."
+    );
+    expect(could.ply).toBe(43);
+  });
+
+  it("could be better drops the mate sentence when the anchor carries no proven alternative (collision-displaced fallback ply)", () => {
+    const noMateAnchor: TurningPoint = { ...anchorPoint, mateIn: undefined };
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, noMateAnchor],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const could = bullets.find((b) => b.section === "could be better")!;
+    expect(could.text).toBe(
+      "you were winning this one. the repetition that started on move 22 gave your lead back to mallow."
+    );
+    expect(could.text).not.toContain("mate in");
+  });
+
+  it("could be better degrades honestly for a non-repetition unconverted ending: no move number, no mate claim", () => {
+    const stalemateAnchor: TurningPoint = tp({
+      rank: 1, ply: 21, san: "Nxe5", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "stalemate",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [stalemateAnchor],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 40,
+    });
+    const could = bullets.find((b) => b.section === "could be better")!;
+    expect(could.text).toBe("you were winning this one, and the stalemate gave your lead back to mallow.");
+    expect(could.text).not.toMatch(/move \d+/);
+    expect(could.text).not.toContain("mate in");
+  });
+
+  it("watch next time names the repetition pattern and concrete alternatives, phase-gate omitted on game 151's real shape (heavy material, ply-fraction fallback)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, anchorPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+      // no gameSans -> nearlyBarePlies is empty -> phaseForPly's "endgame" at
+      // ply 43 here is the ply-fraction fallback, not a material fact, same
+      // as real game 151 (scout-unconverted-data.md (c): min non-pawn count
+      // 3, nowhere near the bare-piece threshold).
+    });
+    const watch = bullets.find((b) => b.section === "watch next time")!;
+    expect(watch.text).toBe(
+      "when you are winning and the position starts to look familiar, that is the moment to change something: a pawn push, a check from a new square, a rook to an open file. repeating is not a safe move, it is the move that gives the win back."
+    );
+    expect(watch.text).not.toMatch(/^your (opening|middlegame|endgame)/);
+    expect(watch.text).not.toContain("is where this one slipped");
+  });
+
+  it("watch next time falls back to the plainer non-repetition wording for a stalemate/fifty-move ending", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        tp({ rank: 1, ply: 21, san: "Nxe5", label: "unconverted win", deltaP: 0, kind: "unconverted", endKind: "fifty moves" }),
+      ],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 40,
+    });
+    const watch = bullets.find((b) => b.section === "watch next time")!;
+    expect(watch.text).toBe(
+      "when you are winning big, the job changes from attacking to finishing. slow down and look for the line that actually ends it."
+    );
+  });
+
+  it("prepends a phase clause on both done-well and watch-next-time ONLY when the phase is established by material (bare-piece override), never the ply-fraction fallback", () => {
+    // GAME150_SANS ply 55 is a genuinely bare-material position (see "nearly
+    // -bare-side phase override" describe block above) -- reused here purely
+    // to drive nearlyBarePlies' real chess.js replay; the result/turning
+    // points are synthetic, testing the copy function in isolation.
+    const bareAnchor: TurningPoint = tp({
+      rank: 1, ply: 55, san: "Nf7+", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "repetition", mateIn: 5,
+    });
+    const bullets = debriefBullets({
+      turningPoints: [bareAnchor],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const doneWell = bullets.find((b) => b.section === "done well")!;
+    const watch = bullets.find((b) => b.section === "watch next time")!;
+    expect(doneWell.text.startsWith("your endgame is working: ")).toBe(true);
+    expect(watch.text.startsWith("the endgame is where this one slipped. ")).toBe(true);
+  });
+
+  it("never names blame vocabulary or an em-dash anywhere on the unconverted-draw bullets", () => {
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, anchorPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    for (const b of bullets) {
+      for (const banned of ["blunder", "mistake", "disaster", "outplayed", "—", "that part is real"]) {
+        expect(b.text).not.toContain(banned);
+      }
+    }
   });
 });
 

@@ -150,6 +150,37 @@ export function phaseForPly(ply: number, totalPlies: number, endgamePlies?: Set<
   return "middlegame";
 }
 
+// Game-151 round (2026-07-29), the phase gate: feedback-unconverted-copy.md
+// requires a phase claim ONLY when the phase is established by MATERIAL,
+// never the ply-fraction fallback above. scout-unconverted-data.md (c)
+// proved the fallback wrong on real game 151: both sides still hold queen +
+// rook(s) + a minor piece at the unconverted moment (min non-pawn count 3,
+// nowhere near ENDGAME_BARE_PIECE_MAX), yet the ply-fraction rule tags it
+// "endgame" purely because it lands in the tail of a 50-ply game. This is
+// deliberately NOT a rewrite of phaseForPly (that would silently re-tag
+// every phase label across her 152-game history, her call, not tonight's)
+// -- it is a gate on what a bullet's TEXT is allowed to assert, layered on
+// top of the unchanged phase computation. Every phase this module derives
+// outside the literal board-fact override (endgamePlies, src/review/
+// phase.ts) is pure ply arithmetic, not a material fact -- "opening" and
+// "middlegame" are exactly as guessed as the ply-fraction "endgame" rule
+// scout-unconverted-data.md (c) caught being wrong. Precision over recall:
+// the only phase this function will ever assert into copy is the one
+// phaseForPly itself already treats as a literal board fact, checked first
+// and unconditionally.
+export function trustedPhaseForClause(ply: number, endgamePlies?: Set<number>): GamePhase | undefined {
+  return endgamePlies?.has(ply) ? "endgame" : undefined;
+}
+
+// Spelled distances for the mate copy (owner previews use words: "mate in
+// twelve", "mate in one"); counts stay digits ("this happened 5 times").
+export const NUMBER_WORDS = [
+  "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+];
+export function numberWord(n: number): string {
+  return NUMBER_WORDS[n] ?? String(n);
+}
+
 // san -> the piece that moved, for "the free {piece}" / "hung her {piece}"
 // phrasing. Deterministic from SAN's own first character; never a claim
 // beyond what the move notation already says.
@@ -362,12 +393,83 @@ function buildDoneWell(
     };
   }
 
+  // Game-151 round (2026-07-29): a win and a draw no longer share one
+  // fallback -- "brought the game home" is not a true claim about a
+  // 1/2-1/2. Owner ruling (feedback-unconverted-copy.md, REVISED COPY
+  // SPEC): the unconverted case names the winning STRETCH and stops -- no
+  // move names (scout-unconverted-data.md (a): the "strong move" field has
+  // fired zero times across all 152 of her games, so naming a move here
+  // would be fabrication), no verdict over the whole game ("outplayed" is
+  // false -- she did not win), no "that part is real" (banned AI-ism). The
+  // stretch's start is the closest earlier opponent-mistake point, when one
+  // is on record; absent that, the copy names only the end and never
+  // invents a start. A phase clause is prepended only when trustedPhaseFor
+  // Clause allows it (see that function's header).
+  const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
+  if (result === "1/2-1/2" && unconvertedTp) {
+    const endMove = moveNumberForPly(unconvertedTp.ply);
+    const startPoint = findPrecedingOpponentPoint(unconvertedTp.ply, turningPoints);
+    const base = startPoint
+      ? `you were winning this one from move ${moveNumberForPly(startPoint.ply)} to move ${endMove}.`
+      : `you were winning this one up to move ${endMove}.`;
+    const trustedPhase = trustedPhaseForClause(unconvertedTp.ply, endgamePlies);
+    return {
+      section: "done well",
+      text: trustedPhase ? `your ${trustedPhase} is working: ${base}` : base,
+      phase: phaseForPly(unconvertedTp.ply, totalPlies, endgamePlies),
+      category: "conversion",
+      ply: unconvertedTp.ply,
+    };
+  }
+
+  // Game-151 round (2026-07-29): the plain-draw case (no unconverted point
+  // to cite) gets its own honest copy -- "kept it level" is true of a draw
+  // in a way "brought the game home" never is.
+  if (result === "1/2-1/2") {
+    return {
+      section: "done well",
+      text: "you kept the game level the whole way. build from here.",
+      phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
+      category: "development",
+    };
+  }
+
   return {
     section: "done well",
     text: "you brought the game home without a disaster. build from here.",
     phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
     category: "development",
   };
+}
+
+// Owner ruling (2026-07-29, feedback-unconverted-copy.md REVISED COPY
+// SPEC), her chosen shape verbatim: "you were winning this one. the
+// repetition that started on move 22 gave your lead back to mallow. you
+// had mate in twelve there instead." Sentence one is hers. Sentence two
+// names the mechanism -- "the repetition that started on move N" -- and is
+// only ever built for a genuine repetition anchor: a stalemate or a
+// fifty-move draw does not "start" on a move the same way, so those
+// degrade to the plainer no-move-number wording rather than invent one.
+// Sentence three (the mate reading, scout-unconverted-data.md (b)) appears
+// ONLY when the annotator's findRepetitionAnchor actually proved a stored,
+// non-repeating alternative existed at this ply (tp.mateIn set) -- a
+// collision-displaced fallback ply, or any non-repetition ending, carries
+// none of that and the sentence is silently dropped, never guessed.
+function unconvertedCouldBeBetterText(tp: TurningPoint): string {
+  const how =
+    tp.endKind === "repetition"
+      ? "the repetition"
+      : tp.endKind === "stalemate"
+        ? "the stalemate"
+        : tp.endKind === "fifty moves"
+          ? "fifty quiet moves"
+          : "the early call";
+  if (tp.endKind === "repetition") {
+    const n = moveNumberForPly(tp.ply);
+    const mate = tp.mateIn != null && tp.mateIn >= 1 ? ` you had mate in ${numberWord(tp.mateIn)} there instead.` : "";
+    return `you were winning this one. ${how} that started on move ${n} gave your lead back to mallow.${mate}`;
+  }
+  return `you were winning this one, and ${how} gave your lead back to mallow.`;
 }
 
 function buildCouldBeBetter(
@@ -398,6 +500,21 @@ function buildCouldBeBetter(
       phase: phaseForPly(missedWin.ply, totalPlies, endgamePlies),
       category: "endgame technique",
       ply: missedWin.ply,
+    });
+  }
+
+  // Game-151 round (2026-07-29): FORCED for the same reason the missed-win
+  // point is -- deltaP 0 by construction means any swing sort buries the
+  // game's most important note.
+  const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
+  if (unconvertedTp && !used.has(unconvertedTp.ply)) {
+    used.add(unconvertedTp.ply);
+    out.push({
+      section: "could be better",
+      text: unconvertedCouldBeBetterText(unconvertedTp),
+      phase: phaseForPly(unconvertedTp.ply, totalPlies, endgamePlies),
+      category: "endgame technique",
+      ply: unconvertedTp.ply,
     });
   }
 
@@ -516,6 +633,30 @@ function buildWatchNextTime(
       phase: phaseForPly(missedWin.ply, totalPlies, endgamePlies),
       category: "endgame technique",
       ply: missedWin.ply,
+    });
+  }
+
+  // Game-151 round (2026-07-29): owner ruling (feedback-unconverted-copy.md
+  // REVISED COPY SPEC), her exact repetition wording -- concrete
+  // alternatives, not a proverb. A non-repetition ending falls back to the
+  // plainer "attacking to finishing" wording (unchanged from the prior
+  // wave; her feedback was specifically about the repetition case in game
+  // 151). A phase clause is prepended only when trustedPhaseForClause
+  // allows it -- see that function's header for why the ply-fraction
+  // fallback is never trusted here.
+  const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
+  if (unconvertedTp && !missedWin) {
+    const base =
+      unconvertedTp.endKind === "repetition"
+        ? "when you are winning and the position starts to look familiar, that is the moment to change something: a pawn push, a check from a new square, a rook to an open file. repeating is not a safe move, it is the move that gives the win back."
+        : "when you are winning big, the job changes from attacking to finishing. slow down and look for the line that actually ends it.";
+    const trustedPhase = trustedPhaseForClause(unconvertedTp.ply, endgamePlies);
+    bullets.push({
+      section: "watch next time",
+      text: trustedPhase ? `the ${trustedPhase} is where this one slipped. ${base}` : base,
+      phase: phaseForPly(unconvertedTp.ply, totalPlies, endgamePlies),
+      category: "endgame technique",
+      ply: unconvertedTp.ply,
     });
   }
 
