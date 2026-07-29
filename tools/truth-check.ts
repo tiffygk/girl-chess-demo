@@ -211,6 +211,12 @@ export interface RawTurningPointRow {
   missed_punish: number | null;
   crossed_advantage: number | null;
   end_kind: string | null;
+  // F9 (review-2.md LOW, fix wave 2026-07-29): were never mapped, so the
+  // truth gate reconstructed an unconverted/missed-win point without the
+  // number those points' claims rest on ("you had mate in twelve there
+  // instead", "this slipped N times").
+  mate_in: number | null;
+  missed_count: number | null;
 }
 
 export function toTurningPoint(r: RawTurningPointRow): TurningPoint {
@@ -227,6 +233,8 @@ export function toTurningPoint(r: RawTurningPointRow): TurningPoint {
     plyEnd: r.ply_end ?? undefined,
     crossedAdvantage: r.crossed_advantage == null ? undefined : !!r.crossed_advantage,
     endKind: r.end_kind ?? undefined,
+    mateIn: r.mate_in ?? undefined,
+    missedCount: r.missed_count ?? undefined,
   };
 }
 

@@ -9,23 +9,32 @@
 // only, no evaluator call, no LLM, ever.
 //
 // Claims: the game ended strictly worse than the position supported, the
-// ply where the terminal winning run began (where it was won), and how it
-// ended. MUST NOT claim (rca B5): a blunder, a "move that lost it", or any
-// deltaP magnitude. There is no bad move in game 151 (worst deltaP -0.049);
-// the teachable content is repetition avoidance and mating technique.
+// ply where the terminal winning run began, how it ended, and -- ONLY when
+// provable from already-stored data -- the ply that entered a repeating
+// cycle when a non-repeating winning alternative was on record. MUST NOT
+// claim a blunder outside that provable case, or a deltaP magnitude.
 //
-// Owner feedback (2026-07-29, feedback-unconverted-copy.md) supersedes the
-// premise above for the ANCHOR only: she is right that the move that
-// entered the repetition was avoidable ("I did have a blunder move, which
-// was doing the repetition. I could have easily not done that"). The
-// wiring in turningPoints.ts's computeTurningPoints re-anchors this event
-// at the first ply she faced a stored forced mate inside the held run
-// (owner ruling #2) rather than at the run's own start -- for game 151
-// that lands on ply 43 (move 22), where moves.best_move/eval_mate already
-// store Ne7+, mate-in-12, written live during play. See that file's
-// comment at the unconverted block for the exact mechanism and the
-// scout's verification that it never lands on ply 47 (the middle repeat,
-// which has no escape on record).
+// Fix wave (2026-07-29, review-2.md SPEC COMPLIANCE FAIL): the original
+// anchor here ("first stored mate reading in the winning run") was WRONG.
+// feedback-unconverted-copy.md is the binding ruling: the owner said, of
+// game 151, "I did have a blunder move, which was doing the repetition. I
+// could have easily not done that" -- the anchor must be the first ply
+// that ENTERED THE REPEATING CYCLE and has a stored, non-repeating
+// alternative that kept her winning. The mate-reading rule landed on ply
+// 43 for real game 151 by COINCIDENCE (it happened to be the first mate
+// reading AND the repetition entry in this one game); proven by
+// review-2.md's perturbation: reading plies 42/44 as cp instead of mate
+// (squarely inside this evaluator's own documented self-disagreement band
+// -- it returned mate-12 and mate-10 for the SAME fen at different times)
+// walked the old rule to ply 47, the ply the owner explicitly forbade,
+// naming `f6g5` (Qg5+, the move she actually played) as "the alternative."
+// findRepetitionAnchor below replaces it: a chess.js replay locates the
+// repeated position, and only a genuinely different, non-repeating stored
+// best_move at HER decision point counts as an escape. See that function's
+// comment for the full mechanism and scout-unconverted-data.md for the
+// verification against real game 151 (anchor ply 43, Ne7+ mate-in-12 on
+// record; ply 47 has no escape on record -- its stored best_move IS the
+// repeat itself).
 import { Chess } from "chess.js";
 import { buildDeltaSeries, type MoveEval } from "./turningPoints";
 
@@ -34,8 +43,22 @@ import { buildDeltaSeries, type MoveEval } from "./turningPoints";
 // drift onto different thresholds.
 export const UNCONVERTED_MIN_P = 0.85;
 
+// F6 fix (review-2.md MEDIUM): a terminal run of length 1 used to qualify,
+// so a single noisy final reading was enough to declare an "unconverted
+// win" on a game she was never really winning. Verified against her real
+// short draws (games 113 at 4 plies, 140 at 16, 127 at 24): bumping ONLY
+// the last stored eval above UNCONVERTED_MIN_P produces exactly a 1-ply
+// run in every one of them. Requiring a run at least this long eliminates
+// every one of those false positives outright (a single bumped reading
+// can never produce a run this long) while leaving game 151's real run
+// (17 plies, 34-50) untouched by a wide margin. 4 (two full move pairs) is
+// a round, conservative floor picked for that margin -- not fit to either
+// number -- and, like UNCONVERTED_MIN_P, is owner-calibratable.
+export const UNCONVERTED_MIN_RUN_PLIES = 4;
+
 export interface UnconvertedEvent {
   ply: number; // first ply of the terminal >= UNCONVERTED_MIN_P run
+  endPly: number; // last evaluated ply of that same run (bounds anchor search)
   san: string;
   finalP: number; // white winprob at the last evaluated ply
   endKind: "repetition" | "stalemate" | "fifty moves" | "called early";
@@ -83,10 +106,114 @@ export function detectUnconverted(moves: MoveEval[], finalResult: string): Uncon
     startIdx = i;
   }
 
+  const runLen = lastIdx - startIdx + 1;
+  if (runLen < UNCONVERTED_MIN_RUN_PLIES) return null; // F6: a single noisy reading is not a held win
+
   return {
     ply: moves[startIdx].ply,
+    endPly: moves[lastIdx].ply,
     san: moves[startIdx].san,
     finalP,
     endKind: deriveEndKind(moves),
   };
+}
+
+export interface RepetitionAnchor {
+  ply: number; // her odd ply that entered the repeating cycle
+  mateIn?: number; // stored mate distance backing the alternative, when present
+}
+
+// F1 fix (feedback-unconverted-copy.md, the owner's ruling): the
+// unconverted anchor is the first ply that ENTERED the repeating cycle AND
+// has a stored, non-repeating alternative that kept her winning.
+//
+// Method, zero fresh engine calls (only moves.best_move, already written
+// live during play -- see manager.ts's attachEval):
+//   1. Replay the full game with chess.js and key the position after every
+//      ply on board+side-to-move+castling+en-passant (the real threefold
+//      key, ignoring the halfmove/fullmove counters -- same key chess.js's
+//      own isThreefoldRepetition uses internally).
+//   2. The position that recurs is the one sitting at the FINAL ply (the
+//      repetition that ended the game). Every ply immediately AFTER an
+//      occurrence of that position, except the last occurrence (which ends
+//      the game -- no move follows it), is a candidate "entry" -- the
+//      first move of a lap that turned out to loop back.
+//   3. Only HER (odd) candidate plies are eligible. A repeated position
+//      with white to move is always reached after an EVEN ply, so her
+//      candidates are automatic; if the repeated position has black to
+//      move, no candidate is hers and this function honestly returns null
+//      rather than anchoring on mallow's move.
+//   4. For each candidate, in game order: read the PRIOR row's stored
+//      best_move (the position she faced at this ply, per
+//      turningPoints.ts's buildDeltaSeries header -- a row's own eval
+//      describes the position for whoever moves NEXT). Replay to that
+//      exact position, apply the stored UCI move via chess.js, and compare
+//      the SAN chess.js generates to what she actually played -- never a
+//      hand-rolled squares comparison, the same discipline
+//      src/review/followedBest.ts uses (playedSan === bestSan). If the
+//      alternative differs from what she played AND does not itself land
+//      back on the repeated position, it is a genuine escape: return it.
+//   5. Otherwise, try the next candidate. No candidate escapes: return
+//      null (precision over recall -- never invent one).
+//
+// Verified against real game 151 (scout-unconverted-data.md): candidates
+// are plies 43 and 47. Ply 43's prior row (ply 42) stores `c6e7` (Ne7+),
+// mate-in-12, different from what she played (Qg5+) and not a repeat --
+// returned. Ply 47 is never reached: 43 already answers. Had it been
+// reached, its prior row (ply 46) stores `f6g5`, IDENTICAL to what she
+// played there -- correctly rejected, matching the owner's "never ply 47."
+export function findRepetitionAnchor(moves: MoveEval[]): RepetitionAnchor | null {
+  const sorted = [...moves].sort((a, b) => a.ply - b.ply);
+  const byPly = new Map(sorted.map((m) => [m.ply, m]));
+  const chess = new Chess();
+  const keys: string[] = [];
+  for (const mv of sorted) {
+    try {
+      chess.move(mv.san);
+    } catch {
+      return null; // not a clean replay from the start position: never guess
+    }
+    keys.push(chess.fen().split(" ").slice(0, 4).join(" "));
+  }
+  if (keys.length === 0) return null;
+  const finalKey = keys[keys.length - 1];
+  const occurrencePlies = sorted
+    .map((mv, i) => (keys[i] === finalKey ? mv.ply : null))
+    .filter((p): p is number => p != null);
+  if (occurrencePlies.length < 2) return null; // no genuine repeat: never guess
+
+  const maxPly = sorted[sorted.length - 1].ply;
+  const candidateEntries = occurrencePlies
+    .slice(0, -1) // drop the final occurrence: it ends the game, no move follows
+    .map((p) => p + 1)
+    .filter((p) => p % 2 === 1 && p <= maxPly);
+
+  for (const entryPly of candidateEntries) {
+    const priorRow = byPly.get(entryPly - 1);
+    const playedRow = byPly.get(entryPly);
+    if (!priorRow?.bestMove || !playedRow) continue;
+
+    const replay = new Chess();
+    for (const mv of sorted) {
+      if (mv.ply >= entryPly) break;
+      replay.move(mv.san);
+    }
+    const uci = priorRow.bestMove;
+    if (uci.length < 4) continue;
+    let altMove;
+    try {
+      altMove = replay.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: (uci[4] as any) ?? "q" });
+    } catch {
+      continue; // stored best_move doesn't replay legally here: never guess
+    }
+    const altKey = replay.fen().split(" ").slice(0, 4).join(" ");
+    const isSameMove = altMove.san === playedRow.san;
+    if (!isSameMove && altKey !== finalKey) {
+      return {
+        ply: entryPly,
+        mateIn: priorRow.evalMate != null && priorRow.evalMate >= 1 ? priorRow.evalMate : undefined,
+      };
+    }
+  }
+  return null;
 }

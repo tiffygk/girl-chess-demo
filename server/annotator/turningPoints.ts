@@ -27,7 +27,7 @@
 
 import { Chess } from "chess.js";
 import { detectMissedWins } from "./missedWins";
-import { detectUnconverted } from "./unconverted";
+import { detectUnconverted, findRepetitionAnchor } from "./unconverted";
 
 export interface TurningPoint {
   rank: 1 | 2 | 3 | 4 | 5 | 6;
@@ -137,6 +137,16 @@ export interface MoveEval {
   san: string;
   evalCp: number | null;
   evalMate: number | null;
+  // Fix wave (2026-07-29, F1): the UCI move the evaluator recommended for
+  // the position AFTER this ply (i.e. the best move for whoever moves
+  // NEXT) -- already persisted live during play (moves.best_move, see
+  // manager.ts's attachEval). Optional so every existing MoveEval literal
+  // in this codebase (none of which needed it before unconverted.ts's
+  // findRepetitionAnchor) keeps compiling unchanged. Only
+  // findRepetitionAnchor reads it, and only to check whether a stored
+  // alternative to a repetition-entering move exists -- never a fresh
+  // evaluator call.
+  bestMove?: string | null;
 }
 
 // Mate cap: M±n -> wcp ±(3000 - 10*min(n,20)), so a fast forced mate scores
@@ -645,41 +655,69 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   // result, appended as one point per game so every turning-point surface
   // (cards, arrows, try-the-line, notes, chat full-detail) lights up with
   // no new plumbing.
+  //
+  // Fix wave (2026-07-29, review-2.md F1/F2/F3, feedback-unconverted-copy.md
+  // is the binding ruling): the anchor is the first ply that ENTERED a
+  // repeating cycle with a stored, non-repeating alternative that kept her
+  // winning -- see unconverted.ts's findRepetitionAnchor for the full
+  // mechanism and why the old "first stored mate reading" rule was wrong
+  // (it landed on the owner's forbidden ply 47 under a perturbation
+  // squarely inside the evaluator's own documented noise band).
   const unconverted = detectUnconverted(moves, finalResult);
   if (unconverted) {
-    // Owner ruling #2 (2026-07-29): the bullet must name the moment AND
-    // what she had -- "at move 21 you had mate in nine". Prefer the first
-    // moment SHE faced a forced mate inside the winning run: a row at even
-    // ply e holds the eval of the position she faces at ply e+1 (white to
-    // move there). Falls back to the run start when no mate reading exists.
-    let anchorPly = unconverted.ply;
+    let anchorPly: number | null = null;
     let mateAtAnchor: number | null = null;
-    for (const m of [...moves].sort((a, b) => a.ply - b.ply)) {
-      if (m.ply < unconverted.ply - 1 || m.ply % 2 !== 0) continue;
-      if (m.evalMate != null && m.evalMate >= 1) {
-        anchorPly = m.ply + 1;
-        mateAtAnchor = m.evalMate;
-        break;
+
+    if (unconverted.endKind === "repetition") {
+      const repAnchor = findRepetitionAnchor(moves);
+      if (repAnchor) {
+        anchorPly = repAnchor.ply;
+        mateAtAnchor = repAnchor.mateIn ?? null;
       }
     }
-    // On collision with an existing point, fall back to the final evaluated
-    // ply (never two cards on one ply -- the missed-win collision rule).
-    if (points.some((p) => p.ply === anchorPly)) {
-      const lastEvaluated = [...moves].reverse().find((m) => m.evalCp != null || m.evalMate != null);
-      anchorPly = lastEvaluated?.ply ?? anchorPly;
+    // Non-repetition endings (stalemate, fifty moves, called early), or a
+    // repetition with no PROVABLE escape at any of her entry points: never
+    // invent an avoidable-blunder anchor (precision over recall) -- fall
+    // back to the run's own start, parity-fixed to HER ply (F3: odd plies
+    // are hers, and this label is never valid on mallow's move, blame or
+    // no blame).
+    if (anchorPly == null) {
+      anchorPly = unconverted.ply % 2 === 1 ? unconverted.ply : unconverted.ply + 1;
     }
-    if (!points.some((p) => p.ply === anchorPly)) {
-      const anchorSan = moves.find((m) => m.ply === anchorPly)?.san ?? unconverted.san;
+
+    // F2/F3 fix: a single fixed fallback (the old code's "last evaluated
+    // ply") could equal the colliding ply itself, silently dropping the
+    // point while detectUnconverted still says one is owed -- an
+    // unpassable gate. Scan forward through HER (odd) plies inside the
+    // held winning run (never outside it, or the card would be misplaced)
+    // for the first one not already claimed by another point. mateIn only
+    // ever attaches to the verified repetition-anchor ply itself, never to
+    // a collision-displaced fallback -- a displaced ply carries no proven
+    // alternative and must not borrow one.
+    const candidatePlies: number[] = [];
+    if (anchorPly % 2 === 1) candidatePlies.push(anchorPly);
+    for (let p = unconverted.ply % 2 === 1 ? unconverted.ply : unconverted.ply + 1; p <= unconverted.endPly; p += 2) {
+      if (!candidatePlies.includes(p)) candidatePlies.push(p);
+    }
+    const resolvedPly = candidatePlies.find(
+      (p) => moves.some((m) => m.ply === p) && !points.some((pt) => pt.ply === p)
+    );
+
+    if (resolvedPly != null) {
+      const anchorSan = moves.find((m) => m.ply === resolvedPly)?.san ?? unconverted.san;
       points.push({
         rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5 | 6,
-        ply: anchorPly,
+        ply: resolvedPly,
         san: anchorSan,
         label: "unconverted win",
         deltaP: 0, // never fabricated to be sortable -- force-slotted downstream
         lowConfidence: false,
         kind: "unconverted",
         endKind: unconverted.endKind,
-        mateIn: mateAtAnchor ?? undefined, // reuses the missed-win column; feeds "you had mate in nine"
+        // Only the verified repetition-anchor ply carries mateIn -- a
+        // collision-displaced fallback ply has no proven alternative on
+        // record and must never borrow this one's.
+        mateIn: resolvedPly === anchorPly ? mateAtAnchor ?? undefined : undefined,
       });
     }
   }
