@@ -20,7 +20,11 @@
      padding (40) = 392px, plus ~18px of slack. Because calc(100vh-410) is
      always one of the three min() candidates, total page height can never
      exceed 100vh - 18 regardless of which term wins — the vmin/cap terms
-     only ever pull the board SMALLER than that ceiling, never larger. */
+     only ever pull the board SMALLER than that ceiling, never larger.
+     The 426px budget is the LIVE-PLAY worst case. Post-game the .postgame
+     reactive collapse (see the game-over section) frees chrome below the
+     board; the board's own size is already fixed by this formula and
+     never changes at game end. */
   --board-size: min(76vmin, calc(100vh - 426px), 1100px);
   background: linear-gradient(168deg, #F2F7FF 0%, #EFE6FF 55%, #FFE9F6 100%);
   min-height: 100vh;
@@ -1190,6 +1194,21 @@
 .gc-app .game-over .result {
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 20px;
 }
+
+/* Game-151 round (owner ruling 2026-07-29, REACTIVE): post-game, the three
+   live-play reservations lose their min-height FLOORS -- each element's
+   height becomes content-driven. Genuinely empty -> collapses to zero and
+   the wordmark rides right up under the board; cookie narrating -> the
+   band keeps its natural height and the wordmark sits below it. NOTHING is
+   hidden while it has content; the only display:none is a status line
+   with literally no text. Live play keeps every floor exactly as today
+   (anti-reflow guards -- the board must never jump when the judge/coach
+   bands fill). The board itself cannot move: --board-size is a fixed
+   viewport formula (see :24) that never measures these siblings. */
+.gc-app .game-page.postgame .action-slot { min-height: 0; }
+.gc-app .game-page.postgame .coach-hint-band { min-height: 0; }
+.gc-app .game-page.postgame .status-line { min-height: 0; margin-top: 0; }
+.gc-app .game-page.postgame .status-line:empty { display: none; }
 
 /* win title: the wordmark's layered construction at celebration scale
    (V6, spec §4.10). Win only — loss and draw stay the plain 20px .result
