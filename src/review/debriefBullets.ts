@@ -133,7 +133,10 @@ const ENDGAME_MIN_TOTAL_PLIES = 40;
 const ENDGAME_TAIL_FLOOR = 8;
 const ENDGAME_TAIL_FRACTION = 4;
 
-function phaseForPly(ply: number, totalPlies: number, endgamePlies?: Set<number>): GamePhase {
+// Exported (truth round, Task 0): src/review/debriefInvariants.ts imports
+// this exact function so its own phase-mismatch check can never drift from
+// the builder's real phase math -- see that file's header.
+export function phaseForPly(ply: number, totalPlies: number, endgamePlies?: Set<number>): GamePhase {
   // Missed-win round (2026-07-28): a literal board fact beats the ply
   // arithmetic below — see src/review/phase.ts. Checked first: a position
   // with a nearly-bare side is an endgame whatever ply it happens on.
