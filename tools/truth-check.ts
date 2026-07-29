@@ -65,10 +65,29 @@ import type { TurningLine, TurningPoint, MoveClassification, SummaryMove } from 
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, "..");
-const REAL_DB_PATH = path.join(REPO_ROOT, "data", "girlchess.db");
+
+// The owner plays on the MAIN worktree; every OTHER worktree (this one
+// included) has no data/girlchess.db of its own by default. Without this,
+// `npm run gate` inside a worktree throws "real db not found" instead of
+// checking her real history. Three-step resolution, most-specific first:
+//   1. GC_DB_PATH env override -- an explicit escape hatch (tests, CI).
+//   2. <repoRoot>/data/girlchess.db -- honored if it genuinely exists (the
+//      main worktree itself, or a worktree that was given its own copy).
+//   3. the main worktree's db -- the real fallback for every OTHER
+//      worktree. Never written to (see copyScratchDb below); only ever the
+//      COPY SOURCE for a WAL-safe scratch snapshot.
+const MAIN_WORKTREE_DB =
+  "/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/data/girlchess.db";
+export function resolveRealDbPath(repoRoot: string): string {
+  if (process.env.GC_DB_PATH) return process.env.GC_DB_PATH;
+  const local = path.join(repoRoot, "data", "girlchess.db");
+  if (fs.existsSync(local)) return local;
+  return MAIN_WORKTREE_DB;
+}
+const REAL_DB_PATH = resolveRealDbPath(REPO_ROOT);
 const SCRATCH_DB_PATH = path.join(TOOL_DIR, ".truth-check-scratch", "girlchess.db");
 
-function sha256File(p: string): string {
+export function sha256File(p: string): string {
   return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 }
 
@@ -78,7 +97,7 @@ function sha256File(p: string): string {
 // silently vanish from this check. Copying all three siblings and letting
 // SQLite's own WAL replay do the reconciliation on open is the only correct
 // way to snapshot a live WAL-mode db.
-function copyScratchDb(sourcePath: string, destPath: string) {
+export function copyScratchDb(sourcePath: string, destPath: string) {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
   for (const suffix of ["", "-wal", "-shm"]) {
     const src = sourcePath + suffix;
