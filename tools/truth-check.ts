@@ -51,6 +51,7 @@ import path from "path";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { Chess } from "chess.js";
+import Database from "better-sqlite3";
 import {
   openDb,
   getGameMoves,
@@ -65,10 +66,84 @@ import type { TurningLine, TurningPoint, MoveClassification, SummaryMove } from 
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, "..");
-const REAL_DB_PATH = path.join(REPO_ROOT, "data", "girlchess.db");
+
+// The owner plays on the MAIN worktree; every OTHER worktree (this one
+// included) has no data/girlchess.db of its own by default. Without this,
+// `npm run gate` inside a worktree throws "real db not found" instead of
+// checking her real history.
+//
+// Fix-wave F2 (2026-07-29): the old order tried <repoRoot>/data/
+// girlchess.db BEFORE the main worktree, with no freshness or size check --
+// data/* is gitignored, so a stale/demo snapshot dropped in a worktree
+// (exactly the state Task 0 itself found and deleted) silently became the
+// entire corpus every downstream check ran against, and printed nothing to
+// say so. Resolution is now live-db-first:
+//   1. GC_DB_PATH env override -- an explicit escape hatch (tests, CI).
+//   2. the main worktree's db -- the source of truth whenever it exists.
+//      Never written to (see copyScratchDb below); only ever the COPY
+//      SOURCE for a WAL-safe scratch snapshot.
+//   3. <repoRoot>/data/girlchess.db -- last resort, only when the main
+//      worktree db is genuinely absent (a fresh clone, CI, a worktree
+//      deliberately given its own copy), and only once it proves itself
+//      non-empty by COUNTING games (never by hashing -- the project's
+//      standing rule for her db).
+// Every caller of resolveRealDbPath is expected to log the returned
+// `source` once, at the top of its run, so a stale read is visible instead
+// of silent.
+const MAIN_WORKTREE_DB =
+  "/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/data/girlchess.db";
+
+export interface DbResolution {
+  path: string;
+  source: string;
+}
+
+// Readonly, count-based, never a hash. Returns null (not 0) when the file
+// is missing or not a real/openable sqlite db, so "0 games" and "not a db"
+// are distinguishable in the caller's error message.
+function countGamesReadonly(p: string): number | null {
+  if (!fs.existsSync(p)) return null;
+  try {
+    const db = new Database(p, { readonly: true });
+    try {
+      return (db.prepare("SELECT COUNT(*) c FROM games").get() as { c: number }).c;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
+export function resolveRealDbPath(
+  repoRoot: string,
+  mainWorktreeDb: string = MAIN_WORKTREE_DB
+): DbResolution {
+  if (process.env.GC_DB_PATH) {
+    return { path: process.env.GC_DB_PATH, source: "GC_DB_PATH override" };
+  }
+  if (fs.existsSync(mainWorktreeDb)) {
+    return { path: mainWorktreeDb, source: "main worktree (live db, source of truth)" };
+  }
+  const local = path.join(repoRoot, "data", "girlchess.db");
+  const localGames = countGamesReadonly(local);
+  if (localGames != null && localGames > 0) {
+    return {
+      path: local,
+      source: `local worktree copy (main worktree db not found at ${mainWorktreeDb}; verified ${localGames} games by count, not hash)`,
+    };
+  }
+  throw new Error(
+    `no usable db found: main worktree db missing at ${mainWorktreeDb}, and local ${local} is ` +
+      `${localGames == null ? "missing or unreadable" : "empty (0 games)"} -- nothing to copy from`
+  );
+}
+
+const dbResolution = resolveRealDbPath(REPO_ROOT);
+const REAL_DB_PATH = dbResolution.path;
 const SCRATCH_DB_PATH = path.join(TOOL_DIR, ".truth-check-scratch", "girlchess.db");
 
-function sha256File(p: string): string {
+export function sha256File(p: string): string {
   return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 }
 
@@ -78,7 +153,7 @@ function sha256File(p: string): string {
 // silently vanish from this check. Copying all three siblings and letting
 // SQLite's own WAL replay do the reconciliation on open is the only correct
 // way to snapshot a live WAL-mode db.
-function copyScratchDb(sourcePath: string, destPath: string) {
+export function copyScratchDb(sourcePath: string, destPath: string) {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
   for (const suffix of ["", "-wal", "-shm"]) {
     const src = sourcePath + suffix;
@@ -124,7 +199,7 @@ export function reconstructPvLine(
 }
 
 export interface RawTurningPointRow {
-  rank: 1 | 2 | 3 | 4;
+  rank: 1 | 2 | 3 | 4 | 5 | 6;
   ply: number;
   san: string;
   label: string;
@@ -135,6 +210,13 @@ export interface RawTurningPointRow {
   ply_end: number | null;
   missed_punish: number | null;
   crossed_advantage: number | null;
+  end_kind: string | null;
+  // F9 (review-2.md LOW, fix wave 2026-07-29): were never mapped, so the
+  // truth gate reconstructed an unconverted/missed-win point without the
+  // number those points' claims rest on ("you had mate in twelve there
+  // instead", "this slipped N times").
+  mate_in: number | null;
+  missed_count: number | null;
 }
 
 export function toTurningPoint(r: RawTurningPointRow): TurningPoint {
@@ -150,6 +232,9 @@ export function toTurningPoint(r: RawTurningPointRow): TurningPoint {
     missedPunish: r.missed_punish == null ? undefined : !!r.missed_punish,
     plyEnd: r.ply_end ?? undefined,
     crossedAdvantage: r.crossed_advantage == null ? undefined : !!r.crossed_advantage,
+    endKind: r.end_kind ?? undefined,
+    mateIn: r.mate_in ?? undefined,
+    missedCount: r.missed_count ?? undefined,
   };
 }
 
@@ -163,6 +248,7 @@ function fmtLineId(l: LineId): string {
 }
 
 async function main() {
+  console.log(`[truth-check] db source: ${REAL_DB_PATH} (${dbResolution.source})`);
   if (!fs.existsSync(REAL_DB_PATH)) {
     throw new Error(`real db not found at ${REAL_DB_PATH} -- nothing to copy from`);
   }

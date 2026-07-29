@@ -685,6 +685,6 @@ describe("missed-win turning point", () => {
   });
 });
 
-it("TP_ALGO_VERSION is 5 so old games heal on read", () => {
-  expect(TP_ALGO_VERSION).toBe(5);
+it("TP_ALGO_VERSION is 6 so old games heal on read", () => {
+  expect(TP_ALGO_VERSION).toBe(6);
 });
