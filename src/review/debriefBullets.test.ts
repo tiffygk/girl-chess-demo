@@ -12,7 +12,8 @@
 // guess.
 
 import { describe, it, expect } from "vitest";
-import { debriefBullets, affordancesForBullet } from "./debriefBullets";
+import { debriefBullets, affordancesForBullet, trustedPhaseForClause } from "./debriefBullets";
+import { nearlyBarePlies } from "./phase";
 import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from "../game/api";
 
 const OLD_PLATITUDE = "a draw. solid, careful, nothing hung.";
@@ -434,7 +435,14 @@ describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverte
     expect(doneWell.text).not.toMatch(/to move \d+/);
   });
 
-  it("done well degrades to a bare 'you were winning this one.' when run-start AND there is no preceding opponent point either", () => {
+  // review-3-pass2.md LOW finding 4 (introduced by the prior wave): on this
+  // exact run-start/no-startPoint path, couldBeBetter's non-proven text
+  // (unconvertedCouldBeBetterText) ALSO opens with "you were winning this
+  // one" -- done-well used to render that literal sentence bare, standing
+  // alone directly above couldBeBetter's sentence that repeats it verbatim,
+  // the F4 redundancy she named by name in a starker form. Fixed by varying
+  // done-well's fallback so the two sections never share an opening clause.
+  it("done well never repeats couldBeBetter's opening clause verbatim when run-start AND there is no preceding opponent point either", () => {
     const stalemateRunStart: TurningPoint = tp({
       rank: 1, ply: 5, san: "Nxe5", label: "unconverted win", deltaP: 0, kind: "unconverted",
       endKind: "stalemate", anchorKind: "run-start",
@@ -446,8 +454,11 @@ describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverte
       totalPlies: 40,
     });
     const doneWell = bullets.find((b) => b.section === "done well")!;
-    expect(doneWell.text).toBe("you were winning this one.");
+    const couldBeBetter = bullets.find((b) => b.section === "could be better")!;
+    expect(doneWell.text).toBe("you had a winning position here.");
     expect(doneWell.text).not.toMatch(/move \d+/);
+    expect(couldBeBetter.text).toBe("you were winning this one, and the stalemate gave your lead back to mallow.");
+    expect(doneWell.text).not.toBe(couldBeBetter.text.split(",")[0] + ".");
   });
 
   it("could be better names the mechanism and the stored mate reading -- her exact three-sentence shape", () => {
@@ -559,20 +570,21 @@ describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverte
     );
   });
 
-  // review-3.md MEDIUM finding 3: done-well and watch-next-time used to
-  // both gate their phase clause on the identical ply (the anchor/slip
-  // ply), so they could only ever agree -- either both silent, or both
-  // asserting the SAME phase word, which is a direct contradiction when it
-  // happens ("your endgame is working" beside "the endgame is where this
-  // one slipped", about the one moment). Fixed by checking done-well's
-  // phase at the STRENGTH ply (the winning run's start) instead, which can
-  // never equal the slip ply -- so the pair either genuinely differs or,
-  // far more often (trustedPhaseForClause can only prove "endgame", and a
-  // winning run's start is rarely bare-material), done-well's half stays
-  // silent while watch-next-time's real, independently-provable claim still
-  // ships. This is the same bareAnchor fixture the old (buggy) version of
-  // this test asserted the contradiction from.
-  it("watch-next-time may claim the material-proven phase; done-well never claims the SAME phase at the SAME ply -- no more contradictory pair", () => {
+  // review-3-pass2.md MEDIUM finding 3 (fixing a review-3.md MEDIUM finding
+  // 3 test that turned out not to test its own name): this fixture used to
+  // supply NO preceding opponent point, so startPoint was always null and
+  // done-well's phase clause was skipped unconditionally -- the pairing
+  // this test claims to cover (both sections independently able to prove
+  // "endgame" about the same debrief) was never actually exercised. Adding
+  // one opponent point at ply 50 (inside GAME150_SANS's real bare-piece
+  // endgame, plies 43-91 -- see "nearly-bare-side phase override" describe
+  // block below) reproduces the collapse review-3-pass2.md finding 2
+  // describes: trustedPhaseForClause's codomain is only {"endgame",
+  // undefined}, so checking a DIFFERENT ply (startPoint.ply=50 vs the
+  // anchor's ply=55) does not stop both sides from proving "endgame." What
+  // actually prevents the contradiction is the copy-layer suppression in
+  // buildDoneWell: watchNextTime's claim wins, done-well's half drops.
+  it("watch-next-time claims the material-proven phase; done-well would claim the SAME phase from a different ply and suppresses instead -- no more contradictory pair", () => {
     // GAME150_SANS ply 55 is a genuinely bare-material position (see "nearly
     // -bare-side phase override" describe block above) -- reused here purely
     // to drive nearlyBarePlies' real chess.js replay; the result/turning
@@ -581,8 +593,16 @@ describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverte
       rank: 1, ply: 55, san: "Nf7+", label: "unconverted win", deltaP: 0, kind: "unconverted",
       endKind: "repetition", mateIn: 5, anchorKind: "repetition-entry",
     });
+    // The opponent point that reproduces the collapse: ply 50 is strictly
+    // before the anchor (so findPrecedingOpponentPoint picks it up as
+    // done-well's startPoint) and sits inside the same bare-material
+    // endgame as the anchor, so trustedPhaseForClause proves "endgame" at
+    // BOTH plies -- two different plies, the same phase.
+    const opponentPointInBareEndgame: TurningPoint = tp({
+      rank: 1, ply: 50, san: "Qxh5", label: "opponent mistake", deltaP: 0.05, kind: "swing",
+    });
     const bullets = debriefBullets({
-      turningPoints: [bareAnchor],
+      turningPoints: [opponentPointInBareEndgame, bareAnchor],
       classifications: [],
       result: "1/2-1/2",
       totalPlies: 91,
@@ -591,8 +611,12 @@ describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverte
     const doneWell = bullets.find((b) => b.section === "done well")!;
     const watch = bullets.find((b) => b.section === "watch next time")!;
     expect(watch.text.startsWith("the endgame is where this one slipped. ")).toBe(true);
+    // The collision, proven: done-well's own gate (checked at startPoint's
+    // ply, 50) independently proves "endgame" too -- so without the
+    // copy-layer suppression this WOULD render "your endgame is working".
+    expect(trustedPhaseForClause(50, nearlyBarePlies(GAME150_SANS))).toBe("endgame");
     expect(doneWell.text.startsWith("your endgame is working")).toBe(false);
-    expect(doneWell.text).toBe("you were winning this one up to move 28.");
+    expect(doneWell.text).toBe("you were winning this one from move 25 to move 28.");
   });
 
   // review-3.md MEDIUM finding 2: the pre-existing episode branch used to

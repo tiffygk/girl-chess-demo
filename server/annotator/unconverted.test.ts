@@ -335,6 +335,47 @@ describe("review-3.md finding 1: anchorKind distinguishes a proven turning momen
   });
 });
 
+// Fix wave 2 (2026-07-29, review-3-pass2.md CODE QUALITY FAIL finding 1):
+// every anchorKind test above reaches turningPoints.ts:764's
+// `resolvedPly === anchorPly && anchorProven` through the
+// COLLISION-DISPLACEMENT path (rejectedGame151 forces the fallback ply to
+// collide with an already-claimed ply and walk forward), where
+// `resolvedPly !== anchorPly` on its own already forces "run-start" --
+// `anchorProven` never gets asked. Deleting `&& anchorProven` from that
+// condition left all 252 pre-wave tests green and reintroduced the
+// original HIGH bug verbatim on real game 151. The untested case is the
+// UNDISPLACED unproven fallback: findRepetitionAnchor proves nothing
+// (anchorProven stays false), anchorPly falls back to the run's own start
+// (parity-fixed to her ply), and that fallback ply happens to be unclaimed
+// and unrejected -- so resolvedPly === anchorPly is TRUE even though
+// nothing was ever proven. Game 151 with every stored best_move nulled is
+// exactly this case: no prior row has a best_move to compare against, so
+// findRepetitionAnchor can prove no escape anywhere, and the fallback
+// lands cleanly (no other point claims it, so no displacement scan is
+// even triggered).
+describe("review-3-pass2.md finding 1: anchorProven gates the UNDISPLACED fallback path too, not only the displaced one", () => {
+  const noBestMoveGame151: MoveEval[] = game151.map((m) => ({ ...m, bestMove: undefined }));
+
+  it("sanity: nulling every best_move genuinely destroys the proof -- findRepetitionAnchor returns null", () => {
+    expect(findRepetitionAnchor(noBestMoveGame151)).toBeNull();
+  });
+
+  it("real game 151, every best_move nulled (undisplaced fallback, the case no existing test reaches): anchorKind is 'run-start', not 'repetition-entry'", () => {
+    const points = computeTurningPoints(noBestMoveGame151, "1/2-1/2");
+    const u = points.find((p) => p.kind === "unconverted")!;
+    expect(u).toBeDefined();
+    expect(u.endKind).toBe("repetition"); // the ending really was a repetition
+    expect(u.anchorKind).toBe("run-start"); // but no escape was ever proven
+    expect(u.mateIn).toBeUndefined(); // a run-start anchor never borrows a proven mate reading
+  });
+
+  it("positive control (same shape, proof intact): the unmodified game151 fixture proves the escape and anchors 'repetition-entry' -- proves the negative test above isn't vacuous", () => {
+    const points = computeTurningPoints(game151, "1/2-1/2");
+    const u = points.find((p) => p.kind === "unconverted")!;
+    expect(u.anchorKind).toBe("repetition-entry");
+  });
+});
+
 // F1's core mechanism, tested directly (not just through the wiring).
 describe("findRepetitionAnchor", () => {
   it("real game 151: finds ply 43 with mateIn 12", () => {

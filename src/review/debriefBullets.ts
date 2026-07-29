@@ -346,7 +346,16 @@ function buildDoneWell(
   result: string | null,
   totalPlies: number,
   gameSans?: SummaryMove[],
-  endgamePlies?: Set<number>
+  endgamePlies?: Set<number>,
+  // Fix wave 2 (2026-07-29, review-3-pass2.md MEDIUM finding 2): the phase
+  // watchNextTime's own unconverted-branch clause would claim, computed
+  // once in debriefBullets() (mirroring buildWatchNextTime's own
+  // missedWin/unconverted gate so the two stay in lockstep) and threaded
+  // down here so this function can avoid asserting the identical phase
+  // word about a different moment in the same debrief. See the comment at
+  // this function's unconverted branch below for why "different ply" does
+  // NOT already guarantee "different phase."
+  watchNextPhaseClaim?: GamePhase
 ): DebriefBullet {
   const punishPoints = turningPoints.filter((t) => t.label.startsWith("opponent") && !!t.punishSan);
   if (punishPoints.length > 0) {
@@ -402,16 +411,26 @@ function buildDoneWell(
   // number there would be fabrication (review-3.md: "you were winning this
   // one from move 6 to move 18" when she was winning through move 25) --
   // this degrades to "onward" instead, true on both paths. A phase clause
-  // is prepended only when trustedPhaseForClause allows it AND only ever on
-  // the START of the stretch (never the same ply watchNextTime's phase
-  // clause below checks -- review-3.md finding 3: checking the identical
-  // ply on both sides is what let "your endgame is working" and "the
-  // endgame is where this one slipped" ship side by side about the same
-  // moment). trustedPhaseForClause can only ever positively prove
-  // "endgame", never "middlegame" (that would need rewriting phaseForPly,
-  // explicitly out of scope -- see that function's header), so checking the
-  // stretch's start here means this clause will essentially never fire; an
-  // honest silence beats fabricating the pair the gate can't prove.
+  // is prepended only when trustedPhaseForClause allows it, checked at the
+  // START of the stretch rather than watchNextTime's slip ply below.
+  //
+  // Fix wave 2 (2026-07-29, review-3-pass2.md MEDIUM finding 2): checking a
+  // DIFFERENT ply than watchNextTime does NOT already guarantee a different
+  // PHASE -- the prior comment here claimed it "eliminates" finding 3's
+  // contradiction; that was false. trustedPhaseForClause's entire codomain
+  // is `{"endgame", undefined}` (it can only ever positively prove
+  // "endgame" -- see that function's header), so two distinct plies that
+  // are both inside the same bare-material stretch (`endgamePlies`) can
+  // trivially both resolve to "endgame." That is exactly the reproduction:
+  // a preceding opponent point sitting inside the same bare-piece endgame
+  // as the unconverted anchor renders "your endgame is working: ..." right
+  // above watchNextTime's "the endgame is where this one slipped" -- the
+  // same phase asserted as both strength and weakness about one game.
+  // What actually prevents the contradiction is the copy-layer suppression
+  // below: watchNextTime's claim (computed once in debriefBullets() and
+  // passed in as watchNextPhaseClaim) wins when both would fire, and this
+  // clause drops rather than repeating it. A silent bullet beats a
+  // self-contradicting pair.
   const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
   if (result === "1/2-1/2" && unconvertedTp) {
     const startPoint = findPrecedingOpponentPoint(unconvertedTp.ply, turningPoints);
@@ -423,22 +442,27 @@ function buildDoneWell(
         ? `you were winning this one from move ${moveNumberForPly(startPoint.ply)} to move ${endMove}.`
         : `you were winning this one up to move ${endMove}.`;
     } else {
+      // LOW finding 4 (review-3-pass2.md, introduced by the prior wave):
+      // couldBeBetter's non-proven text always opens with "you were
+      // winning this one" too (unconvertedCouldBeBetterText below) -- when
+      // there is also no startPoint here, done-well used to render that
+      // exact clause bare, standing alone directly above couldBeBetter's
+      // sentence that repeats it verbatim as its own opening. Not
+      // reachable on her real corpus today (game 151 always has an
+      // opponent point at ply 12), but the same F4 redundancy she named by
+      // name in a starker form. Varied here so the two sections never
+      // share a literal opening sentence.
       base = startPoint
         ? `you were winning this one from move ${moveNumberForPly(startPoint.ply)} onward.`
-        : "you were winning this one.";
+        : "you had a winning position here.";
     }
-    // startPoint.ply is always strictly earlier than unconvertedTp.ply
-    // (findPrecedingOpponentPoint's own contract) -- checking the phase
-    // there, and ONLY there, guarantees this clause can never land on the
-    // identical ply watchNextTime's phase clause checks below, which is
-    // what actually eliminates finding 3's contradiction (not merely
-    // reduces its odds). No startPoint means no earlier ply to check at
-    // all, so the clause is omitted rather than falling back onto
-    // unconvertedTp.ply and reopening the same collision.
     const trustedPhase = startPoint ? trustedPhaseForClause(startPoint.ply, endgamePlies) : undefined;
+    // Suppress rather than repeat watchNextTime's claim (see the comment
+    // above this branch).
+    const phaseClaim = trustedPhase && trustedPhase !== watchNextPhaseClaim ? trustedPhase : undefined;
     return {
       section: "done well",
-      text: trustedPhase ? `your ${trustedPhase} is working: ${base}` : base,
+      text: phaseClaim ? `your ${phaseClaim} is working: ${base}` : base,
       phase: phaseForPly(unconvertedTp.ply, totalPlies, endgamePlies),
       category: "conversion",
       ply: unconvertedTp.ply,
@@ -795,7 +819,19 @@ export function debriefBullets(input: DebriefBulletsInput): DebriefBullet[] {
   // side beats the ply-arithmetic phase rule.
   const endgamePlies = nearlyBarePlies(gameSans);
 
-  const doneWell = buildDoneWell(turningPoints, episode, result, totalPlies, gameSans, endgamePlies);
+  // Fix wave 2 (2026-07-29, review-3-pass2.md MEDIUM finding 2): the phase
+  // watchNextTime's own unconverted-branch clause would claim, computed
+  // ahead of buildDoneWell so it can suppress a colliding claim of its own
+  // (see that function's unconverted branch). Mirrors buildWatchNextTime's
+  // own guard exactly (an unconverted point only gets a watch-next-time
+  // phase clause when there is no missed-win point crowding it out) --
+  // keep the two in sync if either guard changes.
+  const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
+  const missedWinTp = turningPoints.find((t) => t.kind === "missed-win");
+  const watchNextPhaseClaim =
+    unconvertedTp && !missedWinTp ? trustedPhaseForClause(unconvertedTp.ply, endgamePlies) : undefined;
+
+  const doneWell = buildDoneWell(turningPoints, episode, result, totalPlies, gameSans, endgamePlies, watchNextPhaseClaim);
   const couldBeBetter = buildCouldBeBetter(
     turningPoints,
     classifications,
