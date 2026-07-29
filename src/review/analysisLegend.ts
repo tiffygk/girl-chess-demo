@@ -72,5 +72,5 @@ export const LEGEND_DASHED_ROWS: LegendRow[] = [
   { kind: "mallow-best", label: "what your move allowed", style: "dashed", color: ROSE },
 ];
 
-// All six, solid cluster first -- the order the rail actually renders in.
+// All five, solid cluster first -- the order the rail actually renders in.
 export const LEGEND_ROWS: LegendRow[] = [...LEGEND_SOLID_ROWS, ...LEGEND_DASHED_ROWS];

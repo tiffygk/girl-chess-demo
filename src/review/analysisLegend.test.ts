@@ -145,16 +145,44 @@ describe("AnalysisLegendRail copy hygiene: no em-dash in user-facing text (union
 
   // RED when: AxisHead still renders the old 18x4 row-scale line sample (which
   // read as a fifth arrow row) or drops the full-width axis-rule that replaced it.
+  // Strengthened per A3 review MEDIUM: the old version only matched a quoted
+  // "width=\"18\" height=\"4\"" literal (evaded by a JSX numeric width={18}
+  // height={4}) and never checked the axis-rule svg's own attributes, so a
+  // regression to the row-scale x2, or a dropped strokeDasharray, stayed green.
   it("axis heads are headers, not rows: full-width rule, no row-scale sample (visual-rca 5)", () => {
     expect(analysisLegendRailSrc).toMatch(/axis-rule/);
-    expect(analysisLegendRailSrc).not.toMatch(/width="18" height="4"/);
+    // catches both the old quoted literal and a re-added JSX numeric prop.
+    expect(analysisLegendRailSrc).not.toMatch(/width=(?:"18"|\{18\})\s+height=(?:"4"|\{4\})/);
+    const axisRuleSvg = analysisLegendRailSrc.match(/<svg className="axis-rule"[\s\S]*?<\/svg>/);
+    expect(axisRuleSvg).not.toBeNull();
+    const svgMarkup = axisRuleSvg![0];
+    // (a) the rule spans the header's full width -- not the row-scale stub's x2.
+    expect(svgMarkup).toMatch(/x2="100%"/);
+    // (b) the rule still distinguishes solid ("it happened") from dashed
+    // ("it didn't") -- the legend's entire solid-vs-dashed teaching.
+    expect(svgMarkup).toMatch(/strokeDasharray/);
   });
 
   // RED when: the shipped two-column rail-body (or its skewed divider, or the
   // viewport media query's stacking rule) comes back -- the rebuild is one
   // column at EVERY width, with the divider deleted, not hidden.
+  // Strengthened per A3 review HIGH: the old single toMatch regex was
+  // satisfied by ANY `.rail-body { ... }` block containing "flex-direction:
+  // column" ANYWHERE in the file, including inside a reintroduced media
+  // query -- it never proved there was only one such block, and it never
+  // proved the base (unqueried) rule was the column one. Now every
+  // `.rail-body { ... }` block is matched, there must be exactly one, and
+  // that one must be column.
   it("the two-column body and its divider are deleted, not hidden (visual-rca 3)", () => {
+    // sanity (A3 review LOW): prove cssSrc is the real stylesheet, not an
+    // empty string -- if vite.config.ts's `test.css: true` were ever
+    // dropped, cssSrc would be "" and every not.toMatch below would pass
+    // vacuously. A known sentinel selector that must survive any rebuild.
+    expect(cssSrc.length).toBeGreaterThan(0);
+    expect(cssSrc).toMatch(/\.legend-rail/);
     expect(cssSrc).not.toMatch(/cluster-divider/);
-    expect(cssSrc).toMatch(/\.rail-body\s*\{[^}]*flex-direction:\s*column/);
+    const railBodyBlocks = [...cssSrc.matchAll(/\.rail-body\s*\{[^}]*\}/g)];
+    expect(railBodyBlocks).toHaveLength(1);
+    expect(railBodyBlocks[0][0]).toMatch(/flex-direction:\s*column/);
   });
 });
