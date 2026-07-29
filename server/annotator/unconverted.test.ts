@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { detectUnconverted, deriveEndKind, findRepetitionAnchor, UNCONVERTED_MIN_P } from "./unconverted";
 import { computeTurningPoints, type MoveEval } from "./turningPoints";
+// P6 (review-2-pass2.md): the real cross-layer proof that a DEGRADED point
+// cannot reach Task 3's mate sentence -- feeding this file's own real
+// computeTurningPoints output into the real debriefBullets, not a hand-typed
+// TurningPoint literal. Same cross-import tools/replay-check.ts already
+// does in production between server/annotator and src/review; only
+// debriefBullets.test.ts itself avoids it, by its own stated convention of
+// mirroring literal output instead.
+import { debriefBullets } from "../../src/review/debriefBullets";
 
 // Legal 12-ply knight shuffle: start position occurs three times
 // (threefold), evals pin white at winprob ~1.0 (side-to-move signed, see
@@ -179,6 +187,91 @@ describe("computeTurningPoints carries the unconverted point", () => {
   });
 });
 
+// Shared by P2 and P6 below: real game 151 with ply 42's stored best_move
+// overridden to "f6g5" -- a value this evaluator genuinely returns at plies
+// 46 and 50 in the SAME fixture, not an exotic one -- which makes it
+// IDENTICAL to what she actually played at ply 43 (Qg5+), so
+// findRepetitionAnchor correctly rejects candidate 43 (isSameMove). Ply 47's
+// own stored best_move is unchanged and was always identical to what she
+// played there too, so 47 is also correctly rejected: findRepetitionAnchor
+// returns null (no escape anywhere on record) -- a genuinely DEGRADED point.
+const rejectedGame151: MoveEval[] = game151.map((m) => {
+  if (m.ply === 42) return { ...m, bestMove: "f6g5" };
+  // Also needed to force the collision: without this, the run's own start
+  // (the parity-fixed fallback anchor) already lands somewhere that isn't
+  // claimed by another point, and the forward scan is never exercised at
+  // all -- this reading drop is what pushes the fallback into colliding
+  // with an already-claimed ply and walking forward.
+  if (m.ply === 44) return { ...m, evalCp: 400, evalMate: null };
+  return m;
+});
+
+// P2 (review-2-pass2.md MEDIUM): the collision-displacement fallback scan in
+// turningPoints.ts could RE-SELECT a repetition-cycle entry ply that
+// findRepetitionAnchor had already examined and REJECTED for having no
+// escape on record -- including the owner's explicitly forbidden ply 47.
+// Before the fix, the collision-displacement scan in computeTurningPoints
+// did not know these plies had been vetted and rejected, so its forward
+// walk landed the whole "unconverted win" point at ply 47 anyway -- the
+// exact ply the owner ruled must never be the anchor, reached through a
+// side door that carries no mateIn and so never trips the F1 anchor-value
+// check on its own.
+describe("P2 (review-2-pass2.md): a ply findRepetitionAnchor rejects stays rejected by the collision-displacement fallback", () => {
+  it("findRepetitionAnchor itself correctly finds no escape once ply 42's stored alternative matches what she played", () => {
+    expect(findRepetitionAnchor(rejectedGame151)).toBeNull();
+  });
+
+  it("computeTurningPoints must not fall back onto the rejected ply 47 -- it must degrade honestly instead (never claim an unproven anchor)", () => {
+    const u = computeTurningPoints(rejectedGame151, "1/2-1/2").find((p) => p.kind === "unconverted");
+    expect(u).toBeDefined();
+    expect(u!.ply).not.toBe(47); // the owner's explicit constraint, reachable via this side door pre-fix
+    expect(u!.mateIn).toBeUndefined(); // a collision-displaced/degraded ply never borrows a proven mateIn
+  });
+});
+
+// P6 (review-2-pass2.md LOW but CROSS-TASK): Task 3's debriefBullets now
+// renders "you had mate in twelve there instead" straight off tp.mateIn --
+// review-2.md's own P6 finding was that a DEGRADED point (no proven escape,
+// anchor = collision fallback) is field-for-field indistinguishable from a
+// proven repetition anchor except for that one optional field being unset.
+// This proves the full real chain end to end -- real computeTurningPoints
+// output (not a hand-typed TurningPoint fixture) fed into the real
+// debriefBullets -- rather than trusting a read of the gating code.
+describe("P6 (review-2-pass2.md): a degraded unconverted point can never reach Task 3's mate sentence", () => {
+  it("real game 151, collision-displaced (rejected ply 43+47): computeTurningPoints yields no mateIn, and debriefBullets renders no mate claim", () => {
+    const points = computeTurningPoints(rejectedGame151, "1/2-1/2");
+    const u = points.find((p) => p.kind === "unconverted")!;
+    expect(u).toBeDefined();
+    expect(u.mateIn).toBeUndefined(); // the data-level guarantee
+
+    const bullets = debriefBullets({
+      turningPoints: points,
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const could = bullets.find((b) => b.section === "could be better")!;
+    expect(could).toBeDefined();
+    expect(could.text).not.toContain("mate in"); // the copy-level guarantee, proven off the real pipeline
+    expect(could.text).not.toMatch(/mate in \w+ there instead/);
+  });
+
+  it("real game 151, the genuinely proven anchor (unmodified fixture): mateIn IS present and the mate sentence DOES render -- the positive control proving the negative test above isn't vacuous", () => {
+    const points = computeTurningPoints(game151, "1/2-1/2");
+    const u = points.find((p) => p.kind === "unconverted")!;
+    expect(u.mateIn).toBe(12);
+
+    const bullets = debriefBullets({
+      turningPoints: points,
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const could = bullets.find((b) => b.section === "could be better")!;
+    expect(could.text).toContain("you had mate in twelve there instead.");
+  });
+});
+
 // F1's core mechanism, tested directly (not just through the wiring).
 describe("findRepetitionAnchor", () => {
   it("real game 151: finds ply 43 with mateIn 12", () => {
@@ -191,5 +284,105 @@ describe("findRepetitionAnchor", () => {
   it("never returns an even ply (mallow's move) -- a repeated position with black to move has no her-entry", () => {
     const anchor = findRepetitionAnchor(game151);
     if (anchor) expect(anchor.ply % 2).toBe(1);
+  });
+});
+
+// P3 (review-2-pass2.md MEDIUM): findRepetitionAnchor has four guards, and
+// review-2-pass2.md found the whole suite green at 66/66 with ANY of them
+// deleted -- the "never ply 47" behavior was entirely untested at the unit
+// level (only proven through real game 151's own particular numbers, which
+// happen to satisfy all four guards without ever exercising a REJECTION).
+// One dedicated fixture per guard below, each built so the guard is the
+// ONLY thing standing between "correctly null/correct-ply" and "the
+// original lie." Each was verified by hand-mutating the corresponding
+// clause in unconverted.ts and re-running this file: three genuinely
+// redden; the fourth (documented below) is provably unreachable given the
+// function's own parity invariant and does not redden -- reported here
+// rather than faking a red, per this round's test-honesty rule.
+describe("P3 (review-2-pass2.md): each guard inside findRepetitionAnchor, tested in isolation", () => {
+  // Minimal repeat: a single knight shuffles out and back three times, so
+  // the start position recurs after plies 4, 8, 12 and her candidate entry
+  // plies are 5 and 9 (occurrence+1, both hers).
+  const shuffleSans = ["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8"];
+  const shuffle: MoveEval[] = shuffleSans.map((san, i) => ({
+    ply: i + 1, san, evalCp: i % 2 === 0 ? -900 : 900, evalMate: 8,
+  }));
+
+  // Guard: `!isSameMove`. Both candidates' prior rows (plies 4 and 8)
+  // recommend g1f3 -- exactly what she actually plays at both plies 5 and
+  // 9 ("Nf3" both times, the knight returning to f3 the same way). With
+  // the guard, both are correctly rejected (null). Deleting `!isSameMove`
+  // hands back her own move as "the escape" at the first candidate (ply 5)
+  // -- the exact original lie.
+  it("!isSameMove rejects a candidate whose stored alternative is identical to what she actually played (never hand her own move back to her)", () => {
+    const fixture = shuffle.map((m) => (m.ply === 4 || m.ply === 8 ? { ...m, bestMove: "g1f3" } : m));
+    expect(findRepetitionAnchor(fixture)).toBeNull();
+    // Verified by mutation: commenting out `!isSameMove &&` in
+    // findRepetitionAnchor turns this test red, returning
+    // { ply: 5, mateIn: 8 } -- her own played move "Nf3" reported as the
+    // alternative she should have played instead.
+  });
+
+  // Guard: the odd-parity filter (`p % 2 === 1`) on candidateEntries.
+  // Reachable only when the game's FINAL ply is HERS (odd), because that
+  // is the one case where the repeated key's own parity is odd and an
+  // unfiltered entry (occurrence+1) would land on an EVEN, mallow's, ply.
+  // 9-ply fixture: she delivers the third occurrence of the shuffled
+  // position herself (ply 9), so without the filter the only candidate
+  // would be ply 2 -- mallow's move.
+  it("the odd-parity filter rejects a would-be candidate on mallow's (even) ply -- never hers to anchor", () => {
+    const nineSans = ["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8", "Nf3"];
+    const fixture: MoveEval[] = nineSans.map((san, i) => ({
+      ply: i + 1, san, evalCp: i % 2 === 0 ? -900 : 900, evalMate: 8,
+      bestMove: i === 0 ? "b8c6" : undefined, // prior row for the would-be ply-2 candidate: a real, different, non-repeating black move
+    }));
+    expect(findRepetitionAnchor(fixture)).toBeNull();
+    // Verified by mutation: removing `.filter((p) => p % 2 === 1 ...)`
+    // from candidateEntries turns this test red, returning
+    // { ply: 2, mateIn: 8 } -- mallow's move reported as the anchor,
+    // violating "odd plies are hers" directly at this function's own
+    // return value, not just downstream.
+  });
+
+  // Guard: `evalMate != null && evalMate >= 1` gating what gets reported
+  // as mateIn. Real game 151, ply 42's stored evalMate flipped negative
+  // (-12, i.e. BLACK has mate-in-12 at that point -- a losing reading, not
+  // a winning alternative). The candidate at ply 43 is still a genuine
+  // escape (different move, no loop back) so the anchor itself is still
+  // correctly found -- but a losing mate reading must never be reported as
+  // "you had mate in N there instead."
+  it("the evalMate >= 1 gate withholds mateIn when the stored reading at the anchor is a LOSING mate (never claim a losing reading as her winning alternative)", () => {
+    const negativeMate = game151.map((m) => (m.ply === 42 ? { ...m, evalMate: -12 } : m));
+    const anchor = findRepetitionAnchor(negativeMate);
+    expect(anchor).not.toBeNull();
+    expect(anchor!.ply).toBe(43); // the escape itself is still genuine and still found
+    expect(anchor!.mateIn).toBeUndefined(); // but -12 is a losing reading, never reported as a winning mateIn
+    // Verified by mutation: replacing the ternary with a bare
+    // `priorRow.evalMate ?? undefined` turns this test red, returning
+    // { ply: 43, mateIn: -12 }.
+  });
+
+  // Guard: `altKey !== finalKey` -- proven UNREACHABLE, not faked green.
+  // The repeated position K is, by this function's own occurrencePlies
+  // derivation, always reached after an EVEN ply (white/her to move at K --
+  // the odd-parity filter above depends on this). Her candidate move from
+  // K is a SINGLE ply, and a single chess move always flips whose turn it
+  // is (chess.js's own FEN "turn" field alternates strictly by ply parity,
+  // confirmed directly against chess.js rather than assumed). So altKey
+  // (the position immediately after her one alternative move) always has
+  // BLACK to move, while finalKey -- built exclusively from even-ply
+  // occurrences -- always has WHITE to move. The two can never be equal
+  // string-for-string, so `altKey !== finalKey` can never evaluate false
+  // given real, chess.js-legal replay. Confirmed by mutation: deleting
+  // this clause (`if (!isSameMove) {` in place of
+  // `if (!isSameMove && altKey !== finalKey) {`) leaves the FULL suite at
+  // 68/68 green -- zero observable change, on real game 151 or any other
+  // fixture in this file. Reported here as a genuine finding (dead
+  // defensive code, not a bug) rather than manufacturing a fixture that
+  // cannot exist under real chess rules.
+  it("altKey !== finalKey is provably unreachable given the odd-parity filter -- documented, not faked", () => {
+    // The function still returns the correct, real answer with the guard
+    // present; this test exists to record the finding, not to redden.
+    expect(findRepetitionAnchor(game151)).toEqual({ ply: 43, mateIn: 12 });
   });
 });

@@ -162,31 +162,65 @@ export interface RepetitionAnchor {
 // returned. Ply 47 is never reached: 43 already answers. Had it been
 // reached, its prior row (ply 46) stores `f6g5`, IDENTICAL to what she
 // played there -- correctly rejected, matching the owner's "never ply 47."
-export function findRepetitionAnchor(moves: MoveEval[]): RepetitionAnchor | null {
+interface RepetitionKeys {
+  candidateEntries: number[]; // her odd-ply repetition-cycle entries, in game order
+  finalKey: string | null; // fen-substring key of the position that recurs; null if no genuine repeat
+}
+
+// Extracted (P2 fix, review-2-pass2.md MEDIUM): the replay + key-collection
+// + candidate-entry derivation used to live only inside findRepetitionAnchor,
+// duplicated by nothing -- but that meant the set of plies it EXAMINES had
+// no name outside this function, so a caller could not tell "this ply was
+// vetted and rejected" from "this ply was never a repetition-cycle entry at
+// all." Both share this single computation now: one source of truth for
+// "which plies are repetition-cycle entries," never redeclared.
+function computeRepetitionKeys(moves: MoveEval[]): RepetitionKeys {
   const sorted = [...moves].sort((a, b) => a.ply - b.ply);
-  const byPly = new Map(sorted.map((m) => [m.ply, m]));
   const chess = new Chess();
   const keys: string[] = [];
   for (const mv of sorted) {
     try {
       chess.move(mv.san);
     } catch {
-      return null; // not a clean replay from the start position: never guess
+      return { candidateEntries: [], finalKey: null }; // not a clean replay from the start position: never guess
     }
     keys.push(chess.fen().split(" ").slice(0, 4).join(" "));
   }
-  if (keys.length === 0) return null;
+  if (keys.length === 0) return { candidateEntries: [], finalKey: null };
   const finalKey = keys[keys.length - 1];
   const occurrencePlies = sorted
     .map((mv, i) => (keys[i] === finalKey ? mv.ply : null))
     .filter((p): p is number => p != null);
-  if (occurrencePlies.length < 2) return null; // no genuine repeat: never guess
+  if (occurrencePlies.length < 2) return { candidateEntries: [], finalKey: null }; // no genuine repeat: never guess
 
   const maxPly = sorted[sorted.length - 1].ply;
   const candidateEntries = occurrencePlies
     .slice(0, -1) // drop the final occurrence: it ends the game, no move follows
     .map((p) => p + 1)
     .filter((p) => p % 2 === 1 && p <= maxPly);
+  return { candidateEntries, finalKey };
+}
+
+// P2 fix (review-2-pass2.md MEDIUM): the full list of repetition-cycle
+// ENTRY plies -- every ply findRepetitionAnchor examines as a candidate,
+// whether it ultimately accepts one as a proven escape or rejects all of
+// them for having none on record. Exported so downstream fallback paths
+// (turningPoints.ts's collision-displacement scan) can exclude every one of
+// them: a repetition-cycle entry ply is either the verified anchor (the
+// first one with a genuine escape) or was specifically vetted and
+// REJECTED -- and a rejected ply must stay rejected by every downstream
+// path, never quietly re-selected as a "fallback" landing spot. That silent
+// re-selection is exactly how ply 47, the owner's explicitly forbidden ply,
+// reappeared through the collision scan (see turningPoints.ts's usage).
+export function repetitionEntryPlies(moves: MoveEval[]): number[] {
+  return computeRepetitionKeys(moves).candidateEntries;
+}
+
+export function findRepetitionAnchor(moves: MoveEval[]): RepetitionAnchor | null {
+  const sorted = [...moves].sort((a, b) => a.ply - b.ply);
+  const byPly = new Map(sorted.map((m) => [m.ply, m]));
+  const { candidateEntries, finalKey } = computeRepetitionKeys(moves);
+  if (finalKey == null) return null;
 
   for (const entryPly of candidateEntries) {
     const priorRow = byPly.get(entryPly - 1);

@@ -27,7 +27,7 @@
 
 import { Chess } from "chess.js";
 import { detectMissedWins } from "./missedWins";
-import { detectUnconverted, findRepetitionAnchor } from "./unconverted";
+import { detectUnconverted, findRepetitionAnchor, repetitionEntryPlies } from "./unconverted";
 
 export interface TurningPoint {
   rank: 1 | 2 | 3 | 4 | 5 | 6;
@@ -699,8 +699,22 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
     for (let p = unconverted.ply % 2 === 1 ? unconverted.ply : unconverted.ply + 1; p <= unconverted.endPly; p += 2) {
       if (!candidatePlies.includes(p)) candidatePlies.push(p);
     }
+
+    // P2 fix (review-2-pass2.md MEDIUM): the scan above used to be free to
+    // land on ANY her-ply in the run, including a repetition-cycle entry
+    // findRepetitionAnchor already examined and REJECTED (no escape on
+    // record) -- reaching the owner's explicitly forbidden ply 47 through a
+    // side door that carries no mateIn and so never trips the anchor-value
+    // gate on its own. A repetition-cycle entry ply is either the verified
+    // anchor itself (anchorPly, already the first item pushed above) or was
+    // specifically vetted and rejected; every other entry is barred from
+    // ever being selected as a "fallback" landing spot.
+    const rejectedEntries =
+      unconverted.endKind === "repetition"
+        ? new Set(repetitionEntryPlies(moves).filter((p) => p !== anchorPly))
+        : new Set<number>();
     const resolvedPly = candidatePlies.find(
-      (p) => moves.some((m) => m.ply === p) && !points.some((pt) => pt.ply === p)
+      (p) => moves.some((m) => m.ply === p) && !points.some((pt) => pt.ply === p) && !rejectedEntries.has(p)
     );
 
     if (resolvedPly != null) {

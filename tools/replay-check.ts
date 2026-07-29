@@ -58,7 +58,7 @@ import {
 import { moveEndpoints } from "../server/annotator/moveEndpoints";
 import { computeTurningPoints, buildDeltaSeries, type MoveEval } from "../server/annotator/turningPoints";
 import { detectMissedWins, MISSED_MATE_DEPTH } from "../server/annotator/missedWins";
-import { UNCONVERTED_MIN_P } from "../server/annotator/unconverted";
+import { UNCONVERTED_MIN_P, UNCONVERTED_MIN_RUN_PLIES } from "../server/annotator/unconverted";
 import { classifyMoves } from "../server/annotator/classifications";
 import { checkDefenseClaims, postMoveFen } from "../server/coach/defenseClaims";
 import { validateChat, type ChatFactList } from "../server/coach/chat";
@@ -81,7 +81,18 @@ const SCRATCH_DB_PATH = path.join(TOOL_DIR, ".replay-check-scratch", "girlchess.
 // explaining it. Task 2 (2026-07-29): the threshold is imported from the
 // detector itself (server/annotator/unconverted.ts), never redeclared here,
 // so the gate and the detector cannot drift onto different numbers.
-
+//
+// Fix wave (2026-07-29, review-2-pass2.md P1 MERGE BLOCKER): F6's fix added
+// a SECOND detector threshold, UNCONVERTED_MIN_RUN_PLIES (a terminal run
+// shorter than this is noise, not a held win -- see unconverted.ts's
+// header), but this invariant never learned about it. It kept demanding a
+// point exist the instant the final reading alone cleared UNCONVERTED_MIN_P,
+// which is exactly the 1-ply-run shape the detector now correctly declines
+// to flag -- an un-passable GATE: FAIL the moment she plays a short draw
+// that ends on a winning-looking reading (verified against her real game
+// 113 shape: 4 plies, only the final reading bumped). Mirrors the
+// detector's own run-length walk-back exactly (same constant, same
+// direction) so the two can never drift onto different answers.
 export function unconvertedInvariant(
   moves: MoveEval[],
   result: string,
@@ -90,11 +101,27 @@ export function unconvertedInvariant(
   if (/1-0/.test(result)) return null;
   if (!/1\/2-1\/2|0-1/.test(result)) return null; // unfinished/unknown: not this check's business
   const series = buildDeltaSeries(moves);
-  let last: { p: number } | null = null;
+  let lastIdx = -1;
   for (let i = series.length - 1; i >= 0; i--) {
-    if (series[i]) { last = series[i]!; break; }
+    if (series[i]) { lastIdx = i; break; }
   }
-  if (!last || last.p < UNCONVERTED_MIN_P) return null;
+  if (lastIdx < 0) return null;
+  const last = series[lastIdx]!;
+  if (last.p < UNCONVERTED_MIN_P) return null;
+
+  // Same walk-back as detectUnconverted: an unbroken terminal run of >=
+  // UNCONVERTED_MIN_P readings, broken by any null or sub-threshold
+  // reading. A run shorter than UNCONVERTED_MIN_RUN_PLIES is not a real
+  // held win (F6) and the gate must not demand a point for it.
+  let startIdx = lastIdx;
+  for (let i = lastIdx - 1; i >= 0; i--) {
+    const d = series[i];
+    if (!d || d.p < UNCONVERTED_MIN_P) break;
+    startIdx = i;
+  }
+  const runLen = lastIdx - startIdx + 1;
+  if (runLen < UNCONVERTED_MIN_RUN_PLIES) return null;
+
   if (points.some((p) => p.kind === "unconverted")) return null;
   return `final winprob ${last.p.toFixed(2)} with result ${result} and no unconverted point`;
 }
