@@ -80,7 +80,7 @@ describe("NEXT_TIME_TIPS motif bank", () => {
   it("has a distinct tip for every declared motif", () => {
     const motifs = Object.keys(NEXT_TIME_TIPS);
     expect(motifs.sort()).toEqual(
-      ["eval-drop", "good-moment", "king-safety", "missed-punish", "missed-mate"].sort()
+      ["eval-drop", "good-moment", "king-safety", "missed-punish", "missed-mate", "unconverted"].sort()
     );
     const tips = Object.values(NEXT_TIME_TIPS);
     expect(new Set(tips).size).toBe(tips.length);
@@ -606,5 +606,61 @@ describe("missed-win note", () => {
     expect(note.couldImprove).toBe(
       "you had checkmate in one here. you played knight to f7, check instead."
     );
+  });
+});
+
+// Truth round (2026-07-29), Task 3: the game-151 owner ruling
+// (feedback-unconverted-copy.md) applies to this card too. Never a blame
+// line by default (rca B5) -- but the annotator's verified repetition
+// anchor (Task 2, commit c1d1905) sometimes carries a real, stored mate
+// reading, and the card should say so rather than flatten it to "nothing
+// hung" when a true fact is available.
+describe("unconverted note (game-151 owner ruling, feedback-unconverted-copy.md)", () => {
+  const unconvertedTp = tp({
+    rank: 2, ply: 43, san: "Qg5+", label: "unconverted win", deltaP: 0,
+    lowConfidence: false, kind: "unconverted", endKind: "repetition", mateIn: 12,
+  });
+
+  it("states the stored mate reading when the anchor carries one", () => {
+    const note = buildTurningPointNote(unconvertedTp, undefined, undefined);
+    expect(note.couldImprove).toContain("the win was on the board");
+    expect(note.couldImprove).toContain("mate in twelve");
+    expect(note.nextTime).toBe(NEXT_TIME_TIPS["unconverted"]);
+    expect(note.nextTime).toContain("new progress");
+    for (const field of [note.couldImprove, note.nextTime]) {
+      expect(field).not.toMatch(/blunder|mistake|—/);
+    }
+  });
+
+  it("degrades to the plain fact with no mate claim when the anchor has no proven alternative", () => {
+    const note = buildTurningPointNote({ ...unconvertedTp, mateIn: undefined }, undefined, undefined);
+    expect(note.couldImprove).toBe(
+      "from this move the win was on the board, and the game ended level from here. nothing hung; the finish just never came."
+    );
+    expect(note.couldImprove).not.toContain("mate in");
+  });
+
+  // review-3.md MEDIUM finding 4: the card tip was documented as "generic
+  // across endKinds" but named repetition unconditionally -- a stalemate or
+  // fifty-move unconverted game showed "treat a repeated position as a stop
+  // sign" on the card while the bullets right next to it correctly said
+  // "the stalemate". No repetition happened in either fixture below; the
+  // tip must not claim one did.
+  it("the card tip follows the ending kind: a stalemate unconverted point does NOT get the repetition-specific tip", () => {
+    const stalemateTp = { ...unconvertedTp, endKind: "stalemate" as const, mateIn: undefined };
+    const note = buildTurningPointNote(stalemateTp, undefined, undefined);
+    expect(note.nextTime).not.toBe(NEXT_TIME_TIPS["unconverted"]);
+    expect(note.nextTime).not.toContain("repeated position");
+    expect(note.nextTime).not.toContain("stop sign");
+  });
+
+  it("a fifty-moves unconverted point also gets the non-repetition tip, and a real repetition still gets the repetition-specific one", () => {
+    const fiftyMovesTp = { ...unconvertedTp, endKind: "fifty moves" as const, mateIn: undefined };
+    const note = buildTurningPointNote(fiftyMovesTp, undefined, undefined);
+    expect(note.nextTime).not.toContain("repeated position");
+
+    const repetitionNote = buildTurningPointNote(unconvertedTp, undefined, undefined);
+    expect(repetitionNote.nextTime).toBe(NEXT_TIME_TIPS["unconverted"]);
+    expect(repetitionNote.nextTime).toContain("repeated position");
   });
 });

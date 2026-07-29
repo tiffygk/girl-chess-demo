@@ -61,6 +61,21 @@ export function safetyClaimRe(): RegExp {
   return new RegExp(`\\b(${SQ})\\b((?:(?!\\b${SQ}\\b).){0,40}?)\\b(${words})\\b`, "gi");
 }
 
+// Game-151 round (rca A3): a pending-move claim is a counterfactual about a
+// position that does not yet exist; judging it against the pre-move board
+// is a category error (an enemy pawn on e5 trivially "doesn't guard" d3).
+// One chess.js move() call, no engine, no network. Returns null for an
+// illegal/malformed move -- callers skip the extra position, never guess.
+export function postMoveFen(fen: string, from: string, to: string): string | null {
+  try {
+    const chess = new Chess(fen);
+    const mv = chess.move({ from: from as any, to: to as any, promotion: "q" });
+    return mv ? chess.fen() : null;
+  } catch {
+    return null;
+  }
+}
+
 // Detects the two claim shapes above in reply text and checks each against
 // the position (fen) via chess.js. Returns one "defense-claim: ..." string
 // per contradiction, [] if no claim was made or a claim couldn't be

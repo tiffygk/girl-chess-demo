@@ -886,6 +886,53 @@ describe("GameManager", () => {
     expect(getTurningPointsAllVersions(g).length).toBe(before);
   });
 
+  // Fix wave (2026-07-29, review-3.md finding 1): anchor_kind is a brand-new
+  // additive column (server/store/db.ts) and, unlike the fields above, was
+  // never wired into any DB round trip before this test -- proving it here
+  // closes the same gap missedCount's own round-trip test above closes for
+  // itself: without this, the insertTurningPoints/getSummary plumbing for
+  // anchor_kind would be dead code nobody ever exercises past a unit test on
+  // the pure compute function. Reuses the same repeating-shuffle draw shape
+  // server/annotator/unconverted.test.ts's winningDraw fixture uses, but
+  // with no best_move ever stored on any row -- findRepetitionAnchor can
+  // never prove an escape without one, so this is a genuine "run-start"
+  // case, not a proven repetition-entry.
+  it("persists and heals an unconverted turning point with anchorKind intact (run-start: no stored best_move anywhere, so no escape can ever be proven)", () => {
+    const g = createGame(sessionId, "maia-1100");
+    const sans = ["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8"];
+    sans.forEach((san, i) => {
+      const ply = i + 1;
+      recordMove({ gameId: g, ply, san, uci: "a1a1", fenAfter: `fen${ply}`, timeSpentMs: 0 });
+      attachEval(g, ply, { cp: i % 2 === 0 ? -900 : 900, mate: null, bestMove: null, pv: [] });
+    });
+    finishGame(g, "1/2-1/2");
+
+    // Seed a stale v1 row the way a pre-round game would have it, forcing
+    // the heal branch getSummary uses to recompute (and persist) fresh.
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 1, san: "Nf3", label: "opponent blunder", deltaP: 0.9, lowConfidence: false, kind: "swing" }],
+      1
+    );
+
+    const summary = gm.getSummary(g); // heals: v1 < TP_ALGO_VERSION
+    const unconverted = summary.turningPoints.find((t: any) => t.kind === "unconverted");
+    expect(unconverted).toBeDefined();
+    expect(unconverted!.endKind).toBe("repetition");
+    expect(unconverted!.anchorKind).toBe("run-start"); // no best_move ever stored: no escape can be proven
+
+    // The healed row carries the column, not just the in-memory object.
+    const latest = getTurningPoints(g) as any[];
+    const row = latest.find((r) => r.kind === "unconverted");
+    expect(row.anchor_kind).toBe("run-start");
+
+    // Second read is a no-op (idempotent heal) -- anchor_kind still reads
+    // back correctly from the row, not recomputed fresh each time.
+    gm.getSummary(g);
+    const latest2 = getTurningPoints(g) as any[];
+    expect(latest2.find((r) => r.kind === "unconverted").anchor_kind).toBe("run-start");
+  });
+
   // Task 11 fix 2 (.superpowers/sdd/rounds/2026-07-20-inc-3.95/task-11-brief.md):
   // on-read historical backfill. A finished game that has NEVER had
   // turning_points computed (zero rows — not just a stale version, the case

@@ -27,16 +27,17 @@
 
 import { Chess } from "chess.js";
 import { detectMissedWins } from "./missedWins";
+import { detectUnconverted, findRepetitionAnchor, repetitionEntryPlies } from "./unconverted";
 
 export interface TurningPoint {
-  rank: 1 | 2 | 3 | 4 | 5;
+  rank: 1 | 2 | 3 | 4 | 5 | 6;
   ply: number;
   san: string;
   label: string; // exact lowercase vocabulary from the ruling
   punishSan?: string; // the "you punished with {san}" suffix source, when the guard passes
   deltaP: number; // signed, white perspective
   lowConfidence: boolean; // null-gap > TP_DEDUP_PLIES plies behind this point
-  kind: "swing" | "backfill" | "episode" | "missed-win";
+  kind: "swing" | "backfill" | "episode" | "missed-win" | "unconverted";
   // debrief-v2, dedup fix: set on HER kept swing when the preceding kept
   // point in the same dedup cluster is an opponent-error label and her
   // swing is negative — the "missed punish" shape (she had a winning
@@ -67,6 +68,23 @@ export interface TurningPoint {
   // floor).
   mateIn?: number;
   missedCount?: number;
+  // Game-151 round: set only when kind === "unconverted" -- how the game
+  // actually ended, re-derived from the SANs (see unconverted.ts).
+  endKind?: string;
+  // Fix wave (2026-07-29, review-3.md HIGH finding 1): the unconverted
+  // point's `ply` carries two structurally different meanings and the copy
+  // layer must never confuse them. "repetition-entry" means ply IS
+  // findRepetitionAnchor's verified escape ply -- a real turning moment
+  // with a stored, non-repeating alternative on record (unconverted.ts).
+  // "run-start" means no escape was ever proven -- every non-repetition
+  // ending (findRepetitionAnchor is never even called for those), a
+  // repetition whose candidate entries all failed to prove one, OR a
+  // collision-displaced fallback ply (see the push site below) -- and ply
+  // is simply the first ply of the terminal held-winning run, parity-fixed
+  // to hers. It is NEVER a claim about when the win ended. Set only when
+  // kind === "unconverted"; same "encode in types, not helpers" lesson as
+  // ply-parity.
+  anchorKind?: "repetition-entry" | "run-start";
 }
 
 // debrief-v2: bumped when the turning-point algorithm changes shape in a way
@@ -81,7 +99,10 @@ export interface TurningPoint {
 // v5 = missed-win points (2026-07-28) — a game where she let a forced
 // mate-in-1 slip gains one "missed mate" point on heal, which is exactly
 // what retro-fixes games 149/150's debriefs the next time they're opened.
-export const TP_ALGO_VERSION = 5;
+// v6: game-151 round, unconverted-win point — a game that ended level or
+// lost from a held winning eval (result vs eval, invisible to every
+// delta-based detector above) gains one "unconverted win" point on heal.
+export const TP_ALGO_VERSION = 6;
 
 // Owner-calibratable: cp -> winprob steepness. This is the same constant as
 // chess.com's published win% formula (0.00368208, here to 3 sig figs per
@@ -130,6 +151,16 @@ export interface MoveEval {
   san: string;
   evalCp: number | null;
   evalMate: number | null;
+  // Fix wave (2026-07-29, F1): the UCI move the evaluator recommended for
+  // the position AFTER this ply (i.e. the best move for whoever moves
+  // NEXT) -- already persisted live during play (moves.best_move, see
+  // manager.ts's attachEval). Optional so every existing MoveEval literal
+  // in this codebase (none of which needed it before unconverted.ts's
+  // findRepetitionAnchor) keeps compiling unchanged. Only
+  // findRepetitionAnchor reads it, and only to check whether a stored
+  // alternative to a repetition-entering move exists -- never a fresh
+  // evaluator call.
+  bestMove?: string | null;
 }
 
 // Mate cap: M±n -> wcp ±(3000 - 10*min(n,20)), so a fast forced mate scores
@@ -598,7 +629,7 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   const episode = detectKingPressureEpisode(moves, series);
   if (episode) {
     points.push({
-      rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5,
+      rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5 | 6,
       ply: episode.plyStart,
       plyEnd: episode.plyEnd,
       san: episode.san,
@@ -619,7 +650,7 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
     const anchor = missedEvents.find((e) => !points.some((p) => p.ply === e.ply));
     if (anchor) {
       points.push({
-        rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5,
+        rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5 | 6,
         ply: anchor.ply,
         san: anchor.san,
         label: "missed mate",
@@ -628,6 +659,109 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
         kind: "missed-win",
         mateIn: anchor.mateIn,
         missedCount: missedEvents.length,
+      });
+    }
+  }
+
+  // Game-151 round: result vs eval. A game ending level (or lost) from a
+  // held winning evaluation is invisible to the swing detector by
+  // construction -- detected from the final readings vs the recorded
+  // result, appended as one point per game so every turning-point surface
+  // (cards, arrows, try-the-line, notes, chat full-detail) lights up with
+  // no new plumbing.
+  //
+  // Fix wave (2026-07-29, review-2.md F1/F2/F3, feedback-unconverted-copy.md
+  // is the binding ruling): the anchor is the first ply that ENTERED a
+  // repeating cycle with a stored, non-repeating alternative that kept her
+  // winning -- see unconverted.ts's findRepetitionAnchor for the full
+  // mechanism and why the old "first stored mate reading" rule was wrong
+  // (it landed on the owner's forbidden ply 47 under a perturbation
+  // squarely inside the evaluator's own documented noise band).
+  const unconverted = detectUnconverted(moves, finalResult);
+  if (unconverted) {
+    let anchorPly: number | null = null;
+    let mateAtAnchor: number | null = null;
+    // Fix wave (2026-07-29, review-3.md HIGH finding 1): tracked separately
+    // from anchorPly itself -- anchorPly gets overwritten by the run-start
+    // fallback below when nothing was proven, and once that happens there
+    // is no way left to tell "this ply IS the proven escape" from "this
+    // ply is just where the fallback landed." anchorProven is that
+    // distinction, captured at the moment (if ever) it becomes true.
+    let anchorProven = false;
+
+    if (unconverted.endKind === "repetition") {
+      const repAnchor = findRepetitionAnchor(moves);
+      if (repAnchor) {
+        anchorPly = repAnchor.ply;
+        mateAtAnchor = repAnchor.mateIn ?? null;
+        anchorProven = true;
+      }
+    }
+    // Non-repetition endings (stalemate, fifty moves, called early), or a
+    // repetition with no PROVABLE escape at any of her entry points: never
+    // invent an avoidable-blunder anchor (precision over recall) -- fall
+    // back to the run's own start, parity-fixed to HER ply (F3: odd plies
+    // are hers, and this label is never valid on mallow's move, blame or
+    // no blame).
+    if (anchorPly == null) {
+      anchorPly = unconverted.ply % 2 === 1 ? unconverted.ply : unconverted.ply + 1;
+    }
+
+    // F2/F3 fix: a single fixed fallback (the old code's "last evaluated
+    // ply") could equal the colliding ply itself, silently dropping the
+    // point while detectUnconverted still says one is owed -- an
+    // unpassable gate. Scan forward through HER (odd) plies inside the
+    // held winning run (never outside it, or the card would be misplaced)
+    // for the first one not already claimed by another point. mateIn only
+    // ever attaches to the verified repetition-anchor ply itself, never to
+    // a collision-displaced fallback -- a displaced ply carries no proven
+    // alternative and must not borrow one.
+    const candidatePlies: number[] = [];
+    if (anchorPly % 2 === 1) candidatePlies.push(anchorPly);
+    for (let p = unconverted.ply % 2 === 1 ? unconverted.ply : unconverted.ply + 1; p <= unconverted.endPly; p += 2) {
+      if (!candidatePlies.includes(p)) candidatePlies.push(p);
+    }
+
+    // P2 fix (review-2-pass2.md MEDIUM): the scan above used to be free to
+    // land on ANY her-ply in the run, including a repetition-cycle entry
+    // findRepetitionAnchor already examined and REJECTED (no escape on
+    // record) -- reaching the owner's explicitly forbidden ply 47 through a
+    // side door that carries no mateIn and so never trips the anchor-value
+    // gate on its own. A repetition-cycle entry ply is either the verified
+    // anchor itself (anchorPly, already the first item pushed above) or was
+    // specifically vetted and rejected; every other entry is barred from
+    // ever being selected as a "fallback" landing spot.
+    const rejectedEntries =
+      unconverted.endKind === "repetition"
+        ? new Set(repetitionEntryPlies(moves).filter((p) => p !== anchorPly))
+        : new Set<number>();
+    const resolvedPly = candidatePlies.find(
+      (p) => moves.some((m) => m.ply === p) && !points.some((pt) => pt.ply === p) && !rejectedEntries.has(p)
+    );
+
+    if (resolvedPly != null) {
+      const anchorSan = moves.find((m) => m.ply === resolvedPly)?.san ?? unconverted.san;
+      points.push({
+        rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5 | 6,
+        ply: resolvedPly,
+        san: anchorSan,
+        label: "unconverted win",
+        deltaP: 0, // never fabricated to be sortable -- force-slotted downstream
+        lowConfidence: false,
+        kind: "unconverted",
+        endKind: unconverted.endKind,
+        // Only the verified repetition-anchor ply carries mateIn -- a
+        // collision-displaced fallback ply has no proven alternative on
+        // record and must never borrow this one's.
+        mateIn: resolvedPly === anchorPly ? mateAtAnchor ?? undefined : undefined,
+        // Fix wave (review-3.md finding 1): "repetition-entry" only when
+        // this exact ply IS the proven escape AND nothing displaced it --
+        // the same condition mateIn already gates on above, spelled out as
+        // its own fact so copy can ask "is this ply a real turning moment"
+        // without inferring it from mateIn's mere presence (a proven
+        // escape backed by a plain cp read, not a mate read, would leave
+        // mateIn unset while the ply is still genuinely proven).
+        anchorKind: resolvedPly === anchorPly && anchorProven ? "repetition-entry" : "run-start",
       });
     }
   }

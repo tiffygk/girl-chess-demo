@@ -8,9 +8,13 @@
 // Deliberately does not import `main` and touches no db: importing this
 // module never runs main() as a side effect (guarded by the isMain check
 // at the bottom of truth-check.ts).
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import Database from "better-sqlite3";
 import { Chess } from "chess.js";
-import { reconstructPvLine, toTurningPoint, type RawTurningPointRow } from "./truth-check";
+import { reconstructPvLine, toTurningPoint, resolveRealDbPath, type RawTurningPointRow } from "./truth-check";
 
 describe("reconstructPvLine", () => {
   it("replays a space-separated UCI pv into SANs from the given fen", () => {
@@ -59,6 +63,9 @@ describe("toTurningPoint", () => {
       ply_end: null,
       missed_punish: 0,
       crossed_advantage: 1,
+      end_kind: null,
+      mate_in: null,
+      missed_count: null,
     };
     expect(toTurningPoint(row)).toEqual({
       rank: 1,
@@ -88,6 +95,9 @@ describe("toTurningPoint", () => {
       ply_end: null,
       missed_punish: null,
       crossed_advantage: null,
+      end_kind: null,
+      mate_in: null,
+      missed_count: null,
     };
     const tp = toTurningPoint(row);
     expect(tp.punishSan).toBeUndefined();
@@ -95,5 +105,112 @@ describe("toTurningPoint", () => {
     expect(tp.missedPunish).toBeUndefined();
     expect(tp.crossedAdvantage).toBeUndefined();
     expect(tp.lowConfidence).toBe(true);
+    expect(tp.mateIn).toBeUndefined();
+    expect(tp.missedCount).toBeUndefined();
+  });
+
+  // F9 (review-2.md LOW): mate_in/missed_count were never mapped, so the
+  // truth gate reconstructed an unconverted point without the number the
+  // "you had mate in twelve there instead" claim rests on -- the one
+  // number most worth gating was the one the gate could not see.
+  it("F9: maps mate_in and missed_count -- the load-bearing number behind the 'mate in N instead' claim", () => {
+    const row: RawTurningPointRow = {
+      rank: 4,
+      ply: 43,
+      san: "Qg5+",
+      label: "unconverted win",
+      punish_san: null,
+      delta_p: 0,
+      low_confidence: 0,
+      kind: "unconverted",
+      ply_end: null,
+      missed_punish: null,
+      crossed_advantage: null,
+      end_kind: "repetition",
+      mate_in: 12,
+      missed_count: null,
+    };
+    const tp = toTurningPoint(row);
+    expect(tp.mateIn).toBe(12);
+    expect(tp.missedCount).toBeUndefined();
+    expect(tp.endKind).toBe("repetition");
+  });
+});
+
+// F2 (review-1.md important): resolveRealDbPath used to try
+// <repoRoot>/data/girlchess.db BEFORE the main worktree, with no
+// freshness or size check. data/* is gitignored, so a stale/demo snapshot
+// dropped in a worktree (exactly the state Task 0 itself found and
+// deleted) silently became the ENTIRE corpus every downstream check ran
+// against, and nothing printed to say so -- a five-game snapshot reads
+// "games examined: 3", never sees game 151, and still prints VERDICT:
+// PASS. mainWorktreeDb is now an injectable second param (defaults to the
+// real absolute path) specifically so this scenario is testable without
+// touching her real db.
+describe("F2: resolveRealDbPath prefers the live main-worktree db over a stale local copy", () => {
+  const tmpDirs: string[] = [];
+  afterEach(() => {
+    delete process.env.GC_DB_PATH;
+    for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  function makeDbWithGames(n: number): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "truth-check-f2-"));
+    tmpDirs.push(dir);
+    const p = path.join(dir, "girlchess.db");
+    const db = new Database(p);
+    db.exec("CREATE TABLE games(id INTEGER PRIMARY KEY);");
+    const insert = db.prepare("INSERT INTO games DEFAULT VALUES");
+    for (let i = 0; i < n; i++) insert.run();
+    db.close();
+    return p;
+  }
+
+  it("GC_DB_PATH override wins over everything, even when both a main-worktree and local db exist", () => {
+    const mainDb = makeDbWithGames(152);
+    const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), "truth-check-f2-repo-"));
+    tmpDirs.push(repoDir);
+    fs.mkdirSync(path.join(repoDir, "data"));
+    fs.copyFileSync(mainDb, path.join(repoDir, "data", "girlchess.db"));
+    const override = makeDbWithGames(1);
+    process.env.GC_DB_PATH = override;
+    const r = resolveRealDbPath(repoDir, mainDb);
+    expect(r.path).toBe(override);
+    expect(r.source).toMatch(/GC_DB_PATH override/);
+  });
+
+  it("the exact F2 regression: a stale local data/girlchess.db must NOT beat the live main-worktree db", () => {
+    const mainDb = makeDbWithGames(152); // "live" -- the real corpus, per the finding's own numbers
+    const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), "truth-check-f2-repo-"));
+    tmpDirs.push(repoDir);
+    fs.mkdirSync(path.join(repoDir, "data"));
+    const staleLocal = path.join(repoDir, "data", "girlchess.db");
+    fs.copyFileSync(makeDbWithGames(3), staleLocal); // exactly the stale-snapshot shape Task 0 found and deleted
+
+    const r = resolveRealDbPath(repoDir, mainDb);
+    expect(r.path).toBe(mainDb);
+    expect(r.source).toMatch(/main worktree/);
+  });
+
+  it("local copy is honored only as a fallback, and only once it proves itself non-empty by COUNTING", () => {
+    const missingMainDb = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "truth-check-f2-nomain-")), "girlchess.db");
+    const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), "truth-check-f2-repo-"));
+    tmpDirs.push(repoDir);
+    fs.mkdirSync(path.join(repoDir, "data"));
+    fs.copyFileSync(makeDbWithGames(24), path.join(repoDir, "data", "girlchess.db"));
+
+    const r = resolveRealDbPath(repoDir, missingMainDb);
+    expect(r.path).toBe(path.join(repoDir, "data", "girlchess.db"));
+    expect(r.source).toMatch(/verified 24 games by count, not hash/);
+  });
+
+  it("an empty local copy is rejected (not silently accepted) when the main worktree db is also absent", () => {
+    const missingMainDb = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "truth-check-f2-nomain-")), "girlchess.db");
+    const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), "truth-check-f2-repo-"));
+    tmpDirs.push(repoDir);
+    fs.mkdirSync(path.join(repoDir, "data"));
+    fs.copyFileSync(makeDbWithGames(0), path.join(repoDir, "data", "girlchess.db"));
+
+    expect(() => resolveRealDbPath(repoDir, missingMainDb)).toThrow(/empty \(0 games\)/);
   });
 });

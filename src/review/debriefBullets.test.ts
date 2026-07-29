@@ -12,7 +12,8 @@
 // guess.
 
 import { describe, it, expect } from "vitest";
-import { debriefBullets, affordancesForBullet } from "./debriefBullets";
+import { debriefBullets, affordancesForBullet, trustedPhaseForClause } from "./debriefBullets";
+import { nearlyBarePlies } from "./phase";
 import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from "../game/api";
 
 const OLD_PLATITUDE = "a draw. solid, careful, nothing hung.";
@@ -104,7 +105,11 @@ describe("GAME-127 acceptance (owner playtest fixture, feedback.md)", () => {
 
     // done well: no positive swing or punish exists, but she survived the
     // king-pressure episode without losing (a draw) — the holding bullet.
-    expect(bullets[0].text).toBe("you held a worse position under real pressure. that is a skill.");
+    // review-3.md LOW finding 6: "that is a skill." is a bare declarative
+    // validation tacked on -- structurally the same AI-ism shape as the
+    // banned "that part is real". Reworded to state only what the episode
+    // signal actually proves (she survived real king-pressure danger).
+    expect(bullets[0].text).toBe("you held a worse position under real pressure and got through it.");
 
     // could-be-better: her ply-15 missed punish, "the miss" framing, move 8
     // (ceil(15/2)), category "missed tactic" per the brief's binding
@@ -326,14 +331,329 @@ describe("done well: fallback chain", () => {
     expect(bullets[0].text).toBe("you kept playing through a hard game. next one starts even.");
   });
 
-  it("falls to the generic build-from-here line on a draw/win with nothing else to cite", () => {
+  it("falls to the generic build-from-here line on a win with nothing else to cite", () => {
+    const bullets = debriefBullets({
+      turningPoints: [],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 10,
+    });
+    expect(bullets[0].text).toBe("you brought the game home without a disaster. build from here.");
+  });
+
+  // Truth round (2026-07-29), Task 3: a draw and a win used to share this
+  // exact fallback ("you brought the game home without a disaster" on a
+  // 1/2-1/2 with nothing else to cite is not true -- she did not bring
+  // anything home). Own guard now, own copy.
+  it("falls to the honest 'kept it level' line on a plain draw, never the win fallback", () => {
     const bullets = debriefBullets({
       turningPoints: [],
       classifications: [],
       result: "1/2-1/2",
       totalPlies: 10,
     });
-    expect(bullets[0].text).toBe("you brought the game home without a disaster. build from here.");
+    expect(bullets[0].text).toBe("you kept the game level the whole way. build from here.");
+    expect(bullets[0].text).not.toContain("brought the game home");
+  });
+});
+
+// Truth round (2026-07-29), Task 3: owner ruling, feedback-unconverted-copy.md
+// REVISED COPY SPEC. Supersedes plan Task 3's original strings entirely --
+// "you outplayed her" is false (she didn't win), "that part is real" is a
+// banned AI-ism, and the could-be-better sentence used to repeat itself.
+// Game 151's real numbers (scout-unconverted-data.md): the opponent-mistake
+// swing point at ply 12 (move 6) opens her winning stretch; the annotator's
+// verified repetition anchor sits at ply 43 (move 22) with a stored mate-in-
+// twelve alternative on record (Task 2, commit c1d1905). anchorKind:
+// "repetition-entry" on anchorPoint below is exactly the fact
+// turningPoints.ts computes for real game 151 forced through this shape
+// (findRepetitionAnchor proved the escape at ply 43) -- fix wave
+// (2026-07-29, review-3.md HIGH finding 1): a plain TurningPoint literal
+// with endKind: "repetition" and mateIn set used to be enough to earn the
+// "started on move N" copy, which conflated "this ending was a repetition"
+// with "this exact ply is a proven turning moment" -- two different facts
+// that anchorKind now keeps separate at the data layer instead of the
+// string layer.
+describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverted-copy.md)", () => {
+  const openerPoint: TurningPoint = tp({
+    rank: 1, ply: 12, san: "Ba5", label: "opponent mistake", deltaP: 0.1668, kind: "swing",
+  });
+  const anchorPoint: TurningPoint = tp({
+    rank: 2, ply: 43, san: "Qg5+", label: "unconverted win", deltaP: 0, kind: "unconverted",
+    endKind: "repetition", mateIn: 12, anchorKind: "repetition-entry",
+  });
+
+  it("done well names the winning stretch by move number and stops -- no move names, no verdict, no AI-ism", () => {
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, anchorPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const doneWell = bullets.find((b) => b.section === "done well")!;
+    expect(doneWell.text).toBe("you were winning this one from move 6 to move 22.");
+    expect(doneWell.ply).toBe(43);
+    expect(doneWell.text).not.toContain("outplayed");
+    expect(doneWell.text).not.toContain("that part is real");
+    expect(doneWell.text).not.toMatch(/Qg5|Ba5|Nf5|Qh4/); // (a) NO: the data never named a strong move of hers
+  });
+
+  it("done well degrades to the plainer 'up to move' wording when there is no preceding opponent-mistake point to anchor the start on", () => {
+    const bullets = debriefBullets({
+      turningPoints: [anchorPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const doneWell = bullets.find((b) => b.section === "done well")!;
+    expect(doneWell.text).toBe("you were winning this one up to move 22.");
+    expect(doneWell.text).not.toContain("from move");
+  });
+
+  // review-3.md HIGH finding 1, the defect this fix wave exists for. A
+  // NON-repetition unconverted ending NEVER calls findRepetitionAnchor at
+  // all (turningPoints.ts's computeTurningPoints), so anchorKind is always
+  // "run-start" here -- tp.ply is only ever the held-run's FIRST ply, never
+  // a claim about when the win ended. The old code used tp.ply as an
+  // end-of-stretch move number regardless, which is guaranteed-false on
+  // every non-repetition ending: this fixture's real analogue (game 151
+  // forced down a non-proof path) rendered "from move 6 to move 18" when
+  // she was actually winning through move 25.
+  it("done well never invents a false end-of-stretch move number on a non-repetition (run-start) unconverted ending -- degrades to 'onward'", () => {
+    const stalemateRunStart: TurningPoint = tp({
+      rank: 1, ply: 21, san: "Nxe5", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "stalemate", anchorKind: "run-start",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, stalemateRunStart],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 40,
+    });
+    const doneWell = bullets.find((b) => b.section === "done well")!;
+    expect(doneWell.text).toBe("you were winning this one from move 6 onward.");
+    expect(doneWell.text).not.toMatch(/to move \d+/);
+  });
+
+  // review-3-pass2.md LOW finding 4 (introduced by the prior wave): on this
+  // exact run-start/no-startPoint path, couldBeBetter's non-proven text
+  // (unconvertedCouldBeBetterText) ALSO opens with "you were winning this
+  // one" -- done-well used to render that literal sentence bare, standing
+  // alone directly above couldBeBetter's sentence that repeats it verbatim,
+  // the F4 redundancy she named by name in a starker form. Fixed by varying
+  // done-well's fallback so the two sections never share an opening clause.
+  it("done well never repeats couldBeBetter's opening clause verbatim when run-start AND there is no preceding opponent point either", () => {
+    const stalemateRunStart: TurningPoint = tp({
+      rank: 1, ply: 5, san: "Nxe5", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "stalemate", anchorKind: "run-start",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [stalemateRunStart],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 40,
+    });
+    const doneWell = bullets.find((b) => b.section === "done well")!;
+    const couldBeBetter = bullets.find((b) => b.section === "could be better")!;
+    expect(doneWell.text).toBe("you had a winning position here.");
+    expect(doneWell.text).not.toMatch(/move \d+/);
+    expect(couldBeBetter.text).toBe("you were winning this one, and the stalemate gave your lead back to mallow.");
+    expect(doneWell.text).not.toBe(couldBeBetter.text.split(",")[0] + ".");
+  });
+
+  it("could be better names the mechanism and the stored mate reading -- her exact three-sentence shape", () => {
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, anchorPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const could = bullets.find((b) => b.section === "could be better")!;
+    expect(could.text).toBe(
+      "you were winning this one. the repetition that started on move 22 gave your lead back to mallow. you had mate in twelve there instead."
+    );
+    expect(could.ply).toBe(43);
+  });
+
+  it("could be better drops only the mate sentence, keeping the proven move number, when a proven anchor has no stored mate reading", () => {
+    const noMateAnchor: TurningPoint = { ...anchorPoint, mateIn: undefined };
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, noMateAnchor],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const could = bullets.find((b) => b.section === "could be better")!;
+    expect(could.text).toBe(
+      "you were winning this one. the repetition that started on move 22 gave your lead back to mallow."
+    );
+    expect(could.text).not.toContain("mate in");
+  });
+
+  // review-3.md HIGH finding 1: endKind === "repetition" alone used to be
+  // enough to print "the repetition that started on move N" -- but a
+  // repetition can be real (deriveEndKind says so) while
+  // findRepetitionAnchor still honestly proves no escape at any of her
+  // candidate entries (rejected candidates, or a repeated position that
+  // recurs with black to move so none of her plies are even candidates).
+  // On that path tp.ply is only ever the run-start fallback -- naming it as
+  // "where the repetition started" is exactly as false as done well naming
+  // it an end-of-stretch move (the real reproduction: "the repetition that
+  // started on move 18" when it actually started on move 22). anchorKind
+  // "run-start" is what the annotator sets in every one of those cases; the
+  // copy must degrade the same way it already does for stalemate.
+  it("could be better drops the move number entirely for a repetition ending whose anchor was never proven (run-start, not a collision -- a genuinely unprovable escape)", () => {
+    const unprovenRepetition: TurningPoint = tp({
+      rank: 1, ply: 21, san: "Nxe5", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "repetition", anchorKind: "run-start",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, unprovenRepetition],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 40,
+    });
+    const could = bullets.find((b) => b.section === "could be better")!;
+    expect(could.text).toBe("you were winning this one, and the repetition gave your lead back to mallow.");
+    expect(could.text).not.toMatch(/started on move \d+/);
+    expect(could.text).not.toContain("mate in");
+  });
+
+  it("could be better degrades honestly for a non-repetition unconverted ending: no move number, no mate claim", () => {
+    const stalemateAnchor: TurningPoint = tp({
+      rank: 1, ply: 21, san: "Nxe5", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "stalemate", anchorKind: "run-start",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [stalemateAnchor],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 40,
+    });
+    const could = bullets.find((b) => b.section === "could be better")!;
+    expect(could.text).toBe("you were winning this one, and the stalemate gave your lead back to mallow.");
+    expect(could.text).not.toMatch(/move \d+/);
+    expect(could.text).not.toContain("mate in");
+  });
+
+  it("watch next time names the repetition pattern and concrete alternatives, phase-gate omitted on game 151's real shape (heavy material, ply-fraction fallback)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, anchorPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+      // no gameSans -> nearlyBarePlies is empty -> phaseForPly's "endgame" at
+      // ply 43 here is the ply-fraction fallback, not a material fact, same
+      // as real game 151 (scout-unconverted-data.md (c): min non-pawn count
+      // 3, nowhere near the bare-piece threshold).
+    });
+    const watch = bullets.find((b) => b.section === "watch next time")!;
+    expect(watch.text).toBe(
+      "when you are winning and the position starts to look familiar, that is the moment to change something: a pawn push, a check from a new square, a rook to an open file. repeating is not a safe move, it is the move that gives the win back."
+    );
+    expect(watch.text).not.toMatch(/^your (opening|middlegame|endgame)/);
+    expect(watch.text).not.toContain("is where this one slipped");
+  });
+
+  it("watch next time falls back to the plainer non-repetition wording for a stalemate/fifty-move ending", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        tp({ rank: 1, ply: 21, san: "Nxe5", label: "unconverted win", deltaP: 0, kind: "unconverted", endKind: "fifty moves", anchorKind: "run-start" }),
+      ],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 40,
+    });
+    const watch = bullets.find((b) => b.section === "watch next time")!;
+    expect(watch.text).toBe(
+      "when you are winning big, the job changes from attacking to finishing. slow down and look for the line that actually ends it."
+    );
+  });
+
+  // review-3-pass2.md MEDIUM finding 3 (fixing a review-3.md MEDIUM finding
+  // 3 test that turned out not to test its own name): this fixture used to
+  // supply NO preceding opponent point, so startPoint was always null and
+  // done-well's phase clause was skipped unconditionally -- the pairing
+  // this test claims to cover (both sections independently able to prove
+  // "endgame" about the same debrief) was never actually exercised. Adding
+  // one opponent point at ply 50 (inside GAME150_SANS's real bare-piece
+  // endgame, plies 43-91 -- see "nearly-bare-side phase override" describe
+  // block below) reproduces the collapse review-3-pass2.md finding 2
+  // describes: trustedPhaseForClause's codomain is only {"endgame",
+  // undefined}, so checking a DIFFERENT ply (startPoint.ply=50 vs the
+  // anchor's ply=55) does not stop both sides from proving "endgame." What
+  // actually prevents the contradiction is the copy-layer suppression in
+  // buildDoneWell: watchNextTime's claim wins, done-well's half drops.
+  it("watch-next-time claims the material-proven phase; done-well would claim the SAME phase from a different ply and suppresses instead -- no more contradictory pair", () => {
+    // GAME150_SANS ply 55 is a genuinely bare-material position (see "nearly
+    // -bare-side phase override" describe block above) -- reused here purely
+    // to drive nearlyBarePlies' real chess.js replay; the result/turning
+    // points are synthetic, testing the copy function in isolation.
+    const bareAnchor: TurningPoint = tp({
+      rank: 1, ply: 55, san: "Nf7+", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "repetition", mateIn: 5, anchorKind: "repetition-entry",
+    });
+    // The opponent point that reproduces the collapse: ply 50 is strictly
+    // before the anchor (so findPrecedingOpponentPoint picks it up as
+    // done-well's startPoint) and sits inside the same bare-material
+    // endgame as the anchor, so trustedPhaseForClause proves "endgame" at
+    // BOTH plies -- two different plies, the same phase.
+    const opponentPointInBareEndgame: TurningPoint = tp({
+      rank: 1, ply: 50, san: "Qxh5", label: "opponent mistake", deltaP: 0.05, kind: "swing",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [opponentPointInBareEndgame, bareAnchor],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const doneWell = bullets.find((b) => b.section === "done well")!;
+    const watch = bullets.find((b) => b.section === "watch next time")!;
+    expect(watch.text.startsWith("the endgame is where this one slipped. ")).toBe(true);
+    // The collision, proven: done-well's own gate (checked at startPoint's
+    // ply, 50) independently proves "endgame" too -- so without the
+    // copy-layer suppression this WOULD render "your endgame is working".
+    expect(trustedPhaseForClause(50, nearlyBarePlies(GAME150_SANS))).toBe("endgame");
+    expect(doneWell.text.startsWith("your endgame is working")).toBe(false);
+    expect(doneWell.text).toBe("you were winning this one from move 25 to move 28.");
+  });
+
+  // review-3.md MEDIUM finding 2: the pre-existing episode branch used to
+  // run BEFORE the unconverted check, so a draw carrying BOTH a
+  // king-pressure episode AND an unconverted point rendered "you held a
+  // worse position under real pressure..." directly above "you were
+  // winning this one." -- a self-contradicting debrief (she cannot have
+  // both held a worse position and been winning about the same game), and
+  // it displaced her ruled copy from the slot entirely. The unconverted
+  // case must win.
+  it("the unconverted case wins the done-well slot over a king-pressure episode in the same draw -- no contradiction, her ruled copy ships", () => {
+    const episodePoint: TurningPoint = tp({
+      rank: 3, ply: 18, plyEnd: 24, san: "Ng3", label: "king pressure", deltaP: 0, kind: "episode",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, anchorPoint, episodePoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    const doneWell = bullets.find((b) => b.section === "done well")!;
+    expect(doneWell.text).toBe("you were winning this one from move 6 to move 22.");
+    expect(doneWell.text).not.toContain("held a worse position");
+  });
+
+  it("never names blame vocabulary or an em-dash anywhere on the unconverted-draw bullets", () => {
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, anchorPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 50,
+    });
+    for (const b of bullets) {
+      for (const banned of ["blunder", "mistake", "disaster", "outplayed", "—", "that part is real"]) {
+        expect(b.text).not.toContain(banned);
+      }
+    }
   });
 });
 
