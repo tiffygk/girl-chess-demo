@@ -226,6 +226,11 @@ export interface RawTurningPointRow {
   // instead", "this slipped N times").
   mate_in: number | null;
   missed_count: number | null;
+  // union finding 3 (review-union.md medium): never mapped, so the truth
+  // gate reconstructed an unconverted/missed-win point blind to the field
+  // debriefBullets.ts gates an avoidable-blunder claim on -- "repetition-
+  // entry" means a proven escape existed, "run-start" means none ever was.
+  anchor_kind: TurningPoint["anchorKind"] | null;
 }
 
 export function toTurningPoint(r: RawTurningPointRow): TurningPoint {
@@ -244,6 +249,7 @@ export function toTurningPoint(r: RawTurningPointRow): TurningPoint {
     endKind: r.end_kind ?? undefined,
     mateIn: r.mate_in ?? undefined,
     missedCount: r.missed_count ?? undefined,
+    anchorKind: r.anchor_kind ?? undefined,
   };
 }
 

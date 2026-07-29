@@ -68,6 +68,7 @@ describe("toTurningPoint", () => {
       end_kind: null,
       mate_in: null,
       missed_count: null,
+      anchor_kind: null,
     };
     expect(toTurningPoint(row)).toEqual({
       rank: 1,
@@ -100,6 +101,7 @@ describe("toTurningPoint", () => {
       end_kind: null,
       mate_in: null,
       missed_count: null,
+      anchor_kind: null,
     };
     const tp = toTurningPoint(row);
     expect(tp.punishSan).toBeUndefined();
@@ -109,6 +111,7 @@ describe("toTurningPoint", () => {
     expect(tp.lowConfidence).toBe(true);
     expect(tp.mateIn).toBeUndefined();
     expect(tp.missedCount).toBeUndefined();
+    expect(tp.anchorKind).toBeUndefined();
   });
 
   // F9 (review-2.md LOW): mate_in/missed_count were never mapped, so the
@@ -131,11 +134,46 @@ describe("toTurningPoint", () => {
       end_kind: "repetition",
       mate_in: 12,
       missed_count: null,
+      anchor_kind: "run-start",
     };
     const tp = toTurningPoint(row);
     expect(tp.mateIn).toBe(12);
     expect(tp.missedCount).toBeUndefined();
     expect(tp.endKind).toBe("repetition");
+    expect(tp.anchorKind).toBe("run-start");
+  });
+
+  // union finding 3 (review-union.md medium): anchor_kind was never mapped.
+  // Latent today because the only current consumer (this gate's own report)
+  // doesn't read it, but anchorKind is the field debriefBullets.ts gates an
+  // avoidable-blunder claim on ("repetition-entry" = a proven escape existed;
+  // "run-start" = none was ever proven) -- a truth tool blind to it cannot
+  // catch a debrief that claims an avoidable blunder without one.
+  it("union finding 3: maps anchor_kind to anchorKind, both proven values and null", () => {
+    const provenAnchor: RawTurningPointRow = {
+      rank: 1,
+      ply: 21,
+      san: "Nxe5",
+      label: "unconverted win",
+      punish_san: null,
+      delta_p: 0,
+      low_confidence: 0,
+      kind: "unconverted",
+      ply_end: null,
+      missed_punish: null,
+      crossed_advantage: null,
+      end_kind: "repetition",
+      mate_in: null,
+      missed_count: null,
+      anchor_kind: "repetition-entry",
+    };
+    expect(toTurningPoint(provenAnchor).anchorKind).toBe("repetition-entry");
+
+    const noProvenAnchor: RawTurningPointRow = { ...provenAnchor, anchor_kind: "run-start" };
+    expect(toTurningPoint(noProvenAnchor).anchorKind).toBe("run-start");
+
+    const nullAnchor: RawTurningPointRow = { ...provenAnchor, anchor_kind: null };
+    expect(toTurningPoint(nullAnchor).anchorKind).toBeUndefined();
   });
 });
 
