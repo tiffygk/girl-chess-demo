@@ -91,6 +91,13 @@ const STEPS: Step[] = [
     check: (out) =>
       /VERDICT:\s*PASS/.test(out) ? undefined : "truth-check did not print 'VERDICT: PASS'",
   },
+  {
+    name: "replay-check",
+    cmd: "npx",
+    args: ["tsx", "tools/replay-check.ts"],
+    check: (out) =>
+      /VERDICT:\s*PASS/.test(out) ? undefined : "replay-check did not print 'VERDICT: PASS'",
+  },
 ];
 
 const failures: string[] = [];
