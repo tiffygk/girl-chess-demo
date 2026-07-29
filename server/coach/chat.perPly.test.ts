@@ -32,13 +32,36 @@ const LONG_GAME = [
   "gxh6", "Bxh6",
 ];
 
+// Phase round (2026-07-30, Task 3): a scripted capture sequence where
+// majorsAndMinors (queens+rooks+bishops+knights, both colors) is
+// deliberately the ONLY Lichess divider predicate that ever fires -- built
+// and verified against gamePhases.ts's own exported majorsAndMinors/
+// backrankSparse/mixedness at every ply (backrankSparse stays false and
+// mixedness stays well under 150 through at least ply 20, so the
+// "middlegame" pin below cannot be an accident of a different predicate
+// firing first). Captures removing a queen/rook/bishop/knight, counted by
+// hand from the SANs (majorsAndMinors starts at 14 = 7 per side):
+//   ply9  Nxc6  (white N captures black N)            14 -> 13
+//   ply10 bxc6  (pawn recaptures, white N removed)     13 -> 12
+//   ply19 Bxf6  (white B captures black N)             12 -> 11
+//   ply20 Bxf6  (black B recaptures, white B removed)  11 -> 10  <- majorsAndMinors <= 10: MIDGAME LATCH
+//   ply23 Rxe8+ (white R captures black R)             10 -> 9
+//   ply24 Qxe8  (black Q recaptures, white R removed)   9 -> 8
+//   ply26 Bxf5  (black B captures white B)               8 -> 7
+//   ply29 gxf5  (pawn recaptures, black B removed)       7 -> 6  <- majorsAndMinors <= 6: ENDGAME LATCH
+const MATERIAL_FORCED_GAME = [
+  "e4", "e5", "Nf3", "Nc6", "d4", "exd4", "Nxd4", "Nf6", "Nxc6", "bxc6",
+  "Bd3", "d5", "exd5", "cxd5", "O-O", "Be7", "Bg5", "O-O", "Bxf6", "Bxf6",
+  "Re1", "Re8", "Rxe8+", "Qxe8", "Bf5", "Bxf5", "g4", "a6", "gxf5",
+];
+
 describe("assembleChatFactList: perPlyAnalysis (Task 3, R1a)", () => {
   it("is absent when perPly is omitted (no behavior change for existing callers)", () => {
     const facts = assembleChatFactList(moves(LONG_GAME), {});
     expect(facts.perPlyAnalysis).toBeUndefined();
   });
 
-  it("carries SAN best moves through untouched and tags ply 1 as opening (ply <= 20)", () => {
+  it("carries SAN best moves through untouched and tags ply 1 as opening (no divider predicate fires this early)", () => {
     const perPly = [
       { ply: 1, san: "f4", evalCp: 30, evalMate: null, bestSan: "d5", pvSans: ["d5", "Nf3"] },
     ];
@@ -48,29 +71,29 @@ describe("assembleChatFactList: perPlyAnalysis (Task 3, R1a)", () => {
     ]);
   });
 
-  it("tags a ply past 20 with more than 12 pieces on the board as middlegame", () => {
+  it("tags the ply where majorsAndMinors first drops to 10 or fewer as middlegame (MATERIAL_FORCED_GAME ply 20)", () => {
     const perPly = [
-      { ply: 21, san: "Nxd2", evalCp: -50, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5"] },
+      { ply: 20, san: "Bxf6", evalCp: -50, evalMate: null, bestSan: "Re1", pvSans: ["Re1"] },
     ];
-    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+    const facts = assembleChatFactList(moves(MATERIAL_FORCED_GAME), {}, undefined, perPly);
     expect(facts.perPlyAnalysis![0].phase).toBe("middlegame");
   });
 
-  it("tags a ply past 20 with 12 or fewer pieces on the board as endgame", () => {
+  it("tags the ply where majorsAndMinors first drops to 6 or fewer as endgame (MATERIAL_FORCED_GAME ply 29)", () => {
     const perPly = [
-      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+      { ply: 29, san: "gxf5", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
     ];
-    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+    const facts = assembleChatFactList(moves(MATERIAL_FORCED_GAME), {}, undefined, perPly);
     expect(facts.perPlyAnalysis![0].phase).toBe("endgame");
   });
 
   it("tags multiple plies independently in one call", () => {
     const perPly = [
-      { ply: 1, san: "f4", evalCp: 30, evalMate: null, bestSan: "d5", pvSans: ["d5"] },
-      { ply: 21, san: "Nxd2", evalCp: -50, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5"] },
-      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+      { ply: 1, san: "e4", evalCp: 30, evalMate: null, bestSan: "e4", pvSans: [] },
+      { ply: 20, san: "Bxf6", evalCp: -50, evalMate: null, bestSan: "Re1", pvSans: ["Re1"] },
+      { ply: 29, san: "gxf5", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
     ];
-    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+    const facts = assembleChatFactList(moves(MATERIAL_FORCED_GAME), {}, undefined, perPly);
     expect(facts.perPlyAnalysis!.map((p) => p.phase)).toEqual(["opening", "middlegame", "endgame"]);
   });
 
@@ -499,8 +522,8 @@ describe("perPlyForModel — missed-win turning point ships full detail (missed-
   });
 });
 
-describe("derivePhase — nearly-bare side (missed-win round, 2026-07-28)", () => {
-  it("reads a nearly-bare board as endgame regardless of total piece count (game 150 ply 55)", () => {
+describe("the shared phase timeline — nearly-bare side (missed-win round, 2026-07-28; converged onto src/review/gamePhases.ts, phase round 2026-07-30)", () => {
+  it("reads a nearly-bare board as endgame regardless of total piece count, and stays opening until a real Lichess predicate fires (game 150)", () => {
     const gameMoves = GAME150_SANS; // shared fixture from the plan header
     const perPly: ChatPerPlyInput[] = [5, 21, 55].map((ply) => ({
       ply, san: gameMoves[ply - 1].san, evalCp: null, evalMate: null, bestSan: null, pvSans: [],
@@ -508,7 +531,17 @@ describe("derivePhase — nearly-bare side (missed-win round, 2026-07-28)", () =
     const facts = assembleChatFactList(gameMoves, {}, [], perPly);
     const phases = Object.fromEntries(facts.perPlyAnalysis!.map((p) => [p.ply, p.phase]));
     expect(phases[5]).toBe("opening");
-    expect(phases[21]).toBe("middlegame"); // black still has pieces at ply 21
-    expect(phases[55]).toBe("endgame");    // 17 pieces on the board, but black is bare
+    // Board facts at ply 21 (verified against gamePhases.ts's own exported
+    // predicates): majorsAndMinors=13 (> 10), backrankSparse=false,
+    // mixedness=130 (<= 150) -- no Lichess divider predicate has fired yet.
+    // The OLD derivePhase's "ply > 20 means middlegame" pin encoded a
+    // fallback the shared timeline does not have; this game's real midgame
+    // latch is ply 24 (backrankSparse trips first).
+    expect(phases[21]).toBe("opening");
+    // 17 pieces total on the board at ply 55, but black is down to a lone
+    // king (no non-pawn, non-king piece left) -- phase.ts's nearly-bare
+    // override, carried through gamePhases.ts's PhaseTimeline, tags this
+    // endgame regardless of majorsAndMinors/backrankSparse/mixedness.
+    expect(phases[55]).toBe("endgame");
   });
 });
