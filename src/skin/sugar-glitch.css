@@ -716,6 +716,89 @@
   97%, 100% { text-shadow: none; transform: none; }
 }
 
+/* Highlight-a-move (Task 3): the bar pocket — mockup of record "Mark a Move
+   (2026-07-28)", direction D2, ported with the owner's word (highlight,
+   never mark). Two-axis law: the pill and the tray's toggles are pressables
+   → candy (squishy 0 Npx 0 press shadows, .thumb-btn's #E3D9F5 family); a
+   toggle's HIGHLIGHTED state is a machine statement → flat cyan tint,
+   shadow dropped, still tappable to un-highlight but it reads checked, not
+   springy. Cyan only: the highlight is her own voice — never magenta (not
+   an alarm), never mint (the armed-win button's). No animation: this
+   control is on screen for the whole game, so it spends zero of the
+   effects budget (the ≤150ms press transitions below are affordance, not
+   motion spend). All hexes pre-exist in this file. */
+.gc-app .bar-chip-slot { display: inline-flex; align-items: center; gap: 8px; }
+.gc-app .highlight-pocket { display: inline-flex; flex: none; }
+.gc-app .highlight-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 24px; padding: 3px 10px; border-radius: 999px;
+  background: #FFF; border: none; cursor: pointer;
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 11px; color: #4A3B7E;
+  box-shadow: 0 2px 0 #E3D9F5;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.gc-app .highlight-pill:active { transform: translateY(1px); box-shadow: 0 1px 0 #E3D9F5; }
+/* Disabled = the shipped togglesDisabled rule (a move is pending confirm):
+   dimmed, never removed from layout, and the cyan count dot stays visible
+   even dimmed — state is never hidden, only the action. */
+.gc-app .highlight-pill:disabled { opacity: .45; cursor: default; transform: none; box-shadow: 0 2px 0 #E3D9F5; }
+.gc-app .highlight-ring {
+  width: 7px; height: 7px; border-radius: 50%;
+  border: 1.5px solid #9A8BC9; background: transparent; flex: none;
+}
+.gc-app .highlight-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: #23E5FF; flex: none; }
+/* Popover tray: anchored 8px above the bar's right edge (.player-bar is
+   position: relative). z-index 9 clears the board's highest layer (.pixel
+   at 8); it floats over the bottom rank only while open. */
+.gc-app .highlight-tray {
+  position: absolute; right: 12px; bottom: calc(100% + 8px); z-index: 9;
+  width: 216px; background: #FFF; border-radius: 16px;
+  box-shadow: 0 4px 0 #C9BFEF, 0 12px 22px rgba(90,70,180,.28);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.gc-app .highlight-tray-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #6952C4;
+  margin-bottom: 2px;
+}
+/* The toggle — the mockup's one control recipe, .thumb-btn family. */
+.gc-app .highlight-toggle {
+  display: inline-flex; align-items: center; width: 100%; justify-content: flex-start;
+  height: 30px; padding: 5px 11px;
+  background: #FFF; border: 1.5px solid #E3D9F5; border-radius: 12px;
+  box-shadow: 0 3px 0 #E3D9F5; cursor: pointer;
+  font-family: 'Fredoka', sans-serif;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.gc-app .highlight-toggle:hover { transform: translateY(-1px); }
+.gc-app .highlight-toggle:active { transform: translateY(2px); box-shadow: 0 1px 0 #E3D9F5; }
+.gc-app .highlight-toggle .highlight-ring { margin-right: 6px; }
+.gc-app .highlight-toggle-num {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px;
+  letter-spacing: .04em; color: #9C8FC7; margin-right: 5px;
+}
+.gc-app .highlight-toggle-san {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
+  letter-spacing: .02em; color: #4A3B7E;
+  text-transform: none; /* SAN keeps its true case */
+}
+.gc-app .highlight-toggle.highlighted {
+  background: rgba(35,229,255,.14); border-color: #23E5FF; box-shadow: none;
+}
+.gc-app .highlight-toggle.highlighted .highlight-ring { border: none; background: #23E5FF; }
+.gc-app .highlight-toggle.highlighted .highlight-toggle-san { color: #1A7A93; }
+.gc-app .highlight-toggle.highlighted:hover { transform: none; }
+.gc-app .highlight-toggle.highlighted:active { transform: none; box-shadow: none; }
+/* <=480: after the base rules above — equal specificity, source order
+   decides (the chat-corner precedent's own rule). */
+@media (max-width: 480px) {
+  .gc-app .highlight-toggle { height: 26px; padding: 4px 8px; }
+  .gc-app .highlight-toggle-san { font-size: 11.5px; }
+  .gc-app .highlight-toggle-num { font-size: 9px; }
+  .gc-app .highlight-toggle .highlight-ring { width: 6px; height: 6px; }
+}
+
 /* Mallow's decline bark anchors to her bar (the top of the board), poking
    up into the open header space above the board-stack rather than over
    the board itself. */
@@ -887,6 +970,33 @@
 .gc-app .sq.tp-played { box-shadow: inset 0 0 0 3px rgba(35,229,255,.55), inset 0 0 10px rgba(35,229,255,.3); }
 .gc-app .sq.tp-best { box-shadow: inset 0 0 0 3px rgba(76,175,140,.7), inset 0 0 10px rgba(76,175,140,.35); }
 .gc-app .sq.tp-threat { box-shadow: inset 0 0 0 3px rgba(255,61,166,.6), inset 0 0 10px rgba(255,61,166,.35); }
+/* Coach truth-speed round (visual wave, 2026-07-27): "found" — she played
+   the engine's pick. Green best-ring confirmed by a thin cyan edge just
+   outside it (cyan band 0-2px, green band 2-5px, soft green fill), mirroring
+   the found-arrow's green-body/cyan-outline layering. Affirmation, not a
+   fourth color: only the existing cyan + green tokens, no magenta, no mint,
+   no glitch. */
+.gc-app .sq.tp-found {
+  box-shadow:
+    inset 0 0 0 2px rgba(35,229,255,.65),
+    inset 0 0 0 5px rgba(76,175,140,.75),
+    inset 0 0 12px rgba(76,175,140,.3);
+}
+/* Review fix (Wave F, 2026-07-27, review.md finding 7): "mallow" — an
+   opponent-ply turning line's own move, previously washed the same cyan as
+   her reply. Reuses #C22B7E, mallow's own existing deeper magenta/pink
+   (already her name-plate/chip text colour — see .np-mallow/.player-bar.mallow
+   above), never the solid alarm #FF3DA6 .tp-threat uses and never a new hex.
+   Thinner ring than tp-threat's alarm band so it reads as "her voice," not
+   "you are being threatened." */
+.gc-app .sq.tp-mallow { box-shadow: inset 0 0 0 2px rgba(194,43,126,.55), inset 0 0 8px rgba(194,43,126,.25); }
+/* Owner ruling (2026-07-27/28): "mallow-best" — the square wash under
+   mallow's RECOMMENDED (dashed, hypothetical) arrow. Same #C22B7E family as
+   tp-mallow but fainter and with no inner fill, so a should've square
+   whispers where an actually-moved square states. Box-shadow cannot dash;
+   the arrow carries the happened/hypothetical style, the wash only echoes
+   the actor's colour. */
+.gc-app .sq.tp-mallow-best { box-shadow: inset 0 0 0 2px rgba(194,43,126,.3); }
 
 .gc-app .board-arrows {
   position: absolute;
@@ -905,12 +1015,52 @@
   stroke-linecap: round;
   fill: none;
 }
+/* Owner ruling (2026-07-27/28 replay report): SOLID = it happened, DASHED =
+   it didn't, applied on BOTH sides of the board. Solid: played (her actual,
+   cyan), found (her actual = recommended), mallow (mallow's actual), threat
+   (a genuine alarm — #FF3DA6 is reserved for real alarms ONLY, never a
+   hypothetical). Dashed: best (her "you should've", green) and mallow-best
+   (mallow's "should've", #C22B7E). One dash pattern for both dashed arrows
+   so "dashed" reads as a single hypothetical style, not two new colours. */
 .gc-app .board-arrows .arrow-played line,
 .gc-app .board-arrows .arrow-played polygon { stroke: #23E5FF; fill: #23E5FF; }
 .gc-app .board-arrows .arrow-best line,
 .gc-app .board-arrows .arrow-best polygon { stroke: rgb(76,175,140); fill: rgb(76,175,140); }
+.gc-app .board-arrows .arrow-best line { stroke-dasharray: 2.7 1.9; }
 .gc-app .board-arrows .arrow-threat line,
 .gc-app .board-arrows .arrow-threat polygon { stroke: #FF3DA6; fill: #FF3DA6; }
+/* Coach truth-speed round (visual wave, 2026-07-27): the "found" arrow —
+   her played move IS the recommended move, so one arrow carries both
+   voices: the green best-arrow body over a crisp cyan outline (a wider
+   cyan stroke drawn under the green, Board.tsx renders the .halo underlay
+   first). Sharp two-tone, no blur/glow/glitch — this is a machine statement
+   of agreement, and it must read as affirmation, never alarm. Reuses the
+   existing #23E5FF + rgb(76,175,140) tokens only. */
+.gc-app .board-arrows .arrow-found line,
+.gc-app .board-arrows .arrow-found polygon { stroke: rgb(76,175,140); fill: rgb(76,175,140); }
+.gc-app .board-arrows .arrow-found line.halo { stroke: #23E5FF; stroke-width: 3.2; }
+.gc-app .board-arrows .arrow-found polygon.halo {
+  fill: #23E5FF;
+  stroke: #23E5FF;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+/* "mallow" — mallow's ACTUAL move (either side's card). Reuses #C22B7E, her
+   own existing deeper magenta/pink (not the solid alarm #FF3DA6
+   .arrow-threat uses, and no new hex). SOLID per the owner's ruling — it
+   happened (Wave F first shipped this dashed; the ruling flipped it: dashes
+   now mean hypothetical, and a dashed actual-move would lie). Deep rose vs
+   the hot alarm magenta keeps "mallow moved here" distinct from "you are
+   being threatened" at a glance. */
+.gc-app .board-arrows .arrow-mallow line,
+.gc-app .board-arrows .arrow-mallow polygon { stroke: #C22B7E; fill: #C22B7E; }
+/* "mallow-best" — mallow's RECOMMENDED move ("mallow should've"), the
+   hypothetical the owner mistook for a real move while it wore solid alarm
+   #FF3DA6. Same #C22B7E as her actual (one colour per actor), dashed with
+   the same pattern as .arrow-best (one hypothetical style, both sides). */
+.gc-app .board-arrows .arrow-mallow-best line,
+.gc-app .board-arrows .arrow-mallow-best polygon { stroke: #C22B7E; fill: #C22B7E; }
+.gc-app .board-arrows .arrow-mallow-best line { stroke-dasharray: 2.7 1.9; }
 
 /* check ring — sits under the piece sprite (.pieces layer paints over .squares) */
 .gc-app .sq.check-ring {
@@ -1126,6 +1276,62 @@
   flex-direction: column;
   gap: var(--space-2);
 }
+
+/* D1 "cipher rail" -- the six-state arrow legend, first child of .debrief,
+   above the turning-point cards (owner-approved mockup direction, vault "3
+   visual/Girl Chess — Arrow Legend (mockup, 2026-07-28).html"). Sharp
+   register per the two-axis law -- the machine speaking, not a pressable:
+   chamfered plate, hard flat drop-shadow (never box-shadow under a
+   clip-path), signal type throughout, no border-radius past 4px, no hover-
+   press affordance, no glow, no animation. Analysis/review only by
+   construction: DebriefPage (the sole mount site) never renders during
+   live play -- see analysisLegend.test.ts's gating pins. Closed palette:
+   every colour here is either existing chrome ink (#6952C4 machine /
+   #23A8C7 kicker / #9A8BC9 rule) or one of the six real arrow colours
+   already shipped in .arrow-played/.arrow-best/.arrow-threat/.arrow-found/
+   .arrow-mallow/.arrow-mallow-best above -- no new hex. */
+.gc-app .legend-rail {
+  width: 100%;
+  background: rgba(255,255,255,.94); border: 1.5px solid #9A8BC9;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  filter: drop-shadow(2px 2px 0 rgba(74,59,126,.45));
+  padding: 10px 16px 12px;
+  display: flex; flex-direction: column;
+}
+.gc-app .legend-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #23A8C7;
+}
+/* Density deviation from the mockup (see AnalysisLegendRail.tsx's header):
+   the real .debrief caps at 380px, well under the mockup's 520px-wide demo
+   board -- a 2-column solid cluster overflowed it. Both clusters are a
+   single-column stack here; gap tightened from the mockup's 16px to fit
+   the narrower plate without touching any porter's-numbers geometry. */
+.gc-app .legend-rail .rail-body { display: flex; align-items: flex-start; gap: 12px; margin-top: 7px; }
+.gc-app .legend-rail .cluster-inner { display: flex; flex-direction: column; gap: 4px; }
+.gc-app .legend-rail .cluster-rows.stack { display: flex; flex-direction: column; gap: 2px; }
+.gc-app .legend-rail .cluster-divider {
+  align-self: stretch; height: auto; width: 1px; margin-top: 2px;
+  background: rgba(154,139,201,.5); transform: skewX(-12deg);
+}
+.gc-app .legend-row { display: flex; align-items: center; gap: 8px; height: 22px; white-space: nowrap; }
+.gc-app .legend-label {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 600; font-size: 10.5px;
+  letter-spacing: .03em; text-transform: lowercase; color: #6952C4;
+}
+.gc-app .legend-rail .axis-head { display: flex; align-items: center; gap: 7px; }
+.gc-app .legend-rail .axis-head .word {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px;
+  letter-spacing: .08em; text-transform: lowercase; color: #6952C4;
+}
+/* <=480px: clusters stack, divider drops -- mockup's narrow rendering.
+   Placed after the base rules above (equal specificity, source order
+   decides -- see the chat-corner-thread precedent's own note on this). */
+@media (max-width: 480px) {
+  .gc-app .legend-rail .rail-body { flex-direction: column; gap: 8px; }
+  .gc-app .legend-rail .cluster-divider { display: none; }
+}
+
 /* debrief-v2: three fixed-order bullet sections (done well / could be
    better / watch next time) replace the single lesson sentence as the
    debrief's opening act. Same lavender bubble-prose family as the turning-
@@ -1236,6 +1442,121 @@
 .gc-app button.small.debrief-movelist-move.active.debrief-movelist-mallow {
   background: #FF3DA6; color: #fff;
   box-shadow: 0 2px 0 #C22B7E, 0 4px 8px rgba(255,61,166,.35);
+}
+
+/* Highlight-a-move (Task 4): her flagged ply in the recap — the machine's
+   record of the highlight, per the "Mark a Move" mockup's recap spec. The
+   ROW wears the flat statement (cyan tint + inset left rule, never a
+   shadow); the ply button keeps its shipped candy recipe untouched (it
+   still jumps the board) and gains the same 7px cyan dot she filled live,
+   as a badge at its top-right; the closing chip reads `highlighted` — the
+   owner's word, never `marked`. Cyan only: her voice, not an alarm. */
+.gc-app .debrief-movelist-row.highlighted-row {
+  background: rgba(35,229,255,.10);
+  box-shadow: inset 2px 0 0 #23E5FF;
+  border-radius: 6px;
+  padding: 3px 6px 3px 8px;
+}
+.gc-app button.small.debrief-movelist-move.highlighted { position: relative; }
+.gc-app button.small.debrief-movelist-move.highlighted::after {
+  content: ""; position: absolute; top: -2px; right: -2px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #23E5FF; box-shadow: 0 0 0 1.5px #FFF;
+}
+.gc-app .debrief-movelist-hl-chip {
+  margin-left: auto; flex: none;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 8.5px;
+  letter-spacing: .12em; text-transform: lowercase; color: #1A7A93;
+  background: rgba(35,229,255,.14); border: 1px solid #23A8C7;
+  padding: 2px 7px; border-radius: 4px;
+}
+
+/* Highlight-a-move (Task 6): the study ledger — mockup of record
+   "Highlighted Moves Section (2026-07-28)", direction D2. Two-axis law: a
+   collapsed row is a pressable (it expands) → candy, 0 2px 0 press shadow;
+   the open card is the machine restating HER annotation → flat cyan tint +
+   inset left rule, no drop shadow, no press chrome. Verdict chips are
+   machine statements — flat, 1px border, no shadow — reading `done well` /
+   `could be better`, the bullet sections' own vocabulary (owner ruling
+   2026-07-28). A done-well note is a full statement in the same ink, never
+   grayed. Cyan frames every record (her voice); magenta appears nowhere (a
+   highlight is never an alarm). No animation: a persistent analysis
+   surface. Zero highlights renders null upstream — no ghost chrome (the
+   2026-07-22 dead-chrome ruling). All hexes pre-exist in this file. */
+.gc-app .highlight-ledger { display: flex; flex-direction: column; gap: 6px; }
+.gc-app .highlight-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: #23E5FF; box-shadow: 0 0 0 1.5px #FFF;
+}
+.gc-app .highlight-chip {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 8.5px;
+  letter-spacing: .12em; text-transform: lowercase;
+  padding: 2px 7px; border-radius: 4px; flex: none; white-space: nowrap;
+}
+.gc-app .highlight-chip-done { color: #1A7A93; background: rgba(35,229,255,.14); border: 1px solid #23A8C7; }
+.gc-app .highlight-chip-better { color: #6952C4; background: #E7DFFF; border: 1px solid #C9BFEF; }
+/* collapsed row: 20px content in 7px 10px padding → 37.5px + 2px shadow */
+.gc-app .highlight-ledger-row {
+  display: flex; align-items: center; width: 100%; text-align: left;
+  background: #FFF; border: 1.5px solid #E3D9F5; border-radius: 10px;
+  padding: 7px 10px; cursor: pointer;
+  box-shadow: 0 2px 0 #E3D9F5;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.gc-app .highlight-ledger-row:active { transform: translateY(1px); box-shadow: 0 1px 0 #E3D9F5; }
+.gc-app .highlight-ledger-row .highlight-dot { margin-right: 7px; }
+.gc-app .highlight-ledger-num {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px;
+  letter-spacing: .04em; color: #9C8FC7; margin-right: 6px;
+}
+.gc-app .highlight-ledger-phrase {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13px; color: #4A3B7E;
+  flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gc-app .highlight-caret {
+  width: 7px; height: 7px; flex: none; margin-left: 6px;
+  border-right: 1.5px solid #9A8BC9; border-bottom: 1.5px solid #9A8BC9;
+  transform: rotate(45deg) translateY(-2px);
+}
+.gc-app .highlight-caret-up { transform: rotate(-135deg) translateY(-1px); }
+/* the open card */
+.gc-app .highlight-card {
+  background: rgba(35,229,255,.10);
+  border: 1.5px solid #E3D9F5; border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: inset 2px 0 0 #23E5FF;
+  display: flex; flex-direction: column; gap: 6px;
+}
+/* The head doubles as the collapse control when >1 highlight exists — a
+   bare hit area, no candy chrome of its own (the card stays a statement). */
+.gc-app .highlight-card-head {
+  display: flex; align-items: center; gap: 7px;
+  background: none; border: none; padding: 0; width: 100%; text-align: left;
+}
+.gc-app button.highlight-card-head { cursor: pointer; }
+.gc-app .highlight-card-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #23A8C7;
+  flex: 1 1 auto;
+}
+.gc-app .highlight-card-move { display: flex; align-items: baseline; gap: 7px; }
+.gc-app .highlight-card-phrase { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 14px; color: #4A3B7E; }
+.gc-app .highlight-card-san {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10.5px;
+  letter-spacing: .04em; color: #1A7A93;
+  text-transform: none; /* SAN keeps its true case */
+}
+.gc-app .highlight-card-note {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13.5px;
+  color: #4A3B7E; line-height: 1.4; margin: 0;
+}
+.gc-app .highlight-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+/* <=480 (debrief at 88vw): the mockup verified no structural overrides are
+   needed at 343px; only the card tightens. After the base rules — equal
+   specificity, source order decides. */
+@media (max-width: 480px) {
+  .gc-app .highlight-card { padding: 9px 12px; }
+  .gc-app .highlight-card-note { font-size: 13px; }
 }
 
 .gc-app .debrief-footer {

@@ -5,7 +5,9 @@ import { getPersona, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims } from "./placementClaims";
+import { checkMateClaims } from "./mateClaims";
 import { insertAdviceTrace } from "../store/db";
+import { isOffTopic, mentionedPlies, type ChatIntent } from "./intent";
 
 // F16 (this-game grounding chat): a second, independent narration surface
 // alongside narrate() in ./index.ts. Same shape (persona prompt + fact JSON
@@ -33,7 +35,27 @@ export const CHAT_HISTORY_WINDOW = 8; // messages (4 exchanges), owner-calibrata
 // narrate()'s own budget is deliberately NOT raised with it: that surface
 // speaks unprompted while she plays, where a late reply is worse than none.
 export const CHAT_TIMEOUT_MS = 45000;
+// B1 (2026-07-27, coach-truth-speed round), owner's verbatim ask: "once the
+// game is over, I am no longer waiting on it to make a move... I want it to
+// have a longer timeout so it can answer more in-depth questions." The live
+// budget (CHAT_TIMEOUT_MS) is untouched -- she likes it for live play -- this
+// is a SEPARATE, larger TOTAL budget for review-mode chat (finished games
+// only), selected server-side in manager.ts from the db's own `result`
+// column, never from a client-supplied mode flag. MIN_ATTEMPT_MS is the
+// floor: if less than this remains after attempt 0 fails validation, the
+// regen is skipped entirely rather than started and immediately starved --
+// see chat()'s loop below for the accounting that keeps the worst case
+// exactly budgetMs, never budgetMs + a second full timeout.
+export const CHAT_REVIEW_BUDGET_MS = 90000;
+export const MIN_ATTEMPT_MS = 8000;
 export const CHAT_MAX_LEN = 500;
+// Task 2 (Wave D, coach-truth-speed round): the persona's "one to three
+// short sentences" rule is a LIVE-NUDGE budget -- it must not gag a real
+// post-game strategy answer on the new general-chess route. Named (rather
+// than inlined into personas/coach.md's prose alone) so coach-eval can read
+// the exact same number this prompt asks for, instead of a hardcoded guess
+// baked into the eval harness.
+export const GENERAL_MAX_WORDS = 120;
 
 export interface ChatContext {
   mode: "live" | "review";
@@ -77,6 +99,21 @@ export interface ChatContext {
     // the one piece that actually changes what the coach is allowed to say.
     bestSan?: string;
     pvSans?: string[];
+    // Task 3 (Wave D, deferred from A1): the same fact reviewArrows.ts/
+    // debriefBullets.ts/turningPointNote.ts already compute via
+    // src/review/followedBest.ts's followedBest() -- threaded into chat so
+    // the coach's answer and the debrief note can never disagree about
+    // whether she actually played the recommended move. Owner's game-146
+    // question this closes: "did I actually do the move it recommended, or
+    // did I not?" playedNextSan is the move she actually played at the
+    // relevant ply (her own move for an odd tp.ply, her REPLY for an even/
+    // opponent tp.ply -- see followedBest.ts's header comment);
+    // followedBest is whether that move matches the line's own
+    // recommendation. Both optional: absent whenever the client has no
+    // gameSans to compute them from (see chatFocus.ts's
+    // turningPointFocusContext).
+    playedNextSan?: string;
+    followedBest?: boolean;
   };
   // Task 1 (R2, pending-move context threading): the move she's picked up
   // and placed on the board but has NOT confirmed -- src/game/GamePage.tsx's
@@ -105,6 +142,17 @@ export interface ChatContext {
   };
 }
 
+// B4a: the finished-game outcome fact. `winner`/`how` are plain-language,
+// never a raw result-string parse the model has to do itself; `finalPly` is
+// the game's total ply count, the same number chat's own `ply` trace arg
+// already uses for a finished game.
+export interface ChatOutcome {
+  result: string;
+  winner: "you" | "mallow" | "draw";
+  how: string;
+  finalPly: number;
+}
+
 export interface ChatFactList {
   gameSans: string[]; // every san played, in order
   currentFen: string; // final position (review) / live position (live)
@@ -119,6 +167,16 @@ export interface ChatFactList {
   occupancy: { square: string; pieceKind: string; color: "you" | "mallow" }[]; // from currentFen
   legalSans: string[]; // chess.js .moves() on currentFen
   turningPoints?: { ply: number; san: string; label: string; punishSan?: string }[];
+  // B4a (2026-07-27, coach-truth-speed round): there was no game-over signal
+  // in the prompt at all before this -- the coach would discuss a game she
+  // had already won in present/live tense, because nothing in the fact list
+  // ever said the game was over. `status` is ALWAYS emitted (a live game
+  // must be labeled live, not left to be inferred from outcome's absence);
+  // `outcome` is only ever present alongside status "finished", derived by
+  // the caller (manager.ts) from the db's own `result`/`end_reason` columns,
+  // never guessed from ctx.mode.
+  status: "in-progress" | "finished";
+  outcome?: ChatOutcome;
   context?: ChatContext; // live coach facts when present
   allowedSans: string[]; // gameSans + legalSans + context sans + turning-point sans/punishSans
   // Task 2 (defender grounding): every occupied square currently attacked
@@ -173,6 +231,7 @@ export interface ChatFactList {
     bestSan: string | null;
     pvSans: string[];
     phase: "opening" | "middlegame" | "endgame";
+    then?: string;
   }[];
   // NOTE: no allowedSquares -- chat validation treats square names as free
   // geography (see validateChat below). Declared cut #2, not an oversight:
@@ -180,6 +239,14 @@ export interface ChatFactList {
   // fact list to also carry per-square provenance, which nothing upstream
   // computes today. See validateChat's comment and chat.test.ts's cut #2
   // test for the honesty documentation this decision requires.
+  // Highlight-a-move (Task 8): plies she flagged during live play ("that
+  // move I paused on"). Fed into perPlyForModel's fullDetailPlies below so
+  // "why did I highlight this?" always gets pvSans/phase, regardless of how
+  // far outside RECENT_PLY_WINDOW the ply sits -- the same exemption a
+  // turning point or the focused ply already gets. Deliberately NOT folded
+  // into turningPoints/allowedSans: a highlighted ply that was never an
+  // actual turning point would drift validateChat's SAN allow-list.
+  highlightedPlies?: number[];
 }
 
 // Every position-shaped fact the coach gets, derived from one chess.js
@@ -244,6 +311,13 @@ export interface ChatPerPlyInput {
   evalMate: number | null;
   bestSan: string | null;
   pvSans: string[];
+  // Forward-prediction round (2026-07-28): the replay-proven continuation
+  // claim for this ply's line (server/annotator/continuation.ts), derived by
+  // the caller (manager.ts) from the same fenBefore + pvSans replay that
+  // produced bestSan/pvSans -- same "caller derives, this function only
+  // carries it" discipline as every other field here. Absent when the line
+  // proves nothing claimable (about half of real plies, measured).
+  then?: string;
 }
 
 // Owner-calibratable starting values (Task 3, R1a): opening/endgame phase
@@ -253,8 +327,17 @@ export interface ChatPerPlyInput {
 // question this fact exists to answer ("was my opening okay?").
 const PHASE_OPENING_PLY_MAX = 20;
 const PHASE_ENDGAME_PIECE_MAX = 12;
+// Missed-win round (2026-07-28): hand-duplicates src/review/phase.ts's
+// ENDGAME_BARE_PIECE_MAX (server code never imports from src/ — same
+// hand-mirroring convention as api.ts's types). A side reduced to at most
+// this many non-pawn, non-king pieces makes the position an endgame no
+// matter how much the OTHER side kept — the owner's real game 150 finish
+// (her full army vs a lone king, 17 pieces total) never tripped the
+// pieceCount rule below and tagged every mate-in-1 miss "middlegame".
+const CHAT_ENDGAME_BARE_PIECE_MAX = 1;
 
-function derivePhase(ply: number, pieceCount: number): "opening" | "middlegame" | "endgame" {
+function derivePhase(ply: number, pieceCount: number, nearlyBare = false): "opening" | "middlegame" | "endgame" {
+  if (nearlyBare) return "endgame"; // a nearly-bare board is never usefully "opening"
   if (ply <= PHASE_OPENING_PLY_MAX) return "opening";
   if (pieceCount <= PHASE_ENDGAME_PIECE_MAX) return "endgame";
   return "middlegame";
@@ -302,7 +385,20 @@ export function assembleChatFactList(
   gameMoves: { ply: number; san: string }[],
   ctx: ChatContext,
   turningPoints?: { ply: number; san: string; label: string; punishSan?: string | null }[],
-  perPly?: ChatPerPlyInput[]
+  perPly?: ChatPerPlyInput[],
+  // B4a: additive optional 5th param, mirrors perPly's own "caller derives,
+  // this function only carries it through" discipline -- manager.ts is the
+  // one place that knows the db's result/end_reason columns. Every existing
+  // caller (every test, every pre-this-round call site) omits it and gets
+  // status "in-progress", outcome undefined -- unchanged behavior.
+  outcomeInfo?: { status: "in-progress" | "finished"; outcome?: ChatOutcome },
+  // Highlight-a-move (Task 8): additive optional 6th param, same
+  // "caller derives, this function only carries it through" discipline as
+  // outcomeInfo above -- manager.ts is the one place that knows the db's
+  // moves.highlighted column. Every existing caller (every test, every
+  // pre-this-round call site) omits it and gets undefined -- unchanged
+  // behavior.
+  highlightedPlies?: number[]
 ): ChatFactList {
   const chess = new Chess();
   const ordered = [...gameMoves].sort((a, b) => a.ply - b.ply);
@@ -312,10 +408,17 @@ export function assembleChatFactList(
   // on the board at ply N", and this is the one place that walks the game
   // ply by ply already.
   const pieceCountByPly = new Map<number, number>();
+  // Missed-win round (2026-07-28): captured in the same replay pass — see
+  // CHAT_ENDGAME_BARE_PIECE_MAX's comment.
+  const nearlyBareByPly = new Map<number, boolean>();
   for (const m of ordered) {
     const mv = chess.move(m.san);
     gameSans.push(mv.san);
-    pieceCountByPly.set(m.ply, chess.board().flat().filter(Boolean).length);
+    const pieces = chess.board().flat().filter((p) => p != null);
+    pieceCountByPly.set(m.ply, pieces.length);
+    const nonPawn = (color: "w" | "b") =>
+      pieces.filter((p) => p!.color === color && p!.type !== "k" && p!.type !== "p").length;
+    nearlyBareByPly.set(m.ply, Math.min(nonPawn("w"), nonPawn("b")) <= CHAT_ENDGAME_BARE_PIECE_MAX);
   }
 
   const perPlyAnalysis = perPly?.map((p) => ({
@@ -324,7 +427,7 @@ export function assembleChatFactList(
     // above -- defensive only; every real caller's perPly plies are a
     // subset of the same gameMoves this function just replayed, but a
     // missing lookup should read as "not yet endgame" rather than throw.
-    phase: derivePhase(p.ply, pieceCountByPly.get(p.ply) ?? 32),
+    phase: derivePhase(p.ply, pieceCountByPly.get(p.ply) ?? 32, nearlyBareByPly.get(p.ply) ?? false),
   }));
 
   const { fen: currentFen, toMove, occupancy, legalSans, contested } = derivePositionFacts(chess);
@@ -381,6 +484,26 @@ export function assembleChatFactList(
     sans.add(t.san);
     if (t.punishSan) sans.add(t.punishSan);
   }
+  // Missed-win round (2026-07-28): folds every per-ply bestSan/pvSans the
+  // model is HANDED (restored by 46f641a, replay-verified server-side from
+  // fenBefore) into the allow-list. Only replay-verified engine lines join
+  // here, never a claim.
+  //
+  // Union review 2026-07-28 correction: this fold does NOT make those moves
+  // speakable, which is what an earlier version of this comment claimed.
+  // checkVoice rejects EVERY non-bare-square SAN-shaped token independently
+  // of allowedSans (see chat.ts:671 and the both-routes pins in
+  // chat.general.test.ts), so a reply echoing "Qh8#" as literal notation is
+  // still zapped -- by the voice rule, not by this list. The fold is kept
+  // because allowedSans is the truth-membership record for SAN a future
+  // non-voice path may consult, and it costs no prompt tokens (allowedSans
+  // is stripped from the model-facing facts at factsForModel). It is
+  // currently redundant with checkVoice. Do not cite it as a speakability
+  // mechanism.
+  for (const p of perPly ?? []) {
+    if (p.bestSan) sans.add(p.bestSan);
+    for (const s of p.pvSans) sans.add(s);
+  }
   // Task 7 fold: the turningPoints list above only ever carries a turning
   // point's OWN san/punishSan (the debrief's persisted facts) -- never the
   // best line, so a player asking "what should you have played instead" at
@@ -391,6 +514,11 @@ export function assembleChatFactList(
   // validation in validateChat below is untouched by this fold.
   if (ctx.turningPointFocus?.bestSan) sans.add(ctx.turningPointFocus.bestSan);
   for (const s of ctx.turningPointFocus?.pvSans ?? []) sans.add(s);
+  // Task 3 (Wave D): the move she actually played at the focused turning
+  // point -- without this, the coach's own true statement of what she did
+  // ("you played Qf6") could be rejected as an unsanctioned move whenever it
+  // differs from the line's own bestSan/pvSans.
+  if (ctx.turningPointFocus?.playedNextSan) sans.add(ctx.turningPointFocus.playedNextSan);
   // Task 4 fold (R1b): identical reasoning, for the hint ladder's own focus
   // -- without this, a hint follow-up asking "why is that the move?" could
   // never legally name the move the hint itself is about.
@@ -413,6 +541,8 @@ export function assembleChatFactList(
     legalSans,
     focusPosition,
     turningPoints: tpOut,
+    status: outcomeInfo?.status ?? "in-progress",
+    outcome: outcomeInfo?.outcome,
     // Task 1 (R2): context carries the VERIFIED pendingMove, never the raw
     // client claim -- an illegal/dropped claim must not reach validateChat,
     // factsForModel, or the advice_traces record either.
@@ -420,6 +550,7 @@ export function assembleChatFactList(
     allowedSans: [...sans],
     contested,
     perPlyAnalysis,
+    highlightedPlies,
   };
 }
 
@@ -601,6 +732,82 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
   // is about the SHAPE of the prose (notation/banned words/numbers), not
   // whether a claim matches the position.
   violations.push(...checkVoice(text));
+  // Forward-prediction round (2026-07-28): the then facts invite the model
+  // to name mates by number -- adjudicate digit-form "mate in N" against
+  // the Ns the fact list itself vouches for (evalMate, then claims, and a
+  // focused line that visibly ends in #). Board route only: the general
+  // route may legitimately reference mates outside this game.
+  const focusMateNs: number[] = [];
+  for (const line of [facts.context?.hintFocus?.pvSans, facts.context?.turningPointFocus?.pvSans]) {
+    const last = line?.[line.length - 1];
+    if (line && last && last.endsWith("#")) focusMateNs.push(Math.ceil(line.length / 2));
+  }
+  violations.push(...checkMateClaims(text, facts.perPlyAnalysis ?? [], focusMateNs));
+
+  if (violations.length > 0) return { ok: false, violations };
+  return { ok: true };
+}
+
+// Task 2 (Wave D): whether the REPLY itself makes a claim about the
+// position -- names a SAN-shaped token or a bare square. Reused as the gate
+// for the three position-claim checkers in validateChatGeneral below: "if
+// it makes no positional claim there is nothing to check" (the brief's own
+// words). Same SAN_RE the board route's own validateChat scans with.
+function replyReferencesPosition(text: string): boolean {
+  return (text.match(SAN_RE) ?? []).length > 0;
+}
+
+// Task 2 (Wave D, general-chess route): validateChat's sibling for the
+// general route -- kept as a SEPARATE function rather than an intent branch
+// inside validateChat itself, so validateChat (and therefore the board
+// route) stays byte-for-byte unchanged by this wave ("board route: change
+// nothing").
+//
+// Review fix (Wave F, 2026-07-27, review.md finding 5): this function has NO
+// allowedSans-membership check at all (unlike validateChat's SAN loop) --
+// by design, a general answer may legitimately name a move that was never
+// played in THIS game ("consider castling early" is a true, useful answer
+// to a general question). The PREVIOUS version of this comment overclaimed
+// what that relaxation buys: checkVoice (kept unconditionally, below)
+// already flags EVERY non-bare-square SAN-shaped token as voice-notation
+// regardless of whether it names a real/legal/played move, so
+// "developing your knight with Nf3" is rejected on THIS route exactly as it
+// would be on the board route -- not because it names an unplayed move
+// (this route was built specifically not to police that), but because
+// cookie never speaks in notation, on EITHER route. So the relaxation only
+// ever has daylight to matter for a move named in PLAIN WORDS with no
+// SAN-shaped token at all ("knight to f3", not "Nf3") -- see
+// chat.general.test.ts for the honest version of this claim, replacing a
+// prior test that asserted it vacuously (checking a violations array that
+// was never going to contain the bare move token in the first place).
+//
+// Keeps checkVoice unconditionally: voice rules are about HOW cookie talks
+// (no raw notation, no engine/eval/centipawn jargon, no signed numbers), not
+// about what she may discuss.
+//
+// The three position-claim checkers (defense/side-attribution/placement)
+// only run when the reply itself references the position
+// (replyReferencesPosition above) -- a pure-principle answer with no move
+// or square in it has nothing for them to check against.
+export function validateChatGeneral(
+  text: string,
+  facts: ChatFactList
+): { ok: true } | { ok: false; violations: string[] } {
+  const violations: string[] = [];
+
+  if (replyReferencesPosition(text)) {
+    const currentDefense = checkDefenseClaims(text, facts.currentFen);
+    if (facts.focusPosition) {
+      const focusDefense = new Set(checkDefenseClaims(text, facts.focusPosition.fen));
+      violations.push(...currentDefense.filter((v) => focusDefense.has(v)));
+    } else {
+      violations.push(...currentDefense);
+    }
+    violations.push(...checkSideAttributionClaims(text, facts));
+    violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
+  }
+
+  violations.push(...checkVoice(text));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };
@@ -656,17 +863,122 @@ function focusForModel(facts: ChatFactList) {
 // this projection at all -- readForPly (above) replaces both with a single
 // qualitative `read` string, and no key here contains the literal substring
 // "eval". The raw numbers stay on the ChatFactList itself.
-const PER_PLY_PV_MODEL_LIMIT = 2;
+// Forward-prediction round (2026-07-28): raised 2 -> 6 for full-detail
+// plies. Two moves of line cannot answer "and what happens after that" --
+// six (three of hers, three of mallow's) walks a real sequence, and the
+// full-detail set is small enough that the measured cost on a real 91-ply
+// game was +35 tokens of the round's +363 total. Collapsed plies still ship
+// no pvSans at all -- the `then` claim is their whole continuation story.
+const PER_PLY_PV_MODEL_LIMIT = 6;
 
-function perPlyForModel(perPlyAnalysis: ChatFactList["perPlyAnalysis"]) {
-  return perPlyAnalysis?.map((p) => ({
-    ply: p.ply,
-    san: p.san,
-    bestSan: p.bestSan,
-    phase: p.phase,
-    pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
-    read: readForPly(p.ply, p.evalCp, p.evalMate),
-  }));
+// B4b (2026-07-27, coach-truth-speed round): the whole-game perPlyAnalysis
+// list is affordable to CARRY (assembleChatFactList still ships every ply,
+// so the trace JSON stays complete for the Lab) but not to SEND to the
+// model at full detail for every ply of a long game -- most of it is
+// completely irrelevant to whatever she actually asked. Full detail
+// (pvSans/phase, alongside san/bestSan/read) goes only to plies in the
+// union of: turning-point plies (she can ask about any of them), the
+// focused moment +/- FOCUS_PLY_RADIUS (a "why this move" follow-up usually
+// means a move or two of surrounding context, not just the one ply), the
+// live pending move's own ply (the move she's about to make sits right at
+// the game's current tip -- included for the same "the moment in view gets
+// full detail" reason, even though in practice RECENT_PLY_WINDOW already
+// covers it since a pending move can only exist at the live tip), and the
+// last RECENT_PLY_WINDOW plies (ordinary "how did I just do" chat, which is
+// the common case). Every other ply collapses to {ply, san, bestSan, read}
+// -- still enough to answer "what did I play, how did it go, and what
+// should I have played instead" for the whole game, just without the
+// pvSans/phase weight.
+//
+// B4c (2026-07-28, coach-truth-speed round, regression fix): B4b's original
+// collapse dropped bestSan too, alongside pvSans/phase. That shipped a
+// regression the same morning it landed (005b050): the owner asked about
+// move 27/28 in a 91-ply game -- ~37 plies back, well outside
+// RECENT_PLY_WINDOW -- and the coach had no bestSan for that ply at all, so
+// it honestly (but wrongly, from her point of view) said it couldn't name
+// the better move. bestSan is one short token per ply; restoring it on
+// every collapsed ply is a small fraction of what dropping pvSans/phase
+// still saves (measured on a real 91-ply game: see chat.ts's own change
+// notes / the round's report for the before/after character count).
+const RECENT_PLY_WINDOW = 12;
+const FOCUS_PLY_RADIUS = 2;
+
+// Union-review finding 2 (whole-branch review, coach-truth-speed round,
+// 2026-07-28): the per-ply projection below carried no side marker at all,
+// and coach.md's chat section told the model the story reads as "your move
+// then her reply" -- but odd plies are the player's own move and even
+// plies are mallow's (the player is always white, the same fixed mapping
+// derivePositionFacts uses), and that alternation is invisible from a
+// single collapsed ply's shape once it's pulled out of game order (a
+// turning-point lookup, a "what about move 24" follow-up, a collapsed ply
+// carrying only its own `then`). Real game 150 ply 24 -- an even, mallow
+// ply -- shipped {"san":"Nc6","bestSan":"Re8","then":"you win the rook"}
+// with nothing marking whose move `san` was, so a coach reading it
+// literally could attribute mallow's move to the player.
+// checkSideAttributionClaims can't catch this: it only adjudicates the
+// CURRENT legalSans, never who-owns-which-ply. Fixed at the fact layer
+// (this field), not by asking the model to compute ply parity itself.
+function sideForPly(ply: number): "you" | "mallow" {
+  return ply % 2 === 1 ? "you" : "mallow";
+}
+
+function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
+  const perPlyAnalysis = facts.perPlyAnalysis;
+  if (!perPlyAnalysis) return undefined;
+
+  const maxPly = perPlyAnalysis.reduce((m, p) => Math.max(m, p.ply), 0);
+  const fullDetailPlies = new Set<number>();
+  for (const tp of facts.turningPoints ?? []) fullDetailPlies.add(tp.ply);
+  if (facts.focusPosition) {
+    for (let d = -FOCUS_PLY_RADIUS; d <= FOCUS_PLY_RADIUS; d++) {
+      fullDetailPlies.add(facts.focusPosition.ply + d);
+    }
+  }
+  if (facts.context?.pendingMove) fullDetailPlies.add(facts.gameSans.length + 1);
+  for (const p of perPlyAnalysis) {
+    if (p.ply > maxPly - RECENT_PLY_WINDOW) fullDetailPlies.add(p.ply);
+  }
+  // Forward-prediction round (2026-07-28): plies the player named in this
+  // very message ("move 27", "ply 55") -- promoted with the same radius the
+  // focused moment gets, for the same reason (a "what about that moment"
+  // follow-up wants a move or two of surrounding context).
+  for (const p of mentioned) {
+    for (let d = -FOCUS_PLY_RADIUS; d <= FOCUS_PLY_RADIUS; d++) {
+      fullDetailPlies.add(p + d);
+    }
+  }
+  // Highlight-a-move (Task 8): a ply she flagged during live play always
+  // ships full detail, no matter its age -- same exemption a turning point
+  // or the focused ply already get above. Seeded directly here rather than
+  // through facts.turningPoints (see that field's own comment: turning
+  // points fold into allowedSans for validateChat, and a highlighted ply
+  // that was never an actual turning point would drift that allow-list).
+  for (const ply of facts.highlightedPlies ?? []) fullDetailPlies.add(ply);
+
+  return perPlyAnalysis.map((p) => {
+    const read = readForPly(p.ply, p.evalCp, p.evalMate);
+    const side = sideForPly(p.ply);
+    if (!fullDetailPlies.has(p.ply)) {
+      // Collapsed plies: then only where she deviated from best -- the
+      // "what did i miss" set (62/91 plies on real game 150; +363 tokens
+      // measured for the whole rule vs +508 for then-everywhere). A ply
+      // where she played the best move has nothing missed to explain.
+      const deviated = p.bestSan !== null && p.bestSan !== p.san;
+      return deviated && p.then
+        ? { ply: p.ply, san: p.san, side, bestSan: p.bestSan, read, then: p.then }
+        : { ply: p.ply, san: p.san, side, bestSan: p.bestSan, read };
+    }
+    return {
+      ply: p.ply,
+      san: p.san,
+      side,
+      bestSan: p.bestSan,
+      phase: p.phase,
+      pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
+      read,
+      ...(p.then ? { then: p.then } : {}),
+    };
+  });
 }
 
 // Task 4 (R1b): hintFocus's own threat carries the same refutationUci field
@@ -704,7 +1016,7 @@ function pendingMoveForModel(pendingMove: ChatContext["pendingMove"]) {
 // None of them carry a cp/mate number today, so there is nothing else to
 // sanitize; perPlyAnalysis (via readForPly above) is the one real leak this
 // task closes.
-function factsForModel(facts: ChatFactList) {
+function factsForModel(facts: ChatFactList, mentioned: number[] = []) {
   const { allowedSans, context, focusPosition, perPlyAnalysis, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
   if (context) {
@@ -729,8 +1041,27 @@ function factsForModel(facts: ChatFactList) {
     ...rest,
     legalSansBelongTo: facts.toMove,
     focusPosition: focusForModel(facts),
-    perPlyAnalysis: perPlyForModel(perPlyAnalysis),
+    perPlyAnalysis: perPlyForModel(facts, mentioned),
     context: strippedContext,
+  };
+}
+
+// Task 2 (Wave D, general-chess route): the general route's own compact
+// projection -- deliberately NOT factsForModel's shape. A general question
+// isn't about the live position, so occupancy/legalSans/contested (this
+// moment's heaviest, most position-specific facts) and the whole per-ply
+// block (a full line-by-line analysis) buy nothing here but latency -- this
+// IS the single largest latency win available on this route (per the
+// brief). What's left is enough for cookie to ground a real chess answer in
+// HER actual game when a genuine connection exists, without inventing one:
+// the played move list, the finished-game outcome fact, and the
+// already-curated turning points (cheap to carry -- no per-ply weight).
+function generalFactsForModel(facts: ChatFactList) {
+  return {
+    status: facts.status,
+    outcome: facts.outcome,
+    gameSans: facts.gameSans,
+    turningPoints: facts.turningPoints,
   };
 }
 
@@ -740,17 +1071,37 @@ function formatHistory(history: { role: "user" | "coach"; text: string }[]): str
   return ["", "conversation so far:", ...lines].join("\n");
 }
 
+// Task 2 (Wave D): intent picks BOTH halves of the prompt -- which system
+// prompt fragment and which fact projection -- so "board route: change
+// nothing" holds exactly: an undefined/"board" intent takes the identical
+// path (persona.chatSystemPrompt alone, factsForModel(facts)) this function
+// always took before this wave. "general" appends persona.chatGeneralPrompt
+// (a separate, owner-editable section of personas/coach.md -- see
+// server/coach/index.ts's Persona type) after the shared chat system prompt,
+// and swaps in generalFactsForModel's compact projection.
 function buildChatPrompt(
   facts: ChatFactList,
   history: { role: "user" | "coach"; text: string }[],
   userMessage: string,
-  persona: ReturnType<typeof getPersona>
+  persona: ReturnType<typeof getPersona>,
+  intent: ChatIntent,
+  mentioned: number[] = []
 ): string {
+  const systemPrompt =
+    intent === "general"
+      ? [persona.chatSystemPrompt, persona.chatGeneralPrompt].filter(Boolean).join("\n\n")
+      : persona.chatSystemPrompt;
+  const factsPayload = intent === "general" ? generalFactsForModel(facts) : factsForModel(facts, mentioned);
   return [
-    persona.chatSystemPrompt,
+    systemPrompt,
     "",
     "fact list (json):",
-    JSON.stringify(factsForModel(facts), null, 2),
+    // B4c (2026-07-27, coach-truth-speed round): dropped the 2-space indent
+    // -- compact JSON carries identical information at ~10-15% fewer
+    // characters, and prompt size is what (b)'s ply-scoping is also
+    // fighting. No indentation/newlines to strip means no information loss,
+    // just no pretty-printing a model doesn't need.
+    JSON.stringify(factsPayload),
     formatHistory(history),
     "",
     `player: ${userMessage}`,
@@ -794,15 +1145,15 @@ function correctiveSuffix(violations: string[]): string {
 // Flow: persona "## chat" system prompt + fact JSON (no uci) + last
 // CHAT_HISTORY_WINDOW messages + the player's message -> generate() ->
 // validateChat -> on violation (including empty output), ONE corrective
-// regeneration -> on second violation or backend error/timeout, the
-// persona's "- redirect:" template. Never throws; always returns text.
-// Writes exactly one advice_traces row (kind "chat") per call that reaches
-// this function -- i.e. per call that passes GameManager.chat's CHAT_MAX_LEN
-// gate; over-length messages are rejected before chat() is ever called, so
-// they write no trace row at all (see manager.ts's chat() method, the sole
-// caller). history is caller-supplied (the server, never the client) so
-// this function itself has no opinion about where history comes from beyond
-// using it verbatim.
+// regeneration -> on second violation, backend error/timeout, or a
+// budget-exhausted skip of the regen, a persona template. Never throws;
+// always returns text. Writes exactly one advice_traces row (kind "chat")
+// per call that reaches this function -- i.e. per call that passes
+// GameManager.chat's CHAT_MAX_LEN gate; over-length messages are rejected
+// before chat() is ever called, so they write no trace row at all (see
+// manager.ts's chat() method, the sole caller). history is caller-supplied
+// (the server, never the client) so this function itself has no opinion
+// about where history comes from beyond using it verbatim.
 // Task 2 (2026-07-22, truthfulness leaks): a rejection whose message
 // indicates the backend just ran out of time is a different fact from the
 // backend actually being down -- the gate measured hard timeouts rendering
@@ -822,41 +1173,136 @@ export async function chat(
   history: { role: "user" | "coach"; text: string }[],
   facts: ChatFactList,
   backend: CoachBackend,
-  trace: NarrateTraceContext
+  trace: NarrateTraceContext,
+  // B1 (2026-07-27, coach-truth-speed round): additive optional last param --
+  // every existing call site and test compiles untouched, defaulting to the
+  // live CHAT_TIMEOUT_MS. manager.ts computes budgetMs server-side from the
+  // db's own finished state and passes it here; this function has no
+  // opinion about WHY the budget is what it is, only about spending it
+  // correctly. Reserve this object for a later wave's `intent?:`/`onDelta?:`
+  // (streaming) -- that is why it is an object and not a bare number.
+  // B-stream (2026-07-27): onDelta is the streaming hook this comment
+  // reserved space for. Additive/optional -- every existing call site
+  // (chat.test.ts and its siblings, manager.ts pre-this-wave) omits it and
+  // gets exactly today's behavior. onRedraft is a second, equally optional
+  // hook: fired exactly once, right when the one-regen attempt actually
+  // begins (survives the MIN_ATTEMPT_MS budget check below) -- the signal
+  // the SSE route needs to emit its own `redraft` frame, without this
+  // function's attempt loop being duplicated or exposed any other way.
+  // Task 2 (Wave D): intent is the last field this comment reserved space
+  // for. Additive/optional, defaulting to "board" -- every existing call
+  // site (chat.test.ts and its siblings, manager.ts pre-this-wave) omits it
+  // and gets exactly today's behavior (full facts, full validateChat).
+  opts?: { budgetMs?: number; intent?: ChatIntent; onDelta?: (text: string) => void; onRedraft?: () => void }
 ): Promise<{
   text: string;
   source: "model" | "template";
-  cause?: "backend-down" | "timeout";
+  cause?: "backend-down" | "templates-only" | "timeout" | "validation-failed" | "off-topic";
   traceId: number;
 }> {
   const start = Date.now();
+  const budgetMs = opts?.budgetMs ?? CHAT_TIMEOUT_MS;
+  // The deadline is computed ONCE, from wall-clock start, not re-derived per
+  // attempt -- so the regen attempt spends whatever budget the first attempt
+  // left behind, never a fresh full budget. Worst case (attempt 0 alone
+  // consumes the whole budget and then throws) is exactly budgetMs, never
+  // budgetMs plus a second full timeout.
+  const deadline = start + budgetMs;
   const persona = getPersona();
-  const basePrompt = buildChatPrompt(facts, history, userMessage, persona);
+  const intent: ChatIntent = opts?.intent ?? "board";
+
+  // Task 2 (Wave D): "keep the bar high, a chess question is never
+  // off-topic" -- isOffTopic is a much narrower net than "no positional
+  // signal" (which is exactly what routes a message to "general" already):
+  // it only catches a message with NO chess relevance whatsoever. Checked
+  // before any prompt is built or backend called, and skips the whole
+  // attempt loop -- there is nothing for a model to answer here, and no
+  // budget worth spending finding that out. Still writes exactly one
+  // advice_traces row, same discipline as every other exit from this
+  // function.
+  if (isOffTopic(userMessage)) {
+    const text =
+      persona.chatTemplates.redirect ??
+      "keep it on the board. ask me about a move from this game and i'll break it down.";
+    const traceId = insertAdviceTrace({
+      gameId: trace.gameId,
+      ply: trace.ply,
+      kind: "chat",
+      factsJson: JSON.stringify(facts),
+      prompt: "",
+      output: text,
+      source: "template",
+      backend: backend.name,
+      validated: false,
+      regenCount: 0,
+      latencyMs: Date.now() - start,
+    });
+    return { text, source: "template", cause: "off-topic", traceId };
+  }
+
+  const mentioned = mentionedPlies(userMessage, facts.gameSans.length);
+  const basePrompt = buildChatPrompt(facts, history, userMessage, persona, intent, mentioned);
 
   let attemptPrompt = basePrompt;
   let attemptOutput = "";
   let regenCount = 0;
   let modelText: string | null = null;
-  let failureCause: "backend-down" | "timeout" | null = null;
+  let failureCause: "backend-down" | "timeout" | "validation-failed" | null = null;
+  // B3a: true the moment ANY attempt's output fails validateChat (including
+  // an empty/whitespace-only reply) without the backend itself throwing.
+  // This is what makes "validation-failed" reachable at all -- before this
+  // round, two failed validations in a row (no exception, just bad prose)
+  // left failureCause null and fell all the way through to the `redirect`
+  // template, which is the exact bug behind her "I did ask about the board"
+  // note (trace 90: a placement-claim validation failure rendered the
+  // off-topic redirect copy).
+  let sawValidationFailure = false;
 
   for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt === 1) {
+      // B1: the regen is only worth starting if enough budget remains for it
+      // to plausibly finish -- otherwise it would just be a second attempt
+      // guaranteed to die mid-flight. Skip straight to the template instead.
+      const remaining = deadline - Date.now();
+      if (remaining < MIN_ATTEMPT_MS) break;
+      opts?.onRedraft?.();
+    }
+    const timeoutMs = Math.max(0, deadline - Date.now());
     try {
-      attemptOutput = await backend.generate(attemptPrompt, CHAT_TIMEOUT_MS);
+      // B-stream: one ternary, no duplicated attempt loop. Streaming is used
+      // only when the backend actually implements it AND the caller asked
+      // for deltas -- every other caller (every pre-this-wave test, narrate's
+      // own callers, a non-streaming backend) takes the untouched generate()
+      // path.
+      attemptOutput =
+        backend.generateStream && opts?.onDelta
+          ? await backend.generateStream(attemptPrompt, timeoutMs, opts.onDelta)
+          : await backend.generate(attemptPrompt, timeoutMs);
     } catch (err) {
       // Backend error/timeout at any attempt short-circuits straight to the
-      // redirect template below -- never worth a second network/process
-      // call, mirrors narrate()'s discipline exactly.
+      // template below -- never worth a second network/process call,
+      // mirrors narrate()'s discipline exactly.
       attemptOutput = `[backend error] ${err instanceof Error ? err.message : String(err)}`;
       failureCause = isTimeoutError(err) ? "timeout" : "backend-down";
       break;
     }
 
     const trimmed = attemptOutput.trim();
-    const result = trimmed.length > 0 ? validateChat(attemptOutput, facts) : ({ ok: false, violations: [] } as const);
+    // Task 2 (Wave D): the general route validates with validateChatGeneral
+    // (no SAN-allowlist check) instead of validateChat -- everything else
+    // about this loop (regen, corrective suffix, template fallback) is
+    // shared between both routes untouched.
+    const result =
+      trimmed.length > 0
+        ? intent === "general"
+          ? validateChatGeneral(attemptOutput, facts)
+          : validateChat(attemptOutput, facts)
+        : ({ ok: false, violations: [] } as const);
     if (result.ok) {
       modelText = trimmed;
       break;
     }
+    sawValidationFailure = true;
     if (attempt === 0) {
       regenCount = 1;
       const violations = "violations" in result && result.violations.length > 0 ? result.violations : ["the previous answer"];
@@ -864,14 +1310,26 @@ export async function chat(
     }
   }
 
+  // B3a: a validation failure (rather than a thrown backend error) that
+  // never recovered into a clean model reply gets its own honest cause --
+  // never silently falls through to `failureCause === null`, which is what
+  // used to make the `redirect` template fire for a validation failure.
+  if (!failureCause && modelText === null && sawValidationFailure) {
+    failureCause = "validation-failed";
+  }
+
   const source: "model" | "template" = modelText !== null ? "model" : "template";
-  // Owner playtest 2026-07-22: a timed-out reply was served the REDIRECT
-  // template ("keep it on the board. ask me about a move from this game"),
-  // which tells the player her perfectly on-topic question was off topic.
-  // The three failure modes are different apologies: a slow answer is ours
-  // to own, a down backend is a capability statement, and only a genuine
-  // off-topic ask deserves the redirect. Persona-overridable (add `slow:`
-  // / `down:` under the chat templates in coach.md) with an honest default
+  // Owner playtest 2026-07-22 / B3a (2026-07-27): each failure mode is a
+  // different apology, and none of them may borrow another's copy. A slow
+  // answer is ours to own (`slow`), a down backend is a capability statement
+  // (`down`), a validation failure is an honest "that one came out garbled"
+  // (`garbled`) -- and `redirect` is reserved for a genuine off-topic ask,
+  // which nothing in this function emits: failureCause can only ever be
+  // "backend-down" | "timeout" | "validation-failed" | null here, so the
+  // `redirect` branch below is UNREACHABLE this wave. It stays wired for the
+  // future intent router (the one thing that will ever set an "off-topic"
+  // cause) rather than deleted. Persona-overridable (`slow:` / `down:` /
+  // `garbled:` under the chat templates in coach.md) with an honest default
   // here so the fallback never lies about why it fired.
   const failureTemplate =
     failureCause === "timeout"
@@ -880,8 +1338,11 @@ export async function chat(
       : failureCause === "backend-down"
         ? persona.chatTemplates.down ??
           "i can't reach my thinking right now. try me again in a moment."
-        : persona.chatTemplates.redirect ??
-          "keep it on the board. ask me about a move from this game and i'll break it down.";
+        : failureCause === "validation-failed"
+          ? persona.chatTemplates.garbled ??
+            "i couldn't get that one clean. ask me again and i'll come at it from a different angle."
+          : persona.chatTemplates.redirect ??
+            "keep it on the board. ask me about a move from this game and i'll break it down.";
   const text = modelText ?? failureTemplate;
   const latencyMs = Date.now() - start;
 

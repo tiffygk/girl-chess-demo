@@ -4,7 +4,7 @@ import { Chess } from "chess.js";
 import {
   openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces,
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
-  insertVerdict,
+  insertVerdict, getAllChatMessages,
 } from "../store/db";
 import { GameManager, BACKEND_CACHE_TTL_MS } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
@@ -788,6 +788,21 @@ describe("GameManager", () => {
     }, 20000);
   });
 
+  // Highlight-a-move (Task 1): a per-ply flag the player sets during live
+  // play, round-tripped through gm.highlightMove -> gm.getSummary. Built
+  // directly against the db accessors, same reasoning as the healing test
+  // below: a pure persistence concern, no live engine needed.
+  it("a highlighted move comes back highlighted in the summary", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 0 });
+
+    gm.highlightMove(g, 1, true);
+    expect(gm.getSummary(g).moves.find((m) => m.ply === 1)?.highlighted).toBe(true);
+
+    gm.highlightMove(g, 1, false);
+    expect(gm.getSummary(g).moves.find((m) => m.ply === 1)?.highlighted).toBe(false);
+  });
+
   // debrief-v2: algo versioning self-heal. A game finished under the OLD
   // algorithm (dedup-swallows-her-swings, no episode detector) has a stale
   // algo_version=1 row set — getSummary must recompute under the current
@@ -827,6 +842,48 @@ describe("GameManager", () => {
     // Idempotent: reading again doesn't insert yet another row set.
     gm.getSummary(g);
     expect(getTurningPointsAllVersions(g).length).toBe(allVersions.length);
+  });
+
+  // Missed-win round (2026-07-28): the mate_in/missed_count columns must
+  // survive the full insert -> read -> heal round trip intact, exactly like
+  // every other additive TurningPoint field before them.
+  it("persists and heals a missed-win turning point with mateIn/missedCount intact", () => {
+    const g = createGame(sessionId, "maia-1100");
+    // Game-150-shaped tail: she faces mate-in-1 twice, declines both, then mates.
+    const tail: [number, string, number | null, number | null][] = [
+      [1, "e4", 20, null], [2, "e5", 25, null],
+      [53, "h4", null, -2], [54, "Kh6", null, 1], [55, "Nf7+", null, -3],
+      [56, "Kg6", null, 1], [57, "Nh8+", null, -3], [58, "Kh7", null, -2],
+      [59, "Qh8#", null, null],
+    ];
+    for (const [ply, san, cp, mate] of tail) {
+      recordMove({ gameId: g, ply, san, uci: "a1a1", fenAfter: `fen${ply}`, timeSpentMs: 0 });
+      if (cp !== null || mate !== null) attachEval(g, ply, { cp, mate, bestMove: "a8h8", pv: ["a8h8"] });
+    }
+    finishGame(g, "1-0");
+
+    // Seed a stale v4 row set the way games 149/150 have one today.
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 2, san: "e5", label: "opponent blunder", deltaP: 0.9, lowConfidence: false, kind: "swing" }],
+      4
+    );
+
+    const summary = gm.getSummary(g); // heals: v4 < TP_ALGO_VERSION(5)
+    const missed = summary.turningPoints.find((t: any) => t.kind === "missed-win");
+    expect(missed).toMatchObject({ ply: 55, label: "missed mate", mateIn: 1, missedCount: 2 });
+
+    // The healed rows carry the columns; the stale v4 rows survive untouched.
+    const latest = getTurningPoints(g) as any[];
+    const row = latest.find((r) => r.kind === "missed-win");
+    expect(row.mate_in).toBe(1);
+    expect(row.missed_count).toBe(2);
+    expect(getTurningPointsAllVersions(g).some((r: any) => r.algo_version === 4)).toBe(true);
+
+    // Second read is a no-op (idempotent heal).
+    const before = getTurningPointsAllVersions(g).length;
+    gm.getSummary(g);
+    expect(getTurningPointsAllVersions(g).length).toBe(before);
   });
 
   // Task 11 fix 2 (.superpowers/sdd/rounds/2026-07-20-inc-3.95/task-11-brief.md):
@@ -1112,6 +1169,111 @@ describe("GameManager", () => {
     expect(line?.threat).toEqual({ from: "h5", to: "e8" });
   });
 
+  // B3b (2026-07-27, coach-truth-speed round): measured ground truth from
+  // game 146 -- failed replies were persisted into chat_messages
+  // unconditionally, and a retry's own prompt then carried the coach's own
+  // apology back in as "history" (trace 98's prompt literally contained
+  // "that one took me longer than i had" twice), inflating every retry and
+  // raising the odds the NEXT attempt also times out. Gating persistence on
+  // result.source === "model" closes that doom loop: a template reply is
+  // never fed back to the coach as if it were a real turn, while the user's
+  // own row (and the advice_trace, unconditionally) still records that she
+  // asked.
+  describe("chat: coach-row persistence gated on source (B3b)", () => {
+    it("a template reply is absent from getChatMessages while its advice_trace row still exists", async () => {
+      const gameId = createGame(sessionId, "maia-1100");
+      recordMove({ gameId, ply: 1, san: "e4", uci: "e2e4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      gm.setCoachBackendForTesting({
+        name: "fake-invalid",
+        async available() {
+          return true;
+        },
+        async generate() {
+          return "Qxh7 wins the game right now.";
+        },
+      });
+
+      const result = await gm.chat(gameId, { message: "what should I do next?", context: { mode: "live" } });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      expect(result.source).toBe("template");
+
+      const messages = getAllChatMessages(gameId);
+      expect(messages).toHaveLength(1); // the user's row only
+      expect(messages[0].role).toBe("user");
+
+      const traces = getAdviceTraces(gameId);
+      expect(traces).toHaveLength(1);
+      expect(traces[0].kind).toBe("chat");
+    });
+
+    it("a model reply is present in getChatMessages alongside the advice_trace row", async () => {
+      const gameId = createGame(sessionId, "maia-1100");
+      recordMove({ gameId, ply: 1, san: "e4", uci: "e2e4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      gm.setCoachBackendForTesting({
+        name: "fake-valid",
+        async available() {
+          return true;
+        },
+        async generate() {
+          return "e4 opens things up nicely for you.";
+        },
+      });
+
+      const result = await gm.chat(gameId, { message: "what did I just play?", context: { mode: "live" } });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      expect(result.source).toBe("model");
+
+      const messages = getAllChatMessages(gameId);
+      expect(messages).toHaveLength(2);
+      expect(messages[0].role).toBe("user");
+      expect(messages[1].role).toBe("coach");
+      expect(messages[1].trace_id).toBe(result.traceId);
+    });
+  });
+
+  // B4a (2026-07-27, coach-truth-speed round): proves deriveChatOutcome's
+  // real wiring end to end -- not just that assembleChatFactList carries an
+  // outcomeInfo param through untouched (chat.outcome.test.ts's own unit
+  // tests already prove that), but that manager.ts's chat() actually reads
+  // the db's result/end_reason columns and the game's own last san to
+  // produce the right winner/how. Fool's mate (fastest possible checkmate)
+  // is used deliberately: a real, short, legally-replayable game whose last
+  // san ends in "#", with no end_reason set (finishGame's 2-arg call, same
+  // as the natural-checkmate path real games take) -- exercising the
+  // "no end_reason -> read the last san's own '#'" branch, not the
+  // /adjudicate button's reason-string branch.
+  describe("chat: game-over outcome fact reaches the model prompt (B4a)", () => {
+    it("a finished game's winner and checkmate 'how' reach the model prompt", async () => {
+      const gameId = createGame(sessionId, "maia-1100");
+      recordMove({ gameId, ply: 1, san: "f3", uci: "f2f3", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 2, san: "e5", uci: "e7e5", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 3, san: "g4", uci: "g2g4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 4, san: "Qh4#", uci: "d8h4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      finishGame(gameId, "0-1"); // black (mallow) delivers mate -- no end_reason, same as a real game
+
+      let capturedPrompt = "";
+      gm.setCoachBackendForTesting({
+        name: "capture-outcome",
+        async available() {
+          return true;
+        },
+        async generate(prompt: string) {
+          capturedPrompt = prompt;
+          return "that game ended in checkmate against you.";
+        },
+      });
+
+      const result = await gm.chat(gameId, { message: "how did the game end?", context: { mode: "review" } });
+      expect(result.ok).toBe(true);
+
+      expect(capturedPrompt).toContain('"status":"finished"');
+      expect(capturedPrompt).toContain('"winner":"mallow"');
+      expect(capturedPrompt).toContain('"how":"checkmate"');
+    });
+  });
+
   // Task 3 (R1a, fact-gap round): chat()'s call site used to map
   // getGameMoves' rows down to bare {ply, san}, throwing away eval_cp/
   // eval_mate/best_move/pv entirely. This proves the wiring end to end --
@@ -1122,10 +1284,20 @@ describe("GameManager", () => {
     it("converts stored UCI best_move/pv to SAN and includes it in the fact JSON sent to the backend", async () => {
       const gameId = createGame(sessionId, "maia-1100");
       recordMove({ gameId, ply: 1, san: "e4", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 2, san: "Nc6", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
       // Realistic shape (see the turning-lines block's own comment above):
       // attachEval(ply) persists the eval of fenAfter(ply) -- here, the
       // position right after white's e4, black to move. Black's best reply
       // e7e5 followed by white's g1f3 is a legal continuation from there.
+      //
+      // 2026-07-28 (off-by-one fix, coach-truth-speed round): this eval
+      // describes the position black is choosing FROM at ply 2, so its
+      // bestSan/pvSans belong on ply 2's row (the move she could have
+      // played INSTEAD of the actually-played Nc6), never on ply 1's own
+      // row (the move e4 she'd already played when this eval was computed).
+      // The old code attached it to ply 1 -- see manager.ts's pvLine call
+      // site and this round's HANDOFF for the real game-150 proof this was
+      // wrong (a black reply mislabeled as the alternative to a white move).
       attachEval(gameId, 1, { cp: 20, mate: null, bestMove: "e7e5", pv: ["e7e5", "g1f3"] });
 
       let capturedPrompt = "";
@@ -1151,12 +1323,132 @@ describe("GameManager", () => {
       expect(result.ok).toBe(true);
 
       expect(capturedPrompt).toContain('"perPlyAnalysis"');
-      expect(capturedPrompt).toContain('"bestSan": "e5"');
-      expect(capturedPrompt).toContain('"phase": "opening"');
+      // bestSan/pvSans land on ply 2 (Nc6's row) -- the move she could have
+      // played instead of Nc6 -- not on ply 1 (e4's own row).
+      // Union-review fix (2026-07-28, finding 2): a `side` field now sits
+      // between san and bestSan on every projected per-ply object (see
+      // chat.ts's sideForPly) -- ply 2 is mallow's own move.
+      expect(capturedPrompt).toContain('"ply":2,"san":"Nc6","side":"mallow","bestSan":"e5"');
+      expect(capturedPrompt).toContain('"phase":"opening"');
       // pv converted from UCI (e7e5, g1f3) to SAN (e5, Nf3) via the same
       // replay discipline pvLine/getTurningLines already use.
       expect(capturedPrompt).toContain('"e5"');
       expect(capturedPrompt).toContain('"Nf3"');
+      // Ply 1 has no PRIOR persisted eval to draw a "what instead" answer
+      // from (there is no ply-0 row) -- an honest gap, not a guess.
+      expect(capturedPrompt).toContain('"ply":1,"san":"e4","side":"you","bestSan":null');
+    }, 20000);
+
+    it("derives a then claim from the persisted pv and ships it in the prompt (forward-prediction round)", async () => {
+      const gameId = createGame(sessionId, "maia-1100");
+      recordMove({ gameId, ply: 1, san: "e4", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 2, san: "d5", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 3, san: "Nf3", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      // attachEval(2) persists the eval of the position AFTER black's d5 --
+      // white to move at ply 3. Best line exd5 (white nets a pawn, nothing
+      // recaptures in the line) attaches to ply 3's row as its "instead"
+      // line, and deriveContinuation proves "you win a pawn" from it.
+      attachEval(gameId, 2, { cp: 40, mate: null, bestMove: "e4d5", pv: ["e4d5", "g8f6"] });
+
+      let capturedPrompt = "";
+      gm.setCoachBackendForTesting(
+        {
+          name: "capture-fake",
+          async available() {
+            return true;
+          },
+          async generate(prompt: string) {
+            capturedPrompt = prompt;
+            return "you had a clean pawn grab there.";
+          },
+        },
+        "claude"
+      );
+
+      const result = await gm.chat(gameId, {
+        message: "was my opening okay?",
+        context: { mode: "live" },
+        backendPref: "claude",
+      });
+      expect(result.ok).toBe(true);
+      expect(capturedPrompt).toContain('"then":"you win a pawn"');
+    }, 20000);
+  });
+
+  // 2026-07-28 (coach-truth-speed round): the off-by-one bug, pinned against
+  // REAL game-150 rows (data/girlchess.db, read-only queried during
+  // diagnosis, replayed here as a hardcoded fixture so the test never
+  // depends on the mutable live db). Verified independently before writing
+  // this test -- the owner's own illustrative ply numbers in the round brief
+  // didn't survive replay against the real rows (see the round's report),
+  // so this test asserts what chess.js and the persisted best_move/pv
+  // actually prove, not the brief's paraphrase:
+  //
+  // - ply 54 (Kh6) is BLACK's move (mallow) -- verified via chess.js replay,
+  //   fenBefore(54) has "b" to move. The persisted eval for ply 53 (h4, the
+  //   move immediately before it) has best_move g7h7 -- from fenBefore(54),
+  //   that is Kh7 (the black king retreating one square differently). That
+  //   is ply 54's correct bestSan: the move she (well, mallow) could have
+  //   played instead of Kh6.
+  // - ply 55 (Nf7+) is WHITE's move (the player). The persisted eval for
+  //   ply 54 (Kh6, the move immediately before it) has best_move a8h8 --
+  //   from fenBefore(55) (== fenAfter(54)), that is Qh8#, an immediate mate.
+  //   That is ply 55's correct bestSan.
+  //
+  // The OLD (buggy) code attached ply 53's own best_move (g7h7, replayed at
+  // fenAfter(53)) to ply 53 giving a nonsense same-ply best-move-after-the-
+  // opponent's-turn reading, and specifically attached ply 54's own
+  // best_move (a8h8 -> Qh8#) to PLY 54 -- confidently telling her that at
+  // move 54 (a BLACK move) she should have played a WHITE queen mate. This
+  // test pins the corrected attribution: Qh8# belongs to ply 55, Kh7 to
+  // ply 54, matching whose move it actually was.
+  describe("chat: perPlyAnalysis bestSan attribution off-by-one (2026-07-28 fix)", () => {
+    it("bestSan on a ply is the best move AT that ply (from the PRIOR ply's persisted eval), never the reply after it", async () => {
+      const gameId = createGame(sessionId, "maia-1100");
+      const GAME_150_SANS: string[] = [
+        "d4", "d5", "c3", "c6", "b3", "e6", "e3", "Nf6", "Bd2", "Be7", "Bd3", "Bd7", "Nf3", "O-O", "O-O",
+        "c5", "dxc5", "Bxc5", "b4", "Qe7", "bxc5", "Qxc5", "Qb3", "Nc6", "c4", "Nh5", "cxd5", "Ne7", "Bb4",
+        "Ba4", "Qxa4", "Qc6", "dxc6", "f5", "Bxe7", "Rfe8", "cxb7", "g5", "bxa8=Q", "Rxa8", "Bxg5", "Nf4",
+        "exf4", "Rc8", "Qxa7", "Ra8", "Qxa8+", "Kg7", "Ne5", "h6", "Be7", "h5", "h4", "Kh6", "Nf7+",
+      ];
+      expect(GAME_150_SANS.length).toBe(55);
+      for (let i = 0; i < GAME_150_SANS.length; i++) {
+        recordMove({ gameId, ply: i + 1, san: GAME_150_SANS[i], uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      }
+      // Real persisted best_move/pv for plies 53 and 54 (data/girlchess.db,
+      // game 150). pv is stored space-joined UCI on the real row; attachEval
+      // takes an array and joins it the same way.
+      attachEval(gameId, 53, { cp: -2, mate: null, bestMove: "g7h7", pv: ["g7h7", "e7f6", "h7h6", "a8h8"] });
+      attachEval(gameId, 54, { cp: 1, mate: null, bestMove: "a8h8", pv: ["a8h8"] });
+
+      let capturedPrompt = "";
+      gm.setCoachBackendForTesting(
+        {
+          name: "capture-fake",
+          async available() {
+            return true;
+          },
+          async generate(prompt: string) {
+            capturedPrompt = prompt;
+            return "let's look at moves 54 and 55.";
+          },
+        },
+        "claude"
+      );
+
+      const result = await gm.chat(gameId, {
+        message: "what should I have played at move 27 or 28?",
+        context: { mode: "review" },
+        backendPref: "claude",
+      });
+      expect(result.ok).toBe(true);
+
+      // Union-review fix (2026-07-28, finding 2): `side` now sits between
+      // san and bestSan -- ply 54 (Kh6) is mallow's own move, ply 55
+      // (Nf7+) is the player's, matching this test's own header comment on
+      // whose move each ply actually is.
+      expect(capturedPrompt).toContain('"ply":54,"san":"Kh6","side":"mallow","bestSan":"Kh7"');
+      expect(capturedPrompt).toContain('"ply":55,"san":"Nf7+","side":"you","bestSan":"Qh8#"');
     }, 20000);
   });
 });

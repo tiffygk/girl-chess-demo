@@ -120,7 +120,7 @@ describe("the pending move's model-facing projection (Task 1, R2)", () => {
     await chat("why should i not put it here?", [], facts, backend, { gameId, ply: 4, kind: "chat" });
 
     expect(capturedPrompt).toContain('"pendingMove"');
-    expect(capturedPrompt).toContain('"confirmed": false');
+    expect(capturedPrompt).toContain('"confirmed":false');
     expect(capturedPrompt).toMatch(/"note":\s*".*before.*"/i);
     expect(capturedPrompt).not.toContain("deltaCp");
   });
@@ -141,6 +141,6 @@ describe("the pending move's model-facing projection (Task 1, R2)", () => {
     const gameId = createGame(sessionId, "maia-1100");
     await chat("is this ok?", [], facts, backend, { gameId, ply: 4, kind: "chat" });
 
-    expect(capturedPrompt).toContain('"to": "b5"');
+    expect(capturedPrompt).toContain('"to":"b5"');
   });
 });

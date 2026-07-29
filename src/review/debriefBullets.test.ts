@@ -12,10 +12,24 @@
 // guess.
 
 import { describe, it, expect } from "vitest";
-import { debriefBullets } from "./debriefBullets";
-import type { TurningPoint, MoveClassification } from "../game/api";
+import { debriefBullets, affordancesForBullet } from "./debriefBullets";
+import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from "../game/api";
 
 const OLD_PLATITUDE = "a draw. solid, careful, nothing hung.";
+
+// Missed-win round (2026-07-28): shared real-game fixture (game 150,
+// 2026-07-28, her real 91-ply win). Ply 55 (Nf7+) declined Qh8#. Repeated
+// per repo convention (each test file keeps its own copy) rather than a
+// shared fixtures module.
+const GAME150_SANS: SummaryMove[] = [
+  "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+  "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+  "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+  "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+","Kg6","Nh8+","Kh7",
+  "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
+  "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
+  "Qh6+","Kd5","Be7","Kc4","Qc6#",
+].map((san, i) => ({ ply: i + 1, san }));
 
 function tp(overrides: Partial<TurningPoint>): TurningPoint {
   return {
@@ -552,5 +566,346 @@ describe("plain English via gameSans (Task 3)", () => {
     });
     expect(bullets[0].text).toContain("queen to h5");
     expect(bullets[0].text).not.toContain("Qh5");
+  });
+});
+
+// Coach truth-speed round (2026-07-27): owner playtest report fixes.
+describe("phase coherence (2026-07-27 owner report: watch-next-time's phase must match the ply its text names)", () => {
+  it("a 60-ply game whose only slips are in the opening tags the watch-next-time bullet 'opening', not 'endgame'", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 8, san: "Nb6", label: "mistake", deltaP: -0.1 })],
+      classifications: [],
+      result: null,
+      totalPlies: 60,
+    });
+    const watch = bullets.find((b) => b.section === "watch next time")!;
+    expect(watch.phase).toBe("opening");
+    expect(watch.ply).toBe(8);
+  });
+});
+
+describe("article grammar (2026-07-27): 'an inaccuracy', never 'a inaccuracy'", () => {
+  it("a classification-fallback inaccuracy bullet reads 'an inaccuracy', not 'a inaccuracy'", () => {
+    const bullets = debriefBullets({
+      turningPoints: [],
+      classifications: [{ ply: 20, classification: "inaccuracy" }],
+      result: null,
+      totalPlies: 60,
+    });
+    const cbb = bullets.find((b) => b.section === "could be better")!;
+    expect(cbb.text).toContain("an inaccuracy");
+    expect(cbb.text).not.toContain("a inaccuracy");
+  });
+});
+
+describe("followedBest suppression (2026-07-27 owner report): a could-be-better candidate she actually played gets re-sectioned", () => {
+  const SCHOLARS_MATE_SANS: SummaryMove[] = [
+    { ply: 1, san: "e4" },
+    { ply: 2, san: "e5" },
+    { ply: 3, san: "Qh5" },
+    { ply: 4, san: "Nc6" },
+    { ply: 5, san: "Bc4" },
+    { ply: 6, san: "Nf6" },
+  ];
+
+  it("suppresses the nudge and re-sections to done well when followedBest confirms she played the recommended move", () => {
+    const line: TurningLine = { ply: 3, pvSans: ["Qh5"], bestSan: "Qh5" };
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 3, san: "Qh5", label: "blunder", deltaP: -0.1 })],
+      classifications: [],
+      result: null,
+      totalPlies: 6,
+      gameSans: SCHOLARS_MATE_SANS,
+      turningLines: [line],
+    });
+    const followedBullet = bullets.find((b) => b.ply === 3)!;
+    expect(followedBullet.section).toBe("done well");
+    expect(followedBullet.text).not.toContain("blunder");
+    expect(followedBullet.text).toContain("nice find");
+  });
+
+  it("backward compatible: without turningLines, the same candidate stays a could-be-better nudge", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 3, san: "Qh5", label: "blunder", deltaP: -0.1 })],
+      classifications: [],
+      result: null,
+      totalPlies: 6,
+      gameSans: SCHOLARS_MATE_SANS,
+    });
+    const bullet = bullets.find((b) => b.ply === 3)!;
+    expect(bullet.section).toBe("could be better");
+  });
+});
+
+describe("affordancesForBullet (2026-07-27, a later wave's UI consumer)", () => {
+  it("replay and ask are available on every bullet with a ply; tryLine additionally needs a matching TurningLine with a real better move on record", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 30, san: "Qxf7", label: "blunder", deltaP: -0.3 })],
+      classifications: [],
+      result: null,
+      totalPlies: 60,
+      turningLines: [
+        { ply: 30, pvSans: ["Nf3"], bestSan: "Nf3", bestFromTo: { from: "g1", to: "f3" }, playedFromTo: { from: "d1", to: "f7" } },
+      ],
+    });
+    for (const b of bullets) {
+      const aff = affordancesForBullet(b, [
+        { ply: 30, pvSans: ["Nf3"], bestSan: "Nf3", bestFromTo: { from: "g1", to: "f3" }, playedFromTo: { from: "d1", to: "f7" } },
+      ]);
+      if (b.ply != null) {
+        expect(aff.replay).toBe(true);
+        expect(aff.ask).toBe(true);
+      } else {
+        expect(aff).toEqual({ replay: false, tryLine: false, ask: false });
+      }
+    }
+    // At least one bullet in this fixture has a ply, so the true branch
+    // above is actually exercised.
+    expect(bullets.some((b) => b.ply != null)).toBe(true);
+    // The ply-30 bullet's matching line names a DIFFERENT move than what
+    // was actually played (g1-f3 vs d1-f7) -- a real better line exists, so
+    // tryLine is offered.
+    const bullet30 = bullets.find((b) => b.ply === 30)!;
+    expect(
+      affordancesForBullet(bullet30, [
+        { ply: 30, pvSans: ["Nf3"], bestSan: "Nf3", bestFromTo: { from: "g1", to: "f3" }, playedFromTo: { from: "d1", to: "f7" } },
+      ]).tryLine
+    ).toBe(true);
+  });
+
+  it("union-review finding 3: without turningLines threaded in at all, tryLine is absent (no way to confirm a better line exists -- same gap guidingArrow's own null already documents for a classification-fallback ply, src/game/explore.ts)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 30, san: "Qxf7", label: "blunder", deltaP: -0.3 })],
+      classifications: [],
+      result: null,
+      totalPlies: 60,
+    });
+    const bullet = bullets.find((b) => b.ply === 30)!;
+    expect(affordancesForBullet(bullet).tryLine).toBe(false);
+    expect(affordancesForBullet(bullet).replay).toBe(true);
+    expect(affordancesForBullet(bullet).ask).toBe(true);
+  });
+
+  it("union-review finding 3: a classification-fallback ply with no matching TurningLine gets no tryLine, even when other lines are present", () => {
+    const bullets = debriefBullets({
+      turningPoints: [],
+      classifications: [{ ply: 20, classification: "inaccuracy" }],
+      result: null,
+      totalPlies: 60,
+      turningLines: [
+        // A line for a DIFFERENT ply -- proves the lookup is ply-scoped,
+        // not "any line present at all".
+        { ply: 55, pvSans: ["Qh8#"], bestSan: "Qh8#", bestFromTo: { from: "h6", to: "h8" }, playedFromTo: { from: "e5", to: "f7" } },
+      ],
+    });
+    const bullet = bullets.find((b) => b.ply === 20)!;
+    expect(
+      affordancesForBullet(bullet, [
+        { ply: 55, pvSans: ["Qh8#"], bestSan: "Qh8#", bestFromTo: { from: "h6", to: "h8" }, playedFromTo: { from: "e5", to: "f7" } },
+      ]).tryLine
+    ).toBe(false);
+  });
+
+  it("union-review finding 3: a done-well bullet whose matching line's best move IS what she played gets no tryLine -- there is no other line to try", () => {
+    // followedGoodText's own shape: she was re-sectioned to done well
+    // because she played the recommended move. The matching TurningLine's
+    // bestFromTo therefore replays to the SAME squares as playedFromTo.
+    const line: TurningLine = {
+      ply: 3,
+      pvSans: ["Qh5"],
+      bestSan: "Qh5",
+      bestFromTo: { from: "d1", to: "h5" },
+      playedFromTo: { from: "d1", to: "h5" },
+    };
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 3, san: "Qh5", label: "blunder", deltaP: -0.1 })],
+      classifications: [],
+      result: null,
+      totalPlies: 6,
+      gameSans: [
+        { ply: 1, san: "e4" }, { ply: 2, san: "e5" }, { ply: 3, san: "Qh5" },
+        { ply: 4, san: "Nc6" }, { ply: 5, san: "Bc4" }, { ply: 6, san: "Nf6" },
+      ],
+      turningLines: [line],
+    });
+    const followedBullet = bullets.find((b) => b.ply === 3)!;
+    expect(followedBullet.section).toBe("done well"); // sanity: this is the followedGoodText shape
+    expect(affordancesForBullet(followedBullet, [line]).tryLine).toBe(false);
+    expect(affordancesForBullet(followedBullet, [line]).replay).toBe(true);
+    expect(affordancesForBullet(followedBullet, [line]).ask).toBe(true);
+  });
+
+  // Visual gate 2026-07-28 caught this on real game 150: the bullet for a
+  // blunder SHE PUNISHED still offered "try the line" though she had played
+  // the exact best reply. The squares-only check above cannot see it -- at an
+  // EVEN (mallow) turning point, line.playedFromTo is MALLOW'S move, so it
+  // never matches her best line's squares and tryLine always rendered true.
+  // This is the same ply-parity error the round's truth layer was built to
+  // fix (src/review/followedBest.ts: the comparison at an opponent turning
+  // point is her REPLY at ply+1), resurfacing in a consumer that reimplemented
+  // the comparison by hand instead of calling followedBest.
+  // Real game 150 (2026-07-28, her 91-ply win), truncated at ply 55 -- the
+  // exact position the visual gate caught this on. Must be a LEGAL sequence:
+  // debriefBullets replays it through fenAtPly to describe moves in words.
+  // ply 54 = Kh6 is MALLOW's; ply 55 = Nf7+ is hers, and Qh8# was the mate
+  // available to her there instead.
+  const GAME150_TO_55: SummaryMove[] = [
+    "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+    "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+    "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+    "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+",
+  ].map((san, i) => ({ ply: i + 1, san }));
+
+  function bulletAt54(line: TurningLine) {
+    const bullets = debriefBullets({
+      turningPoints: [tp({ ply: 54, san: "Kh6", label: "blunder", deltaP: -0.4 })],
+      classifications: [],
+      result: null,
+      totalPlies: 55,
+      gameSans: GAME150_TO_55,
+      turningLines: [line],
+    });
+    return bullets.find((b) => b.ply === 54)!;
+  }
+
+  it("an opponent turning point she punished gets no tryLine -- the comparison is her reply at ply+1, not mallow's move", () => {
+    const line: TurningLine = {
+      ply: 54,                                  // even: MALLOW's move (Kh6)
+      pvSans: ["Nf7+"],                          // best reply == what she played at 55
+      bestSan: "Nf7+",
+      bestFromTo: { from: "e5", to: "f7" },
+      playedFromTo: { from: "g7", to: "h6" },    // MALLOW's king move at ply 54
+    };
+    const bullet = bulletAt54(line);
+    const aff = affordancesForBullet(bullet, [line], GAME150_TO_55);
+    expect(aff.tryLine).toBe(false);
+    expect(aff.replay).toBe(true);
+    expect(aff.ask).toBe(true);
+  });
+
+  it("an opponent turning point she MISSED still offers tryLine -- a better line genuinely exists", () => {
+    const line: TurningLine = {
+      ply: 54,
+      pvSans: ["Qh8#"],                          // the mate she did not find
+      bestSan: "Qh8#",
+      bestFromTo: { from: "a8", to: "h8" },
+      playedFromTo: { from: "g7", to: "h6" },
+    };
+    const bullet = bulletAt54(line);
+    expect(affordancesForBullet(bullet, [line], GAME150_TO_55).tryLine).toBe(true);
+  });
+});
+
+describe("missed-win bullets", () => {
+  const missedTp = {
+    rank: 3 as const, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0,
+    lowConfidence: false, kind: "missed-win" as const, mateIn: 1, missedCount: 5,
+  };
+  const line55 = { ply: 55, pvSans: ["Qh8#"], bestSan: "Qh8#" };
+
+  it("forces a could-be-better bullet that names the move, the cost, and the repeats (game 150)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedTp],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toBe(
+      "move 28: you had checkmate in one. your queen to h8 was mate on the spot, and the win took 18 more moves to land. this happened 5 times this game."
+    );
+    expect(b.category).toBe("endgame technique");
+    expect(b.phase).toBe("endgame");
+    expect(b.ply).toBe(55);
+  });
+
+  it("says the mate never landed when the game ended without one (adjudication shape)", () => {
+    // Same real game truncated before the mating move: last san is Kc4, no '#'.
+    const truncated = GAME150_SANS.slice(0, 90);
+    const bullets = debriefBullets({
+      turningPoints: [{ ...missedTp, missedCount: 1 }],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 90,
+      gameSans: truncated,
+      turningLines: [line55],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toBe(
+      "move 28: you had checkmate in one. your queen to h8 was mate on the spot, but the game ended 17 moves later without it."
+    );
+  });
+
+  it("outranks the cap: a missed win plus two ordinary mistakes still shows the missed win first", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        missedTp,
+        { rank: 1, ply: 21, san: "bxc5", label: "mistake", deltaP: -0.2, lowConfidence: false, kind: "swing" as const },
+        { rank: 2, ply: 31, san: "Qxa4", label: "blunder", deltaP: -0.3, lowConfidence: false, kind: "swing" as const },
+      ],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const cbb = bullets.filter((x) => x.section === "could be better");
+    expect(cbb).toHaveLength(2); // cap holds
+    expect(cbb[0].ply).toBe(55); // forced first
+  });
+
+  it("makes both no-finding fallbacks unreachable when a missed win exists", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedTp], // no HER_NEG labels, no classifications: old code fell through twice
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const texts = bullets.map((b) => b.text).join(" | ");
+    expect(texts).not.toContain("no clear mistakes to flag here");
+    expect(texts).not.toContain("no repeat pattern showed up");
+    const wn = bullets.find((b) => b.section === "watch next time")!;
+    expect(wn.text).toBe(
+      "you had checkmate on the board 5 times and played past it. when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move."
+    );
+    expect(wn.category).toBe("endgame technique");
+  });
+
+  it("keeps the episode bullet alongside the missed-win watch bullet (game 149 shape)", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        { ...missedTp, missedCount: 1 },
+        { rank: 4, ply: 30, san: "Qxh3", label: "king pressure", deltaP: -0.05, lowConfidence: false, kind: "episode" as const, plyEnd: 40 },
+      ],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line55],
+    });
+    const wn = bullets.filter((b) => b.section === "watch next time");
+    expect(wn).toHaveLength(2);
+    expect(wn[0].text).toContain("you had checkmate on the board");
+    expect(wn[1].text).toContain("pieces camped on your king");
+  });
+});
+
+describe("nearly-bare-side phase override (missed-win round, 2026-07-28)", () => {
+  it("a bullet at a nearly-bare-board ply reads endgame even when the tail rule would say middlegame", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        { rank: 1, ply: 55, san: "Nf7+", label: "inaccuracy", deltaP: -0.09, lowConfidence: false, kind: "swing" },
+      ],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const b = bullets.find((x) => x.ply === 55);
+    expect(b?.phase).toBe("endgame"); // old rule: endgame only from ply 69
   });
 });

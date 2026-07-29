@@ -31,3 +31,14 @@ data/*
 
 # playwright-cli tool scratch
 .playwright-cli/
+
+# truth-check tool scratch (WAL-safe read-only db copy, never committed)
+tools/.truth-check-scratch/
+
+# nested agent worktrees (owner reorg 2026-07-28) — registered via git worktree,
+# never committed as directories into the parent repo
+/girl-chess-eval3/
+/girl-chess-r2/
+/wt-highlight/
+/wt-forward/
+/wt-missedwin/

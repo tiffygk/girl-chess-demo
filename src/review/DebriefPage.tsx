@@ -20,7 +20,7 @@
 
 import type { GameListEntry, MoveClassification, TurningPoint, TurningLine, SummaryMove } from "../game/api";
 import { moveNumberForPly } from "./debriefLesson";
-import { debriefBullets, type DebriefBullet } from "./debriefBullets";
+import { debriefBullets, affordancesForBullet, type DebriefBullet } from "./debriefBullets";
 // Increment 3.91 (Task 4): the four-part note, rendered under a turning-
 // point card once its own "replay" has been clicked (see `active` below).
 // Pure/deterministic module — see turningPointNote.ts's header for why it
@@ -47,6 +47,20 @@ import { MoveList } from "./MoveListNav";
 // SAN when the renderer can't place the move.
 import { fenAtPly } from "./Rewind";
 import { describeSanMove, stripRedundantCheckSuffix } from "../game/describeSanMove";
+// D1 "cipher rail" (analysis legend round, 2026-07-28): the six-state arrow
+// key, first child of this block per the owner's approved mockup direction
+// -- see AnalysisLegendRail.tsx's header for the geometry source (and its
+// own note on why the file isn't named AnalysisLegend.tsx) and
+// analysisLegend.test.ts for the gating pin (this component only ever
+// renders inside DebriefPage, which is itself analysis/review-only).
+import { AnalysisLegend } from "./AnalysisLegendRail";
+// Highlight-a-move (Task 6): the study ledger — her live highlights, pulled
+// into their own section between the bullets and the turning-point cards
+// (her chosen moments immediately before the machine's chosen moments, peer
+// to peer). Pure row model in highlightedMoves.ts; render in
+// HighlightedMovesSection.tsx. Zero highlights renders nothing at all.
+import { buildHighlightedRows } from "./highlightedMoves";
+import { HighlightedMovesSection } from "./HighlightedMovesSection";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -54,7 +68,10 @@ import { describeSanMove, stripRedundantCheckSuffix } from "../game/describeSanM
 // was already lost) is negative in outcome even though she didn't play it,
 // so it gets the same tint; every other label (opponent errors, checkmate,
 // the clincher, strong move) stays the lavender default.
-const NEGATIVE_CARD_LABELS = new Set(["blunder", "mistake", "inaccuracy", "the losing move"]);
+// Missed-win round (2026-07-28): "missed mate" joins the negative-tint set —
+// a forced mate she had and played past is the game's alarm moment, exactly
+// as much as a blunder is.
+const NEGATIVE_CARD_LABELS = new Set(["blunder", "mistake", "inaccuracy", "the losing move", "missed mate"]);
 
 function resultWord(result: string): string {
   if (result === "1-0") return "won";
@@ -163,7 +180,7 @@ function TurningPointCard({
         <>
           {note.didWell && <p className="debrief-card-punish">did well: {note.didWell}</p>}
           {note.couldImprove && <p className="debrief-card-punish">could improve: {note.couldImprove}</p>}
-          <p className="debrief-card-punish">next time: {note.nextTime}</p>
+          {note.nextTime && <p className="debrief-card-punish">next time: {note.nextTime}</p>}
           {note.whatMayHaveHappened && (
             <p className="debrief-card-punish">what may have happened: {note.whatMayHaveHappened}</p>
           )}
@@ -182,11 +199,38 @@ const BULLET_SECTION_ORDER: DebriefBullet["section"][] = ["done well", "could be
 
 function DebriefBulletList({
   bullets,
+  turningLines,
+  gameSans,
   onRewind,
+  onTryLine,
+  onAskAbout,
   exploring,
 }: {
   bullets: DebriefBullet[];
+  // Union-review fix (2026-07-28, finding 3): threaded through to
+  // affordancesForBullet so "try the line" only renders when a matching
+  // TurningLine actually names a better move than what she played -- see
+  // that function's own comment (debriefBullets.ts) for the two symptoms
+  // this closes (a done-well bullet with nothing better to try, and a
+  // classification-fallback ply with no line to seed a sandbox from).
+  turningLines: TurningLine[];
+  // Visual gate 2026-07-28: turningLines ALONE is not enough. Judging "is
+  // there a better line" needs the move she actually replied with at
+  // seedPly+1, which only gameSans carries -- without it, an opponent
+  // turning point she punished perfectly still showed "try the line".
+  gameSans: SummaryMove[] | undefined;
   onRewind: (ply: number) => void;
+  // Coach truth-speed round (Wave C1, 2026-07-27): a bullet earns the SAME
+  // three affordances a TurningPointCard already has (replay/try the line/
+  // ask about this) — the owner's report was that a "could be better" note
+  // had none of them, just like every other note. Bullets are NOT promoted
+  // to cards: a classification-fallback bullet only ever carries
+  // {ply, classification} (debriefBullets.ts), and inventing rank/deltaP/
+  // lowConfidence/kind to make one look like a card would both fabricate
+  // fields no fact supports and double-render the same ply as both a bullet
+  // and a card.
+  onTryLine: (ply: number) => void;
+  onAskAbout: (ply: number) => void;
   // Increment 3.91 (Task 6): same "the live board can't be yanked out from
   // under itself" rule as TurningPointCard's replay/try-line buttons.
   exploring: boolean;
@@ -199,25 +243,51 @@ function DebriefBulletList({
         return (
           <div className="debrief-bullet-section" key={section}>
             <span className="debrief-bullet-kicker">{section}</span>
-            {items.map((b, i) => (
-              <div className="debrief-bullet" key={i}>
-                <p className="debrief-bullet-text">{b.text}</p>
-                <div className="debrief-bullet-foot">
-                  <span className="debrief-bullet-tag">
-                    {b.phase} · {b.category}
-                  </span>
-                  {b.ply != null && (
-                    <button
-                      className="small debrief-replay-btn"
-                      disabled={exploring}
-                      onClick={() => onRewind(b.ply!)}
-                    >
-                      replay
-                    </button>
-                  )}
+            {items.map((b, i) => {
+              // Coach truth-speed round (Wave C1): consumes wave A1's own
+              // exported gate rather than re-deriving "does this bullet have
+              // a ply" locally — one source of truth for the affordance
+              // gate, same discipline the rest of this file follows for
+              // other shared facts.
+              const aff = affordancesForBullet(b, turningLines, gameSans);
+              return (
+                <div className="debrief-bullet" key={i}>
+                  <p className="debrief-bullet-text">{b.text}</p>
+                  <div className="debrief-bullet-foot">
+                    <span className="debrief-bullet-tag">
+                      {b.phase} · {b.category}
+                    </span>
+                    {aff.replay && (
+                      <button
+                        className="small debrief-replay-btn"
+                        disabled={exploring}
+                        onClick={() => onRewind(b.ply!)}
+                      >
+                        replay
+                      </button>
+                    )}
+                    {aff.tryLine && (
+                      <button
+                        className="small debrief-tryline-btn"
+                        disabled={exploring}
+                        onClick={() => onTryLine(b.ply!)}
+                      >
+                        try the line
+                      </button>
+                    )}
+                    {aff.ask && (
+                      <button
+                        className="small debrief-ask-btn"
+                        disabled={exploring}
+                        onClick={() => onAskAbout(b.ply!)}
+                      >
+                        ask about this
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         );
       })}
@@ -283,6 +353,11 @@ export interface DebriefPageProps {
   // Increment 3.95, Task 7: threaded straight through to every
   // TurningPointCard — see that prop's own comment.
   onAskAboutTurningPoint: (point: TurningPoint) => void;
+  // Coach truth-speed round (Wave C1, 2026-07-27): a bullet's own "ask about
+  // this" — GamePage looks up a real TurningPoint by ply first, falling back
+  // to a synthetic focus built from the ply's MoveClassification when no
+  // TurningPoint exists there (see GamePage's handleAskAboutPly).
+  onAskAboutPly: (ply: number) => void;
 }
 
 export function DebriefPage({
@@ -302,6 +377,7 @@ export function DebriefPage({
   onTryLine,
   onExitExplore,
   onAskAboutTurningPoint,
+  onAskAboutPly,
 }: DebriefPageProps) {
   const bullets = debriefBullets({
     turningPoints,
@@ -313,6 +389,14 @@ export function DebriefPage({
     // render in plain English via fenAtPly, same seam every other debrief
     // module already shares.
     gameSans,
+    // Review fix (Wave F, 2026-07-27, review.md finding 3): DebriefPage
+    // already holds turningLines (used above for the explore banner and
+    // below for arrows), but never passed it here -- so lineForPly always
+    // returned undefined, fb was always undefined, and followedGoodText
+    // could never render: a "could be better" bullet kept nudging her about
+    // a move she actually played correctly. One-line wire-up; the
+    // re-sectioning logic itself (buildCouldBeBetter) was already correct.
+    turningLines,
   });
   // Increment 3.95 (Task 4, Part 1): the try-the-line banner has no
   // TurningPoint/classification to hand buildTurningPointNote — just the
@@ -321,8 +405,27 @@ export function DebriefPage({
   // directly via opportunityForLine.
   const exploreLine = exploring?.ply != null ? turningLines.find((l) => l.ply === exploring.ply) : undefined;
   const exploreOpportunity = exploreLine ? opportunityForLine(exploreLine, gameSans) : undefined;
+  // Highlight-a-move (Tasks 4+6): derived straight off gameSans (the summary
+  // Task 1 widened), same "no new prop" pattern the rest of this component
+  // already uses for gameSans-derived data. The list feeds the study ledger
+  // (game order, since gameSans is ply-ordered); the Set feeds the recap.
+  const highlightedPlyList = gameSans.filter((m) => m.highlighted).map((m) => m.ply);
+  const highlightedPlies = new Set(highlightedPlyList);
+  const highlightedRows = buildHighlightedRows({
+    highlightedPlies: highlightedPlyList,
+    gameSans,
+    turningLines,
+    classifications,
+    // Visual gate 2026-07-28: without this a highlighted ply where she had
+    // mate in one rendered as "not-an-error" and printed "this cost you
+    // nothing" -- classifyMoves grades by deltaP and a missed mate in a won
+    // position moves it by ~0, so the classification ladder alone can never
+    // see it. The missed-win point is the only fact that can.
+    turningPoints,
+  });
   return (
     <div className="debrief pop-in">
+      <AnalysisLegend />
       {reviewing && (
         <div className="debrief-review-banner">
           <span className="debrief-review-kicker">reviewing</span>
@@ -354,7 +457,25 @@ export function DebriefPage({
           </button>
         </div>
       )}
-      <DebriefBulletList bullets={bullets} onRewind={onRewind} exploring={!!exploring} />
+      <DebriefBulletList
+        bullets={bullets}
+        turningLines={turningLines}
+        gameSans={gameSans}
+        onRewind={onRewind}
+        onTryLine={onTryLine}
+        onAskAbout={onAskAboutPly}
+        exploring={!!exploring}
+      />
+      {highlightedRows.length > 0 && (
+        <HighlightedMovesSection
+          rows={highlightedRows}
+          gameSans={gameSans}
+          onRewind={onRewind}
+          onTryLine={onTryLine}
+          onAskAboutPly={onAskAboutPly}
+          exploring={!!exploring}
+        />
+      )}
       {turningPoints.length > 0 && (
         <div className="debrief-cards">
           {turningPoints.map((point) => (
@@ -378,6 +499,7 @@ export function DebriefPage({
         currentPly={rewindPly}
         onSelect={onRewind}
         disabled={!!exploring}
+        highlightedPlies={highlightedPlies}
       />
       <div className="debrief-footer">
         {rewindPly != null && !exploring && (

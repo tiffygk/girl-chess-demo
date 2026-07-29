@@ -93,6 +93,60 @@ export const AI_ISM_PHRASES: RegExp[] = [
   /\bfurthermore\b/i,
 ];
 
+// ---- register drift (eval-instrument-repair round, 2026-07-28) ------------
+//
+// A THIRD, separate axis, added after the owner graded all 30 blinded rows:
+// "we also still have AIisms that are in here that are passing as clean but
+// they're saying things like this: 'compounds that's the whole loop buying
+// and selling,' which is weird for a chess game."
+//
+// JARGON_RULES bans engine vocabulary and raw notation; AI_ISM_WORDS bans a
+// fixed word list. Neither has any concept of a chess coach sliding into
+// productivity/business register, so both of these scored clean:
+//   "...spend ten minutes with our chess brain looking at the moments it
+//    flagged. that's the whole loop."
+//   "that habit compounds faster than anything else at your stage."
+//
+// Deliberately SHORT and precision-over-recall: phrases that are unambiguously
+// out of register for a chess coach, not a general corporate-speak detector.
+// The list is UNVALIDATED -- per the coach-eval skill's rule 3 (audit the
+// instrument before you report its numbers, and never let an unaudited checker
+// decide), tools/coach-eval reports this rate and decide.ts is forbidden from
+// consulting it until it has been hand-audited against a sample.
+//
+// "leverage" is also in AI_ISM_WORDS above; that overlap is intentional, and
+// visible rather than hidden, because the two axes are reported separately.
+export const REGISTER_DRIFT: string[] = [
+  "compounds",
+  "the whole loop",
+  "buying and selling",
+  "leverage",
+  "double down",
+  "unlock",
+  "level up",
+  "roi",
+  "bandwidth",
+  "synergy",
+];
+
+// Word-boundary anchored, NOT a raw substring test. The plan's draft used
+// `lower.includes(p)`, which would have fired "roi" inside ordinary English a
+// chess coach really might write ("heroic", "adroit") -- a false positive of
+// exactly the "ownership by proximity" kind that inflated a prior round's
+// error rate 7.5% -> 16.8% before it was audited out.
+//
+// Returns each distinct listed phrase found, once, in list order -- the
+// canonical phrase, not the raw casing of the match, so a caller can group
+// hits without normalizing.
+export function checkRegister(text: string): string[] {
+  const hits: string[] = [];
+  for (const phrase of REGISTER_DRIFT) {
+    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`\\b${escaped}\\b`, "i").test(text)) hits.push(phrase);
+  }
+  return hits;
+}
+
 // Mirrors chat.ts's module-local isBareSquare exactly -- deliberately not
 // imported (chat.ts does not export it; see the header comment above).
 function isBareSquare(token: string): boolean {

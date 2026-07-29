@@ -82,6 +82,14 @@ describe("assembleChatFactList: perPlyAnalysis (Task 3, R1a)", () => {
     expect(facts.perPlyAnalysis![0].bestSan).toBeNull();
     expect(facts.perPlyAnalysis![0].pvSans).toEqual([]);
   });
+
+  it("carries an optional then claim through untouched (forward-prediction round)", () => {
+    const perPly = [
+      { ply: 1, san: "f4", evalCp: 30, evalMate: null, bestSan: "d5", pvSans: ["d5", "Nf3"], then: "you win a pawn" },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+    expect(facts.perPlyAnalysis![0].then).toBe("you win a pawn");
+  });
 });
 
 // Task 3b (R2, voice-enforcement round, 2026-07-22): factsForModel is
@@ -138,22 +146,22 @@ describe("factsForModel — perPlyAnalysis's evalCp/evalMate sanitize into a qua
 
   it("a small even-ply cp edge reads as 'even'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 20, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain('"read": "even"');
+    expect(prompt).toContain('"read":"even"');
   });
 
   it("a moderate even-ply positive cp reads as 'you're a bit better'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 150, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "you're a bit better"`);
+    expect(prompt).toContain(`"read":"you're a bit better"`);
   });
 
   it("a large even-ply positive cp reads as 'you're much better'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 500, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "you're much better"`);
+    expect(prompt).toContain(`"read":"you're much better"`);
   });
 
   it("a large even-ply negative cp reads as 'she's much better'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: -500, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "she's much better"`);
+    expect(prompt).toContain(`"read":"she's much better"`);
   });
 
   it("an ODD-ply negative cp (black's own stored perspective) negates to a white-favorable read", async () => {
@@ -161,17 +169,17 @@ describe("factsForModel — perPlyAnalysis's evalCp/evalMate sanitize into a qua
     // (side-to-move) perspective, so a stored -150 means white (the player)
     // is actually up 150: negation must run before bucketing.
     const prompt = await capturePerPlyPrompt([{ ply: 1, san: "e4", evalCp: -150, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "you're a bit better"`);
+    expect(prompt).toContain(`"read":"you're a bit better"`);
   });
 
   it("an even-ply positive evalMate reads as 'mate for you in N'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: 3, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "mate for you in 3"`);
+    expect(prompt).toContain(`"read":"mate for you in 3"`);
   });
 
   it("an even-ply negative evalMate reads as 'mate against you in N'", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: -2, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "mate against you in 2"`);
+    expect(prompt).toContain(`"read":"mate against you in 2"`);
   });
 
   it("an odd-ply evalMate is negated the same way evalCp is", async () => {
@@ -179,11 +187,328 @@ describe("factsForModel — perPlyAnalysis's evalCp/evalMate sanitize into a qua
     // in 4 is wrong framing -- stored is black delivers in -4, i.e. black is
     // BEING mated) -- negating gives white (the player) mates in 4.
     const prompt = await capturePerPlyPrompt([{ ply: 1, san: "e4", evalCp: null, evalMate: -4, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain(`"read": "mate for you in 4"`);
+    expect(prompt).toContain(`"read":"mate for you in 4"`);
   });
 
   it("no persisted eval yet for that ply (both null) reads as a plain no-data statement, never a number", async () => {
     const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: null, bestSan: null, pvSans: [] }]);
-    expect(prompt).toContain('"read": "no read yet"');
+    expect(prompt).toContain('"read":"no read yet"');
+  });
+});
+
+// B4b (2026-07-27, coach-truth-speed round): perPlyForModel's ply-scoping.
+// The whole-game perPlyAnalysis list is still fully CARRIED (assembleChatFactList
+// ships every ply so the trace JSON stays complete for the Lab) but the
+// MODEL-facing projection now ships full detail (bestSan/pvSans/phase,
+// alongside san/read) only for plies in the union of turning-point plies,
+// the focused ply +/- 2, the pending move's own ply, and the last
+// RECENT_PLY_WINDOW (12) plies -- everything else collapses to
+// {ply, san, read}. LONG_GAME (54 plies, imported above) puts ply 3 and
+// ply 5 both well outside the last-12 window (43-54), so a bare recency
+// check alone would collapse both.
+describe("perPlyForModel — ply-scoping (B4b)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  it("a turning point outside the recent window still ships full detail", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 5, san: "h4", evalCp: -20, evalMate: null, bestSan: "Nf3", pvSans: ["Nf3", "Nc6"] },
+      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList(
+      moves(LONG_GAME),
+      {},
+      [{ ply: 5, san: "h4", label: "inaccuracy" }],
+      perPly
+    );
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "h4 grabbed some space for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("how did move 5 go?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"bestSan":"Nf3"');
+    expect(capturedPrompt).toContain('"pvSans":["Nf3","Nc6"]');
+  });
+
+  it("an ordinary early ply outside every window collapses to ply/san/bestSan/read -- pvSans/phase still dropped", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "KEEP-BESTSAN", pvSans: ["DROP-PV"] },
+      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "e4 opens things up nicely for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("how did the opening go?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"ply":3');
+    // B4c (2026-07-28, coach-truth-speed round, regression fix): a collapsed
+    // ply must still carry bestSan -- dropping it entirely (the shipped
+    // regression) meant a question about any ply outside the last
+    // RECENT_PLY_WINDOW plies could never be answered with a concrete better
+    // move (owner's game-150 thumbs-down: asked about ply 27/28 in a 91-ply
+    // game, ~37 plies back, and the coach could not say). pvSans/phase are
+    // still the ONLY things dropped on collapse -- that's the actual token
+    // saving this round's B4b banked, and this test guards it doesn't quietly
+    // widen back out.
+    expect(capturedPrompt).toContain('"bestSan":"KEEP-BESTSAN"');
+    expect(capturedPrompt).not.toContain("DROP-PV");
+    expect(capturedPrompt).not.toMatch(/"phase":"(opening|middlegame|endgame)"[^}]*"ply":3/);
+  });
+
+  it("a ply outside the recent window still carries bestSan (token-shape guard against re-dropping it)", async () => {
+    // Deliberately identical setup to the collapse test above, phrased as
+    // its own named case per the round's required test list -- a future
+    // change that special-cases away bestSan again fails THIS test even if
+    // the collapse test above is edited or removed.
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
+      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "e4 opens things up nicely for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("what should you have played at move 3 instead?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"ply":3');
+    expect(capturedPrompt).toContain('"bestSan":"Nc6"');
+  });
+});
+
+// Forward-prediction round (2026-07-28): perPlyForModel's then/pv-depth
+// rules. Collapsed plies carry then only when she deviated from best (the
+// "what did i miss" set -- measured +363 tokens on real 91-ply game 150 vs
+// +508 for then-everywhere); full-detail plies carry it whenever derivable,
+// and their pvSans deepen from 2 to 6 so cookie can walk a real line.
+describe("perPlyForModel — then + pv depth (forward-prediction round)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  async function capture(perPly: ChatPerPlyInput[], message = "how did this go?") {
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "that stretch went fine for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat(message, [], facts, backend, { gameId, ply: 1, kind: "chat" });
+    return capturedPrompt;
+  }
+
+  it("a collapsed ply where she deviated from best carries its then claim", async () => {
+    const prompt = await capture([
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "d4", pvSans: ["d4"], then: "you win a pawn" },
+      { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+    ]);
+    expect(prompt).toContain('"ply":3');
+    expect(prompt).toContain('"then":"you win a pawn"');
+  });
+
+  it("a collapsed ply where she PLAYED the best move drops then", async () => {
+    const prompt = await capture([
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nf3", pvSans: ["Nf3"], then: "you win a pawn" },
+      { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+    ]);
+    expect(prompt).not.toContain('"then"');
+  });
+
+  it("a full-detail ply carries then even when she played the best move", async () => {
+    const prompt = await capture([
+      { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: "Bxh6", pvSans: ["Bxh6"], then: "you win a pawn" },
+    ]);
+    expect(prompt).toContain('"then":"you win a pawn"');
+  });
+
+  it("a full-detail ply now ships up to six pv moves, not two", async () => {
+    const prompt = await capture([
+      {
+        ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: "PV1",
+        pvSans: ["PV1", "PV2", "PV3", "PV4", "PV5", "PV6", "PV7"],
+      },
+    ]);
+    expect(prompt).toContain('"pvSans":["PV1","PV2","PV3","PV4","PV5","PV6"]');
+    expect(prompt).not.toContain("PV7");
+  });
+
+  it("naming a move in the message promotes its plies to full detail (pvSans ship)", async () => {
+    const prompt = await capture(
+      [
+        { ply: 27, san: "Nxd2", evalCp: 0, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5", "g4", "Be4"], then: "you win a pawn" },
+        { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+      ],
+      "what should i have done on move 14"
+      // move 14 -> plies 27, 28 (and raw 14): ply 27 sits outside the
+      // last-12 window of the 54-ply LONG_GAME and has no turning point, so
+      // WITHOUT promotion it would collapse and drop its pvSans.
+    );
+    expect(prompt).toContain('"pvSans":["Bxf5","g4","Be4"]');
+  });
+
+  it("the same ply stays collapsed when no move number is mentioned", async () => {
+    const prompt = await capture(
+      [
+        { ply: 27, san: "Nxd2", evalCp: 0, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5", "g4", "Be4"], then: "you win a pawn" },
+        { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+      ],
+      "how did this go?"
+    );
+    expect(prompt).not.toContain('"pvSans":["Bxf5","g4","Be4"]');
+  });
+
+  it("validateChat flags an invented mate-in-N and the reply falls back through the regen discipline", async () => {
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, [
+      { ply: 54, san: "Bxh6", evalCp: null, evalMate: 2, bestSan: null, pvSans: [] },
+    ]);
+    const outputs = ["you had mate in 7 there.", "you had mate in 7 there."];
+    let calls = 0;
+    const backend = fakeBackend(async () => outputs[calls++]);
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    const result = await chat("how did the end go?", [], facts, backend, { gameId, ply: 54, kind: "chat" });
+    expect(result.source).toBe("template");
+    expect(result.cause).toBe("validation-failed");
+  });
+});
+
+// Highlight-a-move (Task 8): a ply she flagged during live play must ship
+// full detail regardless of age, or "why did I highlight this?" hits the
+// same RECENT_PLY_WINDOW wall the turning-point/focus cases above already
+// get an exemption from. Seeded directly into fullDetailPlies (perPlyForModel),
+// NOT routed through facts.turningPoints -- turningPoints' sans fold into
+// allowedSans for validateChat, and a highlighted ply that never was an
+// actual turning point would drift that allow-list.
+describe("perPlyForModel — a highlighted ply ships full detail (Task 8)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  it("a highlighted ply outside the recent window still ships pvSans/phase", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
+      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly, undefined, [3]);
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "here's the position at the moment you flagged.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    // The message names NO move number on purpose. Once the forward-prediction
+    // round's mentioned-ply promotion merged in, "why did I highlight move 2?"
+    // promoted ply 3 by itself, so this test and its control below both passed
+    // without the highlight seed doing any work. A neutral message leaves
+    // highlightedPlies as the only path to full detail.
+    await chat("why did i flag that one?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"ply":3');
+    expect(capturedPrompt).toContain('"bestSan":"Nc6"');
+    expect(capturedPrompt).toContain('"pvSans":["Nc6","Bc4"]');
+  });
+
+  it("without highlightedPlies, the same ply collapses (no behavior change for existing callers)", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
+      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
+    expect(facts.highlightedPlies).toBeUndefined();
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "e4 opens things up nicely for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why did i flag that one?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).not.toContain("Bc4");
+  });
+});
+
+// Missed-win round (2026-07-28): shared real-game fixture (game 150,
+// 2026-07-28, her real 91-ply win). Repeated per repo convention.
+const GAME150_SANS = [
+  "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+  "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+  "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+  "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+","Kg6","Nh8+","Kh7",
+  "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
+  "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
+  "Qh6+","Kd5","Be7","Kc4","Qc6#",
+].map((san, i) => ({ ply: i + 1, san }));
+
+describe("perPlyForModel — missed-win turning point ships full detail (missed-win round, 2026-07-28)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  // Regression pin: pins the EXISTING fullDetailPlies fold (facts.turningPoints
+  // ply -> full detail, see perPlyForModel) against the missed-win shape
+  // specifically -- proving the "one emission point lights up every surface"
+  // design claim for chat without adding a second mechanism. perPlyForModel
+  // itself isn't exported (same convention as every other test in this file),
+  // so this goes through the real chat() call and inspects the captured
+  // model-facing prompt, exactly like the ply-scoping tests above.
+  it("a missed-win turning point's ply ships full detail however old it is", async () => {
+    const gameMoves = GAME150_SANS; // shared fixture, declared above
+    const perPly: ChatPerPlyInput[] = gameMoves.map((m) => ({
+      ply: m.ply, san: m.san, evalCp: 0, evalMate: null, bestSan: m.ply === 55 ? "Qh8#" : null, pvSans: m.ply === 55 ? ["Qh8#"] : [],
+    }));
+    const facts = assembleChatFactList(
+      gameMoves,
+      {},
+      [{ ply: 55, san: "Nf7+", label: "missed mate" }],
+      perPly
+    );
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "the missed mate on move 28 is the story of this game.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("what happened on move 28?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"ply":55');
+    expect(capturedPrompt).toContain('"pvSans":["Qh8#"]'); // full detail, not the collapsed shape
+  });
+});
+
+describe("derivePhase — nearly-bare side (missed-win round, 2026-07-28)", () => {
+  it("reads a nearly-bare board as endgame regardless of total piece count (game 150 ply 55)", () => {
+    const gameMoves = GAME150_SANS; // shared fixture from the plan header
+    const perPly: ChatPerPlyInput[] = [5, 21, 55].map((ply) => ({
+      ply, san: gameMoves[ply - 1].san, evalCp: null, evalMate: null, bestSan: null, pvSans: [],
+    }));
+    const facts = assembleChatFactList(gameMoves, {}, [], perPly);
+    const phases = Object.fromEntries(facts.perPlyAnalysis!.map((p) => [p.ply, p.phase]));
+    expect(phases[5]).toBe("opening");
+    expect(phases[21]).toBe("middlegame"); // black still has pieces at ply 21
+    expect(phases[55]).toBe("endgame");    // 17 pieces on the board, but black is bare
   });
 });

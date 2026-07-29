@@ -58,12 +58,15 @@ describe("deriveOpportunity", () => {
     expect(result).not.toMatch(/wins the/);
   });
 
-  it("a lone pawn capture below the minor-piece floor never claims a material win", () => {
+  it("a net-1-pawn pv says wins a pawn, never the specific-piece phrasing", () => {
     // White captures a single undefended pawn and nothing else happens —
-    // net material for white is +1, below the >= 3 (minor piece) floor, so
-    // this must not claim "wins the pawn" (a smaller edge than the bar).
+    // net material for white is +1, below the >= 3 (minor piece) floor for
+    // NAMING a specific piece, but still a genuine, provable pawn gain
+    // (coach truth-speed round: recovered from the old vague "keeps the
+    // initiative" bucket).
     const fen = "4k3/8/8/8/3p4/8/3R4/4K3 w - - 0 1";
     const result = deriveOpportunity(fen, ["Rxd4"]);
+    expect(result).toBe("wins a pawn");
     expect(result).not.toMatch(/wins the/);
   });
 
@@ -86,13 +89,26 @@ describe("deriveOpportunity", () => {
     expect(eFilePawns.length).toBe(0);
   });
 
-  it("a quiet developing move with none of the above falls back to keeps the initiative", () => {
-    expect(deriveOpportunity(START_FEN, ["Nc3"])).toBe("keeps the initiative");
+  it("a quiet developing move with none of the above (no check) returns undefined, never 'keeps the initiative'", () => {
+    // Nc3 develops but delivers no check — not enough to claim
+    // "develops with the initiative" (coach truth-speed round: the old vague
+    // fallback is gone; an unprovable case is undefined, not a guess).
+    expect(deriveOpportunity(START_FEN, ["Nc3"])).toBeUndefined();
   });
 
-  it("never invents an opportunity beyond what the replay proves: a non-mating, non-capturing, file-neutral pv is the honest fallback, not a fabricated claim", () => {
+  it("a pv with no mate, no net material and no cleared file returns undefined, never 'keeps the initiative'", () => {
     const result = deriveOpportunity(START_FEN, ["Nf3", "Nf6", "Nc3"]);
-    expect(result).toBe("keeps the initiative");
+    expect(result).toBeUndefined();
+  });
+
+  it("a checking developing move honestly claims 'develops with the initiative'", () => {
+    // White bishop a4, kings only otherwise — Bd7+ is a real, legal,
+    // independently-checkable move: it develops the bishop AND delivers
+    // check to the black king on e8, with no capture and no mate (plenty of
+    // escape squares on a near-bare board). This is the concrete,
+    // replay-provable substitute for the old vague "keeps the initiative".
+    const fen = "4k3/8/8/8/B7/8/8/4K3 w - - 0 1";
+    expect(deriveOpportunity(fen, ["Bd7"])).toBe("develops with the initiative");
   });
 });
 
@@ -129,7 +145,10 @@ describe("not inverted: every claim must be a gain for the player (white), never
     // win claim.
     const fen = "1r1qk3/1b6/3N4/8/8/8/6P1/4K3 w - - 0 1";
     const result = deriveOpportunity(fen, ["Nxb7", "Qh4+", "g3", "Rxb7"]);
-    expect(result).not.toMatch(/wins the/);
+    // Net material is exactly zero (bishop for knight) and the first move
+    // (Nxb7) delivers no check, so this is the honest undefined fallback —
+    // never a material win claim, never the old vague "keeps the initiative".
+    expect(result).toBeUndefined();
   });
 
   it("a pv that costs the player net material is never dressed up as keeps the initiative or an opened file either", () => {

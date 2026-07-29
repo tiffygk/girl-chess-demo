@@ -15,7 +15,21 @@
 // literals -- run.ts is the only place that replays these against a real
 // (scratch) db copy and actually calls the coach.
 
-export type FixtureId = "C1" | "C2" | "C3" | "C4" | "C5";
+// Wave E1 (coach-truth-speed round, 2026-07-27): the owner's ask -- "if I ask
+// a question specifically about a move or the board, it should only use the
+// chess brain... if I'm asking general chess questions, we should see if it
+// works" -- adds two new arms alongside the original (now-named) "board-live"
+// arm. `arm` is the axis decide.ts and render.ts now score/aggregate BY;
+// `tag` (below) stays the bucket label it always was (open/narr/dir/pending/
+// affirmation), extended with "general" for the new arm's own rows.
+export type Arm = "board-live" | "general" | "board-review";
+
+export type LiveFixtureId = "C1" | "C2" | "C3" | "C4" | "C5";
+// Eval-instrument-repair round (2026-07-28): the board-review arm's own
+// fixtures, pinned to the FINAL ply of games that genuinely finished. See
+// REVIEW_FIXTURE_IDS / the board-review section below for why they exist.
+export type ReviewFixtureId = "R1" | "R2" | "R3";
+export type FixtureId = LiveFixtureId | ReviewFixtureId;
 
 export interface Fixture {
   id: FixtureId;
@@ -24,10 +38,17 @@ export interface Fixture {
   ply: number;
   fen: string;
   phase: string;
+  // Set only on review fixtures: this game really is over in the db, `ply` is
+  // its final ply, and run.ts must read the outcome from the db rather than
+  // synthesizing one. Absent on C1-C5, which are mid-game positions in games
+  // that continue well past the pinned ply.
+  finished?: true;
 }
 
-// Player is white in every fixture; all run mode: "live"; white to move
-// (methodology part 3, "fixture contexts").
+// Player is white in every fixture. C1-C5 are live, mid-game, white to move
+// (methodology part 3, "fixture contexts"); R1-R3 are final positions of
+// finished games, so whose turn it is there is whatever the last move left
+// (in two of the three the side to move is checkmated).
 export const FIXTURES: Record<FixtureId, Fixture> = {
   C1: {
     id: "C1",
@@ -64,7 +85,55 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     fen: "5rk1/ppp2pp1/2n2r1p/P3p3/RNPpP3/1P3P2/3NR1PP/6K1 w - - 5 21",
     phase: "late middlegame, queens already off, Nd5 tactic available",
   },
+
+  // ---- review fixtures (eval-instrument-repair round, 2026-07-28) ---------
+  //
+  // Real finished games from the owner's own db, pinned at their real final
+  // ply, chosen for outcome RANGE -- the old synthetic wrapper had exactly
+  // one outcome shape and it was a fabricated one:
+  //   R1  her only loss, and a fast one (checkmated in 14 moves)
+  //   R2  a long win that ended in checkmate (46 moves)
+  //   R3  a very long win that ended by ADJUDICATION, not mate -- the one
+  //       outcome shape that exercises the games.end_reason column at all
+  // fen/ply were read out of the db and re-derived by chess.js replay (the
+  // same replay run.ts asserts against at startup), never transcribed by eye.
+  R1: {
+    id: "R1",
+    gameId: 147,
+    ply: 28,
+    fen: "2kn1b1r/pbpp3p/1p5n/4NP2/2P5/PPNP4/4BPqP/R2Q1RK1 w - - 0 15",
+    phase: "finished, 0-1: her only loss -- mallow mated on g2 after her Nxe5 blunder at ply 27",
+    finished: true,
+  },
+  R2: {
+    id: "R2",
+    gameId: 150,
+    ply: 91,
+    fen: "6N1/4B3/2Q5/5B2/2k4P/5NP1/P4P2/1R2R1K1 b - - 6 46",
+    phase: "finished, 1-0: a long win, mate on c6 at move 46, after mallow's blunder at ply 20",
+    finished: true,
+  },
+  R3: {
+    id: "R3",
+    gameId: 149,
+    ply: 144,
+    fen: "8/2R5/1k6/5B2/4K3/8/7P/8 w - - 15 73",
+    phase: "finished, 1-0 by adjudication: a 72-move rook-and-bishop endgame ended with the end-game button",
+    finished: true,
+  },
 };
+
+// The board-review arm's fixtures, and the games those fixtures live in.
+// Both are exported so score.test.ts can assert the arm never drifts back
+// onto a live fixture or an unfinished game, and so run.ts can re-verify the
+// "this game is really finished" claim against the scratch db at startup
+// rather than trusting this file.
+export const REVIEW_FIXTURE_IDS: ReviewFixtureId[] = ["R1", "R2", "R3"];
+// Every game in the owner's db with a non-null result as of 2026-07-28,
+// restricted to the recent, fully-analysed ones this arm draws from. Kept as
+// data (not a db query) so the unit test stays pure; run.ts's own startup
+// assertion is the real, live check.
+export const REAL_FINISHED_GAME_IDS: number[] = [146, 147, 148, 149, 150];
 
 // Engine-best moves used by fixtures, from the db's own persisted analysis
 // (best_move of the pinned ply row, converted uci -> san at the pinned fen).
@@ -81,11 +150,17 @@ export const ENGINE_BEST_UCI_BY_FIXTURE: Partial<Record<FixtureId, string>> = {
   C5: "b4d5", // Nd5
 };
 
-export type QuestionTag = "open" | "narr" | "dir" | "pending" | "affirmation";
+export type QuestionTag = "open" | "narr" | "dir" | "pending" | "affirmation" | "general";
 
 export interface BaseQuestion {
   id: string;
   tag: "open" | "narr" | "dir";
+  // Wave E1: every row now carries which arm it belongs to. All of
+  // BASE_QUESTIONS/PENDING_QUESTIONS/AFFIRMATION_QUESTIONS are "board-live"
+  // (the arm's original, unchanged meaning) -- see the *_RAW arrays below,
+  // which stay byte-identical to the frozen v2/v3 content; arm is added by
+  // a map, never by editing those literals.
+  arm: Arm;
   q: string;
   ctx: FixtureId;
   // A deliberate false-premise or missing-referent probe -- the right
@@ -99,7 +174,12 @@ export interface BaseQuestion {
 // The exact v1 50 questions (questions-v1-base.json, ids/wording verbatim),
 // pinned to fixture contexts + probe markers per the methodology's part 3
 // tables. Order matches both v1's ids and the methodology's own tables.
-export const BASE_QUESTIONS: BaseQuestion[] = [
+//
+// Wave E1: kept as a private, byte-identical-to-v2/v3 RAW literal -- `arm`
+// is added by the map below, never by touching this array, so "the existing
+// 65 questions ... must stay byte-identical" holds by construction, not by
+// discipline.
+const BASE_QUESTIONS_RAW: Omit<BaseQuestion, "arm">[] = [
   // [open], 18
   { id: "open-01", tag: "open", ctx: "C3", probe: true, q: "why is that the best move?", note: "no referent -- no hint attached to open bucket" },
   { id: "open-02", tag: "open", ctx: "C2", probe: true, q: "why should i not put this piece here?", note: "deixis void, NO pending -- the control twin of PD1" },
@@ -159,6 +239,8 @@ export const BASE_QUESTIONS: BaseQuestion[] = [
   { id: "dir-16", tag: "dir", ctx: "C5", probe: false, q: "what move keeps my advantage?", note: "premise TRUE (white better)" },
 ];
 
+export const BASE_QUESTIONS: BaseQuestion[] = BASE_QUESTIONS_RAW.map((q) => ({ ...q, arm: "board-live" as const }));
+
 export type PendingTier = "silent" | "warning" | "nudge" | "judge-in-flight";
 
 export interface PendingMove {
@@ -171,6 +253,7 @@ export interface PendingMove {
 export interface PendingQuestion {
   id: string;
   tag: "pending" | "affirmation";
+  arm: Arm; // Wave E1 -- always "board-live" for these fixtures, see below.
   ctx: FixtureId;
   pending?: PendingMove;
   tier?: PendingTier;
@@ -182,7 +265,9 @@ export interface PendingQuestion {
 // pending move was legality-checked with chess.js at its fixture fen by the
 // methodology's author; run.ts re-verifies legality at startup and aborts
 // on any illegal fixture (do not trust this file alone).
-export const PENDING_QUESTIONS: PendingQuestion[] = [
+//
+// Wave E1: RAW + mapped, same discipline as BASE_QUESTIONS_RAW above.
+const PENDING_QUESTIONS_RAW: Omit<PendingQuestion, "arm">[] = [
   { id: "PD1", tag: "pending", ctx: "C2", tier: "silent", pending: { pieceKind: "n", from: "g1", to: "f3", san: "Nf3" }, q: "why should i not put this piece here" },
   { id: "PD2", tag: "pending", ctx: "C3", tier: "silent", pending: { pieceKind: "n", from: "f3", to: "e1", san: "Ne1" }, q: "is this ok", note: "engine best" },
   { id: "PD3", tag: "pending", ctx: "C5", tier: "silent", pending: { pieceKind: "n", from: "b4", to: "d5", san: "Nd5" }, q: "what if i go here", note: "engine best" },
@@ -195,14 +280,278 @@ export const PENDING_QUESTIONS: PendingQuestion[] = [
   { id: "PD10", tag: "pending", ctx: "C2", tier: "judge-in-flight", pending: { pieceKind: "b", from: "d2", to: "b4", san: "Bxb4" }, q: "wait should i do this instead", note: "recapturable trade, judged:false" },
 ];
 
+export const PENDING_QUESTIONS: PendingQuestion[] = PENDING_QUESTIONS_RAW.map((q) => ({ ...q, arm: "board-live" as const }));
+
 // The 5 short-affirmation prompts (methodology part 3).
-export const AFFIRMATION_QUESTIONS: PendingQuestion[] = [
+const AFFIRMATION_QUESTIONS_RAW: Omit<PendingQuestion, "arm">[] = [
   { id: "AF1", tag: "affirmation", ctx: "C3", tier: "silent", pending: { pieceKind: "n", from: "f3", to: "e1", san: "Ne1" }, q: "is this fine" },
   { id: "AF2", tag: "affirmation", ctx: "C5", tier: "silent", pending: { pieceKind: "n", from: "b4", to: "d5", san: "Nd5" }, q: "this looks safe to me, right" },
   { id: "AF3", tag: "affirmation", ctx: "C4", tier: "silent", pending: { pieceKind: "b", from: "f5", to: "c8", san: "Bxc8" }, q: "i think this is right" },
   { id: "AF4", tag: "affirmation", ctx: "C5", q: "am i doing ok so far", note: "no pending -- white clearly better here" },
   { id: "AF5", tag: "affirmation", ctx: "C2", tier: "silent", pending: { pieceKind: "n", from: "g1", to: "f3", san: "Nf3" }, q: "quick check, this ok" },
 ];
+
+export const AFFIRMATION_QUESTIONS: PendingQuestion[] = AFFIRMATION_QUESTIONS_RAW.map((q) => ({ ...q, arm: "board-live" as const }));
+
+// ---- arm: general (Wave E1, coach-truth-speed round) ----------------------
+//
+// The axis the owner cares about and that v3 never measured: "how do I know
+// when it's a good idea..." -- next-game strategy, not this game's position.
+// Every one of these MUST classify as "general" via server/coach/intent.ts's
+// classifyIntent(q, {hasFocus:false, hasPendingMove:false, status:
+// "in-progress"}) -- the same ctx run.ts actually passes for this arm
+// (signature widened, Wave F review fix 2026-07-27; see intent.ts). score.
+// test.ts asserts this so a general question that silently routes to
+// "board" can never pass unnoticed (that would measure the wrong pipeline
+// and invalidate the whole arm).
+// `ctx` still pins a real fixture -- the harness needs a real position/
+// gameSans/turningPoints to assemble a fact list from, even though a general
+// answer is not required to reference the position at all (and is graded
+// by validateChatGeneral, which only checks position claims IF the reply
+// makes one -- see chat.ts). Varied across C1-C5 so different questions see
+// different amounts of real game history to (truthfully) connect to.
+export interface GeneralQuestion {
+  id: string;
+  arm: "general";
+  tag: "general";
+  ctx: FixtureId;
+  probe: boolean;
+  q: string;
+  note?: string;
+}
+
+const GENERAL_QUESTIONS_RAW: Omit<GeneralQuestion, "arm" | "tag">[] = [
+  // gen-01 is the owner's real refused question, verbatim (brief's own
+  // quote, casing included -- every other entry follows this file's usual
+  // lowercase house style).
+  {
+    id: "gen-01",
+    ctx: "C5",
+    probe: false,
+    q: "I learned that I always want my pawns staggered so they support each other. How do I know when it's a good idea to have them staggered versus move them in a horizontal wall?",
+    note: "owner's real refused question (trace), verbatim",
+  },
+  { id: "gen-02", ctx: "C2", probe: false, q: "when should i trade pieces versus keep them on the board?" },
+  { id: "gen-03", ctx: "C1", probe: false, q: "what should i work on before my next game?" },
+  { id: "gen-04", ctx: "C3", probe: false, q: "what is a fork in chess, and how do i spot one before it happens?" },
+  { id: "gen-05", ctx: "C5", probe: false, q: "how do i know when the endgame has started?" },
+  { id: "gen-06", ctx: "C4", probe: false, q: "what is a pin, and why is it dangerous?" },
+  { id: "gen-07", ctx: "C3", probe: false, q: "how should i decide which side of the board to attack on?" },
+  { id: "gen-08", ctx: "C1", probe: false, q: "what's a good way to study my own games afterward?" },
+  { id: "gen-09", ctx: "C5", probe: false, q: "how do i tell if a position is worth simplifying into an endgame?" },
+  { id: "gen-10", ctx: "C2", probe: false, q: "what's the difference between a good bishop and a bad bishop?" },
+  { id: "gen-11", ctx: "C4", probe: false, q: "when is it worth giving up a pawn for faster development?" },
+  { id: "gen-12", ctx: "C1", probe: false, q: "how many hours should i actually spend studying versus playing?" },
+  { id: "gen-13", ctx: "C3", probe: false, q: "what separates a good plan from a bad one in the middlegame?" },
+  { id: "gen-14", ctx: "C5", probe: false, q: "is it better to focus on tactics or endgames as a beginner?" },
+  { id: "gen-15", ctx: "C2", probe: false, q: "how do i build an opening repertoire without memorizing everything?" },
+];
+
+export const GENERAL_QUESTIONS: GeneralQuestion[] = GENERAL_QUESTIONS_RAW.map((q) => ({
+  ...q,
+  arm: "general" as const,
+  tag: "general" as const,
+}));
+
+// ---- arm: board-review (Wave E1; REBUILT 2026-07-28) ----------------------
+//
+// Board questions against a FINISHED game -- exercises the 90s
+// CHAT_REVIEW_BUDGET_MS budget and the ChatFactList `status: "finished"` +
+// `outcome` facts (server/coach/chat.ts), which board-live's fixtures never
+// touch (C1-C5 are all mid-game, status "in-progress").
+//
+// WHAT CHANGED AND WHY (eval-instrument-repair round). Wave E1 built this arm
+// by reusing the live [dir] questions verbatim against C1-C5 and bolting a
+// FABRICATED `1-0 by resignation` outcome onto them at run time (run.ts's
+// now-deleted `boardReviewOutcome`), purely so the finished-game plumbing had
+// something to carry. The owner graded the blinded read on 2026-07-28 and
+// threw the arm out:
+//
+//   "all of the questions that are about the opponent resigning we should
+//    just remove because that's synthetic data that doesn't make sense and
+//    never happened so I can't really judge the answers off of them."
+//
+// Measured against the raw rows, the contamination was total, not partial:
+// all 16 of 16 rev-* rows had at least one model discussing the resignation
+// (the plan's estimate was 12). And the questions were incoherent in a second
+// way the fabricated outcome had been masking -- they are LIVE-position
+// questions ("what should i play next?", "should i castle now?", "do i have
+// any threats right now?") asked about a game that is over. There is no next.
+//
+// So this is a rewrite, not a repoint. Every question below names the rev-*
+// question it replaces and what was wrong with it, so the substitution is
+// auditable. Two consequences, stated plainly rather than buried:
+//   1. Wave E1's stated reason for reusing [dir] text verbatim -- "so any
+//      live-vs-review delta is attributable to the budget/outcome-fact change
+//      alone" -- no longer holds, and could not have been preserved: the arm
+//      had to move to different GAMES entirely, which breaks that comparison
+//      on its own. The arm's job is now what it should have been from the
+//      start: measure the coach on real post-game review, under the review
+//      budget.
+//   2. The v2/v3 board-review numbers are therefore NOT comparable to
+//      anything produced after this change. board-live's 65 questions are
+//      untouched and byte-identical, and remain the comparison baseline.
+//
+// score.test.ts checks every question below still routes "board" through
+// classifyIntent -- a phrase like "next game" or "how do i" would silently
+// divert the arm onto the general-chess pipeline and measure nothing.
+export interface BoardReviewQuestion {
+  id: string;
+  arm: "board-review";
+  tag: "open" | "narr" | "dir";
+  ctx: FixtureId;
+  probe: boolean;
+  q: string;
+  // Where the finished-game outcome comes from. "db" is the only legal value:
+  // it is read from games.result/end_reason via manager.ts's own
+  // deriveChatOutcome, the same derivation the product uses. The field exists
+  // so a synthesized outcome cannot quietly return -- there is no enum member
+  // for one.
+  outcomeSource: "db";
+  note?: string;
+}
+
+const BOARD_REVIEW_QUESTIONS_RAW: Omit<BoardReviewQuestion, "arm" | "outcomeSource">[] = [
+  // -- R1: game 147, her only loss, checkmated on g2 in 14 moves ------------
+  {
+    id: "rev-01",
+    tag: "dir",
+    ctx: "R1",
+    probe: false,
+    q: "what should i have played instead of my last move?",
+    note: "replaces the live 'what should i play next?' -- a finished game has no next move. real: her Nxe5 at ply 27 is the db's own blunder turning point and allowed the mate",
+  },
+  {
+    id: "rev-02",
+    tag: "open",
+    ctx: "R1",
+    probe: false,
+    q: "how did she get mate on my king so fast?",
+    note: "replaces the live \"what's now unsafe?\" -- nothing is 'now' unsafe in a finished game. premise TRUE: mated in 14 moves",
+  },
+  {
+    id: "rev-03",
+    tag: "open",
+    ctx: "R1",
+    probe: false,
+    q: "where did this game turn against me?",
+    note: "replaces the live 'which piece should i move?'. premise TRUE: db turning points at plies 8, 14 and 27",
+  },
+  {
+    id: "rev-04",
+    tag: "dir",
+    ctx: "R1",
+    probe: false,
+    q: "was there a moment i could have stopped the mate?",
+    note: "replaces the live 'should i castle now?' -- she had already castled by ply 13 in this game, so the original was doubly wrong here",
+  },
+  {
+    id: "rev-05",
+    tag: "open",
+    ctx: "R1",
+    probe: false,
+    q: "what did i do right in this game, even though i lost?",
+    note: "replaces the live 'is there a capture i should make?'. exercises the outcome fact honestly -- the coach must know she LOST this one",
+  },
+  {
+    id: "rev-06",
+    tag: "open",
+    ctx: "R1",
+    probe: true,
+    q: "why did i lose my queen in this game?",
+    note: "replaces the live \"what's the best square for my knight?\". PROBE: false premise -- her queen is alive on d1 in the final position. honest redirection is the right answer",
+  },
+
+  // -- R2: game 150, a long win ending in mate on c6 at move 46 -------------
+  {
+    id: "rev-07",
+    tag: "open",
+    ctx: "R2",
+    probe: false,
+    q: "what won me this game?",
+    note: "replaces the live 'do i have any threats right now?'. premise TRUE: 1-0 by checkmate",
+  },
+  {
+    id: "rev-08",
+    tag: "dir",
+    ctx: "R2",
+    probe: false,
+    q: "which of my pieces did the most work in this game?",
+    note: "replaces the live 'should i trade or keep pieces on?' -- a live decision question about a game already played",
+  },
+  {
+    id: "rev-09",
+    tag: "open",
+    ctx: "R2",
+    probe: false,
+    q: "was there anything sloppy in how i finished it?",
+    note: "replaces the live 'what is my opponent threatening?' -- nothing is threatened after mate",
+  },
+  {
+    id: "rev-10",
+    tag: "open",
+    ctx: "R2",
+    probe: false,
+    q: "she blundered early on, did i punish it properly?",
+    note: "replaces the live 'where should my rooks go?'. premise TRUE: db turning point at ply 20, labelled an opponent blunder",
+  },
+  {
+    id: "rev-11",
+    tag: "dir",
+    ctx: "R2",
+    probe: false,
+    q: "what part of this game should i try to repeat?",
+    note: "replaces the live 'is it safe to push this pawn?' (deixis void, and no pawn is pending in a finished game). deliberately avoids the words 'next game', which trip intent.ts's general marker and would divert the arm off the board route",
+  },
+  {
+    id: "rev-12",
+    tag: "open",
+    ctx: "R2",
+    probe: false,
+    q: "did i take too long to convert my advantage?",
+    note: "replaces the live \"what's the fastest way to develop?\" -- development is long over. a fair question here: 46 moves, after mallow's blunder at move 10",
+  },
+
+  // -- R3: game 149, a 72-move win ended by adjudication, not mate ----------
+  {
+    id: "rev-13",
+    tag: "open",
+    ctx: "R3",
+    probe: false,
+    q: "why did this game end without a checkmate?",
+    note: "replaces the live 'should i attack the king or play on the queenside?'. the one question that directly exercises end_reason='adjudicated' -- the outcome fact here reads 'adjudicated win', not a mate",
+  },
+  {
+    id: "rev-14",
+    tag: "open",
+    ctx: "R3",
+    probe: false,
+    q: "was i actually winning when the game ended?",
+    note: "replaces the live 'which side of the board should i play on?'. premise TRUE: the final ply's persisted eval is mate in 7 for her",
+  },
+  {
+    id: "rev-15",
+    tag: "dir",
+    ctx: "R3",
+    probe: false,
+    q: "what was the cleanest way to finish from the final position?",
+    note: "replaces the live 'is now a good time to open the position?'. a real rook-and-bishop-vs-bare-king technique question, and the final position genuinely is on the fact list",
+  },
+  {
+    id: "rev-16",
+    tag: "open",
+    ctx: "R3",
+    probe: true,
+    q: "did i lose this game on time?",
+    note: "replaces the live 'what move keeps my advantage?'. PROBE: doubly false premise -- she won, and this app has no clock at all. honest redirection is the right answer",
+  },
+];
+
+export const BOARD_REVIEW_QUESTIONS: BoardReviewQuestion[] = BOARD_REVIEW_QUESTIONS_RAW.map((q) => ({
+  ...q,
+  arm: "board-review" as const,
+  outcomeSource: "db" as const,
+}));
 
 // chess.js piece-kind letter -> plain-language word, for the pending-
 // awareness mechanical check (methodology part 4, axis 5).
@@ -224,4 +573,11 @@ export const PIECE_WORDS: Record<string, string> = {
 export const NARR_HINT_LEVEL = 3;
 export const NARR_HINT_TEXT = "there's a better option here.";
 
-export const TOTAL_QUESTION_COUNT = BASE_QUESTIONS.length + PENDING_QUESTIONS.length + AFFIRMATION_QUESTIONS.length; // 50 + 10 + 5 = 65
+// board-live is the original v2/v3 arm -- byte-identical 65 questions,
+// frozen per README/skill rule. Wave E1 adds general (15) and board-review
+// (16, one per [dir] question) as new arms; TOTAL_QUESTION_COUNT is the sum
+// of all three, and run.ts's drift assertion checks against it.
+export const BOARD_LIVE_QUESTION_COUNT = BASE_QUESTIONS.length + PENDING_QUESTIONS.length + AFFIRMATION_QUESTIONS.length; // 50 + 10 + 5 = 65
+export const GENERAL_QUESTION_COUNT = GENERAL_QUESTIONS.length; // 15
+export const BOARD_REVIEW_QUESTION_COUNT = BOARD_REVIEW_QUESTIONS.length; // 16
+export const TOTAL_QUESTION_COUNT = BOARD_LIVE_QUESTION_COUNT + GENERAL_QUESTION_COUNT + BOARD_REVIEW_QUESTION_COUNT;

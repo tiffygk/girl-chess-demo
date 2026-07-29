@@ -16,6 +16,7 @@ import {
   insertAdviceTrace,
   getAdviceTraces,
   rateAdviceTrace,
+  setMoveHighlighted,
 } from "./db";
 
 describe("store", () => {
@@ -116,6 +117,23 @@ describe("store", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].mode).toBe("guardian");
     expect(rows[1].mode).toBe("post");
+  });
+
+  // Highlight-a-move (Task 1): moves.highlighted is a plain per-ply flag
+  // the player sets during live play. setMoveHighlighted is a repeatable
+  // UPDATE (same convention as setMoveClassification above), and
+  // getGameMoves must surface it as 0/1 straight off the row.
+  it("persists a highlight on a move and returns it from getGameMoves", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 1200 });
+
+    setMoveHighlighted(g, 1, true);
+    expect(getGameMoves(g)[0].highlighted).toBe(1);
+
+    setMoveHighlighted(g, 1, false);
+    expect(getGameMoves(g)[0].highlighted).toBe(0);
   });
 
   // C4: migration guard — CREATE TABLE IF NOT EXISTS silently no-ops on a

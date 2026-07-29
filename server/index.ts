@@ -56,6 +56,26 @@ app.post("/api/game/:id/move", async (req, res) => {
   }
 });
 
+// Highlight-a-move (Task 1): the player flags a move (her own, up to three
+// back) she wasn't sure about during live play. Sync passthrough to
+// gm.highlightMove -- no engine call, same shape-check-then-call convention
+// as /api/trace/:id/rate above.
+app.post("/api/game/:id/move/:ply/highlight", (req, res) => {
+  const gameId = Number(req.params.id);
+  const ply = Number(req.params.ply);
+  const { highlighted } = req.body ?? {};
+  if (!Number.isInteger(gameId) || !Number.isInteger(ply) || ply < 1) {
+    res.status(400).json({ error: "bad game id or ply" });
+    return;
+  }
+  if (typeof highlighted !== "boolean") {
+    res.status(400).json({ error: "highlighted must be a boolean" });
+    return;
+  }
+  gm.highlightMove(gameId, ply, highlighted);
+  res.json({ ok: true });
+});
+
 app.post("/api/game/:id/judge", async (req, res) => {
   // `strictness` (Task 6, F10 tuning — UI label "judge strictness"):
   // optional, appended after `mode` same as that field's own convention;
@@ -173,6 +193,60 @@ app.post("/api/game/:id/chat", async (req, res) => {
   } catch (error) {
     res.status(500).json({ ok: false, error: "internal" });
   }
+});
+
+// B-stream (2026-07-27, coach-truth-speed round). Owner's verbatim ask: "if
+// there's anything else we can do to make these answers faster" -- game
+// 146's three thumbs-up replies took 38.4s/39.7s/24.3s and the client
+// rendered NOTHING until the terminal result. Streaming doesn't shorten
+// generation; it makes the wait legible, which is what reads as "faster".
+// This is a NEW route, not a replacement -- POST /api/game/:id/chat above is
+// untouched and stays the client's fallback if the stream never opens.
+// SSE-over-POST rather than EventSource: EventSource can only GET, and the
+// chat body (message + full ChatContext, sometimes carrying a focused
+// turning-point's whole pv) is too large/shaped for a query string.
+// Frames, one JSON object per SSE `data:` line, `event:` naming the kind:
+//   delta   {text}                         -- advisory rendering only
+//   redraft {}                              -- the one-regen attempt is starting
+//   done    the exact gm.chat() return value (same object the JSON route
+//           above sends via res.json) -- ok:true incl. text/source/cause/
+//           traceId, so the two routes' envelopes can never drift apart
+//   error   the exact gm.chat() ok:false value, or {ok:false,error:"internal"}
+//           on a thrown error, mirroring the JSON route's catch branch
+// Persistence/trace-writing ordering is entirely gm.chat's/chat.ts's own
+// concern, unchanged by this route: the coach row still writes once, after
+// the terminal result, still gated on source === "model" (B3b).
+app.post("/api/game/:id/chat/stream", async (req, res) => {
+  const { message, context, backendPref } = req.body;
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+  res.flushHeaders();
+
+  const writeFrame = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const result = await gm.chat(
+      Number(req.params.id),
+      {
+        message: String(message ?? ""),
+        context: context ?? { mode: "live" },
+        backendPref,
+      },
+      {
+        onDelta: (text) => writeFrame("delta", { text }),
+        onRedraft: () => writeFrame("redraft", {}),
+      }
+    );
+    writeFrame(result.ok ? "done" : "error", result);
+  } catch (error) {
+    writeFrame("error", { ok: false, error: "internal" });
+  }
+  res.end();
 });
 
 // Increment 3.9, Task 4 (F19): thumbs up/down with feedback capture on

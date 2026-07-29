@@ -29,9 +29,13 @@ export interface MoveListProps {
    *  live, the same rule the turning-point cards' own buttons already
    *  follow (the live board can't be yanked out from under itself). */
   disabled?: boolean;
+  /** Highlight-a-move: plies she flagged during live play, so the recap can
+   *  spot them even outside the (collapsed-by-default) study ledger. Empty
+   *  by default so every pre-existing caller keeps compiling unchanged. */
+  highlightedPlies?: Set<number>;
 }
 
-export function MoveList({ sans, currentPly, onSelect, disabled }: MoveListProps) {
+export function MoveList({ sans, currentPly, onSelect, disabled, highlightedPlies }: MoveListProps) {
   const rows = groupMoves(sans);
   if (rows.length === 0) return null;
 
@@ -64,8 +68,22 @@ export function MoveList({ sans, currentPly, onSelect, disabled }: MoveListProps
         </button>
       </div>
       <div className="debrief-movelist-rows" role="list" aria-label="full move list">
-        {rows.map((row) => (
-          <div className="debrief-movelist-row" key={row.moveNumber} role="listitem">
+        {rows.map((row) => {
+          // Highlight-a-move (Task 4): the machine's record of her flag —
+          // the ROW wears the flat cyan statement (tint + inset rule) and a
+          // closing chip; the ply button keeps its candy recipe untouched
+          // (it still jumps the board) and gains the same 7px dot she
+          // filled live, via CSS. Only her plies can be highlighted, but
+          // both seats are checked rather than assuming.
+          const rowHighlighted =
+            (row.white != null && highlightedPlies?.has(row.white.ply)) ||
+            (row.black != null && highlightedPlies?.has(row.black.ply));
+          return (
+          <div
+            className={"debrief-movelist-row" + (rowHighlighted ? " highlighted-row" : "")}
+            key={row.moveNumber}
+            role="listitem"
+          >
             <span className="debrief-movelist-num">{row.moveNumber}.</span>
             {row.white && (
               <button
@@ -73,7 +91,8 @@ export function MoveList({ sans, currentPly, onSelect, disabled }: MoveListProps
                 disabled={disabled}
                 className={
                   "small debrief-movelist-move debrief-movelist-you" +
-                  (shownPly === row.white.ply ? " active" : "")
+                  (shownPly === row.white.ply ? " active" : "") +
+                  (highlightedPlies?.has(row.white.ply) ? " highlighted" : "")
                 }
                 onClick={() => onSelect(row.white!.ply)}
               >
@@ -86,15 +105,18 @@ export function MoveList({ sans, currentPly, onSelect, disabled }: MoveListProps
                 disabled={disabled}
                 className={
                   "small debrief-movelist-move debrief-movelist-mallow" +
-                  (shownPly === row.black.ply ? " active" : "")
+                  (shownPly === row.black.ply ? " active" : "") +
+                  (highlightedPlies?.has(row.black.ply) ? " highlighted" : "")
                 }
                 onClick={() => onSelect(row.black!.ply)}
               >
                 {row.black.san}
               </button>
             )}
+            {rowHighlighted && <span className="debrief-movelist-hl-chip">highlighted</span>}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

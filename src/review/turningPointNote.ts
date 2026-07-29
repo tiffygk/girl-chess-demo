@@ -24,17 +24,28 @@ import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from 
 // already share (seedPly = ply - (ply % 2)).
 import { fenAtPly } from "./Rewind";
 import { deriveOpportunity } from "./opportunity";
+// Coach truth-speed round (2026-07-27): the single source of truth for "did
+// she actually play the recommended move" — see followedBest.ts's header
+// for the full odd/even-ply comparison rule this replaces ad hoc guessing
+// with.
+import { followedBest } from "./followedBest";
+import type { FollowedBest } from "./followedBest";
 // Debrief Plain-English Notation round (Task 2): every raw-SAN mention in
 // the note (the played move, the punish, the stronger idea, the pv's first
 // move) now routes through the shared plain-English renderer whenever a fen
 // to replay it from is available. Falls back to the raw SAN string when
 // gameSans is absent or the fen can't be reconstructed — never nothing.
-import { describeSanMove } from "../game/describeSanMove";
+import { describeSanMove, stripRedundantCheckSuffix } from "../game/describeSanMove";
 
 export interface TurningPointNote {
   didWell?: string; // (i)   present when the point is a good moment / good defense
   couldImprove?: string; // (ii)  the played move vs the better idea, from label/classification
-  nextTime: string; // (iii) motif-keyed template tip (always present; generic fallback allowed)
+  // (iii) motif-keyed template tip. Coach truth-speed round (2026-07-27):
+  // the owner reported the old generic fallback ("look one move deeper
+  // before you commit next time") as a useless sentence she'd already done.
+  // GENERIC_TIP is gone; nextTime is now optional and only set when
+  // inferMotif actually resolves a real motif — absent, never a filler.
+  nextTime?: string;
   whatMayHaveHappened?: string; // (iv)  the pv line phrased plainly, present when bestSan/pvSans exist
   opportunity?: string; // (v)   what the pv's replay proves it opens up — present when line+gameSans exist and the pv replays at all
 }
@@ -49,7 +60,7 @@ export interface TurningPointNote {
 // backfill labels "checkmate" / "the losing move" / "the clincher", which
 // carry no distinct motif of their own) falls through to GENERIC_TIP below —
 // a declared cut (plan Task 3), asserted directly in the test file.
-export type Motif = "king-safety" | "missed-punish" | "good-moment" | "eval-drop";
+export type Motif = "king-safety" | "missed-punish" | "good-moment" | "eval-drop" | "missed-mate";
 
 function moveNumberForPly(ply: number): number {
   return Math.ceil(ply / 2);
@@ -93,12 +104,9 @@ export const NEXT_TIME_TIPS: Record<Motif, string> = {
   "good-moment": "good eye. keep hunting for your most forcing move first every turn.",
   "eval-drop":
     "this move gave back the most ground here. before you commit, check every forcing reply she has: her checks, her captures, her threats.",
+  "missed-mate":
+    "when you are winning big, hunt the fastest finish first: look at every check you have and count her king's escape squares. a check she cannot answer while her king has nowhere to go is mate.",
 };
-
-// Declared cut (plan Task 3): a turning point whose motif doesn't match the
-// fixed bank above (no engine call, no invented chess claim) gets this
-// generic fallback rather than nothing.
-const GENERIC_TIP = "look one move deeper before you commit next time.";
 
 // Motif inference is read-only off TurningPoint.label/kind/missedPunish —
 // never an engine call, never a guess beyond what those fields already say.
@@ -109,6 +117,7 @@ const GENERIC_TIP = "look one move deeper before you commit next time.";
 // are pure winprob-delta magnitude bands — they say nothing about *why* the
 // eval moved, so they only ever earn the honest eval-drop/good-moment tips.
 function inferMotif(tp: TurningPoint): Motif | undefined {
+  if (tp.kind === "missed-win") return "missed-mate";
   if (tp.kind === "episode") return "king-safety";
   if (tp.missedPunish) return "missed-punish";
   if (tp.label === "strong move") return "good-moment";
@@ -117,7 +126,12 @@ function inferMotif(tp: TurningPoint): Motif | undefined {
   return undefined;
 }
 
-function buildDidWell(tp: TurningPoint, gameSans?: SummaryMove[]): string | undefined {
+function buildDidWell(
+  tp: TurningPoint,
+  gameSans: SummaryMove[] | undefined,
+  line: TurningLine | undefined,
+  fb: FollowedBest | undefined
+): string | undefined {
   if (tp.kind === "episode") {
     const n = moveNumberForPly(tp.ply);
     return `you held up under real pressure starting around move ${n}. that composure is a skill.`;
@@ -134,6 +148,32 @@ function buildDidWell(tp: TurningPoint, gameSans?: SummaryMove[]): string | unde
     // ply+1.
     const punish = describedOrRaw(tp.punishSan, fenBeforePly(gameSans, tp.ply + 1));
     return `you punished her slip on move ${n} with ${punish}.`;
+  }
+  // Coach truth-speed round (2026-07-27): the case above only fires when
+  // turningPoints.ts's own attachPunishSuffix already recorded tp.punishSan.
+  // followedBest is a second, independently-measured confirmation off the
+  // TurningLine itself (her actual reply at ply+1 vs the pv's recommended
+  // move) — it catches an opponent turning point (even tp.ply) she punished
+  // that the branch above didn't already credit.
+  if (fb?.followed && line && line.ply % 2 === 0) {
+    const n = moveNumberForPly(fb.playerPly);
+    const punish = fb.playedSan ? describedOrRaw(fb.playedSan, fenBeforePly(gameSans, fb.playerPly)) : undefined;
+    return punish ? `you punished it. your ${punish} on move ${n} made her pay.` : `you punished it on move ${n}.`;
+  }
+  // Controller ruling (2026-07-27, Wave C1): buildWhatMayHaveHappened no
+  // longer carries the congratulation for a followed ODD-ply point (her own
+  // turning point) — its counterfactual line now simply disappears instead
+  // (see below), which left that parity with no congratulation anywhere.
+  // didWell is the right home for it: same "you found it" phrasing, just
+  // moved under the label that actually names a positive moment instead of
+  // the counterfactual "what may have happened" label the owner reported as
+  // confusing when it congratulated her.
+  if (fb?.followed && line && line.ply % 2 !== 0) {
+    const n = moveNumberForPly(fb.playerPly);
+    const played = fb.playedSan ? describedOrRaw(fb.playedSan, fenBeforePly(gameSans, fb.playerPly)) : undefined;
+    return played
+      ? `you found it. your ${played} was the top move here.`
+      : `you found it. your move ${n} was the top move here.`;
   }
   return undefined;
 }
@@ -157,18 +197,51 @@ function buildCouldImprove(
   cls: MoveClassification | undefined,
   line: TurningLine | undefined,
   gameSans: SummaryMove[] | undefined,
-  seedFen: string | undefined
+  seedFen: string | undefined,
+  fb: FollowedBest | undefined
 ): string | undefined {
   const played = describedOrRaw(tp.san, fenBeforePly(gameSans, tp.ply));
   if (tp.missedPunish) {
     const bestClause = line?.bestSan ? ` ${describedOrRaw(line.bestSan, seedFen)} was on the board.` : "";
     return `${played} let the punish slip.${bestClause}`;
   }
+  // Missed-win round (2026-07-28): kind carries the fact (a forced mate she
+  // had and declined — see turningPoints.ts), so the eval-band nudge
+  // vocabulary below never applies. Names the mate move when the line
+  // carries it; states only the miss when it does not — never a guess.
+  if (tp.kind === "missed-win") {
+    const count = tp.missedCount ?? 1;
+    const repeat = count > 1 ? ` this happened ${count} times this game.` : "";
+    const best = line?.bestSan
+      ? stripRedundantCheckSuffix(describedOrRaw(line.bestSan, seedFen), "checkmate")
+      : undefined;
+    return best
+      ? `you had checkmate in one here. your ${best} ends it on the spot. you played ${played} instead.${repeat}`
+      : `you had checkmate in one here. you played ${played} instead.${repeat}`;
+  }
   const label = cls?.classification ?? tp.label;
   const nudge = IMPROVE_NUDGE[label];
   if (!nudge) return undefined;
-  const bestClause =
-    line?.bestSan && line.bestSan !== tp.san ? ` ${describedOrRaw(line.bestSan, seedFen)} was the stronger idea.` : "";
+  // Coach truth-speed round (2026-07-27): the "stronger idea" clause used to
+  // compare line.bestSan against tp.san directly — the exact comparison the
+  // round's measured ground truth flags as never correct for an even-ply
+  // (opponent) turning point. followedBest already resolves the right
+  // comparison (her own move at odd tp.ply, her REPLY at ply+1 for even
+  // tp.ply) once, so the guard here is simply "didn't follow it" WHEN fb is
+  // available.
+  //
+  // Review fix (Wave F, 2026-07-27, review.md finding 6): `fb` is optional
+  // (buildTurningPointNote's own `gameSans` param is optional), and `!fb
+  // ?.followed` treated fb undefined the SAME as fb.followed === false —
+  // i.e. "unknown" read as "didn't follow it". With bestSan === tp.san (the
+  // move she actually played WAS the recommendation) and no gameSans to
+  // resolve followedBest from, this rendered "…was the stronger idea" about
+  // the move she just played — a latent trap (not reachable from DebriefPage
+  // today, which always passes gameSans, but wrong on its own terms). Falls
+  // back to the ORIGINAL direct SAN comparison only when fb is genuinely
+  // unavailable, never assuming not-followed by default.
+  const notFollowed = fb ? !fb.followed : line?.bestSan !== tp.san;
+  const bestClause = line?.bestSan && notFollowed ? ` ${describedOrRaw(line.bestSan, seedFen)} was the stronger idea.` : "";
   // "an inaccuracy" vs "a blunder/mistake" — pure article grammar, not a
   // copy retune (2026-07-19 visual gate).
   const article = /^[aeiou]/.test(label) ? "an" : "a";
@@ -182,8 +255,23 @@ function buildCouldImprove(
 // "this opens up" clause (opportunity, below), so nothing is lost by
 // dropping it here. No fen available degrades to the existing single-move
 // raw-SAN fallback text, never to nothing.
-function buildWhatMayHaveHappened(line: TurningLine | undefined, seedFen: string | undefined): string | undefined {
+function buildWhatMayHaveHappened(
+  line: TurningLine | undefined,
+  seedFen: string | undefined,
+  fb: FollowedBest | undefined
+): string | undefined {
   if (!line) return undefined;
+  // Controller ruling (2026-07-27, Wave C1): the owner's playtest report was
+  // exactly this — she DID play the recommended move (queen f6, checkmate)
+  // and the debrief still asked "what may have happened if instead...",
+  // forcing her to go check the chat to find out whether she'd already done
+  // it. When followedBest confirms she played it, the counterfactual is
+  // false on its face — this now goes silent rather than swap in a
+  // congratulation under the literal "what may have happened:" label, which
+  // is a counterfactual label and was itself part of the confusion the owner
+  // reported. The congratulation now lives in buildDidWell instead (both
+  // parities), under a label that actually names a positive moment.
+  if (fb?.followed) return undefined;
   const pv = line.pvSans.length > 0 ? line.pvSans : line.bestSan ? [line.bestSan] : [];
   if (pv.length === 0) return undefined;
   const [first] = pv;
@@ -217,18 +305,34 @@ export function buildTurningPointNote(
   tp: TurningPoint,
   cls: MoveClassification | undefined,
   line: TurningLine | undefined,
-  gameSans?: SummaryMove[]
+  gameSans?: SummaryMove[],
+  // Highlight-a-move (Task 7): true when the player flagged tp.ply during
+  // live play. This function's other fields are all optional and a neutral
+  // point (no missedPunish, no error-band label) naturally leaves
+  // couldImprove unset -- fine for an ordinary turning-point card, but a
+  // move she paused on must always say something true rather than go
+  // silent. Only ever fills a genuine gap (below), never overwrites an
+  // couldImprove the existing logic already produced.
+  highlighted?: boolean
 ): TurningPointNote {
   const motif = inferMotif(tp);
   const seedFen = seedFenForLine(line, gameSans);
-  const note: TurningPointNote = {
-    nextTime: motif ? NEXT_TIME_TIPS[motif] : GENERIC_TIP,
-  };
-  const didWell = buildDidWell(tp, gameSans);
+  const fb = followedBest(line, gameSans);
+  const note: TurningPointNote = {};
+  if (motif) note.nextTime = NEXT_TIME_TIPS[motif];
+  const didWell = buildDidWell(tp, gameSans, line, fb);
   if (didWell) note.didWell = didWell;
-  const couldImprove = buildCouldImprove(tp, cls, line, gameSans, seedFen);
+  const couldImprove = buildCouldImprove(tp, cls, line, gameSans, seedFen, fb);
   if (couldImprove) note.couldImprove = couldImprove;
-  const whatMayHaveHappened = buildWhatMayHaveHappened(line, seedFen);
+  if (highlighted && !note.couldImprove) {
+    const bestSan = line?.bestSan;
+    const notFollowed = fb ? !fb.followed : !!bestSan && bestSan !== tp.san;
+    note.couldImprove =
+      bestSan && notFollowed
+        ? `you highlighted this one. our chess brain would have played ${describedOrRaw(bestSan, seedFen)} here.`
+        : "you highlighted this one. nothing here was a mistake, so trust the instinct that made you pause.";
+  }
+  const whatMayHaveHappened = buildWhatMayHaveHappened(line, seedFen, fb);
   if (whatMayHaveHappened) note.whatMayHaveHappened = whatMayHaveHappened;
   const opportunity = opportunityForLine(line, gameSans);
   if (opportunity) note.opportunity = opportunity;

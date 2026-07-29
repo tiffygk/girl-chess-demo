@@ -15,8 +15,11 @@
 // past-games drawer's separate server-computed `lesson` tag, are unaffected
 // by this file).
 
-import type { TurningPoint, MoveClassification, SummaryMove } from "../game/api";
+import type { TurningPoint, MoveClassification, SummaryMove, TurningLine } from "../game/api";
 import { moveNumberForPly } from "./debriefLesson";
+// Coach truth-speed round (2026-07-27): the single source of truth for "did
+// she actually play the recommended move" — see followedBest.ts's header.
+import { followedBest } from "./followedBest";
 // Debrief Plain-English Notation round (Task 3): the two spots this module
 // prints raw SAN directly (a could-be-better mistake/blunder/inaccuracy
 // bullet's played move, and a done-well strong-move bullet) now route
@@ -25,7 +28,8 @@ import { moveNumberForPly } from "./debriefLesson";
 // turningPointNote.ts/Rewind.tsx already share). No gameSans (every
 // pre-existing call site) falls back to the raw SAN string unchanged.
 import { fenAtPly } from "./Rewind";
-import { describeSanMove } from "../game/describeSanMove";
+import { describeSanMove, stripRedundantCheckSuffix } from "../game/describeSanMove";
+import { nearlyBarePlies } from "./phase";
 
 export type BulletSection = "done well" | "could be better" | "watch next time";
 export type ChessCategory =
@@ -57,6 +61,13 @@ interface DebriefBulletsInput {
   // buildTurningPointNote already use. Absent simply means the two raw-SAN
   // bullet spots below fall back to SAN, never a guess at the fen.
   gameSans?: SummaryMove[];
+  // Coach truth-speed round (2026-07-27): optional so every existing caller
+  // compiles unchanged. When present (alongside gameSans), a could-be-better
+  // candidate whose ply matches a TurningLine that followedBest confirms she
+  // actually played gets its nudge suppressed and re-sectioned to "done
+  // well" instead — the owner's report that a "what went wrong" note kept
+  // firing on moves she'd already gotten right.
+  turningLines?: TurningLine[];
 }
 
 // Renders `san` (played at 1-indexed `ply`) in plain English when gameSans
@@ -122,7 +133,11 @@ const ENDGAME_MIN_TOTAL_PLIES = 40;
 const ENDGAME_TAIL_FLOOR = 8;
 const ENDGAME_TAIL_FRACTION = 4;
 
-function phaseForPly(ply: number, totalPlies: number): GamePhase {
+function phaseForPly(ply: number, totalPlies: number, endgamePlies?: Set<number>): GamePhase {
+  // Missed-win round (2026-07-28): a literal board fact beats the ply
+  // arithmetic below — see src/review/phase.ts. Checked first: a position
+  // with a nearly-bare side is an endgame whatever ply it happens on.
+  if (endgamePlies?.has(ply)) return "endgame";
   const openingBound = Math.min(OPENING_PLY_CAP, Math.floor(totalPlies / OPENING_FRACTION));
   if (ply <= openingBound) return "opening";
   if (totalPlies >= ENDGAME_MIN_TOTAL_PLIES) {
@@ -238,8 +253,57 @@ function couldBeBetterText(
     crossedAdvantage && CROSSING_GRADED_LABELS.has(label)
       ? CROSSED_LEAD_NUDGE
       : NUDGES[label] ?? "look for a cleaner follow-up next time.";
-  if (san) return `move ${n}: ${describedOrRaw(san, ply, gameSans)} was a ${label}. ${nudge}`;
-  return `move ${n}: a ${label} here. ${nudge}`;
+  // "an inaccuracy" vs "a blunder/mistake" — pure article grammar, same fix
+  // as turningPointNote.ts's couldImprove clause (2026-07-19 gate); this
+  // module had the same bug in both the san-present and no-san branches.
+  const article = /^[aeiou]/.test(label) ? "an" : "a";
+  if (san) return `move ${n}: ${describedOrRaw(san, ply, gameSans)} was ${article} ${label}. ${nudge}`;
+  return `move ${n}: ${article} ${label} here. ${nudge}`;
+}
+
+// Missed-win round (2026-07-28): the one bullet the owner's report was
+// about — "actually tell me the direct thing i should have done, not just
+// that i had mate in one and i didn't take it." Names the exact move in
+// plain language (describedOrRaw over the persisted best line), quantifies
+// the cost in moves, and counts the repeats. Every clause is a literal
+// fact off the TurningPoint/TurningLine/gameSans passed in.
+function missedWinText(
+  tp: TurningPoint,
+  totalPlies: number,
+  gameSans: SummaryMove[] | undefined,
+  turningLines: TurningLine[] | undefined
+): string {
+  const n = moveNumberForPly(tp.ply);
+  const line = turningLines?.find((l) => l.ply === tp.ply);
+  // bestSan is a move from the position she faced — fenBefore(tp.ply), the
+  // same fen describedOrRaw derives (missed-win plies are always hers/odd,
+  // where seedPly === tp.ply - 1). The sentence already says "checkmate in
+  // one", so the ", checkmate" suffix is stripped as redundant.
+  const best = line?.bestSan
+    ? stripRedundantCheckSuffix(describedOrRaw(line.bestSan, tp.ply, gameSans), "checkmate")
+    : undefined;
+  const count = tp.missedCount ?? 1;
+  const repeat = count > 1 ? ` this happened ${count} times this game.` : "";
+  if (!best || !gameSans || gameSans.length === 0) {
+    return `move ${n}: you had checkmate in one and played past it.${repeat}`;
+  }
+  const lastSan = gameSans[gameSans.length - 1].san;
+  const extra = moveNumberForPly(totalPlies) - n;
+  const cost = lastSan.includes("#")
+    ? `, and the win took ${extra} more moves to land.`
+    : `, but the game ended ${extra} moves later without it.`;
+  return `move ${n}: you had checkmate in one. your ${best} was mate on the spot${cost}${repeat}`;
+}
+
+// Coach truth-speed round (2026-07-27): the positive counterpart to
+// couldBeBetterText, used when followedBest confirms a would-be
+// could-be-better candidate was actually the move she played.
+function followedGoodText(ply: number, san: string | undefined, gameSans: SummaryMove[] | undefined): string {
+  const n = moveNumberForPly(ply);
+  const played = san ? describedOrRaw(san, ply, gameSans) : undefined;
+  return played
+    ? `move ${n}: ${played} was actually the best idea here. nice find.`
+    : `move ${n}: that was actually the best idea here. nice find.`;
 }
 
 function buildDoneWell(
@@ -247,7 +311,8 @@ function buildDoneWell(
   episode: TurningPoint | null,
   result: string | null,
   totalPlies: number,
-  gameSans?: SummaryMove[]
+  gameSans?: SummaryMove[],
+  endgamePlies?: Set<number>
 ): DebriefBullet {
   const punishPoints = turningPoints.filter((t) => t.label.startsWith("opponent") && !!t.punishSan);
   if (punishPoints.length > 0) {
@@ -256,7 +321,7 @@ function buildDoneWell(
     return {
       section: "done well",
       text: `you took the free ${pieceNameFromSan(best.san)} on move ${n} when she dropped it.`,
-      phase: phaseForPly(best.ply, totalPlies),
+      phase: phaseForPly(best.ply, totalPlies, endgamePlies),
       category: "conversion",
       ply: best.ply,
     };
@@ -269,7 +334,7 @@ function buildDoneWell(
     return {
       section: "done well",
       text: `move ${n}: ${describedOrRaw(best.san, best.ply, gameSans)} was the right idea and it paid off.`,
-      phase: phaseForPly(best.ply, totalPlies),
+      phase: phaseForPly(best.ply, totalPlies, endgamePlies),
       category: "tactics",
       ply: best.ply,
     };
@@ -279,7 +344,7 @@ function buildDoneWell(
     return {
       section: "done well",
       text: "you held a worse position under real pressure. that is a skill.",
-      phase: phaseForPly(episode.ply, totalPlies),
+      phase: phaseForPly(episode.ply, totalPlies, endgamePlies),
       category: "defense",
       ply: episode.ply,
     };
@@ -289,7 +354,7 @@ function buildDoneWell(
     return {
       section: "done well",
       text: "you kept playing through a hard game. next one starts even.",
-      phase: phaseForPly(totalPlies, totalPlies),
+      phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
       category: "development",
     };
   }
@@ -297,7 +362,7 @@ function buildDoneWell(
   return {
     section: "done well",
     text: "you brought the game home without a disaster. build from here.",
-    phase: phaseForPly(totalPlies, totalPlies),
+    phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
     category: "development",
   };
 }
@@ -307,10 +372,31 @@ function buildCouldBeBetter(
   classifications: MoveClassification[],
   episode: TurningPoint | null,
   totalPlies: number,
-  gameSans?: SummaryMove[]
+  gameSans?: SummaryMove[],
+  turningLines?: TurningLine[],
+  endgamePlies?: Set<number>
 ): DebriefBullet[] {
   const used = new Set<number>();
   const out: DebriefBullet[] = [];
+
+  const lineForPly = (ply: number): TurningLine | undefined => turningLines?.find((l) => l.ply === ply);
+
+  // Missed-win round (2026-07-28): FORCED, never ranked. A missed-win point
+  // carries deltaP 0 by construction (see turningPoints.ts), so any sort by
+  // swing size would bury the single most important note of a winning game
+  // under a 0.09 inaccuracy. It takes the first could-be-better slot
+  // unconditionally; the cap of 2 still holds for everything after it.
+  const missedWin = turningPoints.find((t) => t.kind === "missed-win");
+  if (missedWin) {
+    used.add(missedWin.ply);
+    out.push({
+      section: "could be better",
+      text: missedWinText(missedWin, totalPlies, gameSans, turningLines),
+      phase: phaseForPly(missedWin.ply, totalPlies, endgamePlies),
+      category: "endgame technique",
+      ply: missedWin.ply,
+    });
+  }
 
   // Missed-punish and her-own-mistake turning points, worst-first by
   // deltaP together (both are negative swings; more negative = worse). A
@@ -330,20 +416,34 @@ function buildCouldBeBetter(
       out.push({
         section: "could be better",
         text: missedPunishText(c, turningPoints),
-        phase: phaseForPly(c.ply, totalPlies),
+        phase: phaseForPly(c.ply, totalPlies, endgamePlies),
         category: "missed tactic",
         ply: c.ply,
       });
-    } else {
-      const episodeCtx = episode ? { ply: episode.ply, plyEnd: episode.plyEnd } : null;
+      continue;
+    }
+    const episodeCtx = episode ? { ply: episode.ply, plyEnd: episode.plyEnd } : null;
+    const category = categorize(c, phaseForPly(c.ply, totalPlies, endgamePlies), episodeCtx);
+    // Coach truth-speed round: a candidate that followedBest confirms she
+    // actually played gets re-sectioned to "done well" instead of nudged.
+    const fb = followedBest(lineForPly(c.ply), gameSans);
+    if (fb?.followed) {
       out.push({
-        section: "could be better",
-        text: couldBeBetterText(c.ply, c.label, c.san, c.crossedAdvantage, gameSans),
-        phase: phaseForPly(c.ply, totalPlies),
-        category: categorize(c, phaseForPly(c.ply, totalPlies), episodeCtx),
+        section: "done well",
+        text: followedGoodText(c.ply, c.san, gameSans),
+        phase: phaseForPly(c.ply, totalPlies, endgamePlies),
+        category,
         ply: c.ply,
       });
+      continue;
     }
+    out.push({
+      section: "could be better",
+      text: couldBeBetterText(c.ply, c.label, c.san, c.crossedAdvantage, gameSans),
+      phase: phaseForPly(c.ply, totalPlies, endgamePlies),
+      category,
+      ply: c.ply,
+    });
   }
 
   const clsNeg = classifications
@@ -353,11 +453,23 @@ function buildCouldBeBetter(
     if (out.length >= 2) break;
     used.add(c.ply);
     const episodeCtx = episode ? { ply: episode.ply, plyEnd: episode.plyEnd } : null;
+    const category = categorize({ ply: c.ply, label: c.classification }, phaseForPly(c.ply, totalPlies, endgamePlies), episodeCtx);
+    const fb = followedBest(lineForPly(c.ply), gameSans);
+    if (fb?.followed) {
+      out.push({
+        section: "done well",
+        text: followedGoodText(c.ply, undefined, gameSans),
+        phase: phaseForPly(c.ply, totalPlies, endgamePlies),
+        category,
+        ply: c.ply,
+      });
+      continue;
+    }
     out.push({
       section: "could be better",
       text: couldBeBetterText(c.ply, c.classification, undefined, undefined, gameSans),
-      phase: phaseForPly(c.ply, totalPlies),
-      category: categorize({ ply: c.ply, label: c.classification }, phaseForPly(c.ply, totalPlies), episodeCtx),
+      phase: phaseForPly(c.ply, totalPlies, endgamePlies),
+      category,
       ply: c.ply,
     });
   }
@@ -366,7 +478,7 @@ function buildCouldBeBetter(
     out.push({
       section: "could be better",
       text: "no clear mistakes to flag here. keep playing this clean.",
-      phase: phaseForPly(totalPlies, totalPlies),
+      phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
       category: "development",
     });
   }
@@ -378,20 +490,43 @@ function buildWatchNextTime(
   turningPoints: TurningPoint[],
   classifications: MoveClassification[],
   episode: TurningPoint | null,
-  totalPlies: number
+  totalPlies: number,
+  endgamePlies?: Set<number>
 ): DebriefBullet[] {
+  const bullets: DebriefBullet[] = [];
+
+  // Missed-win round (2026-07-28): when a forced mate slipped, THAT is the
+  // pattern to watch — the "no repeat pattern" fallback below must be
+  // unreachable on such a game (owner requirement, 2026-07-28). The tip is
+  // her stated learning goal ("how to coordinate the pieces to corner the
+  // king") made procedural.
+  const missedWin = turningPoints.find((t) => t.kind === "missed-win");
+  if (missedWin) {
+    const count = missedWin.missedCount ?? 1;
+    const opener =
+      count > 1
+        ? `you had checkmate on the board ${count} times and played past it.`
+        : `you had checkmate on the board and played past it.`;
+    bullets.push({
+      section: "watch next time",
+      text: `${opener} when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move.`,
+      phase: phaseForPly(missedWin.ply, totalPlies, endgamePlies),
+      category: "endgame technique",
+      ply: missedWin.ply,
+    });
+  }
+
   if (episode) {
     const n1 = moveNumberForPly(episode.ply);
     const n2 = moveNumberForPly(episode.plyEnd ?? episode.ply);
-    return [
-      {
-        section: "watch next time",
-        text: `moves ${n1}-${n2}: she kept pieces camped on your king. keep the pawn shelter intact when you recapture.`,
-        phase: phaseForPly(episode.ply, totalPlies),
-        category: "king safety",
-        ply: episode.ply,
-      },
-    ];
+    bullets.push({
+      section: "watch next time",
+      text: `moves ${n1}-${n2}: she kept pieces camped on your king. keep the pawn shelter intact when you recapture.`,
+      phase: phaseForPly(episode.ply, totalPlies, endgamePlies),
+      category: "king safety",
+      ply: episode.ply,
+    });
+    return bullets;
   }
 
   // Most repeated negative category, deduped by ply across both sources so
@@ -400,20 +535,21 @@ function buildWatchNextTime(
   const byPly = new Map<number, ChessCategory>();
   for (const t of turningPoints) {
     if (!HER_NEG_LABELS.has(t.label)) continue;
-    byPly.set(t.ply, categorize(t, phaseForPly(t.ply, totalPlies), null));
+    byPly.set(t.ply, categorize(t, phaseForPly(t.ply, totalPlies, endgamePlies), null));
   }
   for (const c of classifications) {
     if (SEVERITY[c.classification] == null) continue;
     if (byPly.has(c.ply)) continue;
-    byPly.set(c.ply, categorize({ ply: c.ply, label: c.classification }, phaseForPly(c.ply, totalPlies), null));
+    byPly.set(c.ply, categorize({ ply: c.ply, label: c.classification }, phaseForPly(c.ply, totalPlies, endgamePlies), null));
   }
 
   if (byPly.size === 0) {
+    if (bullets.length > 0) return bullets; // a missed win IS the pattern; the fallback below is unreachable
     return [
       {
         section: "watch next time",
         text: "no repeat pattern showed up this game. stay sharp on the next one.",
-        phase: phaseForPly(totalPlies, totalPlies),
+        phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
         category: "development",
       },
     ];
@@ -423,26 +559,116 @@ function buildWatchNextTime(
   for (const cat of byPly.values()) counts.set(cat, (counts.get(cat) ?? 0) + 1);
   const [topCategory, topCount] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
 
+  // Phase coherence fix (2026-07-27, owner report): this bullet's TEXT names
+  // the most-frequent-mistake category (topCategory, above) but its PHASE
+  // used to be derived from the game's LAST ply regardless — on any game of
+  // 40+ plies that guarantees "endgame · a slip came from opening play",
+  // which made no sense to the owner ("how is this note about both the
+  // opening play and the end game?"). Fix: pick the representative ply for
+  // topCategory (the lowest ply mapping to it) and phase/anchor the bullet
+  // to THAT ply instead, so the phase tag agrees with the text it's
+  // labeling.
+  let repPly: number | undefined;
+  for (const [ply, cat] of byPly.entries()) {
+    if (cat !== topCategory) continue;
+    if (repPly === undefined || ply < repPly) repPly = ply;
+  }
+  // byPly.size > 0 here (checked above), so at least one entry matches
+  // topCategory and repPly is always reassigned — the fallback is only for
+  // the type checker.
+  if (repPly === undefined) repPly = totalPlies;
+
   return [
+    ...bullets,
     {
       section: "watch next time",
       text:
         topCount > 1
           ? `${topCount} slips came back to ${topCategory}. scan for that pattern before you commit to a move.`
           : `a slip came from ${topCategory}. scan for that before you commit to a move.`,
-      phase: phaseForPly(totalPlies, totalPlies),
+      phase: phaseForPly(repPly, totalPlies, endgamePlies),
       category: topCategory,
+      ply: repPly,
     },
   ];
 }
 
 export function debriefBullets(input: DebriefBulletsInput): DebriefBullet[] {
-  const { turningPoints, classifications, result, totalPlies, gameSans } = input;
+  const { turningPoints, classifications, result, totalPlies, gameSans, turningLines } = input;
   const episode = turningPoints.find((t) => t.kind === "episode") ?? null;
+  // Missed-win round (2026-07-28): computed once, threaded into every
+  // phaseForPly call below — see phase.ts's header for why a nearly-bare
+  // side beats the ply-arithmetic phase rule.
+  const endgamePlies = nearlyBarePlies(gameSans);
 
-  const doneWell = buildDoneWell(turningPoints, episode, result, totalPlies, gameSans);
-  const couldBeBetter = buildCouldBeBetter(turningPoints, classifications, episode, totalPlies, gameSans).slice(0, 2);
-  const watchNext = buildWatchNextTime(turningPoints, classifications, episode, totalPlies).slice(0, 2);
+  const doneWell = buildDoneWell(turningPoints, episode, result, totalPlies, gameSans, endgamePlies);
+  const couldBeBetter = buildCouldBeBetter(
+    turningPoints,
+    classifications,
+    episode,
+    totalPlies,
+    gameSans,
+    turningLines,
+    endgamePlies
+  ).slice(0, 2);
+  const watchNext = buildWatchNextTime(turningPoints, classifications, episode, totalPlies, endgamePlies).slice(0, 2);
 
   return [doneWell, ...couldBeBetter, ...watchNext].slice(0, 5);
+}
+
+// Coach truth-speed round (2026-07-27): a small pure helper a later wave
+// wires into the bullet cards' actual UI affordances (rewind to the ply,
+// open the "try the line" sandbox seeded there, or ask cookie about the
+// moment). A bullet without a ply has nothing to rewind/seed/anchor to, so
+// none of the three apply.
+//
+// Union-review fix (2026-07-28, finding 3): tryLine used to fire off `has`
+// alone, same as replay/ask -- but "try the line" only means something when
+// a DIFFERENT, better move is actually on record for this ply. That broke
+// two ways in practice: a done-well bullet built from followedGoodText (she
+// already played the recommended move -- there IS no other line to try)
+// still showed the button, and a classification-fallback ply (no matching
+// TurningPoint, only the broader `classifications` list -- see
+// buildCouldBeBetter's clsNeg loop) had no TurningLine to seed a sandbox
+// from at all, so src/game/explore.ts's guidingArrow silently rendered
+// null underneath a button that claimed there was a line to try.
+// turningLines is optional and additive (every existing call site that
+// doesn't pass it keeps working, just with tryLine now correctly false
+// rather than a bare guess) -- same "caller derives, this function only
+// consults" discipline the rest of this module follows for turningLines.
+// The comparison is geometric (bestFromTo vs playedFromTo, both already
+// replay-derived by manager.ts's getTurningLines) rather than a SAN string
+// compare: DebriefBullet carries no "san actually played" field of its own,
+// and TurningLine's playedFromTo is the one fact already on hand that pins
+// down what really happened at this ply.
+function sameSquares(
+  a: { from: string; to: string } | undefined,
+  b: { from: string; to: string } | undefined
+): boolean {
+  return !!a && !!b && a.from === b.from && a.to === b.to;
+}
+
+// Visual gate 2026-07-28: the geometric compare described above is NOT
+// sufficient on its own. At an even (mallow) turning point, playedFromTo is
+// MALLOW'S move, so it never matches her best line's squares and tryLine
+// rendered true even on a blunder she punished with the exact best reply --
+// caught on real game 150. That is this round's own ply-parity bug
+// (followedBest: the move to judge is her REPLY at seedPly+1), reintroduced
+// by reimplementing the comparison here instead of calling the truth layer.
+// gameSans stays optional so existing callers compile; without it there is no
+// way to know what she replied, so it falls back to the geometric check.
+export function affordancesForBullet(
+  b: DebriefBullet,
+  turningLines?: TurningLine[],
+  gameSans?: SummaryMove[]
+): { replay: boolean; tryLine: boolean; ask: boolean } {
+  const has = b.ply != null;
+  const line = has ? turningLines?.find((l) => l.ply === b.ply) : undefined;
+  const fb = followedBest(line, gameSans);
+  // fb is undefined when there is no line, no bestSan on it, or the reply
+  // falls outside the game -- none of those PROVE a better line existed.
+  const betterLineExists = fb
+    ? !fb.followed
+    : !!line?.bestFromTo && !sameSquares(line.bestFromTo, line.playedFromTo);
+  return { replay: has, tryLine: has && betterLineExists, ask: has };
 }
