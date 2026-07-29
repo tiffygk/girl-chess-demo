@@ -5,6 +5,7 @@ import path from "path";
 import Database from "better-sqlite3";
 import {
   unconvertedInvariant,
+  unconvertedAnchorInvariant,
   missedMateInvariant,
   isKnownDebriefViolation,
   KNOWN_DEBRIEF_VIOLATIONS,
@@ -51,6 +52,45 @@ describe("replay-check invariants", () => {
     ];
     expect(missedMateInvariant(moves, [])).toMatch(/blind/);
     expect(missedMateInvariant(moves, detectMissedWins(moves))).toBeNull();
+  });
+});
+
+// F4 (review-2.md MEDIUM): invariant 1 (unconvertedInvariant above) recomputes
+// with the SAME buildDeltaSeries/computeTurningPoints output it is checking
+// -- genuine closure for EXISTENCE only. It has zero power over which ply
+// gets anchored, so an "unconverted" point on the wrong ply (even the
+// owner's explicitly forbidden ply 47) would still pass a green gate.
+// unconvertedAnchorInvariant gives the gate power over the anchor itself:
+// game 151 must land at ply 43 with endKind "repetition", and no
+// unconverted point anywhere in her corpus may sit on an even (mallow's)
+// ply.
+describe("F4 (review-2.md): the gate has power over the anchor, not just existence", () => {
+  it("silent when no unconverted point is present", () => {
+    expect(unconvertedAnchorInvariant(999, [])).toBeNull();
+    expect(unconvertedAnchorInvariant(999, [{ kind: "swing", ply: 10 } as any])).toBeNull();
+  });
+  it("flags an unconverted point anchored on an even (mallow's) ply -- never valid, blame or no blame", () => {
+    const v = unconvertedAnchorInvariant(999, [{ kind: "unconverted", ply: 34, endKind: "called early" } as any]);
+    expect(v).toMatch(/even/);
+    expect(v).toMatch(/ply 34/);
+  });
+  it("game 151 must anchor at ply 43 with endKind repetition -- the owner's ruling, made a hard gate", () => {
+    expect(
+      unconvertedAnchorInvariant(151, [{ kind: "unconverted", ply: 43, endKind: "repetition" } as any])
+    ).toBeNull();
+    const wrongPly = unconvertedAnchorInvariant(151, [
+      { kind: "unconverted", ply: 45, endKind: "repetition" } as any,
+    ]);
+    expect(wrongPly).toMatch(/ply 45/);
+    expect(wrongPly).toMatch(/must be ply 43/);
+    const wrongEndKind = unconvertedAnchorInvariant(151, [
+      { kind: "unconverted", ply: 43, endKind: "called early" } as any,
+    ]);
+    expect(wrongEndKind).toMatch(/endKind/);
+  });
+  it("game 151 landing on the owner's explicitly forbidden ply 47 is a violation naming 47", () => {
+    const v = unconvertedAnchorInvariant(151, [{ kind: "unconverted", ply: 47, endKind: "repetition" } as any]);
+    expect(v).toMatch(/47/);
   });
 });
 

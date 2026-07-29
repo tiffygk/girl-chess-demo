@@ -64,6 +64,8 @@ describe("toTurningPoint", () => {
       missed_punish: 0,
       crossed_advantage: 1,
       end_kind: null,
+      mate_in: null,
+      missed_count: null,
     };
     expect(toTurningPoint(row)).toEqual({
       rank: 1,
@@ -94,6 +96,8 @@ describe("toTurningPoint", () => {
       missed_punish: null,
       crossed_advantage: null,
       end_kind: null,
+      mate_in: null,
+      missed_count: null,
     };
     const tp = toTurningPoint(row);
     expect(tp.punishSan).toBeUndefined();
@@ -101,6 +105,35 @@ describe("toTurningPoint", () => {
     expect(tp.missedPunish).toBeUndefined();
     expect(tp.crossedAdvantage).toBeUndefined();
     expect(tp.lowConfidence).toBe(true);
+    expect(tp.mateIn).toBeUndefined();
+    expect(tp.missedCount).toBeUndefined();
+  });
+
+  // F9 (review-2.md LOW): mate_in/missed_count were never mapped, so the
+  // truth gate reconstructed an unconverted point without the number the
+  // "you had mate in twelve there instead" claim rests on -- the one
+  // number most worth gating was the one the gate could not see.
+  it("F9: maps mate_in and missed_count -- the load-bearing number behind the 'mate in N instead' claim", () => {
+    const row: RawTurningPointRow = {
+      rank: 4,
+      ply: 43,
+      san: "Qg5+",
+      label: "unconverted win",
+      punish_san: null,
+      delta_p: 0,
+      low_confidence: 0,
+      kind: "unconverted",
+      ply_end: null,
+      missed_punish: null,
+      crossed_advantage: null,
+      end_kind: "repetition",
+      mate_in: 12,
+      missed_count: null,
+    };
+    const tp = toTurningPoint(row);
+    expect(tp.mateIn).toBe(12);
+    expect(tp.missedCount).toBeUndefined();
+    expect(tp.endKind).toBe("repetition");
   });
 });
 

@@ -99,6 +99,37 @@ export function unconvertedInvariant(
   return `final winprob ${last.p.toFixed(2)} with result ${result} and no unconverted point`;
 }
 
+// -- HARD invariant 1b (review-2.md F4): the gate must have power over the
+// ANCHOR, not just existence. unconvertedInvariant above recomputes with
+// the SAME buildDeltaSeries/computeTurningPoints output it is checking --
+// genuine closure for existence only (removing the wiring re-reds it), but
+// it cannot see WHICH ply the point landed on. Every failure mode in
+// review-2.md's reproduction table (wrong ply, an even/mallow's ply, the
+// owner's explicitly forbidden ply 47) passed the existence check. This
+// closes that gap: no unconverted point may ever sit on an even ply
+// (blame or no blame -- the label is never valid on mallow's move), and
+// game 151 specifically -- the game this whole round is about -- must
+// land exactly at the owner's ruled ply 43 with endKind "repetition".
+export function unconvertedAnchorInvariant(
+  gameId: number,
+  points: { kind: string; ply: number; endKind?: string }[]
+): string | null {
+  const u = points.find((p) => p.kind === "unconverted");
+  if (!u) return null;
+  if (u.ply % 2 === 0) {
+    return `game ${gameId}: unconverted point anchored on ply ${u.ply}, an even (mallow's) ply -- never valid`;
+  }
+  if (gameId === 151) {
+    if (u.ply !== 43) {
+      return `game 151: unconverted point anchored at ply ${u.ply}, must be ply 43 (owner ruling, feedback-unconverted-copy.md)`;
+    }
+    if (u.endKind !== "repetition") {
+      return `game 151: unconverted point endKind is "${u.endKind}", must be "repetition"`;
+    }
+  }
+  return null;
+}
+
 // -- HARD invariant 2 (rca B3) ----------------------------------------------
 // An independent formulation, deliberately NOT detectMissedWins' own
 // arithmetic -- (a) any mate-in-1 walked past must produce an event; (b) any
@@ -361,6 +392,7 @@ async function main() {
   const games = listFinishedGames(1_000_000) as { id: number; result: string | null }[];
 
   const unconvertedViolations: string[] = [];
+  const unconvertedAnchorViolations: string[] = [];
   const missedMateViolations: string[] = [];
   const debriefViolations: string[] = [];
   const debriefViolationsByGame = new Map<number, string[]>();
@@ -384,6 +416,7 @@ async function main() {
       san: string;
       eval_cp: number | null;
       eval_mate: number | null;
+      best_move: string | null;
       classification: string | null;
     }[];
     if (movesRows.length === 0) {
@@ -392,11 +425,17 @@ async function main() {
     }
     replayedCount++;
 
+    // best_move: fix wave (2026-07-29, F1) -- findRepetitionAnchor (called
+    // inside computeTurningPoints below) needs the already-persisted
+    // stored alternative to check the owner's repetition-entry anchor;
+    // without it here the gate would replay every game through the SAME
+    // blind spot the anchor fix exists to close.
     const moves: MoveEval[] = movesRows.map((r) => ({
       ply: r.ply,
       san: r.san,
       evalCp: r.eval_cp,
       evalMate: r.eval_mate,
+      bestMove: r.best_move ?? null,
     }));
     const gameSans: SummaryMove[] = movesRows.map((r) => ({ ply: r.ply, san: r.san }));
     const result = game.result ?? "";
@@ -412,6 +451,10 @@ async function main() {
       const v = unconvertedInvariant(moves, result, tps);
       if (v) unconvertedViolations.push(`game ${gameId}: ${v}`);
     }
+    // F4 (review-2.md): always checked, never allowlisted -- the anchor
+    // being right is exactly what a listed game would be hiding.
+    const anchorViolation = unconvertedAnchorInvariant(gameId, tps);
+    if (anchorViolation) unconvertedAnchorViolations.push(anchorViolation);
 
     const missedEvents = detectMissedWins(moves);
     const mv = missedMateInvariant(moves, missedEvents);
@@ -564,6 +607,9 @@ async function main() {
   console.log(`\nunconverted violations: ${unconvertedViolations.length} (must be 0, KNOWN_UNCONVERTED_GAMES excluded)`);
   for (const v of unconvertedViolations) console.log(`  ${v}`);
 
+  console.log(`\nunconverted-anchor violations: ${unconvertedAnchorViolations.length} (must be 0, never allowlisted)`);
+  for (const v of unconvertedAnchorViolations) console.log(`  ${v}`);
+
   console.log(`\nmissed-mate violations: ${missedMateViolations.length} (must be 0)`);
   for (const v of missedMateViolations) console.log(`  ${v}`);
 
@@ -597,6 +643,7 @@ async function main() {
 
   const ok =
     unconvertedViolations.length === 0 &&
+    unconvertedAnchorViolations.length === 0 &&
     missedMateViolations.length === 0 &&
     emDashViolations.length === 0 &&
     defenseClaimViolations.length === 0 &&

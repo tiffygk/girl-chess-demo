@@ -243,7 +243,7 @@ export class GameManager {
   private persistGameSummary(gameId: number, result: string) {
     try {
       const rows = getGameMoves(gameId);
-      const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate }));
+      const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null }));
       const turningPoints = computeTurningPoints(moves, result);
       insertTurningPoints(
         gameId,
@@ -299,7 +299,7 @@ export class GameManager {
 
     const persistedVersion = persisted.length > 0 ? (persisted[0].algo_version ?? 1) : TP_ALGO_VERSION;
     if (persisted.length > 0 && persistedVersion < TP_ALGO_VERSION) {
-      const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate }));
+      const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null }));
       const game = getGame(gameId);
       const healed = computeTurningPoints(evalMoves, game?.result ?? "");
       insertTurningPoints(
@@ -360,7 +360,7 @@ export class GameManager {
     // computes zero turning points (computeTurningPoints's all-null
     // short-circuit), and the `computed.length > 0` guard below means
     // nothing is ever written for it (graceful no-op).
-    const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate }));
+    const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null }));
     const game = getGame(gameId);
     const computed = computeTurningPoints(evalMoves, game?.result ?? "");
     if (game?.result && computed.length > 0) {
