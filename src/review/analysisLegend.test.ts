@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { LEGEND_ROWS, LEGEND_SOLID_ROWS, LEGEND_DASHED_ROWS } from "./analysisLegend";
 import type { ArrowColor } from "../game/reviewArrows";
+import { computeShowAllowedRow } from "./DebriefPage";
+import type { TurningLine } from "../game/api";
 // Vite's `?raw` import (typed by the `vite/client` ambient types this
 // project's tsconfig.app.json already includes) rather than node:fs -- src/
 // is client bundler code with no Node builtins available under tsc -b's
@@ -116,8 +118,75 @@ describe("analysis-legend render gating: analysis/review only, never live play",
     expect(gamePageSrc).toMatch(/\{reviewGame && \(\s*<DebriefPage/);
   });
 
+  // A6: updated from the old bare `<AnalysisLegend />` pin to the
+  // prop-carrying form -- see the dedicated "AnalysisLegendRail wiring"
+  // describe block below for the discriminating fixture-level test.
   it("AnalysisLegend is rendered from within DebriefPage.tsx, its only mount site", () => {
-    expect(debriefPageSrc).toMatch(/<AnalysisLegend\s*\/>/);
+    expect(debriefPageSrc).toMatch(/<AnalysisLegend showAllowedRow=\{computeShowAllowedRow\(turningLines\)\}\s*\/>/);
+  });
+});
+
+// A6 (rca.md section E / root cause 10): 0 of 31 even-ply turning points
+// ever carry a verdicts-backed `threat` (verdicts are only ever written on
+// HER own candidate moves -- see threat-arrow-decision.md), so the dashed
+// rose "what your move allowed" row used to promise an arrow that is
+// structurally impossible on 62% of cards. The row is now conditional,
+// gated by AnalysisLegend's own `showAllowedRow` prop (default `true`, so
+// any caller that doesn't pass it -- the one-line revert -- keeps the
+// pre-A6 unconditional row).
+describe("computeShowAllowedRow (rca #10): the dashed rose row only promises what the data can draw", () => {
+  // Real shape from game 151 (rca.md section E): ply 12 is mallow's move
+  // (even), and it is the exact row where a naive implementation and the
+  // correct one disagree. `bestFromTo` is always populated at an even ply
+  // (moves.best_move is read unconditionally) -- that becomes the green
+  // "best" arrow, not a second dashed-rose one. `threat` is undefined
+  // because verdicts are structurally odd-ply-only. So a buggy check like
+  // "does any turningLine exist" or "does bestFromTo exist" says SHOW on
+  // this exact fixture, while the correct check (`!!l.threat`) says HIDE.
+  // Ply 12 is chosen because it is the concrete real game-151 row where the
+  // two answers diverge, not one where they happen to coincide.
+  const evenPlyNoThreat: TurningLine = {
+    ply: 12,
+    bestFromTo: { from: "b2", to: "b4" },
+    bestSan: "b4",
+    pvSans: ["b4"],
+    threat: undefined,
+  };
+  const oddPlyWithThreat: TurningLine = {
+    ply: 7,
+    bestFromTo: { from: "d3", to: "d5" },
+    bestSan: "d5",
+    pvSans: ["d5"],
+    threat: { from: "d3", to: "d5" },
+  };
+
+  it("hides the row when every line's bestFromTo is populated but none carries a real threat (game 151's shape)", () => {
+    expect(computeShowAllowedRow([evenPlyNoThreat])).toBe(false);
+  });
+
+  it("shows the row the moment any line in the game carries a real threat", () => {
+    expect(computeShowAllowedRow([evenPlyNoThreat, oddPlyWithThreat])).toBe(true);
+  });
+
+  it("hides the row for no lines / undefined turningLines, never guesses true", () => {
+    expect(computeShowAllowedRow([])).toBe(false);
+    expect(computeShowAllowedRow(undefined)).toBe(false);
+  });
+});
+
+describe("AnalysisLegendRail wiring for the conditional row (A6)", () => {
+  it("the dashed-cluster filter keys on showAllowedRow, not a re-derived condition", () => {
+    expect(analysisLegendRailSrc).toMatch(
+      /showAllowedRow\s*\?\s*LEGEND_DASHED_ROWS\s*:\s*LEGEND_DASHED_ROWS\.filter\(\(r\)\s*=>\s*r\.kind !== "mallow-best"\)/
+    );
+  });
+
+  // The row model itself is untouched -- only rendering is conditional.
+  // LEGEND_DASHED_ROWS (what gets filtered) must still carry mallow-best
+  // unconditionally, and the pre-existing "covers every DRAWABLE ArrowColor"
+  // test above (over LEGEND_ROWS) keeps passing without any change.
+  it("LEGEND_DASHED_ROWS itself still contains mallow-best unconditionally", () => {
+    expect(LEGEND_DASHED_ROWS.map((r) => r.kind)).toContain("mallow-best");
   });
 });
 

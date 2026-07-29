@@ -84,7 +84,21 @@ function AxisHead({ dashed, words }: { dashed: boolean; words: string }) {
   );
 }
 
-export function AnalysisLegend() {
+// A6 (rca.md section E / root cause 10, threat-arrow-decision.md): the
+// dashed rose "what your move allowed" row promises an arrow that is
+// structurally impossible on an even-ply (opponent) turning point -- 0 of
+// 31 even-ply turning points across the whole db ever carry a verdicts-
+// backed `threat` (verdicts are only ever written on HER own candidate
+// moves). `showAllowedRow` defaults to `true` (the pre-A6 unconditional
+// row) so any caller that omits the prop is unaffected; DebriefPage.tsx's
+// mount is the only caller that computes it per game, via
+// computeShowAllowedRow(turningLines). Row MODEL is untouched --
+// LEGEND_DASHED_ROWS still carries mallow-best unconditionally, only the
+// rendered list is filtered.
+export function AnalysisLegend({ showAllowedRow = true }: { showAllowedRow?: boolean }) {
+  const dashedRows = showAllowedRow
+    ? LEGEND_DASHED_ROWS
+    : LEGEND_DASHED_ROWS.filter((r) => r.kind !== "mallow-best");
   return (
     <div className="legend-rail">
       <span className="legend-kicker">analysis legend</span>
@@ -100,7 +114,7 @@ export function AnalysisLegend() {
         <div className="cluster-inner">
           <AxisHead dashed={true} words="dashed: it didn't" />
           <div className="cluster-rows stack">
-            {LEGEND_DASHED_ROWS.map((row) => (
+            {dashedRows.map((row) => (
               <LegendRowLine row={row} key={row.kind} />
             ))}
           </div>
