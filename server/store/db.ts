@@ -150,6 +150,11 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // convention as every column above.
     { name: "mate_in", addSql: "mate_in INTEGER" },
     { name: "missed_count", addSql: "missed_count INTEGER" },
+    // Game-151 round (2026-07-29): mirrors TurningPoint.endKind — set only
+    // on kind='unconverted' rows (how the game actually ended: repetition,
+    // stalemate, fifty moves, or called early). Additive/nullable, same
+    // convention as every column above.
+    { name: "end_kind", addSql: "end_kind TEXT" },
   ],
   // Increment 3.9 (F16, this-game grounding chat): one row per chat message,
   // player and coach both. Brand-new table (CREATE TABLE IF NOT EXISTS below
@@ -395,6 +400,7 @@ export const insertTurningPoints = (
     crossedAdvantage?: boolean;
     mateIn?: number | null;
     missedCount?: number | null;
+    endKind?: string | null;
   }[],
   algoVersion: number
 ) => {
@@ -403,14 +409,14 @@ export const insertTurningPoints = (
     .get(gameId, algoVersion) as { n: number };
   if (existing.n > 0) return;
   const stmt = db.prepare(
-    `INSERT INTO turning_points(game_id, rank, ply, san, label, punish_san, delta_p, low_confidence, kind, ply_end, missed_punish, algo_version, crossed_advantage, mate_in, missed_count)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO turning_points(game_id, rank, ply, san, label, punish_san, delta_p, low_confidence, kind, ply_end, missed_punish, algo_version, crossed_advantage, mate_in, missed_count, end_kind)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   );
   for (const p of points) {
     stmt.run(
       gameId, p.rank, p.ply, p.san, p.label, p.punishSan ?? null, p.deltaP,
       p.lowConfidence ? 1 : 0, p.kind, p.plyEnd ?? null, p.missedPunish ? 1 : 0, algoVersion,
-      p.crossedAdvantage ? 1 : 0, p.mateIn ?? null, p.missedCount ?? null
+      p.crossedAdvantage ? 1 : 0, p.mateIn ?? null, p.missedCount ?? null, p.endKind ?? null
     );
   }
 };

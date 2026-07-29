@@ -143,7 +143,7 @@ export function reconstructPvLine(
 }
 
 export interface RawTurningPointRow {
-  rank: 1 | 2 | 3 | 4;
+  rank: 1 | 2 | 3 | 4 | 5 | 6;
   ply: number;
   san: string;
   label: string;
@@ -154,6 +154,7 @@ export interface RawTurningPointRow {
   ply_end: number | null;
   missed_punish: number | null;
   crossed_advantage: number | null;
+  end_kind: string | null;
 }
 
 export function toTurningPoint(r: RawTurningPointRow): TurningPoint {
@@ -169,6 +170,7 @@ export function toTurningPoint(r: RawTurningPointRow): TurningPoint {
     missedPunish: r.missed_punish == null ? undefined : !!r.missed_punish,
     plyEnd: r.ply_end ?? undefined,
     crossedAdvantage: r.crossed_advantage == null ? undefined : !!r.crossed_advantage,
+    endKind: r.end_kind ?? undefined,
   };
 }
 

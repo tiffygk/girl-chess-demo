@@ -253,6 +253,7 @@ export class GameManager {
           plyEnd: t.plyEnd ?? null, missedPunish: t.missedPunish ?? false,
           crossedAdvantage: t.crossedAdvantage ?? false,
           mateIn: t.mateIn ?? null, missedCount: t.missedCount ?? null,
+          endKind: t.endKind ?? null,
         })),
         TP_ALGO_VERSION
       );
@@ -309,6 +310,7 @@ export class GameManager {
           plyEnd: t.plyEnd ?? null, missedPunish: t.missedPunish ?? false,
           crossedAdvantage: t.crossedAdvantage ?? false,
           mateIn: t.mateIn ?? null, missedCount: t.missedCount ?? null,
+          endKind: t.endKind ?? null,
         })),
         TP_ALGO_VERSION
       );
@@ -325,6 +327,7 @@ export class GameManager {
           plyEnd: r.ply_end ?? undefined, missedPunish: !!r.missed_punish,
           crossedAdvantage: !!r.crossed_advantage,
           mateIn: r.mate_in ?? undefined, missedCount: r.missed_count ?? undefined,
+          endKind: r.end_kind ?? undefined,
         })),
         classifications: rows
           .filter((m: any) => m.classification)
@@ -369,6 +372,7 @@ export class GameManager {
           plyEnd: t.plyEnd ?? null, missedPunish: t.missedPunish ?? false,
           crossedAdvantage: t.crossedAdvantage ?? false,
           mateIn: t.mateIn ?? null, missedCount: t.missedCount ?? null,
+          endKind: t.endKind ?? null,
         })),
         TP_ALGO_VERSION
       );
