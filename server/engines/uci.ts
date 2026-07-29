@@ -1,4 +1,5 @@
-import { spawn, ChildProcessWithoutNullStreams } from "child_process";
+import { spawn } from "child_process";
+import type { ChildProcessWithoutNullStreams } from "child_process";
 
 export class UciEngine {
   private proc: ChildProcessWithoutNullStreams;
