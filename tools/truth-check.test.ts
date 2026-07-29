@@ -15,6 +15,8 @@ import path from "path";
 import Database from "better-sqlite3";
 import { Chess } from "chess.js";
 import { reconstructPvLine, toTurningPoint, resolveRealDbPath, type RawTurningPointRow } from "./truth-check";
+import * as truthCheckModule from "./truth-check";
+import { checkDbIntact, type DbCountSnapshot } from "./dbCountSnapshot";
 
 describe("reconstructPvLine", () => {
   it("replays a space-separated UCI pv into SANs from the given fen", () => {
@@ -212,5 +214,39 @@ describe("F2: resolveRealDbPath prefers the live main-worktree db over a stale l
     fs.copyFileSync(makeDbWithGames(0), path.join(repoDir, "data", "girlchess.db"));
 
     expect(() => resolveRealDbPath(repoDir, missingMainDb)).toThrow(/empty \(0 games\)/);
+  });
+});
+
+// union finding 2 (review-union.md medium, ACTIVELY BITING her while she
+// plays): truth-check used to sha256 the real db before and after the run
+// and throw "isolation was violated" the moment a single byte changed --
+// including a WAL checkpoint that folds already-committed rows into the
+// main file with zero data touched, and including her simply playing
+// another move while the gate runs. replay-check.ts and gate.ts already
+// had exactly this pattern removed (see their own 2026-07-29 headers);
+// truth-check kept it. Fixed by importing (never reimplementing)
+// replay-check's own countDbSnapshot/checkDbIntact -- the project's
+// standing rule is her db is verified by COUNTING, never hashing.
+describe("union finding 2: truth-check's isolation check is count-based, not sha256", () => {
+  it("no longer exports a sha256-based isolation helper", () => {
+    // sha256File used to be the isolation check itself (lines 256/367 of
+    // the pre-fix file). Its removal is the fix; this fails loudly if it
+    // (or an equivalent hash helper) ever creeps back in.
+    expect((truthCheckModule as Record<string, unknown>).sha256File).toBeUndefined();
+  });
+
+  it("counts growing while she keeps playing is NOT an isolation violation (the exact condition this finding exists to tolerate)", () => {
+    const before: DbCountSnapshot = { games: 160, moves: 1420, integrity: "ok" };
+    const afterSheKeptPlaying: DbCountSnapshot = { games: 162, moves: 1444, integrity: "ok" };
+    expect(checkDbIntact(before, afterSheKeptPlaying)).toBeUndefined();
+  });
+
+  it("a real count shrink, or a broken integrity_check, still throws", () => {
+    const before: DbCountSnapshot = { games: 160, moves: 1420, integrity: "ok" };
+    const afterLostRows: DbCountSnapshot = { games: 160, moves: 1410, integrity: "ok" };
+    expect(checkDbIntact(before, afterLostRows)).toMatch(/isolation was violated/);
+
+    const afterCorrupt: DbCountSnapshot = { games: 160, moves: 1420, integrity: "corruption found" };
+    expect(checkDbIntact(before, afterCorrupt)).toMatch(/integrity_check returned/);
   });
 });
