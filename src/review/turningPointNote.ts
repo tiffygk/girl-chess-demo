@@ -60,10 +60,21 @@ export interface TurningPointNote {
 // backfill labels "checkmate" / "the losing move" / "the clincher", which
 // carry no distinct motif of their own) falls through to GENERIC_TIP below —
 // a declared cut (plan Task 3), asserted directly in the test file.
-export type Motif = "king-safety" | "missed-punish" | "good-moment" | "eval-drop" | "missed-mate";
+export type Motif = "king-safety" | "missed-punish" | "good-moment" | "eval-drop" | "missed-mate" | "unconverted";
 
 function moveNumberForPly(ply: number): number {
   return Math.ceil(ply / 2);
+}
+
+// Spelled distances for the mate copy ("mate in twelve"), same convention
+// debriefBullets.ts's NUMBER_WORDS uses -- copied locally rather than
+// imported (this file's Parallel-safety contract, see header, deliberately
+// never imports from debriefBullets.ts).
+const NUMBER_WORDS = [
+  "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+];
+function numberWord(n: number): string {
+  return NUMBER_WORDS[n] ?? String(n);
 }
 
 // Debrief Plain-English Notation round (Task 2): fen BEFORE the move played
@@ -106,6 +117,13 @@ export const NEXT_TIME_TIPS: Record<Motif, string> = {
     "this move gave back the most ground here. before you commit, check every forcing reply she has: her checks, her captures, her threats.",
   "missed-mate":
     "when you are winning big, hunt the fastest finish first: look at every check you have and count her king's escape squares. a check she cannot answer while her king has nowhere to go is mate.",
+  // Game-151 round (2026-07-29): the annotator's unconverted point (Task 2,
+  // commit c1d1905) -- a win that ended level. The debrief bullets carry
+  // the endKind-specific version of this warning; this card-note tip stays
+  // generic across endKinds (repetition is her real game-151 case and the
+  // one her feedback named directly).
+  unconverted:
+    "when you are winning, treat a repeated position as a stop sign: find the move that makes new progress before it repeats.",
 };
 
 // Motif inference is read-only off TurningPoint.label/kind/missedPunish —
@@ -118,6 +136,7 @@ export const NEXT_TIME_TIPS: Record<Motif, string> = {
 // eval moved, so they only ever earn the honest eval-drop/good-moment tips.
 function inferMotif(tp: TurningPoint): Motif | undefined {
   if (tp.kind === "missed-win") return "missed-mate";
+  if (tp.kind === "unconverted") return "unconverted";
   if (tp.kind === "episode") return "king-safety";
   if (tp.missedPunish) return "missed-punish";
   if (tp.label === "strong move") return "good-moment";
@@ -218,6 +237,18 @@ function buildCouldImprove(
     return best
       ? `you had checkmate in one here. your ${best} ends it on the spot. you played ${played} instead.${repeat}`
       : `you had checkmate in one here. you played ${played} instead.${repeat}`;
+  }
+  // Game-151 round (2026-07-29): owner ruling (feedback-unconverted-copy.md)
+  // -- never a blame line by default (rca B5, "nothing hung" stays true:
+  // no piece was hung), but the annotator's verified repetition anchor
+  // (Task 2, commit c1d1905, findRepetitionAnchor) sometimes carries a
+  // real, stored mate reading. State it when it's there; degrade to the
+  // plain fact when it isn't (a collision-displaced fallback ply, or a
+  // non-repetition ending, proves no alternative).
+  if (tp.kind === "unconverted") {
+    return tp.mateIn != null && tp.mateIn >= 1
+      ? `from this move the win was on the board. a mate in ${numberWord(tp.mateIn)} was on record right there, and the game ended level instead.`
+      : "from this move the win was on the board, and the game ended level from here. nothing hung; the finish just never came.";
   }
   const label = cls?.classification ?? tp.label;
   const nudge = IMPROVE_NUDGE[label];
