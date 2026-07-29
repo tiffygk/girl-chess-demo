@@ -38,8 +38,13 @@
 //     tools/.truth-check-scratch/, and calls openDb() only on that copy.
 //   - Asserts the opened db's own resolved file (PRAGMA database_list)
 //     equals the scratch path -- aborts before reading anything if not.
-//   - Records sha256 of the real db before and after the run; throws if
-//     they differ.
+//   - Counts games/moves and checks integrity_check on the real db before
+//     and after the run (countDbSnapshot/checkDbIntact, imported from
+//     replay-check.ts, never reimplemented here); throws only on a real
+//     shrink or a broken integrity_check. Counts are expected to GROW --
+//     she plays on the main worktree while this runs -- a hash would
+//     false-fail on that same growth, and also on a WAL checkpoint that
+//     touches no data at all.
 //   - Never deletes/checkpoints the real db, starts no server, spawns no
 //     engine process.
 //
@@ -48,7 +53,6 @@
 
 import fs from "fs";
 import path from "path";
-import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { Chess } from "chess.js";
 import Database from "better-sqlite3";
@@ -59,6 +63,15 @@ import {
   getMoveEvalsByPlies,
   listFinishedGames,
 } from "../server/store/db";
+// union finding 2 (review-union.md medium): reuse the same count-based
+// isolation check replay-check.ts uses, rather than reimplementing it. Her
+// db is verified by COUNTING (games, moves, integrity_check), never by
+// hashing -- a hash moves on a WAL checkpoint alone (no data touched) and
+// would false-fail this gate the instant she plays while it runs. Imported
+// from ./dbCountSnapshot (not from ./replay-check) because replay-check.ts
+// itself imports resolveRealDbPath/copyScratchDb/reconstructPvLine from
+// THIS file -- importing the other way would create a cycle.
+import { countDbSnapshot, checkDbIntact } from "./dbCountSnapshot";
 import { moveEndpoints } from "../server/annotator/moveEndpoints";
 import { followedBest } from "../src/review/followedBest";
 import { buildTurningPointNote } from "../src/review/turningPointNote";
@@ -142,10 +155,6 @@ export function resolveRealDbPath(
 const dbResolution = resolveRealDbPath(REPO_ROOT);
 const REAL_DB_PATH = dbResolution.path;
 const SCRATCH_DB_PATH = path.join(TOOL_DIR, ".truth-check-scratch", "girlchess.db");
-
-export function sha256File(p: string): string {
-  return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
-}
 
 // Same WAL-safe copy tools/coach-eval/run.ts uses: a plain `cp` of the .db
 // alone misses rows still sitting in the -wal file (SQLite hasn't
@@ -253,7 +262,7 @@ async function main() {
     throw new Error(`real db not found at ${REAL_DB_PATH} -- nothing to copy from`);
   }
 
-  const beforeHash = sha256File(REAL_DB_PATH);
+  const beforeSnapshot = countDbSnapshot(REAL_DB_PATH);
   copyScratchDb(REAL_DB_PATH, SCRATCH_DB_PATH);
   console.log(`[truth-check] copied ${REAL_DB_PATH} -> ${SCRATCH_DB_PATH}`);
 
@@ -364,13 +373,14 @@ async function main() {
     }
   }
 
-  const afterHash = sha256File(REAL_DB_PATH);
-  if (afterHash !== beforeHash) {
-    throw new Error(
-      `data/girlchess.db changed during this run (sha256 before=${beforeHash} after=${afterHash}) -- isolation was violated. Investigate immediately; do not trust this run's results.`
-    );
+  const afterSnapshot = countDbSnapshot(REAL_DB_PATH);
+  const intactReason = checkDbIntact(beforeSnapshot, afterSnapshot);
+  if (intactReason) {
+    throw new Error(intactReason);
   }
-  console.log(`[truth-check] real db unchanged (sha256 ${afterHash.slice(0, 12)}...)`);
+  console.log(
+    `[truth-check] real db intact (games ${beforeSnapshot.games} -> ${afterSnapshot.games}, moves ${beforeSnapshot.moves} -> ${afterSnapshot.moves}, integrity ${afterSnapshot.integrity})`
+  );
 
   console.log("\n[truth-check] ---- report ----");
   console.log(`games examined (finished): ${games.length}`);
