@@ -31,6 +31,14 @@ import { debriefBullets, affordancesForBullet, type DebriefBullet } from "./debr
 // TurningPoint/classification, just a ply) can render the identical honest
 // clause for whichever line the sandbox was seeded from.
 import { buildTurningPointNote, opportunityForLine } from "./turningPointNote";
+// Legend card-scope fix (2026-07-29): the legend must ask the real arrow
+// producer whether a line draws a mallow-best arrow, never re-derive the
+// coincidence rule (that duplication is what caused the bug -- see
+// computeShowAllowedRow below). followedBest is the same played-vs-best
+// replay every other played/best comparison in this file already routes
+// through (never hand-roll a squares comparison).
+import { turningLineArrows } from "../game/reviewArrows";
+import { followedBest } from "./followedBest";
 // Increment 3.95 (Task 10): the full-game move-list navigator, rendered
 // alongside the turning-point cards below using props this page already
 // has in hand (gameSans, rewindPly, onRewind, exploring) — no new props on
@@ -301,15 +309,45 @@ function DebriefBulletList({
 // on (ply, san) -- and verdicts are written exclusively on HER own
 // candidate moves (followedBest.ts's ply-parity header), so an even-ply
 // (opponent) turning point can never carry one: 0 of 31 in the whole db.
-// Checks the real persisted field directly (`!!l.threat`) rather than a
-// hand-rolled ply-parity guess -- a parity guess would coincide with
-// today's data by accident (verdicts only ever land on odd plies right
-// now) and silently stop discriminating the moment that assumption changes,
-// which is exactly the failure mode this bug class keeps taking. Reversible
-// in one line: delete the `showAllowedRow` prop below (AnalysisLegend's own
-// `showAllowedRow = true` default restores the pre-A6 unconditional row).
-export function computeShowAllowedRow(turningLines: TurningLine[] | undefined): boolean {
-  return turningLines?.some((l) => !!l.threat) ?? false;
+//
+// Union-review 2026-07-29 (finding 1, feedback.md this round): `!!l.threat`
+// was still the wrong test even after the A6 fix above, because the real
+// arrow producer (turningLineArrows, reviewArrows.ts) applies a SECOND test
+// this function didn't: it suppresses the mallow-best arrow whenever mallow's
+// ACTUAL reply coincides with the recommended refutation (game 151's ply 43
+// shape). `!!l.threat` says show, the board draws nothing -- the legend
+// promised a colour the board never draws. Owner ruling this round: fix it
+// card-scoped, not a strict "mirror the literal board arrows" (landing state
+// has zero arrows on the board, so a literal mirror would hide every row).
+//
+// Two-branch design (ruled, do not improvise):
+//   - a card is selected (rewindPly != null): show the row only if THAT
+//     line actually draws a mallow-best arrow. No line for that ply (a
+//     MoveList jump to a non-turning-point ply) -> hide, never throw.
+//   - nothing selected (rewindPly == null, the landing state): fall back to
+//     game-scoped, but using the same real producer test -- show if ANY line
+//     in the game would draw a mallow-best arrow. This is the branch that
+//     fixes game 151 (no card is selected on first landing).
+// Both branches route through turningLineArrows so the legend can never
+// drift from the board again -- the coincidence rule is never re-derived
+// here, only asked of the one place it's already implemented.
+function lineDrawsAllowedArrow(line: TurningLine, gameSans: SummaryMove[]): boolean {
+  return turningLineArrows(line, followedBest(line, gameSans), gameSans).some(
+    (a) => a.color === "mallow-best"
+  );
+}
+
+export function computeShowAllowedRow(
+  turningLines: TurningLine[] | undefined,
+  gameSans: SummaryMove[] = [],
+  rewindPly: number | null = null
+): boolean {
+  if (!turningLines) return false;
+  if (rewindPly != null) {
+    const line = turningLines.find((l) => l.ply === rewindPly);
+    return line ? lineDrawsAllowedArrow(line, gameSans) : false;
+  }
+  return turningLines.some((l) => lineDrawsAllowedArrow(l, gameSans));
 }
 
 export interface DebriefReviewing {
@@ -442,7 +480,7 @@ export function DebriefPage({
   });
   return (
     <div className="debrief pop-in">
-      <AnalysisLegend showAllowedRow={computeShowAllowedRow(turningLines)} />
+      <AnalysisLegend showAllowedRow={computeShowAllowedRow(turningLines, gameSans, rewindPly)} />
       {reviewing && (
         <div className="debrief-review-banner">
           <span className="debrief-review-kicker">reviewing</span>
