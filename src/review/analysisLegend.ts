@@ -53,6 +53,13 @@ export const LEGEND_SOLID_ROWS: LegendRow[] = [
 
 // "dashed -- it didn't" cluster.
 //
+// "recommended move" (owner ruling 2026-07-29): this arrow is
+// moves.best_move -- the engine's recommended move at that moment. A noun
+// phrase, parallel to "your move" / "mallow's move"; "you should've"
+// scolds. The ruling confirms the row SPLIT: this dashed green row reads
+// "recommended move" while the solid green row keeps "you found the best
+// move" -- do not harmonize them.
+//
 // "what your move allowed" (owner ruling 2026-07-28): this arrow is
 // threatForPly -- the refutation of the move SHE PLAYED, i.e. how mallow
 // could have punished it (manager.ts:520). The old label "mallow should've"
@@ -61,7 +68,7 @@ export const LEGEND_SOLID_ROWS: LegendRow[] = [
 // move protects against" -- nothing in the codebase derives that, and the two
 // only usually coincide. The label must stay true to the refutation.
 export const LEGEND_DASHED_ROWS: LegendRow[] = [
-  { kind: "best", label: "you should've", style: "dashed", color: GREEN },
+  { kind: "best", label: "recommended move", style: "dashed", color: GREEN },
   { kind: "mallow-best", label: "what your move allowed", style: "dashed", color: ROSE },
 ];
 
