@@ -34,19 +34,57 @@ describe("end-game copy (owner rulings 2026-07-29)", () => {
 });
 
 describe("all three endings wear the layered construction (source pins)", () => {
-  // RED while draw/loss render as plain text (no layer-stack spans in the
-  // panel JSX).
-  it("draw and loss render their own layer stacks", () => {
-    expect(panelSrc).toMatch(/draw-title/);
-    expect(panelSrc).toMatch(/loss-title/);
+  // Bounded per-branch extraction: the draw branch runs from its own
+  // condition to the next branch's condition; the loss branch runs from
+  // its condition to the shared fallback return. Using the surrounding
+  // control flow as fences (the same idea as the css pins' `[^}]*` rule
+  // boundary) means a branch that gets flattened to a single span, with
+  // no ghosts and no shadow, has nothing left in its slice to match.
+  // RED while draw/loss render as plain text (no four-layer stack: both
+  // ghosts, the shadow, and the base) -- a bare `draw-title`/`loss-title`
+  // substring match is not enough, since a single flat span still carries
+  // that class name with no glitch construction underneath it.
+  it("draw and loss render the four-layer stack (both ghosts, shadow, base)", () => {
+    const drawBlock =
+      panelSrc.match(/if \(result === "1\/2-1\/2"\)[\s\S]*?(?=if \(result === "0-1"\))/)?.[0] ?? "";
+    const lossBlock =
+      panelSrc.match(/if \(result === "0-1"\)[\s\S]*?(?=return resultText\(result\);)/)?.[0] ?? "";
+    expect(drawBlock).toMatch(/className="draw-title"/);
+    expect(drawBlock).toMatch(/dt-cyan/);
+    expect(drawBlock).toMatch(/dt-mag/);
+    expect(drawBlock).toMatch(/dt-shadow/);
+    expect(drawBlock).toMatch(/dt-base/);
+    expect((drawBlock.match(/aria-hidden="true"/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(lossBlock).toMatch(/className="loss-title"/);
+    expect(lossBlock).toMatch(/lt-cyan/);
+    expect(lossBlock).toMatch(/lt-mag/);
+    expect(lossBlock).toMatch(/lt-shadow/);
+    expect(lossBlock).toMatch(/lt-base/);
+    expect((lossBlock.match(/aria-hidden="true"/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
   // RED if any ghost layer loses its animation and goes static -- a static
   // offset reads as out-of-focus text (the rejected first draw mockup).
+  // Pins the full declaration, not just the keyframe name: a single
+  // iteration (`winGl1 3.5s steps(1) 1` instead of `infinite`) flickers
+  // once and then goes permanently static, which is exactly the
+  // out-of-focus look this test guards against.
   it("draw and loss ghosts animate with the win's flicker (nothing static)", () => {
-    expect(cssSrc).toMatch(/\.dt-cyan[^}]*animation:\s*winGl1/);
-    expect(cssSrc).toMatch(/\.dt-mag[^}]*animation:\s*winGl2/);
-    expect(cssSrc).toMatch(/\.lt-cyan[^}]*animation:\s*winGl1/);
-    expect(cssSrc).toMatch(/\.lt-mag[^}]*animation:\s*winGl2/);
+    expect(cssSrc).toMatch(/\.dt-cyan[^}]*animation:\s*winGl1\s+3\.5s\s+steps\(1\)\s+infinite/);
+    expect(cssSrc).toMatch(/\.dt-mag[^}]*animation:\s*winGl2\s+3\.5s\s+steps\(1\)\s+infinite/);
+    expect(cssSrc).toMatch(/\.lt-cyan[^}]*animation:\s*winGl1\s+3\.5s\s+steps\(1\)\s+infinite/);
+    expect(cssSrc).toMatch(/\.lt-mag[^}]*animation:\s*winGl2\s+3\.5s\s+steps\(1\)\s+infinite/);
+  });
+  // RED if the win branch's JSX text drifts from RESULT_COPY["1-0"] while
+  // the constant itself stays put -- e.g. "melts." becomes "puddles." in
+  // the panel only. The brief requires the win branch stay byte-identical
+  // (a hardcoded literal, not a read of the constant), so this pins the
+  // literal against the constant instead of changing the branch.
+  it("win branch's copy has not drifted from RESULT_COPY[\"1-0\"]", () => {
+    const winBlock =
+      panelSrc.match(/className="win-title"[\s\S]*?(?=if \(result === "1\/2-1\/2"\))/)?.[0] ?? "";
+    for (const word of RESULT_COPY["1-0"].split(" ")) {
+      expect(winBlock).toContain(word);
+    }
   });
   // Owner ruling 2026-07-29 (verdict session, supersedes the plan and the
   // brief sketch): draw shadow is MAGENTA-DARK, loss shadow is INK -- her

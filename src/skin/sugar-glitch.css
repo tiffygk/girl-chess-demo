@@ -1211,8 +1211,9 @@
 .gc-app .game-page.postgame .status-line:empty { display: none; }
 
 /* win title: the wordmark's layered construction at celebration scale
-   (V6, spec §4.10). Win only — loss and draw stay the plain 20px .result
-   above. Copied verbatim from component-library.html 992-1038. */
+   (V6, spec §4.10). Draw and loss titles now join the same construction
+   in their own inks -- see the block below .wt-melt-bottom (owner ruling
+   2026-07-29). Copied verbatim from component-library.html 992-1038. */
 .gc-app .win-title {
   position: relative; display: inline-block;
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 28px;
