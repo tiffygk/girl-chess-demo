@@ -23,7 +23,8 @@
 
 import { Chess } from "chess.js";
 import type { TurningPoint, TurningLine, SummaryMove } from "../game/api";
-import { phaseForPly, affordancesForBullet, type DebriefBullet } from "./debriefBullets";
+import { affordancesForBullet, type DebriefBullet } from "./debriefBullets";
+import { phasesForGame } from "./gamePhases";
 import { followedBest } from "./followedBest";
 
 export interface DebriefFacts {
@@ -32,7 +33,6 @@ export interface DebriefFacts {
   gameSans: SummaryMove[];
   turningLines?: TurningLine[]; // absent -> san/square/try-line checks SKIP (never guess)
   totalPlies: number;
-  endgamePlies?: Set<number>;
 }
 
 export interface DebriefOutput {
@@ -201,6 +201,12 @@ function outputTextUnits(output: DebriefOutput): TextUnit[] {
 export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): DebriefViolation[] {
   const violations: DebriefViolation[] = [];
   const bullets = output.bullets ?? [];
+  // Phase round (2026-07-30): built once per invocation, straight off the
+  // same real chess.js replay of facts.gameSans that debriefBullets.ts's
+  // own builder runs -- a genuine board fact (lichess divider + nearly-bare
+  // override), not the old ply-arithmetic guess this rule used to import
+  // and re-run against itself.
+  const phases = phasesForGame(facts.gameSans);
 
   // -- contradictions --------------------------------------------------
 
@@ -265,13 +271,13 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
 
   bullets.forEach((b, i) => {
     if (b.ply == null) return;
-    const expected = phaseForPly(b.ply, facts.totalPlies, facts.endgamePlies);
+    const expected = phases.phaseAt(b.ply);
     if (b.phase !== expected) {
       violations.push({
         kind: "contradiction",
         rule: "phase-mismatch",
         where: bulletWhere(b, i),
-        message: `phase "${b.phase}" tagged at ply ${b.ply} but phaseForPly says "${expected}"`,
+        message: `phase "${b.phase}" tagged at ply ${b.ply} but the phase timeline says "${expected}"`,
       });
     }
   });
