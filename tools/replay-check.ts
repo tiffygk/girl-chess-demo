@@ -294,22 +294,6 @@ export function regenLegOk(
     : { ok: false, rate, reason: `rate ${(rate * 100).toFixed(1)}% exceeds REGEN_RATE_MAX ${(REGEN_RATE_MAX * 100).toFixed(0)}%` };
 }
 
-interface RawTurningPointRow {
-  rank: 1 | 2 | 3 | 4;
-  ply: number;
-  san: string;
-  label: string;
-  punish_san: string | null;
-  delta_p: number;
-  low_confidence: number | null;
-  kind: string;
-  ply_end: number | null;
-  missed_punish: number | null;
-  crossed_advantage: number | null;
-  mate_in: number | null;
-  missed_count: number | null;
-}
-
 // Same TurningLine assembly as truth-check.ts's main loop (which mirrors
 // manager.ts's getTurningLines) -- pure data plumbing (a chess.js replay of
 // already-persisted best_move/pv columns), not any part of the invariant
