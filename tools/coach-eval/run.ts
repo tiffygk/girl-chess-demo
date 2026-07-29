@@ -269,7 +269,12 @@ function buildContext(
         from: question.pending.from,
         to: question.pending.to,
         san: question.pending.san,
-        tier: question.pendingTier,
+        // ChatContext.pendingMove.tier is "silent" | "nudge" | "warning" --
+        // narrower than this harness's own PendingTier, which also carries
+        // "judge-in-flight" (no settled tier exists yet while judging is
+        // in flight, same case the judged:false line below already special-
+        // cases).
+        tier: question.pendingTier === "judge-in-flight" ? undefined : question.pendingTier,
         judged: question.pendingTier === "judge-in-flight" ? false : true,
       };
     }

@@ -1,0 +1,44 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.server.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    // server/tools code itself has no JSX; this exists only because
+    // tools/replay-check.ts -> src/review/turningPointNote.ts and
+    // debriefBullets.ts -> src/review/Rewind.tsx pulls a .tsx file
+    // transitively into this project's compilation graph.
+    "jsx": "react-jsx",
+
+    /* Bundler mode -- matches tsconfig.app.json's resolution style. server/
+       and tools/ run under tsx (bare relative imports, no .js extension),
+       the same as vite bundles src/; "nodenext" would demand ECMAScript's
+       explicit .js extensions on every relative import and flag hundreds
+       of imports that already work correctly under tsx, none of them a
+       real bug. */
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["server", "tools"],
+  // 44 pre-existing type errors across 8 *.test.ts files (fixture literals
+  // missing fields interfaces gained since the fixture was written --
+  // ChatContext.mode, CoachFactList.currentFen, ThreatFacts.
+  // capturedSquareDefended, etc.) surfaced the moment these trees were
+  // first type-checked (union finding 4, 2026-07-29). None are load-bearing
+  // runtime bugs -- vitest/tsx never type-checks tests, so nobody noticed --
+  // but fixing 44 fixtures correctly (verifying each new field's intent
+  // rather than rubber-stamping a value) is real work outside this round's
+  // scope. Excluded here rather than silently left broken; test source
+  // itself is still exercised at runtime by `npm run gate`'s vitest step.
+  "exclude": ["**/*.test.ts"]
+}
