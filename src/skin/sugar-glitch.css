@@ -1275,6 +1275,9 @@
   position: relative; display: inline-block;
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 28px;
   line-height: 1.25;
+  /* owner ruling 2026-07-29 (post-port): no widowed "over." -- the copy
+     stays one line at 28px; there is room under the board. */
+  white-space: nowrap;
 }
 .gc-app .dt-layer, .gc-app .lt-layer { position: absolute; inset: 0; pointer-events: none; }
 .gc-app .dt-cyan, .gc-app .lt-cyan { color: #23E5FF; opacity: .8; transform: translate(-2px, 1px); animation: winGl1 3.5s steps(1) infinite; }

@@ -60,6 +60,14 @@ describe("all three endings wear the layered construction (source pins)", () => 
     expect(cssSrc).toMatch(/\.dt-shadow[^}]*rgba\(194,\s*43,\s*126/);
     expect(cssSrc).toMatch(/\.lt-shadow[^}]*rgba\(74,\s*59,\s*126/);
   });
+  // Owner ruling 2026-07-29 (post-port, her words): "i dont want the last
+  // word, over, on the draw wordmark widdowed ... all one line without
+  // making font smaller." nowrap on the shared draw/loss rule keeps the
+  // whole family single-line at 28px.
+  // RED if white-space: nowrap is removed from the title rule.
+  it("draw and loss titles stay one line (no widowed last word)", () => {
+    expect(cssSrc).toMatch(/\.draw-title[^}]*white-space:\s*nowrap/);
+  });
   // RED while the draw celebration still fires the 1.8s small shimmer the
   // owner could not see (visual-rca 1).
   it("the draw celebration uses the big shimmer", () => {
