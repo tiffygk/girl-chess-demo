@@ -47,9 +47,22 @@ describe("reactive post-game collapse (owner ruling 2026-07-29)", () => {
   // .action-slot-judge child's min-height. RED when either the padding
   // collapse or the judge floor collapse is removed, or when either loses
   // its :empty guard (which would let it clip a real post-game judge badge).
-  it("the action-slot's residual padding + judge floor collapse to zero, but only when genuinely empty", () => {
+  //
+  // A3+A5 re-review F1: the :has() guard above tested only whether
+  // action-slot-judge is empty. It did not test whether
+  // action-slot-controls is rendered, and that sibling is gated on
+  // !gameOver ALONE (GamePage.tsx:2234) -- not on reviewGame. selectPastGame
+  // sets reviewGame but never gameId or gameOver, so opening a saved game
+  // from the pregame panel turns .postgame on (gameOver || reviewGame)
+  // while gameOver stays null: action-slot-controls still renders the live
+  // elo-select / start game / past games row. The old guard collapsed the
+  // slot's padding-top out from under that visible row. RED when the
+  // guard is missing the :not(:has(> .action-slot-controls)) clause --
+  // i.e. RED for the state where controls are rendered and padding has
+  // collapsed anyway.
+  it("the action-slot's residual padding + judge floor collapse to zero, but only when genuinely empty and no controls are rendered", () => {
     expect(cssSrc).toMatch(
-      /\.game-page\.postgame \.action-slot:has\(> \.action-slot-judge:empty\) \{ padding-top: 0; \}/
+      /\.game-page\.postgame \.action-slot:has\(> \.action-slot-judge:empty\):not\(:has\(> \.action-slot-controls\)\) \{ padding-top: 0; \}/
     );
     expect(cssSrc).toMatch(
       /\.game-page\.postgame \.action-slot-judge:empty \{ min-height: 0; \}/
