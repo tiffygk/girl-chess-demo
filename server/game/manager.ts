@@ -116,6 +116,33 @@ export function deriveChatOutcome(
   return { result, winner, how, finalPly };
 }
 
+// H3 fix, logic-only half (union review, 2026-07-31): judgeMove's
+// insertVerdict call used to store `verdict.threat` alone
+// (`JSON.stringify(verdict.threat)` or null) — conversionCopy was on the
+// wire (returned to the caller) but never persisted, so a rewind or a Lab
+// audit could never recover what she was actually told on a conversion
+// nudge. Merges the two FLAT, never nested: manager.ts's own threatForPly
+// reads facts_json as `Partial<ThreatFacts>` and expects
+// refutationFromSquare/refutationToSquare at the TOP level, so nesting
+// threat under its own key would silently break that reader. The extra
+// `conversionCopy` key is simply additional data threatForPly's own
+// (unvalidated) cast ignores — harmless by construction, not by luck.
+// Pure and exported so it's unit-testable without a real evaluator or a
+// crafted mate position (see manager.test.ts) — the JSON shape is the only
+// thing this function is responsible for; classify.ts already owns
+// deciding what conversionCopy/threat actually say.
+export function buildVerdictFactsJson(
+  threat: ThreatFacts | undefined,
+  conversionCopy: string | undefined
+): string | null {
+  if (!threat && !conversionCopy) return null;
+  // JSON.stringify drops an undefined-valued key automatically, so a
+  // conversionCopy-less verdict serializes identically to the old
+  // `JSON.stringify(verdict.threat)` shape — no migration, no reader change
+  // needed for the common (non-conversion) case.
+  return JSON.stringify({ ...(threat ?? {}), conversionCopy });
+}
+
 export class GameManager {
   private games = new Map<number, LiveGame>();
   private evaluator = new StockfishEvaluator();
@@ -739,7 +766,7 @@ export class GameManager {
       latencyMs: verdict.latencyMs,
       adviceLevel: level,
       mode,
-      factsJson: verdict.threat ? JSON.stringify(verdict.threat) : null,
+      factsJson: buildVerdictFactsJson(verdict.threat, verdict.conversionCopy),
     });
     return { ok: true, verdict };
   }

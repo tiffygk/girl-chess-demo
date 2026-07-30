@@ -6,7 +6,7 @@ import {
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
   insertVerdict, getAllChatMessages,
 } from "../store/db";
-import { GameManager, BACKEND_CACHE_TTL_MS } from "./manager";
+import { GameManager, BACKEND_CACHE_TTL_MS, buildVerdictFactsJson } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
 // Task 5 reviewer fix: the "ollama unavailable" test below spies on this
 // module's own available() rather than pre-seeding pickCoachBackend's cache,
@@ -17,6 +17,59 @@ import { ollamaBackend } from "../coach/backends/ollama";
 import { claudeCliBackend } from "../coach/backends/claude-cli";
 import { agentSdkBackend } from "../coach/backends/agent-sdk";
 import { moveEndpoints } from "../annotator/moveEndpoints";
+import type { ThreatFacts } from "../annotator/motifs";
+
+// H3 fix, logic-only half (union review, 2026-07-31): pure, no real
+// evaluator or crafted mate position needed -- classify.ts already owns
+// deciding what conversionCopy says (classify.test.ts's real-engine and
+// scripted-evaluator fixtures cover that); this only tests the JSON SHAPE
+// judgeMove persists, which is the part actually new here.
+describe("buildVerdictFactsJson (H3 fix, union review 2026-07-31)", () => {
+  const threat: ThreatFacts = {
+    motif: "capture",
+    refutationUci: "d1h5",
+    refutationSan: "Qh5+",
+    refutationPieceKind: "q",
+    refutationFromSquare: "d1",
+    refutationToSquare: "h5",
+    givesCheck: true,
+    capturesHerJustMovedPiece: false,
+  };
+
+  it("returns null when neither threat nor conversionCopy is present (the ordinary silent/no-facts case)", () => {
+    expect(buildVerdictFactsJson(undefined, undefined)).toBeNull();
+  });
+
+  it("threat alone serializes exactly as the old JSON.stringify(verdict.threat) shape -- no migration needed", () => {
+    const json = buildVerdictFactsJson(threat, undefined);
+    expect(json).not.toBeNull();
+    const parsed = JSON.parse(json!);
+    expect(parsed).toEqual(threat); // no stray conversionCopy key, no nesting
+  });
+
+  // The discriminating case: conversionCopy must actually reach storage,
+  // flat alongside threat's own fields -- manager.ts's threatForPly reads
+  // facts_json as Partial<ThreatFacts> and expects refutationFromSquare/
+  // refutationToSquare at the TOP level, so a wrong (nested) implementation
+  // would still parse but threatForPly would silently stop finding them.
+  it("threat AND conversionCopy persist flat, together, in one object", () => {
+    const json = buildVerdictFactsJson(threat, "still winning, but there was a faster mate. mate in 2 was there, now it's mate in 4.");
+    expect(json).not.toBeNull();
+    const parsed = JSON.parse(json!);
+    expect(parsed.refutationFromSquare).toBe("d1"); // threat's own fields still top-level -- threatForPly's reader is unaffected
+    expect(parsed.refutationToSquare).toBe("h5");
+    expect(parsed.conversionCopy).toBe(
+      "still winning, but there was a faster mate. mate in 2 was there, now it's mate in 4."
+    );
+  });
+
+  it("conversionCopy alone (no threat at all) still persists -- the case the OLD code silently dropped to null", () => {
+    const json = buildVerdictFactsJson(undefined, "still winning, but the forced mate is gone for now.");
+    expect(json).not.toBeNull();
+    const parsed = JSON.parse(json!);
+    expect(parsed.conversionCopy).toBe("still winning, but the forced mate is gone for now.");
+  });
+});
 
 describe("GameManager", () => {
   let gm: GameManager;
