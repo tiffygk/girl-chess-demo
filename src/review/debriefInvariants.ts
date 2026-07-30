@@ -238,6 +238,23 @@ function noteWhere(ply: number): string {
   return `note:${ply}`;
 }
 
+// ADDENDUM 2 fix (union review, 2026-07-31): conversion-claim needs the
+// PLY a text unit is about (to look up its backing turning point), but
+// outputTextUnits only carries the `where` string, not a numeric ply --
+// bullets encode an ARRAY INDEX in their `where` (bulletWhere's own
+// `i`), notes encode the ply DIRECTLY (noteWhere's `ply`). This is the one
+// place that decodes either shape back to a real ply, so the two formats
+// never have to be re-parsed ad hoc at each call site. `bullets` is the
+// same array outputTextUnits itself was built from -- same order, so the
+// index recovered from a bullet's `where` always resolves to the right one.
+function plyForWhere(where: string, bullets: DebriefBullet[]): number | undefined {
+  const noteMatch = /^note:(\d+)$/.exec(where);
+  if (noteMatch) return parseInt(noteMatch[1], 10);
+  const bulletMatch = /^bullet:.*:(\d+)$/.exec(where);
+  if (bulletMatch) return bullets[parseInt(bulletMatch[1], 10)]?.ply;
+  return undefined;
+}
+
 interface TextUnit {
   text: string;
   where: string;
@@ -397,37 +414,55 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
     }
   });
 
-  // conversion-claim (K1, game-160 RCA round, 2026-07-31; TIGHTENED in the
-  // union review fix wave, same date): any bullet asserting a missed/
-  // slipped mate ("mate in N" / "checkmate in N") must be backed by a
+  // conversion-claim (K1, game-160 RCA round, 2026-07-31; TIGHTENED twice in
+  // the union review fix wave, same date): any TEXT UNIT -- bullet, note,
+  // lesson, or highlighted row, ANYTHING on her screen -- asserting a
+  // missed/slipped mate ("mate in N" / "checkmate in N") must be backed by a
   // same-ply turning point whose stored mateIn AGREES with the number
   // actually asserted -- the debrief path has no LLM (CLAUDE.md), so a
   // false mate claim here is our own template contradicting our own data,
   // same failure class as every other contradiction rule in this file.
   //
-  // Originally shipped checking only that mate data EXISTED at the ply
-  // (`tp.mateIn != null`), never that the asserted number matched it. That
-  // is why `replay-check` reported PASS, 0 violations over a corpus
-  // containing 8 real games where the bullet said "checkmate in one" and
-  // the backing turning point's mateIn was 2-5 (C1). Backs BOTH the
+  // First tightening: originally shipped checking only that mate data
+  // EXISTED at the ply (`tp.mateIn != null`), never that the asserted number
+  // matched it. That is why `replay-check` reported PASS, 0 violations over
+  // a corpus containing 8 real games where a bullet said "checkmate in one"
+  // and the backing turning point's mateIn was 2-5 (C1).
+  //
+  // Second tightening (ADDENDUM 2, ships the SAME commit as the fourth C1
+  // producer's copy fix, turningPointNote.ts): this rule iterated
+  // `bullets.forEach` directly, so it was structurally blind to card NOTE
+  // text (turningPointNote.ts's couldImprove field, rendered on every card
+  // by DebriefPage.tsx) -- the surface where the fourth "checkmate in one"
+  // producer actually lived. `checkDebriefOutput` reported 0 violations in
+  // the SAME run that produced 8 false notes, for the identical shape of
+  // reason the first tightening exists to fix: a check narrower than the
+  // thing it claims to cover. Now routes through `outputTextUnits(output)`,
+  // the SAME helper win-copy-on-non-win/unknown-san/unknown-square/voice-*
+  // already use, so it covers bullets AND notes (and, structurally, the
+  // lesson/highlighted-row text ANY future caller folds into `output` the
+  // same way) alike -- if a fifth producer appears, this routing is what
+  // catches it, not a fifth hand-written check. `plyForWhere` recovers the
+  // ply from either shape (`where`'s own encoding, see its comment); a
+  // TEXT UNIT WITH NO RESOLVABLE PLY IS TREATED AS UNBACKED, same as a ply
+  // that matches no turning point -- never silently skipped, since there is
+  // no way to verify an unanchored claim either way. Backs BOTH the
   // "conversion" kind's bullet (mateIn = the episode's shortest held mate)
   // and the existing "missed-win"/"unconverted" kinds' own mate clauses
   // (mateIn is already the field all three use). Tolerant of games with no
-  // conversion turning points at all -- only bullets that actually name a
-  // mate distance are checked; a bullet that also gets the PLY wrong
-  // (b.ply not matching any turning point) still reports the older
-  // "no backing at all" message, since there is nothing to compare the
-  // number against.
-  bullets.forEach((b, i) => {
-    const claims = parseMateClaimNumbers(b.text);
+  // conversion turning points at all -- only text that actually names a
+  // mate distance is checked.
+  outputTextUnits(output).forEach(({ text, where }) => {
+    const claims = parseMateClaimNumbers(text);
     if (claims.length === 0) return;
-    const tp = b.ply != null ? facts.turningPoints.find((t) => t.ply === b.ply && t.mateIn != null) : undefined;
+    const ply = plyForWhere(where, bullets);
+    const tp = ply != null ? facts.turningPoints.find((t) => t.ply === ply && t.mateIn != null) : undefined;
     if (!tp) {
       violations.push({
         kind: "contradiction",
         rule: "conversion-claim",
-        where: bulletWhere(b, i),
-        message: `bullet asserts a mate claim ("${b.text}") with no same-ply turning point mate data to back it`,
+        where,
+        message: `text asserts a mate claim ("${text}") with no same-ply turning point mate data to back it`,
       });
       return;
     }
@@ -436,8 +471,8 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
         violations.push({
           kind: "contradiction",
           rule: "conversion-claim",
-          where: bulletWhere(b, i),
-          message: `bullet asserts mate in ${n} but the same-ply turning point's mateIn is ${tp.mateIn}`,
+          where,
+          message: `text asserts mate in ${n} but the same-ply turning point's mateIn is ${tp.mateIn}`,
         });
       }
     }

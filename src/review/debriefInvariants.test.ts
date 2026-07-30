@@ -472,6 +472,72 @@ describe("conversion-claim (K1, game-160 RCA round)", () => {
     expect(violations.map((v) => v.rule)).toContain("conversion-claim");
   });
 
+  // ADDENDUM 2 red-proof (union review, 2026-07-31): the fixture above only
+  // ever put the false claim in a BULLET. conversion-claim used to iterate
+  // `bullets.forEach` directly, so it was structurally blind to a false
+  // claim sitting in a card NOTE instead (turningPointNote.ts's own
+  // "checkmate in one"/"ends it on the spot" hardcoding, the fourth C1
+  // producer) -- `checkDebriefOutput` reported 0 violations over a corpus
+  // containing 8 real games with a false note, in the SAME run that this
+  // rule's bullet-side fix already passed. Required red-proof: this test
+  // must be run against the bullets-only version of the rule FIRST and
+  // confirmed to report NOTHING (proving notes really were invisible to
+  // it), before the rule is routed through outputTextUnits.
+  it("fires when a card NOTE (not a bullet) asserts a mate distance that disagrees with the same-ply turning point (the fourth C1 producer, turningPointNote.ts)", () => {
+    const out = {
+      bullets: [],
+      notes: [
+        {
+          ply: 69,
+          couldImprove:
+            "you had checkmate in one here. your Qh8+ ends it on the spot. you played rook takes on c7 instead. this happened 8 times this game.",
+        },
+      ],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
+  // A note whose claim genuinely agrees with its same-ply turning point
+  // must still stay silent -- proves the note-routing fix doesn't just
+  // flag every note that mentions a mate distance.
+  it("stays silent on a note whose mate claim agrees with the same-ply turning point", () => {
+    const out = {
+      bullets: [],
+      notes: [{ ply: 69, couldImprove: "you had checkmate in four here. your Qf7+ starts a forced mate in four." }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
+  // A mate claim with no resolvable ply (a malformed `where`, or a note
+  // whose ply matches no turning point at all) must be treated as UNBACKED,
+  // never silently skipped -- the coordinator's explicit requirement.
+  it("treats a mate claim with no matching turning point as unbacked, not silently skipped", () => {
+    const out = {
+      bullets: [],
+      notes: [{ ply: 999, couldImprove: "you had checkmate in four here." }],
+    } as any;
+    const facts = { result: "1-0", totalPlies: 187, gameSans: [], turningPoints: [] } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
   it("also backs a missed-win bullet's checkmate claim (mateIn on the same-ply missed-win point)", () => {
     const out = {
       bullets: [{ section: "could be better", text: "move 28: you had checkmate in one and played past it.", phase: "endgame", category: "endgame technique", ply: 55 }],
