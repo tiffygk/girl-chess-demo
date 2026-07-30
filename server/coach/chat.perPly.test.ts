@@ -608,5 +608,11 @@ describe("an unprovable phase (no board to derive it from) is omitted, never fab
     // not state it falsely and not state it as an empty/placeholder value.
     expect(capturedPrompt).not.toContain('"phase"');
     expect(capturedPrompt).not.toMatch(/"phase"\s*:\s*"?(null|undefined|none)"?/i);
+    // m4 (2026-07-30 integration review): the negative assertion above is
+    // satisfied just as well by perPlyAnalysis disappearing from the
+    // projection entirely -- exactly the kind of change factsForModel has
+    // taken twice before (B4b, B4c). This positive assertion pins that the
+    // section this ply's phase key is omitted FROM still ships.
+    expect(capturedPrompt).toContain('"perPlyAnalysis"');
   });
 });
