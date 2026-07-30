@@ -63,7 +63,7 @@ import type { Evaluator, Evaluation } from "../../../server/engines/types";
 import { debriefBullets } from "../../../src/review/debriefBullets";
 import { buildTurningPointNote } from "../../../src/review/turningPointNote";
 import { checkDebriefOutput, type DebriefFacts, type DebriefOutput } from "../../../src/review/debriefInvariants";
-import type { TurningLine, SummaryMove } from "../../../src/game/api";
+import type { SummaryMove } from "../../../src/game/api";
 import { openDb, getGameMoves } from "../../../server/store/db";
 import { assertGamesExamined } from "../../truth-check";
 import { copyScratchDb } from "../../truth-check";
@@ -526,7 +526,6 @@ function ct04(backupPath: string): EvalResult {
 function ct06(dbPath: string): EvalResult {
   const db = new Database(dbPath, { readonly: true });
   let moveRows: any[];
-  let tpRows: any[];
   let game: any;
   try {
     moveRows = db.prepare("SELECT ply, san, eval_cp as evalCp, eval_mate as evalMate FROM moves WHERE game_id=160 ORDER BY ply").all();
