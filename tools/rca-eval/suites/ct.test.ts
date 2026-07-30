@@ -1,12 +1,27 @@
 // tools/rca-eval/suites/ct.test.ts
 //
-// TDD: watched red against a pre-implementation suites/ct.ts ("Cannot find
-// module './ct'"). Asserts the suite's own denominator (7), reads the real
-// pre-tpv7 backup triple (161 games, matching baseline B9), and confirms
-// the honest split expected pre-K1/K2 merge: CT-01/02/03/04/05/07
-// did-not-run (each citing the current pre-heal state, matching baseline
-// rows B4/B5); CT-06 executed for real against pre-existing code and red
-// (both fallback strings still fire on game 160 today).
+// Dispatch 6 (2026-07-31, post phase-A merge): watched RED first against
+// the pre-dispatch suites/ct.ts, which returned a plain (sync) SuiteResult
+// and expected CT-01/02/03/04/05/07 to all report did-not-run. Real red,
+// quoted verbatim from the run that motivated this rewrite:
+//
+//   FAIL runCtSuite > asserts its own denominator...
+//   AssertionError: expected undefined to be 'CT'
+//     - Expected: "CT"  + Received: undefined
+//   (suite.suite) -- because runCtSuite() now returns a Promise<SuiteResult>
+//   (CT-01/04/05/07 need `await`s inside for computeTurningPoints'
+//   idempotency check, ct04's scratch-db setup, and ct05's async
+//   classifyMove calls) and the old test called it with no `await`.
+//   Every downstream assertion in the old file then failed the same way
+//   ("Cannot read properties of undefined (reading 'find')") -- 5 of 12
+//   tests red, all for the single real reason: the suite is now async and
+//   does real work instead of reporting did-not-run.
+//
+// This file replaces those did-not-run expectations with the real
+// acceptance assertions the RCA Acceptance Evals spec (section 3, suite
+// CT) describes, now that phase A (server/annotator/conversion.ts,
+// TP_ALGO_VERSION 7, classify.ts's K2 adjudication, debriefInvariants.ts's
+// conversion-claim rule) is merged.
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -25,39 +40,76 @@ const SPAN_GATE_GAMES = ["141", "144"];
 const CONVERSION_GAMES = ["130", "143", "145", "150", "151", "160"];
 
 describe("runCtSuite", () => {
-  it("asserts its own denominator: exactly 7 evals, over the real 161-game corpus", () => {
-    const suite = runCtSuite();
+  it("asserts its own denominator: exactly 7 evals, over the real 161-game corpus", async () => {
+    const suite = await runCtSuite();
     expect(suite.suite).toBe("CT");
     expect(suite.expectedCount).toBe(7);
     expect(suite.results.length).toBe(7);
     expect(suite.notes?.join(" ")).toMatch(/161 games/);
   });
 
-  it("CT-01/02/03/04/05/07 report did-not-run, each citing the current pre-heal state", () => {
-    const suite = runCtSuite();
-    for (const id of ["CT-01", "CT-02", "CT-03", "CT-04", "CT-05", "CT-07"]) {
-      const r = suite.results.find((e) => e.id === id)!;
-      expect(r.verdict, `${id}: ${r.detail}`).toBe("did-not-run");
-    }
-  });
-
-  it("CT-01's did-not-run detail matches baseline B4/B5: game 160 has 3 turning points today", () => {
-    const suite = runCtSuite();
-    const ct01 = suite.results.find((r) => r.id === "CT-01")!;
-    expect(ct01.detail).toMatch(/game 160 has 3 turning points/);
-  });
-
-  it("CT-06 ran for real against pre-existing code and is red: both fallback strings still fire on game 160", () => {
-    const suite = runCtSuite();
-    const ct06 = suite.results.find((r) => r.id === "CT-06")!;
-    expect(ct06.verdict, ct06.detail).toBe("red");
-    expect(ct06.detail).toMatch(/no clear mistakes to flag here/);
-    expect(ct06.detail).toMatch(/no repeat pattern showed up/);
-  });
-
-  it("never opens data/girlchess.db itself -- the corpus source is the pre-tpv7 backup triple", () => {
-    const suite = runCtSuite();
+  it("never opens data/girlchess.db itself -- the corpus source is the pre-tpv7 backup triple", async () => {
+    const suite = await runCtSuite();
     expect(suite.notes?.join(" ")).toMatch(/pre-tpv7/);
+  });
+
+  it("CT-01: game 160 heals to exactly one conversion point (ply 87, mateIn 2, plyEnd 187) and one missed-win point (ply 69, mateIn 4, missedCount 8), idempotent, TP_ALGO_VERSION 7", async () => {
+    const suite = await runCtSuite();
+    const ct01 = suite.results.find((r) => r.id === "CT-01")!;
+    expect(ct01.verdict, ct01.detail).toBe("pass");
+    expect(ct01.detail).toMatch(/ply 87/);
+    expect(ct01.detail).toMatch(/mateIn 2/);
+    expect(ct01.detail).toMatch(/plyEnd 187/);
+    expect(ct01.detail).toMatch(/ply 69/);
+    expect(ct01.detail).toMatch(/missedCount 8/);
+    expect(ct01.detail).toMatch(/idempotent/);
+    expect(ct01.detail).toMatch(/TP_ALGO_VERSION 7/);
+    expect(ct01.detail).toMatch(/computeTurningPoints/); // states which seam was exercised
+  });
+
+  it("CT-02: game 161 (the clean Nxc7# win) gains zero conversion/missed-win events", async () => {
+    const suite = await runCtSuite();
+    const ct02 = suite.results.find((r) => r.id === "CT-02")!;
+    expect(ct02.verdict, ct02.detail).toBe("pass");
+  });
+
+  it("CT-03: ply 185 is a non-event in game 160", async () => {
+    const suite = await runCtSuite();
+    const ct03 = suite.results.find((r) => r.id === "CT-03")!;
+    expect(ct03.verdict, ct03.detail).toBe("pass");
+  });
+
+  it("CT-04: zero debriefInvariants violations corpus-wide, all 161 games examined", async () => {
+    const suite = await runCtSuite();
+    const ct04 = suite.results.find((r) => r.id === "CT-04")!;
+    expect(ct04.verdict, ct04.detail).toBe("pass");
+    expect(ct04.detail).toMatch(/161 games examined/);
+    expect(ct04.detail).toMatch(/conversion-claim/);
+  });
+
+  it("CT-05: judge verdicts on game 160's fixture plies -- 95/123/125 nudge, 185 silent", async () => {
+    const suite = await runCtSuite();
+    const ct05 = suite.results.find((r) => r.id === "CT-05")!;
+    expect(ct05.verdict, ct05.detail).toBe("pass");
+    expect(ct05.detail).toMatch(/ply 95 -> nudge/);
+    expect(ct05.detail).toMatch(/ply 123 -> nudge/);
+    expect(ct05.detail).toMatch(/ply 125 -> nudge/);
+    expect(ct05.detail).toMatch(/ply 185 -> silent/);
+  });
+
+  it("CT-06 ran for real against the healed computeTurningPoints() output and passes: neither fallback string fires", async () => {
+    const suite = await runCtSuite();
+    const ct06 = suite.results.find((r) => r.id === "CT-06")!;
+    expect(ct06.verdict, ct06.detail).toBe("pass");
+    expect(ct06.detail).not.toMatch(/"no clear mistakes to flag here/);
+  });
+
+  it("CT-07: floor holds -- ply 125 (the worst slip) is carded; count reported, not gated", async () => {
+    const suite = await runCtSuite();
+    const ct07 = suite.results.find((r) => r.id === "CT-07")!;
+    expect(ct07.verdict, ct07.detail).toBe("pass");
+    expect(ct07.detail).toMatch(/ply 125/);
+    expect(ct07.detail).toMatch(/mate-in-10 became mate-in-16/);
   });
 });
 
@@ -65,14 +117,10 @@ describe("runCtSuite", () => {
 // from the COMMITTED integration-branch behavior (real computeTurningPoints
 // run against the verified pre-tpv7 backup via a detached worktree), per
 // review-phaseA-union-DELTA-for-fixer.md's cross-check rules. These tests
-// read the fixture directly (not the live suite -- conversion.ts has not
-// merged into this worktree; the eval branch stays out of
-// server/annotator entirely) so the fixture's own invariants stay pinned
-// even before CT-01/02/03/07 can execute for real. Watched red first
-// against the STALE (pre-regeneration) fixture, which had only game 160's
-// raw detectConversion events and none of these per-game/per-rule shapes --
-// every assertion below failed on that file (wrong shape, no `games` key,
-// no collision/span-gate/conversion-anchor data to check).
+// read the fixture directly -- pinning its own invariants independent of
+// whatever ct.ts's live suite computes, so a future regression in either
+// the fixture or the real code shows up as a real disagreement, not a
+// coincidental match.
 describe("expected-conversion.json (regenerated ground truth)", () => {
   const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, "utf8"));
 
