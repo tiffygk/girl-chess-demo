@@ -1,0 +1,871 @@
+{
+  "_comment": "game 149's persisted moves (ply, san, eval_cp, eval_mate), readonly-extracted 2026-07-31 from the pre-tpv7 backup triple (data/backups/pre-tpv7-20260729-195853.db) via: SELECT ply, san, eval_cp as evalCp, eval_mate as evalMate FROM moves WHERE game_id=149 ORDER BY ply. Used by suite PC (PC-01/02/03/04) to assemble the chat fact payload at every ply without ever opening data/girlchess.db.",
+  "gameId": 149,
+  "plies": 144,
+  "rows": [
+    {
+      "ply": 1,
+      "san": "d4",
+      "evalCp": -53,
+      "evalMate": null
+    },
+    {
+      "ply": 2,
+      "san": "b6",
+      "evalCp": 119,
+      "evalMate": null
+    },
+    {
+      "ply": 3,
+      "san": "c4",
+      "evalCp": -91,
+      "evalMate": null
+    },
+    {
+      "ply": 4,
+      "san": "a5",
+      "evalCp": 122,
+      "evalMate": null
+    },
+    {
+      "ply": 5,
+      "san": "a4",
+      "evalCp": -33,
+      "evalMate": null
+    },
+    {
+      "ply": 6,
+      "san": "c5",
+      "evalCp": 134,
+      "evalMate": null
+    },
+    {
+      "ply": 7,
+      "san": "d5",
+      "evalCp": -133,
+      "evalMate": null
+    },
+    {
+      "ply": 8,
+      "san": "Ba6",
+      "evalCp": 163,
+      "evalMate": null
+    },
+    {
+      "ply": 9,
+      "san": "b3",
+      "evalCp": -150,
+      "evalMate": null
+    },
+    {
+      "ply": 10,
+      "san": "g6",
+      "evalCp": 159,
+      "evalMate": null
+    },
+    {
+      "ply": 11,
+      "san": "e4",
+      "evalCp": -154,
+      "evalMate": null
+    },
+    {
+      "ply": 12,
+      "san": "Bg7",
+      "evalCp": 142,
+      "evalMate": null
+    },
+    {
+      "ply": 13,
+      "san": "Ra2",
+      "evalCp": -163,
+      "evalMate": null
+    },
+    {
+      "ply": 14,
+      "san": "d6",
+      "evalCp": 158,
+      "evalMate": null
+    },
+    {
+      "ply": 15,
+      "san": "Be2",
+      "evalCp": -114,
+      "evalMate": null
+    },
+    {
+      "ply": 16,
+      "san": "Nd7",
+      "evalCp": 178,
+      "evalMate": null
+    },
+    {
+      "ply": 17,
+      "san": "Nh3",
+      "evalCp": -143,
+      "evalMate": null
+    },
+    {
+      "ply": 18,
+      "san": "Ne5",
+      "evalCp": 230,
+      "evalMate": null
+    },
+    {
+      "ply": 19,
+      "san": "O-O",
+      "evalCp": -188,
+      "evalMate": null
+    },
+    {
+      "ply": 20,
+      "san": "Bc8",
+      "evalCp": 222,
+      "evalMate": null
+    },
+    {
+      "ply": 21,
+      "san": "f3",
+      "evalCp": -151,
+      "evalMate": null
+    },
+    {
+      "ply": 22,
+      "san": "Nh6",
+      "evalCp": 186,
+      "evalMate": null
+    },
+    {
+      "ply": 23,
+      "san": "Be3",
+      "evalCp": -120,
+      "evalMate": null
+    },
+    {
+      "ply": 24,
+      "san": "Bxh3",
+      "evalCp": 123,
+      "evalMate": null
+    },
+    {
+      "ply": 25,
+      "san": "gxh3",
+      "evalCp": -112,
+      "evalMate": null
+    },
+    {
+      "ply": 26,
+      "san": "Qd7",
+      "evalCp": 179,
+      "evalMate": null
+    },
+    {
+      "ply": 27,
+      "san": "Bxh6",
+      "evalCp": -199,
+      "evalMate": null
+    },
+    {
+      "ply": 28,
+      "san": "Bxh6",
+      "evalCp": 188,
+      "evalMate": null
+    },
+    {
+      "ply": 29,
+      "san": "f4",
+      "evalCp": -182,
+      "evalMate": null
+    },
+    {
+      "ply": 30,
+      "san": "Qxh3",
+      "evalCp": 201,
+      "evalMate": null
+    },
+    {
+      "ply": 31,
+      "san": "fxe5",
+      "evalCp": -216,
+      "evalMate": null
+    },
+    {
+      "ply": 32,
+      "san": "Bg7",
+      "evalCp": 315,
+      "evalMate": null
+    },
+    {
+      "ply": 33,
+      "san": "Kh1",
+      "evalCp": -293,
+      "evalMate": null
+    },
+    {
+      "ply": 34,
+      "san": "dxe5",
+      "evalCp": 317,
+      "evalMate": null
+    },
+    {
+      "ply": 35,
+      "san": "Rf3",
+      "evalCp": -274,
+      "evalMate": null
+    },
+    {
+      "ply": 36,
+      "san": "Qh4",
+      "evalCp": 276,
+      "evalMate": null
+    },
+    {
+      "ply": 37,
+      "san": "Qd3",
+      "evalCp": -264,
+      "evalMate": null
+    },
+    {
+      "ply": 38,
+      "san": "f5",
+      "evalCp": 322,
+      "evalMate": null
+    },
+    {
+      "ply": 39,
+      "san": "Nd2",
+      "evalCp": -301,
+      "evalMate": null
+    },
+    {
+      "ply": 40,
+      "san": "fxe4",
+      "evalCp": 448,
+      "evalMate": null
+    },
+    {
+      "ply": 41,
+      "san": "Nxe4",
+      "evalCp": -485,
+      "evalMate": null
+    },
+    {
+      "ply": 42,
+      "san": "Rf8",
+      "evalCp": 486,
+      "evalMate": null
+    },
+    {
+      "ply": 43,
+      "san": "Rh3",
+      "evalCp": -495,
+      "evalMate": null
+    },
+    {
+      "ply": 44,
+      "san": "Qe1+",
+      "evalCp": 495,
+      "evalMate": null
+    },
+    {
+      "ply": 45,
+      "san": "Kg2",
+      "evalCp": -501,
+      "evalMate": null
+    },
+    {
+      "ply": 46,
+      "san": "Rf2+",
+      "evalCp": 731,
+      "evalMate": null
+    },
+    {
+      "ply": 47,
+      "san": "Nxf2",
+      "evalCp": -822,
+      "evalMate": null
+    },
+    {
+      "ply": 48,
+      "san": "Rd8",
+      "evalCp": 874,
+      "evalMate": null
+    },
+    {
+      "ply": 49,
+      "san": "Qd2",
+      "evalCp": -764,
+      "evalMate": null
+    },
+    {
+      "ply": 50,
+      "san": "Qxd2",
+      "evalCp": 771,
+      "evalMate": null
+    },
+    {
+      "ply": 51,
+      "san": "Rxd2",
+      "evalCp": -777,
+      "evalMate": null
+    },
+    {
+      "ply": 52,
+      "san": "Kf7",
+      "evalCp": 811,
+      "evalMate": null
+    },
+    {
+      "ply": 53,
+      "san": "Rxh7",
+      "evalCp": -839,
+      "evalMate": null
+    },
+    {
+      "ply": 54,
+      "san": "Kg8",
+      "evalCp": 846,
+      "evalMate": null
+    },
+    {
+      "ply": 55,
+      "san": "Rh3",
+      "evalCp": -855,
+      "evalMate": null
+    },
+    {
+      "ply": 56,
+      "san": "e4",
+      "evalCp": 862,
+      "evalMate": null
+    },
+    {
+      "ply": 57,
+      "san": "Nxe4",
+      "evalCp": -880,
+      "evalMate": null
+    },
+    {
+      "ply": 58,
+      "san": "Rd6",
+      "evalCp": 915,
+      "evalMate": null
+    },
+    {
+      "ply": 59,
+      "san": "Nxd6",
+      "evalCp": -963,
+      "evalMate": null
+    },
+    {
+      "ply": 60,
+      "san": "e5",
+      "evalCp": null,
+      "evalMate": 7
+    },
+    {
+      "ply": 61,
+      "san": "Ne8",
+      "evalCp": null,
+      "evalMate": -7
+    },
+    {
+      "ply": 62,
+      "san": "Bf8",
+      "evalCp": null,
+      "evalMate": 6
+    },
+    {
+      "ply": 63,
+      "san": "Bg4",
+      "evalCp": null,
+      "evalMate": -6
+    },
+    {
+      "ply": 64,
+      "san": "e4",
+      "evalCp": null,
+      "evalMate": 1
+    },
+    {
+      "ply": 65,
+      "san": "Re2",
+      "evalCp": null,
+      "evalMate": -6
+    },
+    {
+      "ply": 66,
+      "san": "Bg7",
+      "evalCp": null,
+      "evalMate": 3
+    },
+    {
+      "ply": 67,
+      "san": "Rxe4",
+      "evalCp": null,
+      "evalMate": -5
+    },
+    {
+      "ply": 68,
+      "san": "Bd4",
+      "evalCp": null,
+      "evalMate": 3
+    },
+    {
+      "ply": 69,
+      "san": "b4",
+      "evalCp": null,
+      "evalMate": -5
+    },
+    {
+      "ply": 70,
+      "san": "Bb2",
+      "evalCp": null,
+      "evalMate": 3
+    },
+    {
+      "ply": 71,
+      "san": "bxc5",
+      "evalCp": null,
+      "evalMate": -5
+    },
+    {
+      "ply": 72,
+      "san": "b5",
+      "evalCp": null,
+      "evalMate": 3
+    },
+    {
+      "ply": 73,
+      "san": "cxb5",
+      "evalCp": null,
+      "evalMate": -5
+    },
+    {
+      "ply": 74,
+      "san": "Ba3",
+      "evalCp": null,
+      "evalMate": 2
+    },
+    {
+      "ply": 75,
+      "san": "Rxa3",
+      "evalCp": null,
+      "evalMate": -4
+    },
+    {
+      "ply": 76,
+      "san": "Kf8",
+      "evalCp": null,
+      "evalMate": 3
+    },
+    {
+      "ply": 77,
+      "san": "Nc7",
+      "evalCp": null,
+      "evalMate": -5
+    },
+    {
+      "ply": 78,
+      "san": "Kg8",
+      "evalCp": null,
+      "evalMate": 4
+    },
+    {
+      "ply": 79,
+      "san": "Re6",
+      "evalCp": null,
+      "evalMate": -4
+    },
+    {
+      "ply": 80,
+      "san": "Kf7",
+      "evalCp": null,
+      "evalMate": 4
+    },
+    {
+      "ply": 81,
+      "san": "Rd6",
+      "evalCp": null,
+      "evalMate": -4
+    },
+    {
+      "ply": 82,
+      "san": "Kg8",
+      "evalCp": null,
+      "evalMate": 3
+    },
+    {
+      "ply": 83,
+      "san": "Rxg6+",
+      "evalCp": null,
+      "evalMate": -4
+    },
+    {
+      "ply": 84,
+      "san": "Kf7",
+      "evalCp": null,
+      "evalMate": 4
+    },
+    {
+      "ply": 85,
+      "san": "Be6+",
+      "evalCp": null,
+      "evalMate": -5
+    },
+    {
+      "ply": 86,
+      "san": "Kxg6",
+      "evalCp": null,
+      "evalMate": 5
+    },
+    {
+      "ply": 87,
+      "san": "Rg3+",
+      "evalCp": null,
+      "evalMate": -5
+    },
+    {
+      "ply": 88,
+      "san": "Kf6",
+      "evalCp": null,
+      "evalMate": 5
+    },
+    {
+      "ply": 89,
+      "san": "Bc8",
+      "evalCp": null,
+      "evalMate": -5
+    },
+    {
+      "ply": 90,
+      "san": "Ke5",
+      "evalCp": null,
+      "evalMate": 5
+    },
+    {
+      "ply": 91,
+      "san": "Re3+",
+      "evalCp": null,
+      "evalMate": -7
+    },
+    {
+      "ply": 92,
+      "san": "Kd4",
+      "evalCp": null,
+      "evalMate": 7
+    },
+    {
+      "ply": 93,
+      "san": "Rg3",
+      "evalCp": null,
+      "evalMate": -6
+    },
+    {
+      "ply": 94,
+      "san": "Kxc5",
+      "evalCp": null,
+      "evalMate": 6
+    },
+    {
+      "ply": 95,
+      "san": "Ne6+",
+      "evalCp": null,
+      "evalMate": -5
+    },
+    {
+      "ply": 96,
+      "san": "Kb4",
+      "evalCp": null,
+      "evalMate": 5
+    },
+    {
+      "ply": 97,
+      "san": "Bd7",
+      "evalCp": null,
+      "evalMate": -5
+    },
+    {
+      "ply": 98,
+      "san": "Kxa4",
+      "evalCp": null,
+      "evalMate": 5
+    },
+    {
+      "ply": 99,
+      "san": "Nc5+",
+      "evalCp": null,
+      "evalMate": -6
+    },
+    {
+      "ply": 100,
+      "san": "Kb4",
+      "evalCp": null,
+      "evalMate": 6
+    },
+    {
+      "ply": 101,
+      "san": "Na6+",
+      "evalCp": null,
+      "evalMate": -6
+    },
+    {
+      "ply": 102,
+      "san": "Kc4",
+      "evalCp": null,
+      "evalMate": 6
+    },
+    {
+      "ply": 103,
+      "san": "Rg4+",
+      "evalCp": null,
+      "evalMate": -7
+    },
+    {
+      "ply": 104,
+      "san": "Kxd5",
+      "evalCp": null,
+      "evalMate": 6
+    },
+    {
+      "ply": 105,
+      "san": "Rg6",
+      "evalCp": null,
+      "evalMate": -7
+    },
+    {
+      "ply": 106,
+      "san": "a4",
+      "evalCp": null,
+      "evalMate": 7
+    },
+    {
+      "ply": 107,
+      "san": "Nc7+",
+      "evalCp": null,
+      "evalMate": -8
+    },
+    {
+      "ply": 108,
+      "san": "Kc5",
+      "evalCp": null,
+      "evalMate": 8
+    },
+    {
+      "ply": 109,
+      "san": "Rg5+",
+      "evalCp": null,
+      "evalMate": -9
+    },
+    {
+      "ply": 110,
+      "san": "Kb6",
+      "evalCp": null,
+      "evalMate": 5
+    },
+    {
+      "ply": 111,
+      "san": "Nd5+",
+      "evalCp": null,
+      "evalMate": -6
+    },
+    {
+      "ply": 112,
+      "san": "Kc5",
+      "evalCp": null,
+      "evalMate": 6
+    },
+    {
+      "ply": 113,
+      "san": "Nc7+",
+      "evalCp": null,
+      "evalMate": -9
+    },
+    {
+      "ply": 114,
+      "san": "Kb4",
+      "evalCp": null,
+      "evalMate": 7
+    },
+    {
+      "ply": 115,
+      "san": "Be6",
+      "evalCp": null,
+      "evalMate": -7
+    },
+    {
+      "ply": 116,
+      "san": "a3",
+      "evalCp": null,
+      "evalMate": 7
+    },
+    {
+      "ply": 117,
+      "san": "Rg4+",
+      "evalCp": null,
+      "evalMate": -9
+    },
+    {
+      "ply": 118,
+      "san": "Kc5",
+      "evalCp": null,
+      "evalMate": 9
+    },
+    {
+      "ply": 119,
+      "san": "Na6+",
+      "evalCp": null,
+      "evalMate": -9
+    },
+    {
+      "ply": 120,
+      "san": "Kxb5",
+      "evalCp": null,
+      "evalMate": 9
+    },
+    {
+      "ply": 121,
+      "san": "Nc7+",
+      "evalCp": null,
+      "evalMate": -9
+    },
+    {
+      "ply": 122,
+      "san": "Kb6",
+      "evalCp": null,
+      "evalMate": 9
+    },
+    {
+      "ply": 123,
+      "san": "Rb4+",
+      "evalCp": null,
+      "evalMate": -11
+    },
+    {
+      "ply": 124,
+      "san": "Kxc7",
+      "evalCp": null,
+      "evalMate": 11
+    },
+    {
+      "ply": 125,
+      "san": "Ra4",
+      "evalCp": null,
+      "evalMate": -11
+    },
+    {
+      "ply": 126,
+      "san": "Kd6",
+      "evalCp": null,
+      "evalMate": 11
+    },
+    {
+      "ply": 127,
+      "san": "Bg4",
+      "evalCp": null,
+      "evalMate": -11
+    },
+    {
+      "ply": 128,
+      "san": "Ke5",
+      "evalCp": null,
+      "evalMate": 11
+    },
+    {
+      "ply": 129,
+      "san": "Rxa3",
+      "evalCp": null,
+      "evalMate": -11
+    },
+    {
+      "ply": 130,
+      "san": "Kd5",
+      "evalCp": null,
+      "evalMate": 10
+    },
+    {
+      "ply": 131,
+      "san": "Kf3",
+      "evalCp": null,
+      "evalMate": -10
+    },
+    {
+      "ply": 132,
+      "san": "Kd4",
+      "evalCp": null,
+      "evalMate": 10
+    },
+    {
+      "ply": 133,
+      "san": "Ra4+",
+      "evalCp": null,
+      "evalMate": -9
+    },
+    {
+      "ply": 134,
+      "san": "Kc5",
+      "evalCp": null,
+      "evalMate": 9
+    },
+    {
+      "ply": 135,
+      "san": "Bf5",
+      "evalCp": null,
+      "evalMate": -9
+    },
+    {
+      "ply": 136,
+      "san": "Kb5",
+      "evalCp": null,
+      "evalMate": 9
+    },
+    {
+      "ply": 137,
+      "san": "Rd4",
+      "evalCp": null,
+      "evalMate": -9
+    },
+    {
+      "ply": 138,
+      "san": "Kc5",
+      "evalCp": null,
+      "evalMate": 8
+    },
+    {
+      "ply": 139,
+      "san": "Ke4",
+      "evalCp": null,
+      "evalMate": -7
+    },
+    {
+      "ply": 140,
+      "san": "Kc6",
+      "evalCp": null,
+      "evalMate": 7
+    },
+    {
+      "ply": 141,
+      "san": "Rc4+",
+      "evalCp": null,
+      "evalMate": -6
+    },
+    {
+      "ply": 142,
+      "san": "Kb5",
+      "evalCp": null,
+      "evalMate": 6
+    },
+    {
+      "ply": 143,
+      "san": "Rc7",
+      "evalCp": null,
+      "evalMate": -7
+    },
+    {
+      "ply": 144,
+      "san": "Kb6",
+      "evalCp": null,
+      "evalMate": 7
+    }
+  ]
+}
