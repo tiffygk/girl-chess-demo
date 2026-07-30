@@ -53,6 +53,23 @@ export type ConversionEvent = {
   piece?: "p" | "n" | "b" | "r" | "q"; // free-material only
 };
 
+// Task K2 (conversion-aware judge, context-v2-changes-and-contract.md
+// section 2): the EvalSnapshot classify.ts's live judge already has in hand
+// -- its own beforeEval/afterEval Evaluation objects, trimmed to the two
+// fields this module's math actually reads. No bestMove/pv/depth here on
+// purpose: conversionForMove below never touches them.
+export type EvalSnapshot = { cp: number | null; mate: number | null };
+
+// The single-move sibling of ConversionEvent, minus `ply` -- deliberately
+// NOT a change to ConversionEvent.ply itself (missedWins.ts and
+// turningPoints.ts both consume detectConversion's array output and treat
+// `ply` as a required, always-real number for sorting; loosening the
+// shared type to satisfy this one new producer would silently reopen a
+// hole in both). A single live move judged by classify.ts has no array
+// position of its own to carry -- its caller already knows which ply it's
+// judging without this module repeating it back.
+export type MoveConversionEvent = Omit<ConversionEvent, "ply">;
+
 export type ConversionEpisode = {
   fromPly: number;
   toPly: number;
@@ -233,4 +250,70 @@ export function detectConversion(
 
   const events = [...mateEvents, ...freeMaterialEvents].sort((a, b) => a.ply - b.ply);
   return { events, episode };
+}
+
+// Task K2: the SAME mate-distance math as detectMateEvents above (sign
+// convention, slip formula, MISSED_MATE_DEPTH/MATE_SLIP_MIN gates -- all
+// identical, deliberately not re-derived), generalized from "one row in an
+// array with a byPly neighbor lookup" to "the single move classify.ts's
+// live judge is judging right now." `before`/`after` are classify.ts's own
+// beforeEval/afterEval (already-computed for the eval-delta math it already
+// does -- zero new engine calls). `boardBefore`/`playedSan` let this verify
+// the move the same defensive way deriveFacts/deriveThreatFacts do (replay
+// with chess.js, try/catch, never trust an unchecked string) rather than
+// pattern-matching "#" in playedSan the way detectMateEvents does when it
+// already has a whole verified game's SANs to work from.
+//
+// Returns null whenever there is nothing to report: no mate was held
+// before the move (before.mate is null or <= 0 -- this is the mate-side
+// check only, not the free-material one, which classify.ts derives
+// separately from its own already-computed threat facts), the move is
+// unreplayable, the move itself delivered the mate (nothing missed -- she
+// just won), or the mate distance stayed on schedule (slip < MATE_SLIP_MIN
+// and not a missed shallow mate).
+//
+// When both a mate-slip and a missed-mate condition fire at once (a
+// shallow mate, i.e. before.mate <= MISSED_MATE_DEPTH, that also slipped by
+// >= MATE_SLIP_MIN -- the two gates overlap by construction, see
+// MISSED_MATE_DEPTH's header comment), mate-slip wins: it is the strictly
+// more general condition (it also catches slips on mates deeper than
+// MISSED_MATE_DEPTH, where missed-mate can never fire at all), so returning
+// it here never hides a real slip behind the narrower label.
+export function conversionForMove(
+  before: EvalSnapshot,
+  after: EvalSnapshot,
+  boardBefore: string,
+  playedSan: string
+): MoveConversionEvent | null {
+  if (before.mate == null || before.mate <= 0) return null; // no mate held before her move
+
+  try {
+    const probe = new Chess(boardBefore);
+    const mv = probe.move(playedSan);
+    if (!mv) return null;
+    if (probe.isCheckmate()) return null; // she delivered the mate herself -- nothing to miss
+  } catch {
+    return null; // unreplayable from boardBefore: never guess
+  }
+
+  const beforeMate = before.mate;
+  const afterMate = after.mate;
+
+  if (afterMate == null) {
+    // The mate reading vanished with the game continuing -- she let the
+    // forced mate go entirely, not just slower. Same "lost-mate" contract
+    // as detectMateEvents above.
+    return { kind: "lost-mate", mateBefore: beforeMate, mateAfter: null, slip: 0 };
+  }
+
+  const afterAbs = Math.abs(afterMate);
+  const slip = afterAbs - (beforeMate - 1);
+
+  if (slip >= MATE_SLIP_MIN) {
+    return { kind: "mate-slip", mateBefore: beforeMate, mateAfter: afterAbs, slip };
+  }
+  if (beforeMate <= MISSED_MATE_DEPTH && slip >= 1) {
+    return { kind: "missed-mate", mateBefore: beforeMate, mateAfter: afterAbs, slip };
+  }
+  return null;
 }
