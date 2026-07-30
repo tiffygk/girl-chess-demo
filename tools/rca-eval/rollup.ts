@@ -6,9 +6,16 @@
 // "partially solved" means the floor gates are green and the measured
 // numbers are reported beside their baselines; "not solved" is stated
 // outright. No row may show a solved/not-solved verdict while any of its
-// evals reads UNAUDITED or did-not-run, or belongs to a suite this
-// dispatch never ran (CE/FH/NM/ST) -- those rows render "not run this
-// dispatch" rather than a fabricated verdict.
+// evals reads UNAUDITED or did-not-run.
+//
+// Dispatch 2 (RCA acceptance-evals round, 2026-07-31): suites CE/FH/NM/ST
+// are now BUILT (tools/coach-eval/suites/{ce,fh,nm}.ts, tools/rca-eval/
+// suites/st.ts) -- their evalRefs below are real, not placeholders. This
+// dispatch still makes NO model calls, so every one of their evals reads
+// did-not-run/UNAUDITED until the announced runs actually happen (the B11
+// baseline, the FH/NM 1-rep baselines, `st --live`); computeVerdict's
+// existing did-not-run handling renders that honestly without any special
+// casing here.
 import fs from "fs";
 import path from "path";
 import type { EvalResult, SuiteResult } from "./lib/types";
@@ -37,13 +44,23 @@ const ROWS: RollupRow[] = [
     ],
     gate: "verdict table exact; heal correct; 161 clean",
   },
-  { question: 'mate-move naming ("mate in 7", no move)', suiteLabel: "NM-01, NM-02", evalRefs: [], gate: ">= 20/21 named; zero false mate claims", fixedNote: "suite NM not built in this dispatch (scripted-live through coach-eval, out of this dispatch's scope)." },
+  {
+    question: 'mate-move naming ("mate in 7", no move)',
+    suiteLabel: "NM-01, NM-02",
+    evalRefs: [
+      { suite: "NM", id: "NM-01" },
+      { suite: "NM", id: "NM-02" },
+    ],
+    gate: ">= 20/21 named; zero false mate claims",
+  },
   {
     question: "prompt cap and timeouts",
     suiteLabel: "PC-01..02, CE-02..03",
     evalRefs: [
       { suite: "PC", id: "PC-01" },
       { suite: "PC", id: "PC-02" },
+      { suite: "CE", id: "CE-02" },
+      { suite: "CE", id: "CE-03" },
     ],
     gate: "cap 100% at every ply; timeout < 5%; no growth with length",
   },
@@ -59,16 +76,22 @@ const ROWS: RollupRow[] = [
   {
     question: "coach reasoning wrongness",
     suiteLabel: "FH-02 + FH-03 blinded read",
-    evalRefs: [],
+    evalRefs: [
+      { suite: "FH", id: "FH-01" },
+      { suite: "FH", id: "FH-02" },
+    ],
     gate: ">= 90% with zero on the fork; owner's read reported",
-    fixedNote: "suite FH not built in this dispatch (scripted-live through coach-eval, out of this dispatch's scope).",
+    // FH-03 is a human column (blinded worksheet), never a computed
+    // verdict -- deliberately NOT in evalRefs (computeVerdict would try to
+    // require it "pass", which it can only do by asserting the worksheet
+    // FILE exists, not that the owner has read it). Reported alongside, not
+    // folded into this row's solved/not-solved computation.
   },
   {
     question: "latency floor",
     suiteLabel: "CE-01 + live traces post-merge",
-    evalRefs: [],
+    evalRefs: [{ suite: "CE", id: "CE-01" }],
     gate: "eval-run medians <= baseline run; live median vs 10.7s reported",
-    fixedNote: "suite CE not built in this dispatch (scripted-live through coach-eval, out of this dispatch's scope).",
   },
   {
     question: "safe-square semantics",
@@ -87,9 +110,11 @@ const ROWS: RollupRow[] = [
   {
     question: "redo-to-template rarity",
     suiteLabel: "CE-04, CE-05",
-    evalRefs: [],
+    evalRefs: [
+      { suite: "CE", id: "CE-04" },
+      { suite: "CE", id: "CE-05" },
+    ],
     gate: "regen < 10%; success > 50% (if n >= 10); template <= 10% by cause",
-    fixedNote: "suite CE not built in this dispatch (scripted-live through coach-eval, out of this dispatch's scope).",
   },
 ];
 
@@ -154,9 +179,10 @@ export function renderRollup(runsDir: string): string {
   }
   lines.push("");
   lines.push(
-    "No row above shows solved/not-solved while any of its mapped evals is did-not-run, missing, or belongs to a " +
-      "suite this dispatch did not build (CE/FH/NM/ST) -- per spec section 7's rule that no row may carry a verdict " +
-      "while any of its evals reads UNAUDITED or did-not-run."
+    "No row above shows solved/not-solved while any of its mapped evals is did-not-run or missing (including every " +
+      "row mapped into suite CE/FH/NM/ST -- all four are built, but this dispatch makes no model calls, so their " +
+      "evals read did-not-run until the announced runs happen) -- per spec section 7's rule that no row may carry a " +
+      "verdict while any of its evals reads UNAUDITED or did-not-run."
   );
   return lines.join("\n");
 }
