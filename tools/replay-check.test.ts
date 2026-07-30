@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import {
   unconvertedInvariant,
   unconvertedAnchorInvariant,
+  noPlyCollisionInvariant,
   missedMateInvariant,
   isKnownDebriefViolation,
   KNOWN_DEBRIEF_VIOLATIONS,
@@ -78,6 +79,52 @@ describe("replay-check invariants", () => {
     ];
     expect(missedMateInvariant(moves, [])).toMatch(/blind/);
     expect(missedMateInvariant(moves, detectMissedWins(moves))).toBeNull();
+  });
+
+  // M2 fix (union review, 2026-07-31): widened from missedWins.ts's depth-1
+  // constant to conversion.ts's depth-5. This fixture (a mate-in-4 walked
+  // past, slipping to mate-in-6) was INVISIBLE to the old depth-1-gated
+  // check -- pre.evalMate=4 > the old MISSED_MATE_DEPTH(1) used to `continue`
+  // before the row was ever examined, so an unfixed implementation reports
+  // NO violation here even with an empty events list. mateIn 1 alone (the
+  // test above) cannot prove this widening; it needs a depth strictly
+  // between 2 and 5 to discriminate.
+  it("missed mate: a mate-in-4 slip is now caught (was invisible at the old depth-1 gate)", () => {
+    const moves: MoveEval[] = [
+      { ply: 2, san: "Kg8", evalCp: null, evalMate: 4 },
+      { ply: 3, san: "Qd2", evalCp: null, evalMate: -6 }, // slipped mate-4 -> mate-6, not vanished
+    ];
+    expect(missedMateInvariant(moves, [])).toMatch(/blind/);
+    expect(missedMateInvariant(moves, [{ ply: 3 }])).toBeNull();
+  });
+});
+
+// Union review DELTA (2026-07-31): the collision found in turningPoints.ts's
+// H1+H2 fix -- bestMissedPly and the missed-win point's own anchor both
+// hunt the shallowest mate in a held run, so they can land on the same ply
+// (measured on 5 of her real games: 85, 86, 132, 149, 159). The fix
+// suppresses the duplicate point at the data layer; this is the corpus-wide
+// proof that guard actually holds, since nothing else in the gate checked
+// for two points sharing a ply.
+describe("noPlyCollisionInvariant (union review DELTA)", () => {
+  it("fires when two points share a ply", () => {
+    const points = [
+      { kind: "missed-win", ply: 37 },
+      { kind: "conversion", ply: 37 },
+    ];
+    expect(noPlyCollisionInvariant(1, points)).toMatch(/share ply 37/);
+  });
+  it("stays silent when every point has its own ply", () => {
+    const points = [
+      { kind: "swing", ply: 8 },
+      { kind: "missed-win", ply: 37 },
+      { kind: "conversion", ply: 49 },
+    ];
+    expect(noPlyCollisionInvariant(1, points)).toBeNull();
+  });
+  it("stays silent on an empty or single-point game", () => {
+    expect(noPlyCollisionInvariant(1, [])).toBeNull();
+    expect(noPlyCollisionInvariant(1, [{ kind: "swing", ply: 8 }])).toBeNull();
   });
 });
 

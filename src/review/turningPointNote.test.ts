@@ -607,6 +607,26 @@ describe("missed-win note", () => {
       "you had checkmate in one here. you played knight to f7, check instead."
     );
   });
+
+  // Union review ADDENDUM 2 fix (2026-07-31, the fourth C1 producer): mateIn
+  // 1 alone (missedTp above) proves nothing -- "checkmate in one" AND "ends
+  // it on the spot" were ALSO the old hardcoded text, so neither can
+  // discriminate "reads tp.mateIn" from "always assumes one". Game 160's
+  // real shape: ply 69, mateIn 4 -- before this fix the card said "you had
+  // checkmate in one here. your Qh8+ ends it on the spot", false on both
+  // counts (she had mate in FOUR, and the named move only starts that mate).
+  it("reads the real mate distance and 'starts a forced mate' phrasing for mateIn > 1 (game 160's real shape)", () => {
+    const tp160 = tp({
+      rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8,
+    });
+    const line69 = { ply: 69, pvSans: ["Qxg7+"], bestSan: "Qxg7+" };
+    const note = buildTurningPointNote(tp160, undefined, line69, GAME150_SANS);
+    expect(note.couldImprove).toContain("you had checkmate in four here.");
+    expect(note.couldImprove).toContain("starts a forced mate in four");
+    expect(note.couldImprove).not.toContain("checkmate in one");
+    expect(note.couldImprove).not.toContain("ends it on the spot");
+  });
 });
 
 // Truth round (2026-07-29), Task 3: the game-151 owner ruling

@@ -1,12 +1,12 @@
 // server/game/manager.test.ts
-import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { Chess } from "chess.js";
 import {
   openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces,
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
   insertVerdict, getAllChatMessages,
 } from "../store/db";
-import { GameManager, BACKEND_CACHE_TTL_MS } from "./manager";
+import { GameManager, BACKEND_CACHE_TTL_MS, buildVerdictFactsJson } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
 // Task 5 reviewer fix: the "ollama unavailable" test below spies on this
 // module's own available() rather than pre-seeding pickCoachBackend's cache,
@@ -17,6 +17,59 @@ import { ollamaBackend } from "../coach/backends/ollama";
 import { claudeCliBackend } from "../coach/backends/claude-cli";
 import { agentSdkBackend } from "../coach/backends/agent-sdk";
 import { moveEndpoints } from "../annotator/moveEndpoints";
+import type { ThreatFacts } from "../annotator/motifs";
+
+// H3 fix, logic-only half (union review, 2026-07-31): pure, no real
+// evaluator or crafted mate position needed -- classify.ts already owns
+// deciding what conversionCopy says (classify.test.ts's real-engine and
+// scripted-evaluator fixtures cover that); this only tests the JSON SHAPE
+// judgeMove persists, which is the part actually new here.
+describe("buildVerdictFactsJson (H3 fix, union review 2026-07-31)", () => {
+  const threat: ThreatFacts = {
+    motif: "capture",
+    refutationUci: "d1h5",
+    refutationSan: "Qh5+",
+    refutationPieceKind: "q",
+    refutationFromSquare: "d1",
+    refutationToSquare: "h5",
+    givesCheck: true,
+    capturesHerJustMovedPiece: false,
+  };
+
+  it("returns null when neither threat nor conversionCopy is present (the ordinary silent/no-facts case)", () => {
+    expect(buildVerdictFactsJson(undefined, undefined)).toBeNull();
+  });
+
+  it("threat alone serializes exactly as the old JSON.stringify(verdict.threat) shape -- no migration needed", () => {
+    const json = buildVerdictFactsJson(threat, undefined);
+    expect(json).not.toBeNull();
+    const parsed = JSON.parse(json!);
+    expect(parsed).toEqual(threat); // no stray conversionCopy key, no nesting
+  });
+
+  // The discriminating case: conversionCopy must actually reach storage,
+  // flat alongside threat's own fields -- manager.ts's threatForPly reads
+  // facts_json as Partial<ThreatFacts> and expects refutationFromSquare/
+  // refutationToSquare at the TOP level, so a wrong (nested) implementation
+  // would still parse but threatForPly would silently stop finding them.
+  it("threat AND conversionCopy persist flat, together, in one object", () => {
+    const json = buildVerdictFactsJson(threat, "still winning, but there was a faster mate. mate in 2 was there, now it's mate in 4.");
+    expect(json).not.toBeNull();
+    const parsed = JSON.parse(json!);
+    expect(parsed.refutationFromSquare).toBe("d1"); // threat's own fields still top-level -- threatForPly's reader is unaffected
+    expect(parsed.refutationToSquare).toBe("h5");
+    expect(parsed.conversionCopy).toBe(
+      "still winning, but there was a faster mate. mate in 2 was there, now it's mate in 4."
+    );
+  });
+
+  it("conversionCopy alone (no threat at all) still persists -- the case the OLD code silently dropped to null", () => {
+    const json = buildVerdictFactsJson(undefined, "still winning, but the forced mate is gone for now.");
+    expect(json).not.toBeNull();
+    const parsed = JSON.parse(json!);
+    expect(parsed.conversionCopy).toBe("still winning, but the forced mate is gone for now.");
+  });
+});
 
 describe("GameManager", () => {
   let gm: GameManager;
@@ -27,6 +80,12 @@ describe("GameManager", () => {
     gm = new GameManager();
     await gm.init();
   }, 40000);
+
+  // Gate-determinism fix (2026-07-31): this file's shared `gm` spawns a
+  // real stockfish process (plus one real maia/lc0 per elo used below) and
+  // never killed it -- see GameManager.shutdown()'s comment in manager.ts
+  // for the full leak this closes across four files.
+  afterAll(() => gm.shutdown());
 
   it("plays a move, gets a legal reply, and records both moves", async () => {
     const g = await gm.newGame(sessionId, 1100);
@@ -1498,4 +1557,40 @@ describe("GameManager", () => {
       expect(capturedPrompt).toContain('"ply":55,"san":"Nf7+","side":"you","bestSan":"Qh8#"');
     }, 20000);
   });
+});
+
+// Gate-determinism fix (2026-07-31): a separate, LOCAL GameManager -- never
+// the shared `gm` above -- because exercising shutdown() on the shared
+// instance would kill the engine every other test in this file depends on.
+describe("GameManager.shutdown() -- test-teardown seam", () => {
+  it("kills the real stockfish process the constructor spawned, even though init() was never called", async () => {
+    // The bug this closes: `evaluator = new StockfishEvaluator()` is a
+    // field initializer, so the real stockfish binary spawns the instant
+    // `new GameManager()` runs -- init() only performs the uci handshake on
+    // an already-running process. server/coach/chat.test.ts's beforeEach
+    // constructed a GameManager per test (21 of them) on exactly the
+    // opposite assumption ("no gm.init() here, so the real engine never
+    // starts") and never called anything to clean one up. Revert
+    // GameManager.shutdown() to a no-op (or delete the `this.evaluator
+    // .quit()` line inside it, manager.ts) and this test goes RED: the pid
+    // stays signalable past the 3s deadline and the assertion below fails.
+    const localGm = new GameManager();
+    const pid = localGm.getEvaluatorPidForTesting();
+    expect(pid).toBeTruthy();
+
+    localGm.shutdown();
+
+    const deadline = Date.now() + 3000;
+    let alive = true;
+    while (Date.now() < deadline) {
+      try {
+        process.kill(pid!, 0);
+        await new Promise((r) => setTimeout(r, 50));
+      } catch {
+        alive = false;
+        break;
+      }
+    }
+    expect(alive).toBe(false);
+  }, 5000);
 });

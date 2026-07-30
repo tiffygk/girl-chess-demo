@@ -9,6 +9,10 @@ export class StockfishEvaluator implements Evaluator {
   async init() { await this.engine.init(); }
   quit() { this.engine.quit(); }
 
+  // Test/observability seam only, mirrors UciEngine.pid -- no production
+  // call site.
+  get pid(): number | undefined { return this.engine.pid; }
+
   evaluate(fen: string, movetimeMs = 800): Promise<Evaluation> {
     // serialize: one search at a time on the single engine process
     const run = this.queue.then(() => this.search(fen, movetimeMs));
