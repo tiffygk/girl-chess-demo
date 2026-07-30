@@ -47,7 +47,13 @@ export type ChessCategory =
 export interface DebriefBullet {
   section: BulletSection;
   text: string; // lowercase, one sentence (occasionally two short clauses for a pinned template), no numbers/percentages beyond move numbers/counts
-  phase: GamePhase;
+  // Important 5 / union F1 (2026-07-30 fix wave): null when there is no
+  // board to derive a phase from (gameSans absent/empty/unreplayable to
+  // this ply) -- phasesForGame's phaseAt is honest about "I don't know" now,
+  // and this field carries that through rather than defaulting to
+  // "opening". Every render site (the card tag, the two prose clauses) must
+  // treat null as "omit the claim", never as a value to print.
+  phase: GamePhase | null;
   category: ChessCategory;
   ply?: number; // rewind anchor when the bullet points at a moment
 }
@@ -201,7 +207,7 @@ interface CategorizeFact {
 // HER_NEG_LABELS facts — punish credit is handled directly in
 // buildDoneWell, not through this function) but is kept for spec fidelity
 // and any future caller that widens the input set.
-function categorize(fact: CategorizeFact, phase: GamePhase, episode: { ply: number; plyEnd?: number } | null): ChessCategory {
+function categorize(fact: CategorizeFact, phase: GamePhase | null, episode: { ply: number; plyEnd?: number } | null): ChessCategory {
   if (fact.kind === "episode") return "king safety";
   if (fact.missedPunish) return "missed tactic";
   if (episode != null && HER_NEG_LABELS.has(fact.label)) {
@@ -306,7 +312,7 @@ function buildDoneWell(
   // word about a different moment in the same debrief. See the comment at
   // this function's unconverted branch below for why "different ply" does
   // NOT already guarantee "different phase."
-  watchNextPhaseClaim?: GamePhase
+  watchNextPhaseClaim?: GamePhase | null
 ): DebriefBullet {
   const punishPoints = turningPoints.filter((t) => t.label.startsWith("opponent") && !!t.punishSan);
   if (punishPoints.length > 0) {
@@ -405,7 +411,28 @@ function buildDoneWell(
         ? `you were winning this one from move ${moveNumberForPly(startPoint.ply)} onward.`
         : "you had a winning position here.";
     }
-    const trustedPhase = startPoint ? phases.phaseAt(startPoint.ply) : undefined;
+    // Critical 2 fix (2026-07-30 fix wave): findPrecedingOpponentPoint
+    // returns an OPPONENT turning point by construction (it filters on
+    // label.startsWith("opponent")) -- so startPoint.ply is always even,
+    // always mallow's move (this project's ply-parity constraint: odd is
+    // hers, even is mallow's). Deriving this PRAISE clause's phase from
+    // startPoint.ply credited HER with a window that opened because MALLOW
+    // blundered -- reproduced on her real game 151, where this used to
+    // render "your opening is working" sourced from ply 12, mallow's Ba5
+    // (stored label "opponent mistake"). The window text above (the "from
+    // move N to move N" numbers) is correct and unchanged -- that stretch
+    // genuinely starts at the opponent's mistake. Only the PHASE
+    // ATTRIBUTION was wrong: it must come from HER side of the board, not
+    // the ply that opened the window. herRunStartPly is the winning run's
+    // first ply that is actually hers -- one past the opponent's point,
+    // which the parity constraint guarantees is odd -- a board-position
+    // fact about which ply starts her side of the run, not a re-derivation
+    // of anything phaseAt already computed. When there is no startPoint at
+    // all there is no run to attribute a side to, and the clause is
+    // omitted rather than guessed (same discipline as the no-startPoint
+    // branch already used for the window text above).
+    const herRunStartPly = startPoint ? startPoint.ply + 1 : undefined;
+    const trustedPhase = herRunStartPly ? phases.phaseAt(herRunStartPly) : undefined;
     // Suppress rather than repeat watchNextTime's claim (see the comment
     // above this branch).
     const phaseClaim = trustedPhase && trustedPhase !== watchNextPhaseClaim ? trustedPhase : undefined;
@@ -667,18 +694,35 @@ function buildWatchNextTime(
   // 151). Phase round (2026-07-30): the phase clause used to be omitted
   // unless the old endgame-only gate could prove "endgame" from the
   // nearly-bare override alone; every phase phases.phaseAt returns is now a
-  // board fact (lichess divider + nearly-bare override), so the clause
-  // always renders.
+  // board fact (lichess divider + nearly-bare override).
+  //
+  // Critical 1 fix (2026-07-30 fix wave, restores the rule commit 365f503
+  // established): unconvertedTp.ply is provably the SLIP location -- a real
+  // turning moment -- ONLY when anchorKind is "repetition-entry"
+  // (findRepetitionAnchor actually proved a stored, non-repeating
+  // alternative existed there). On every other unconverted ending
+  // (anchorKind "run-start") it is only the held-run's FIRST ply, never a
+  // claim about when the win slipped -- buildDoneWell's own `proven` branch
+  // above already respects this distinction; this clause did not. The old
+  // trustedPhaseForClause gate (deleted this round) could only ever prove
+  // "endgame" from the nearly-bare override, so a run-start anchor almost
+  // never passed it -- this clause was near-unreachable by accident.
+  // phaseAt is total now, so that accidental protection is gone and must be
+  // restored explicitly: the phase-and-slip claim is gated on the SAME
+  // condition buildDoneWell already uses, and omitted (not weakened) when
+  // it is not proven -- a silent bullet beats one that contradicts our own
+  // data.
   const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
   if (unconvertedTp && !missedWin) {
     const base =
       unconvertedTp.endKind === "repetition"
         ? "when you are winning and the position starts to look familiar, that is the moment to change something: a pawn push, a check from a new square, a rook to an open file. repeating is not a safe move, it is the move that gives the win back."
         : "when you are winning big, the job changes from attacking to finishing. slow down and look for the line that actually ends it.";
-    const trustedPhase = phases.phaseAt(unconvertedTp.ply);
+    const proven = unconvertedTp.anchorKind === "repetition-entry";
+    const trustedPhase = proven ? phases.phaseAt(unconvertedTp.ply) : null;
     bullets.push({
       section: "watch next time",
-      text: `the ${trustedPhase} is where this one slipped. ${base}`,
+      text: trustedPhase ? `the ${trustedPhase} is where this one slipped. ${base}` : base,
       phase: phases.phaseAt(unconvertedTp.ply),
       category: "endgame technique",
       ply: unconvertedTp.ply,
@@ -775,11 +819,15 @@ export function debriefBullets(input: DebriefBulletsInput): DebriefBullet[] {
   // ahead of buildDoneWell so it can suppress a colliding claim of its own
   // (see that function's unconverted branch). Mirrors buildWatchNextTime's
   // own guard exactly (an unconverted point only gets a watch-next-time
-  // phase clause when there is no missed-win point crowding it out) --
-  // keep the two in sync if either guard changes.
+  // phase clause when there is no missed-win point crowding it out, AND
+  // (Critical 1 fix, 2026-07-30) only when anchorKind proves the slip
+  // location) -- keep the two in sync if either guard changes.
   const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
   const missedWinTp = turningPoints.find((t) => t.kind === "missed-win");
-  const watchNextPhaseClaim = unconvertedTp && !missedWinTp ? phases.phaseAt(unconvertedTp.ply) : undefined;
+  const watchNextPhaseClaim =
+    unconvertedTp && !missedWinTp && unconvertedTp.anchorKind === "repetition-entry"
+      ? phases.phaseAt(unconvertedTp.ply)
+      : undefined;
 
   const doneWell = buildDoneWell(turningPoints, episode, result, totalPlies, gameSans, phases, watchNextPhaseClaim);
   const couldBeBetter = buildCouldBeBetter(

@@ -121,39 +121,39 @@ describe("GAME-127 acceptance (owner playtest fixture, feedback.md)", () => {
     // lichess-divider timeline, and this fixture is never given gameSans
     // (only turningPoints/classifications/result/totalPlies, per its own
     // "hardcoded copy" convention), so there is no board to derive a phase
-    // from. Verified independently (probed against this exact 24-ply
-    // reconstruction's real sans with gameSans supplied): none of the three
-    // divider predicates (majorsAndMinors<=10, backrankSparse, mixedness>150)
-    // actually trip within these 24 plies of ordinary opening play either --
-    // "opening" is the honest board fact here, not an artifact of missing
-    // data. The old "middlegame" expectation was pinned to a ply-fraction
-    // formula purpose-built for this fixture, not a material fact.
+    // from.
+    //
+    // Important 5 / union F1 (2026-07-30 fix wave): the prior wave of this
+    // comment claimed "opening" was the honest default here -- it was not.
+    // "opening" with no board to replay is a fabricated fact, indistinguish-
+    // able to any reader from a genuinely proven opening (this is the exact
+    // shape the review caught: a debrief with no gameSans asserting "the
+    // opening is where this one slipped" about a move deep in a 50-ply
+    // game). phaseAt now returns null when there is no board, and this
+    // fixture -- deliberately never given gameSans -- must show that: null,
+    // not a guessed phase word.
     const missBullet = bullets.find((b) => b.category === "missed tactic");
     expect(missBullet).toBeTruthy();
     expect(missBullet!.section).toBe("could be better");
     expect(missBullet!.ply).toBe(15);
-    expect(missBullet!.phase).toBe("opening");
+    expect(missBullet!.phase).toBeNull();
     expect(missBullet!.text).toContain("move 8");
     expect(missBullet!.text).toContain("knight");
     expect(missBullet!.text).toContain("castle");
 
     // watch-next-time: the king-pressure episode, anchored to its start.
-    // Phase round (2026-07-30-phase): same as the missed-tactic bullet
-    // above -- no gameSans on this fixture, no board to derive a phase
-    // from, honest default is "opening" (verified independently: even with
-    // the real sans supplied, none of the divider predicates trip by ply 18
-    // of this particular 24-ply reconstruction either).
+    // Same no-board reasoning as the missed-tactic bullet above.
     const episodeBullet = bullets.find((b) => b.category === "king safety");
     expect(episodeBullet).toBeTruthy();
     expect(episodeBullet!.section).toBe("watch next time");
     expect(episodeBullet!.ply).toBe(18);
-    expect(episodeBullet!.phase).toBe("opening");
+    expect(episodeBullet!.phase).toBeNull();
 
     // The old single-sentence platitude must appear nowhere.
     for (const b of bullets) expect(b.text).not.toBe(OLD_PLATITUDE);
   });
 
-  it("every bullet carries a phase and category (the render-time tag)", () => {
+  it("every bullet carries a category; phase is null with no board to derive one from (the render-time tag)", () => {
     const bullets = debriefBullets({
       turningPoints: GAME_127_TPS,
       classifications: GAME_127_CLASSIFICATIONS,
@@ -161,7 +161,9 @@ describe("GAME-127 acceptance (owner playtest fixture, feedback.md)", () => {
       totalPlies: 24,
     });
     for (const b of bullets) {
-      expect(b.phase).toMatch(/^(opening|middlegame|endgame)$/);
+      // No gameSans on this fixture -- every bullet's phase must be null,
+      // never a guessed word (Important 5 / union F1).
+      expect(b.phase).toBeNull();
       expect(typeof b.category).toBe("string");
     }
   });
@@ -215,13 +217,13 @@ describe("GAME-127 REAL acceptance (owner's actual played sans, calibration swee
   // Phase round (2026-07-30-phase): this fixture (only turningPoints/
   // classifications/result/totalPlies, no gameSans -- same "hardcoded copy"
   // convention as the block above) no longer has ply-arithmetic phase to
-  // claim "middlegame" from. Verified independently against her real 24
-  // played sans with gameSans supplied: none of the divider predicates trip
-  // by ply 17 of this particular game either, so "opening" is the honest
-  // board fact this fixture actually supports, not the old formula's
-  // "middlegame". Category is unaffected -- it comes from the king-pressure
-  // episode window, not phase.
-  it("her ply-17 gxf3 mistake (1 ply before the king-pressure episode window) tags king safety, not development, and honestly degrades to 'opening' with no gameSans to derive a phase from", () => {
+  // claim "middlegame" from. Category is unaffected -- it comes from the
+  // king-pressure episode window, not phase.
+  //
+  // Important 5 / union F1: with no board to replay, phase must be null,
+  // never a guessed "opening" (see the comment on the block above for why
+  // "opening" used to be the wrong default, not the honest one).
+  it("her ply-17 gxf3 mistake (1 ply before the king-pressure episode window) tags king safety, not development, and phase is null with no gameSans to derive one from", () => {
     const bullets = debriefBullets({
       turningPoints: GAME_127_REAL_TPS,
       classifications: GAME_127_REAL_CLASSIFICATIONS,
@@ -230,7 +232,7 @@ describe("GAME-127 REAL acceptance (owner's actual played sans, calibration swee
     });
     const gxf3Bullet = bullets.find((b) => b.ply === 17);
     expect(gxf3Bullet).toBeTruthy();
-    expect(gxf3Bullet!.phase).toBe("opening");
+    expect(gxf3Bullet!.phase).toBeNull();
     expect(gxf3Bullet!.category).toBe("king safety");
   });
 });
@@ -259,9 +261,13 @@ describe("phase derivation now comes from the shared board-fact timeline (2026-0
     return bullets.find((b) => b.section === "could be better")!.phase;
   }
 
-  it("without gameSans there is no board to derive a phase from -- every ply degrades to 'opening', never a ply-fraction guess", () => {
-    expect(phaseOfSoleCouldBeBetter(55, 91)).toBe("opening");
-    expect(phaseOfSoleCouldBeBetter(9, 24)).toBe("opening");
+  // Important 5 / union F1 (2026-07-30 fix wave): "opening" used to be the
+  // no-board default here, which reads as a proven fact to every consumer.
+  // The honest answer to "what phase is this ply" with nothing to replay is
+  // "I don't know" -- null, not a guessed word.
+  it("without gameSans there is no board to derive a phase from -- every ply is null, never a ply-fraction guess or a guessed word", () => {
+    expect(phaseOfSoleCouldBeBetter(55, 91)).toBeNull();
+    expect(phaseOfSoleCouldBeBetter(9, 24)).toBeNull();
   });
 
   it("with real gameSans, the bullet's phase agrees exactly with phasesForGame's own board-fact timeline at that ply", () => {
@@ -294,10 +300,26 @@ describe("category chain (episode > missedPunish > capture-tactics > episode-def
     expect(categoryOfSoleCouldBeBetter({ ply: 30, san: "Qxf7", label: "blunder", deltaP: -0.3 }, 60)).toBe("tactics");
   });
 
-  it("her mistake without a capture, opening-phase (no board data, degrades honestly to opening) -> opening play", () => {
+  // Important 5 / union F1 (2026-07-30 fix wave): with no gameSans there is
+  // no board to prove "opening" from, so the category chain must NOT claim
+  // "opening play" either -- that category name asserts the same phase fact
+  // the copy layer does. Falls to the honest "development" fallback
+  // instead. (The old comment here called "opening" the "honest" default;
+  // it was the opposite -- see gamePhases.ts's own no-input-degradation
+  // fix.)
+  it("her mistake without a capture, no board data at all -> falls to development, never invents 'opening play'", () => {
     expect(categoryOfSoleCouldBeBetter({ ply: 12, san: "Nb6", label: "mistake", deltaP: -0.16 }, 60)).toBe(
-      "opening play"
+      "development"
     );
+  });
+
+  // Positive case: with a real board proving "opening" (GAME150_SANS's
+  // midgame latch is ply 24; ply 12 sits before it), "opening play" is
+  // reachable and correct.
+  it("her mistake without a capture, board-proven opening phase -> opening play", () => {
+    expect(
+      categoryOfSoleCouldBeBetter({ ply: 12, san: "Nb6", label: "mistake", deltaP: -0.16 }, 91, GAME150_SANS)
+    ).toBe("opening play");
   });
 
   // Phase round (2026-07-30-phase): these two now supply GAME150_SANS (her
@@ -527,6 +549,13 @@ describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverte
     const unprovenRepetition: TurningPoint = tp({
       rank: 1, ply: 21, san: "Nxe5", label: "unconverted win", deltaP: 0, kind: "unconverted",
       endKind: "repetition", anchorKind: "run-start",
+      // Union review F3 (2026-07-30 fix wave): mateIn set on a run-start
+      // fixture on purpose. Without it, ".not.toContain(\"mate in\")" below
+      // was vacuous -- it could never fail regardless of whether the gate
+      // exists, because there was nothing to print. This makes it
+      // load-bearing: the mate sentence must be suppressed BECAUSE
+      // anchorKind is unproven, not because mateIn happens to be absent.
+      mateIn: 12,
     });
     const bullets = debriefBullets({
       turningPoints: [openerPoint, unprovenRepetition],
@@ -544,6 +573,8 @@ describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverte
     const stalemateAnchor: TurningPoint = tp({
       rank: 1, ply: 21, san: "Nxe5", label: "unconverted win", deltaP: 0, kind: "unconverted",
       endKind: "stalemate", anchorKind: "run-start",
+      // Union review F3: same load-bearing fix as the repetition case above.
+      mateIn: 12,
     });
     const bullets = debriefBullets({
       turningPoints: [stalemateAnchor],
@@ -557,16 +588,16 @@ describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverte
     expect(could.text).not.toContain("mate in");
   });
 
-  // Phase round (2026-07-30): this test used to prove the phase-gate omitted
-  // its prefix on game 151's real shape, because the old ply-fraction
-  // fallback's "endgame" at ply 43 was never a material fact and the gate
-  // refused to print it. That gate is gone -- every phase the timeline
-  // returns is a board fact now, so the clause always renders. Without
-  // gameSans there is no board to replay, so phasesForGame degrades to
-  // "opening" at every ply (the documented no-input behavior, ./gamePhases's
-  // own "no-input degradation" test) -- not a guess, the honest default when
-  // there is nothing to derive a phase from.
-  it("watch next time always carries the phase timeline's fact -- 'opening' when no gameSans is available to derive one, never a ply-arithmetic guess", () => {
+  // Phase round (2026-07-30) then Critical 1 fix wave (2026-07-30, same
+  // day): the deleted trustedPhaseForClause gate could only ever prove
+  // "endgame" from the nearly-bare override, so this clause was near-
+  // unreachable on a run-start anchor -- that accidental protection is gone
+  // now that phaseAt is total. Two independent reasons the clause must be
+  // OMITTED here, not printed: (1) anchorPoint's anchorKind IS
+  // "repetition-entry" (proven), but (2) this fixture supplies no gameSans,
+  // so there is no board to derive a phase from at all (Important 5 / union
+  // F1) -- either fact alone is enough to suppress the prefix.
+  it("watch next time never invents a phase prefix with no board to derive one from, even when the anchor is proven", () => {
     const bullets = debriefBullets({
       turningPoints: [openerPoint, anchorPoint],
       classifications: [],
@@ -575,16 +606,11 @@ describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverte
     });
     const watch = bullets.find((b) => b.section === "watch next time")!;
     expect(watch.text).toBe(
-      "the opening is where this one slipped. when you are winning and the position starts to look familiar, that is the moment to change something: a pawn push, a check from a new square, a rook to an open file. repeating is not a safe move, it is the move that gives the win back."
+      "when you are winning and the position starts to look familiar, that is the moment to change something: a pawn push, a check from a new square, a rook to an open file. repeating is not a safe move, it is the move that gives the win back."
     );
   });
 
-  // Phase round (2026-07-30): no gameSans -> the phase timeline has nothing
-  // to replay and degrades honestly to "opening" (same no-input default as
-  // every other test in this file without a gameSans fixture) -- the phase
-  // clause now always renders (see the pointer comment atop this file's
-  // phase section), so it prefixes the plainer non-repetition wording too.
-  it("watch next time falls back to the plainer non-repetition wording for a stalemate/fifty-move ending, prefixed with the phase timeline's fact", () => {
+  it("watch next time falls back to the plainer non-repetition wording for a stalemate/fifty-move ending, no phase prefix (anchorKind run-start is never proven, and there is also no gameSans)", () => {
     const bullets = debriefBullets({
       turningPoints: [
         tp({ rank: 1, ply: 21, san: "Nxe5", label: "unconverted win", deltaP: 0, kind: "unconverted", endKind: "fifty moves", anchorKind: "run-start" }),
@@ -595,8 +621,37 @@ describe("draw copy: unconverted win (game-151 owner ruling, feedback-unconverte
     });
     const watch = bullets.find((b) => b.section === "watch next time")!;
     expect(watch.text).toBe(
-      "the opening is where this one slipped. when you are winning big, the job changes from attacking to finishing. slow down and look for the line that actually ends it."
+      "when you are winning big, the job changes from attacking to finishing. slow down and look for the line that actually ends it."
     );
+  });
+
+  // Critical 1, direct reproduction (2026-07-30 fix wave): the SAME anchor
+  // ply on a REAL board (so the "no board" reason above cannot explain the
+  // omission) with anchorKind "run-start" -- the exact shape review-phase.md
+  // Critical 1 named: a stalemate/fifty-move/unconverted-draw anchor whose
+  // ply is only the held-run's start, never a claim about when the win
+  // slipped. Before this fix wave this rendered "the endgame is where this
+  // one slipped" (GAME150_SANS ply 50 sits inside the nearly-bare override,
+  // see the "phase pair unlock" describe block below) even though anchorKind
+  // proves nothing about ply 50 being where anything slipped.
+  it("Critical 1: a real, board-proven phase still never prefixes the slip clause when anchorKind is run-start (not proven)", () => {
+    const unprovenAnchor: TurningPoint = tp({
+      rank: 2, ply: 50, san: "h6", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "fifty moves", anchorKind: "run-start",
+    });
+    expect(phasesForGame(GAME150_SANS).phaseAt(50)).toBe("endgame"); // a real, provable phase exists here
+    const bullets = debriefBullets({
+      turningPoints: [unprovenAnchor],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const watch = bullets.find((b) => b.section === "watch next time")!;
+    expect(watch.text).toBe(
+      "when you are winning big, the job changes from attacking to finishing. slow down and look for the line that actually ends it."
+    );
+    expect(watch.text).not.toContain("is where this one slipped");
   });
 
   // review-3-pass2.md MEDIUM finding 3 (fixing a review-3.md MEDIUM finding
@@ -924,13 +979,28 @@ describe("plain English via gameSans (Task 3)", () => {
 
 // Coach truth-speed round (2026-07-27): owner playtest report fixes.
 describe("phase coherence (2026-07-27 owner report: watch-next-time's phase must match the ply its text names)", () => {
-  it("a 60-ply game whose only slips are in the opening tags the watch-next-time bullet 'opening', not 'endgame'", () => {
+  // Important 5 / union F1 (2026-07-30 fix wave): this fixture used to omit
+  // gameSans, which meant EVERY ply -- ply 8 and totalPlies alike -- read
+  // "opening" under the old no-board default. That made the assertion
+  // below pass whether the code correctly anchored to the slip's own ply OR
+  // incorrectly anchored to the game's last ply: both wrong and right
+  // answers were "opening" by coincidence, so the test never actually
+  // discriminated the bug it's named for (the same "passed for an unrelated
+  // reason" shape this project keeps getting bitten by). Fixed by supplying
+  // a real board (GAME150_SANS) where ply 8 and totalPlies (91, deep inside
+  // the nearly-bare override from ply 43) are genuinely different phases --
+  // now the assertion can only pass if the bullet is really anchored to
+  // ply 8.
+  it("a game whose only slip is in the opening tags the watch-next-time bullet 'opening', not the game's last-ply phase", () => {
     const bullets = debriefBullets({
       turningPoints: [tp({ ply: 8, san: "Nb6", label: "mistake", deltaP: -0.1 })],
       classifications: [],
       result: null,
-      totalPlies: 60,
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
     });
+    expect(phasesForGame(GAME150_SANS).phaseAt(8)).toBe("opening");
+    expect(phasesForGame(GAME150_SANS).phaseAt(91)).toBe("endgame"); // what a wrong last-ply anchor would say
     const watch = bullets.find((b) => b.section === "watch next time")!;
     expect(watch.phase).toBe("opening");
     expect(watch.ply).toBe(8);
@@ -1260,6 +1330,45 @@ describe("nearly-bare-side phase override (missed-win round, 2026-07-28)", () =>
     });
     const b = bullets.find((x) => x.ply === 55);
     expect(b?.phase).toBe("endgame"); // old rule: endgame only from ply 69
+  });
+});
+
+// Critical 2 (2026-07-30 fix wave): findPrecedingOpponentPoint returns an
+// OPPONENT turning point by construction, so startPoint.ply is always even
+// -- always mallow's move. On her real game 151 this shipped "your opening
+// is working: you were winning this one from move 6 to move 22", sourced
+// from ply 12, mallow's Ba5 (stored label "opponent mistake"). Reproduced
+// here on a real board (GAME150_SANS) rather than a synthetic one, with a
+// ply pair (42 mallow / 43 hers) straddling a genuine phase boundary
+// (middlegame -> endgame, the nearly-bare override) so the fix is provably
+// reading HER ply, not just coincidentally matching.
+describe("Critical 2: the praise clause's phase must come from HER ply, never the opponent point that opened the window", () => {
+  it("derives the phase from her own first ply of the run (odd, ply 43 = endgame), not the opponent's mistake ply (even, ply 42 = middlegame)", () => {
+    const phases = phasesForGame(GAME150_SANS);
+    expect(phases.phaseAt(42)).toBe("middlegame"); // mallow's ply -- the old, wrong source
+    expect(phases.phaseAt(43)).toBe("endgame"); // her ply -- the fix's source
+    const openerPoint: TurningPoint = tp({
+      rank: 1, ply: 42, san: "exf4", label: "opponent mistake", deltaP: 0.05, kind: "swing",
+    });
+    // anchorKind run-start (not proven) so watch-next-time's own phase
+    // claim is undefined regardless of ITS ply's phase -- isolates this
+    // assertion to done-well's attribution bug specifically, with nothing
+    // from the same-phase suppression (already covered by its own describe
+    // block) able to hide a wrong answer.
+    const anchorPoint: TurningPoint = tp({
+      rank: 2, ply: 55, san: "Nf7+", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "fifty moves", anchorKind: "run-start",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [openerPoint, anchorPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const doneWell = bullets.find((b) => b.section === "done well")!;
+    expect(doneWell.text).toBe("your endgame is working: you were winning this one from move 21 onward.");
+    expect(doneWell.text).not.toContain("your middlegame is working");
   });
 });
 
