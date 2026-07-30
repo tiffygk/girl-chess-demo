@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import { app, ready, gm } from "./index";
 
@@ -20,6 +20,16 @@ function parseFrames(raw: string): { event: string; data: unknown }[] {
 }
 
 describe("POST /api/game/:id/chat/stream (B-stream)", () => {
+  // Gate-determinism fix (2026-07-31): `gm` here is the module-level
+  // singleton from ./index -- constructing it spawns a real stockfish
+  // process, and every /api/game call spawns a real maia/lc0 process too,
+  // neither of which this file ever killed. That leak, surviving for the
+  // rest of whichever vitest worker happened to run this file, is the root
+  // cause this round found for the "socket hang up" flake below: see
+  // GameManager.shutdown()'s comment in server/game/manager.ts for the
+  // full explanation, which spans four files.
+  afterAll(() => gm.shutdown());
+
   it("frame order is delta* then done, for a backend that streams", async () => {
     await ready;
     gm.setCoachBackendForTesting({

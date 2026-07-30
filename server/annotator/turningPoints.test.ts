@@ -131,7 +131,23 @@ describe("computeTurningPoints — acceptance fixtures", () => {
   // exactly this.
   it("reproduces game 85: two opponent errors with punish suffixes + her ply-21 inaccuracy (debrief-v2 dedup fix)", () => {
     const tps = computeTurningPoints(GAME_85, "1-0");
-    expect(tps).toHaveLength(3);
+    // Game-160 RCA round, Task K1 (2026-07-31): this fixture's own mate
+    // ladder (63. Rxf8 -> M-9 ... 74. bxa4 -> M14) carries real mate-DISTANCE
+    // slips the old depth-1 detector was structurally blind to (before=5 at
+    // plies 65/67, the exact failure class this round exists to fix) -- so
+    // length grows from 3 to 4: a missed-win point (K1 widens
+    // MISSED_MATE_DEPTH 1 -> 5), verified by direct computation against this
+    // fixture's own numbers, not assumed. The three swing assertions below
+    // are UNCHANGED.
+    //
+    // Union review DELTA fix (2026-07-31): this fixture's own conversion
+    // point would ALSO anchor at ply 65 -- the same ply as the missed-win
+    // point below, since both detectors hunt the shallowest mate in the
+    // run and land on the same moment here. The collision guard suppresses
+    // the redundant conversion point rather than stacking two cards on one
+    // ply ("one story, one bullet", the same reasoning the hasUnconverted
+    // suppression already uses) -- length stays 4, not 5.
+    expect(tps).toHaveLength(4);
 
     expect(tps[0]).toMatchObject({
       rank: 1, ply: 22, san: "Qd8", label: "opponent mistake", punishSan: "Nxe5", kind: "swing",
@@ -147,6 +163,20 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     expect(tps[2].deltaP).toBeCloseTo(-0.1166, 2);
     expect(tps[2].missedPunish).toBeFalsy();
     expect(tps[2].punishSan).toBeUndefined();
+
+    expect(tps[3]).toMatchObject({
+      rank: 4, ply: 65, label: "missed mate", kind: "missed-win", mateIn: 5, missedCount: 2,
+    });
+    expect(tps[3].deltaP).toBe(0);
+
+    // No tps[4]: the conversion point (which WOULD have anchored at ply 65,
+    // the ply she actually held the shortest mate, mate-in-5, at -- verified
+    // by hand: 63.Rxf8->M-9 (her, but its own "before" reading at ply 62 is
+    // a plain cp, not a mate, so it never qualifies) | 64.a5->M5 |
+    // 65.Bxf5->M-7 (her; pre = ply64's M5, the smallest positive "before"
+    // anywhere in this run)) collides with the missed-win point already at
+    // ply 65 and is suppressed -- see the comment above.
+    expect(tps.some((t) => t.kind === "conversion")).toBe(false);
   });
 
   it("reproduces game 86: three genuine swings including HER inaccuracy, no backfill needed, PLUS a real missed mate-in-1 (missed-win round, 2026-07-28)", () => {
@@ -156,12 +186,27 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     // ladder — ...35. Rd1 -> M-2 | 36. Bf8 -> M1 | 37. Qxe6+ -> M-6...
     // — carries a REAL missed mate-in-1 the old algorithm had no way to
     // see: after black's ply 36, white (her) had M1 and played the check
-    // Qxe6+ instead of mating, giving the distance back out to M6. A
-    // second miss recurs at ply 59 (after ply 58's M1). detectMissedWins
-    // correctly flags both; the anchor is the earlier one (ply 37) not
-    // already claimed by an existing turning point, with missedCount 2.
-    // This is a genuine, previously-invisible fact surfacing on 2026-07-28
-    // fixture data that predates this round — not a fixture change.
+    // Qxe6+ instead of mating, giving the distance back out to M6.
+    //
+    // Game-160 RCA round, Task K1 (2026-07-31): the OLD depth-1 detector
+    // only ever saw two of this ladder's misses (ply 37 and ply 59, both
+    // exactly mate-in-1). K1 widens MISSED_MATE_DEPTH to 5 and adds
+    // MATE_SLIP_MIN 2 (conversion.ts) — this fixture's own long, wobbly
+    // mate chase (mate distance bounces between 1 and 8 for 40 plies) turns
+    // out to carry ELEVEN qualifying missed-mate/lost-mate events at that
+    // wider depth, verified by direct computation against this fixture's
+    // own numbers, not assumed. The anchor stays the earliest one (ply 37)
+    // not already claimed by an existing turning point; missedCount now
+    // reports the true wider count (11). The three swing assertions below
+    // are UNCHANGED.
+    //
+    // Union review DELTA fix (2026-07-31): the conversion point (bestMissed
+    // 1 -- she held mate-in-1 at least once in this run) would ALSO anchor
+    // at ply 37, her Qxe6+ -- the exact same ply the missed-win point
+    // already claims, since both detectors hunt the shallowest mate in the
+    // run and land on the same moment here. The collision guard suppresses
+    // the redundant conversion point (see the game-85 test above for the
+    // same reasoning) -- length stays 4, not 5.
     expect(tps).toHaveLength(4);
     expect(tps.slice(0, 3).every((t) => t.kind === "swing")).toBe(true);
 
@@ -189,9 +234,14 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     expect(tps[2].deltaP).toBeCloseTo(0.1003, 2);
 
     expect(tps[3]).toMatchObject({
-      rank: 4, ply: 37, san: "Qxe6+", label: "missed mate", kind: "missed-win", mateIn: 1, missedCount: 2,
+      rank: 4, ply: 37, san: "Qxe6+", label: "missed mate", kind: "missed-win", mateIn: 1, missedCount: 11,
     });
     expect(tps[3].deltaP).toBe(0);
+
+    // No tps[4]: bestMissedPly (37 -- her Qxe6+, where mate-in-1 was
+    // actually held) collides with the missed-win point already at ply 37,
+    // so the conversion point is suppressed -- see the comment above.
+    expect(tps.some((t) => t.kind === "conversion")).toBe(false);
   });
 });
 
@@ -648,8 +698,18 @@ describe("missed-win turning point", () => {
       deltaP: 0,
       lowConfidence: false,
     });
-    // Appended after the swing/backfill/episode points, rank sequential.
+    // Union review DELTA fix (2026-07-31): this fixture's mate run has real
+    // slip evidence at both plies 55 and 57, so a "conversion" point would
+    // exist -- anchored on bestMissedPly (55, where mate-in-1 was actually
+    // held, not fromPly 53, whose own "before" reading is null and was
+    // never a real bestMissed candidate). But bestMissedPly (55) is the
+    // SAME ply the missed-win point above already claims, so the collision
+    // guard suppresses it (see turningPoints.ts's own comment) rather than
+    // stacking two cards on one move -- missed-win stays the LAST point,
+    // literally, not just the last-before-conversion the pre-collision-guard
+    // comment here used to describe.
     expect(missed[0].rank).toBe(points.length);
+    expect(points.some((p) => p.kind === "conversion")).toBe(false);
   });
 
   it("emits nothing when no mate was missed", () => {
@@ -685,6 +745,95 @@ describe("missed-win turning point", () => {
   });
 });
 
-it("TP_ALGO_VERSION is 6 so old games heal on read", () => {
-  expect(TP_ALGO_VERSION).toBe(6);
+// Union review fix (H2, 2026-07-31): the conversion point's own `ply` must
+// always land on HER side, end to end through computeTurningPoints -- not
+// just at the conversion.ts unit level (conversion.test.ts already proves
+// bestMissedPly itself is always odd; this proves the FULL pipeline, incl.
+// the defensive anchorPly parity-fix mirroring unconverted's own shape,
+// never regresses that guarantee). Real shape: the mate-reading run's first
+// ply (fromPly) is mallow's -- measured on her real corpus, 7 of 12
+// conversion games anchor this way before the fix.
+describe("conversion turning point parity (H2, union review)", () => {
+  // Union review fix (M1, 2026-07-31): real game 144's shape -- a mate
+  // reading that flickers in for only 5 plies (40-44) never becomes a
+  // conversion point at all, end to end. This is what actually resolves
+  // the contradiction the review flagged (a "took 2 more moves" bullet
+  // sitting beside "this happened 8 times" in the same debrief): the short
+  // run simply mints no conversion card, so there is nothing left to
+  // contradict the missed-win bullet, which is untouched (it comes from
+  // mateEvents over every row, not from episode formation).
+  it("a 5-ply mate-reading flicker (game 144's shape) never mints a conversion point", () => {
+    const moves: MoveEval[] = [
+      { ply: 40, san: "Qh5+", evalCp: null, evalMate: -5 },
+      { ply: 41, san: "Kg8", evalCp: null, evalMate: 5 },
+      { ply: 42, san: "Rd7", evalCp: null, evalMate: -5 },
+      { ply: 43, san: "Kf8", evalCp: null, evalMate: 5 },
+      { ply: 44, san: "Rb7", evalCp: null, evalMate: -4 },
+    ];
+    const tps = computeTurningPoints(moves, "1-0");
+    expect(tps.some((t) => t.kind === "conversion")).toBe(false);
+  });
+
+  it("anchors on her ply even when the mate run's first ply (fromPly) is mallow's", () => {
+    const moves: MoveEval[] = [
+      { ply: 60, san: "Kg8", evalCp: null, evalMate: 6 },
+      { ply: 61, san: "Qh5+", evalCp: null, evalMate: -8 },
+      { ply: 62, san: "Kf8", evalCp: null, evalMate: 8 },
+      { ply: 63, san: "Rd7", evalCp: null, evalMate: -8 },
+      { ply: 64, san: "Ke8", evalCp: null, evalMate: 8 },
+      { ply: 65, san: "Rb7", evalCp: null, evalMate: -9 },
+    ];
+    const tps = computeTurningPoints(moves, "1-0");
+    const conv = tps.find((t) => t.kind === "conversion");
+    expect(conv).toBeDefined();
+    expect(conv!.ply % 2).toBe(1); // her side -- never mallow's ply 60 (fromPly)
+    expect(conv!.ply).toBe(61); // bestMissedPly: pre = ply 60's evalMate 6, the smallest "before" here
+  });
+});
+
+it("TP_ALGO_VERSION is 7 (game-160 RCA round, K1: conversion + wider missed-win heal old games on read)", () => {
+  expect(TP_ALGO_VERSION).toBe(7);
+});
+
+// Game-160 RCA round, Task K1 (2026-07-31): real db evals (verified
+// pre-tpv7-20260729-195853 backup, 187 rows), never hand-typed -- same
+// fixture conversion.test.ts uses. This is the game the whole round is
+// about: 123 plies of a held mate that kept getting slower, zero mate-in-1
+// misses (so the OLD depth-1 detector was silent), and one prior wrong
+// claim (v1's "missed mate-in-2 at ply 185") that the raw evals refute.
+describe("computeTurningPoints — game 160 (real data, K1 conversion round)", () => {
+  const raw = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "__fixtures__", "game160-evals.json"), "utf-8")
+  ) as { ply: number; san: string; eval_cp: number | null; eval_mate: number | null }[];
+  const moves160: MoveEval[] = raw.map((r) => ({
+    ply: r.ply,
+    san: r.san,
+    evalCp: r.eval_cp,
+    evalMate: r.eval_mate,
+  }));
+
+  it("yields exactly 1 conversion TP plus the missed-mate-derived missed-win TP", () => {
+    const tps = computeTurningPoints(moves160, "1-0");
+    const conversionTps = tps.filter((t) => t.kind === "conversion");
+    const missedWinTps = tps.filter((t) => t.kind === "missed-win");
+    expect(conversionTps).toHaveLength(1);
+    expect(missedWinTps.length).toBeGreaterThanOrEqual(1);
+    // Union review fix (H1+H2, 2026-07-31): `ply` is 87 (bestMissedPly --
+    // her Nf7+, where mate-in-2 was actually held: pre = ply 86's evalMate
+    // 2, the smallest positive "before" anywhere in the run), not 65
+    // (fromPly, the run's start -- move 33, two different moments the old
+    // code welded into one sentence). moveNumberForPly(87) = 44, matching
+    // the union review's own "held at move 44" finding.
+    expect(conversionTps[0]).toMatchObject({ ply: 87, plyEnd: 187, mateIn: 2, kind: "conversion" });
+    expect(conversionTps[0].ply % 2).toBe(1); // her side, always
+    // ply 185 must never surface as a claimed miss anywhere -- v1's
+    // retracted claim (context-v2-changes-and-contract.md section 0.6).
+    expect(tps.some((t) => t.ply === 185)).toBe(false);
+  });
+
+  it("is idempotent: re-running on the same input yields the same turning points", () => {
+    const first = computeTurningPoints(moves160, "1-0");
+    const second = computeTurningPoints(moves160, "1-0");
+    expect(second).toEqual(first);
+  });
 });

@@ -131,12 +131,13 @@ const CROSSING_GRADED_LABELS = new Set(["mistake", "inaccuracy"]);
 
 // Spelled distances for the mate copy (owner previews use words: "mate in
 // twelve", "mate in one"); counts stay digits ("this happened 5 times").
-export const NUMBER_WORDS = [
-  "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
-];
-export function numberWord(n: number): string {
-  return NUMBER_WORDS[n] ?? String(n);
-}
+// Union review fix (C1, 2026-07-31): moved into ./numberWords so
+// debriefLesson.ts/highlightedMoves.ts/debriefInvariants.ts can read it
+// without a hand-typed second copy or a new coupling onto THIS file --
+// re-exported here so every existing caller of debriefBullets.ts's own
+// numberWord/NUMBER_WORDS keeps compiling unchanged.
+export { NUMBER_WORDS, numberWord } from "./numberWords";
+import { numberWord, pluralizeWord } from "./numberWords";
 
 // san -> the piece that moved, for "the free {piece}" / "hung her {piece}"
 // phrasing. Deterministic from SAN's own first character; never a claim
@@ -283,25 +284,63 @@ function missedWinText(
   turningLines: TurningLine[] | undefined
 ): string {
   const n = moveNumberForPly(tp.ply);
+  // C1 fix (union review, 2026-07-31): K1 widened this point's source from
+  // missedWins.ts (depth 1, mate-in-1 only) to conversion.ts (depth 5), so
+  // tp.mateIn can now be 2-5 -- this used to hardcode "checkmate in one"
+  // regardless, which is flatly false on 8 of her real games (measured:
+  // 85, 130, 141, 143, 144, 145, 150, 160). numberWord already exists in
+  // this file (used by conversionCouldBeBetterText/unconvertedCouldBeBetterText
+  // below) -- reused here rather than a second number-to-word table.
+  const mateIn = tp.mateIn ?? 1;
+  const distance = numberWord(mateIn);
   const line = turningLines?.find((l) => l.ply === tp.ply);
   // bestSan is a move from the position she faced — fenBefore(tp.ply), the
   // same fen describedOrRaw derives (missed-win plies are always hers/odd,
   // where seedPly === tp.ply - 1). The sentence already says "checkmate in
-  // one", so the ", checkmate" suffix is stripped as redundant.
+  // {distance}", so the ", checkmate" suffix is stripped as redundant.
   const best = line?.bestSan
     ? stripRedundantCheckSuffix(describedOrRaw(line.bestSan, tp.ply, gameSans), "checkmate")
     : undefined;
   const count = tp.missedCount ?? 1;
   const repeat = count > 1 ? ` this happened ${count} times this game.` : "";
   if (!best || !gameSans || gameSans.length === 0) {
-    return `move ${n}: you had checkmate in one and played past it.${repeat}`;
+    return `move ${n}: you had checkmate in ${distance} and played past it.${repeat}`;
   }
   const lastSan = gameSans[gameSans.length - 1].san;
   const extra = moveNumberForPly(totalPlies) - n;
   const cost = lastSan.includes("#")
-    ? `, and the win took ${extra} more moves to land.`
-    : `, but the game ended ${extra} moves later without it.`;
-  return `move ${n}: you had checkmate in one. your ${best} was mate on the spot${cost}${repeat}`;
+    ? `, and the win took ${extra} more ${pluralizeWord(extra, "move")} to land.`
+    : `, but the game ended ${extra} ${pluralizeWord(extra, "move")} later without it.`;
+  // "was mate on the spot" is only ever true for mate-in-one -- for a
+  // deeper miss the best move STARTS a forced mate, it isn't the mate
+  // itself (game 160's real bug: mateIn 4 rendered "was mate on the spot",
+  // false -- she had four moves of work left, not zero).
+  const startsMate =
+    mateIn === 1 ? `${best} was mate on the spot` : `${best} started a forced mate in ${distance}`;
+  return `move ${n}: you had checkmate in ${distance}. your ${startsMate}${cost}${repeat}`;
+}
+
+// Game-160 RCA round, Task K1 (2026-07-31): the conversion episode bullet
+// -- naming the shortest mate she ever held during a held-mate run and how
+// long closing it out actually took. Every clause is a literal fact off
+// the TurningPoint (ply/plyEnd = the run's start/end, mateIn = the run's
+// shortest held mate, conversion.ts's ConversionEpisode.bestMissed).
+function conversionCouldBeBetterText(tp: TurningPoint): string {
+  const startMove = moveNumberForPly(tp.ply);
+  const endMove = moveNumberForPly(tp.plyEnd ?? tp.ply);
+  const length = Math.max(endMove - startMove, 0);
+  const shortest = tp.mateIn != null ? numberWord(tp.mateIn) : "some";
+  return `move ${startMove}: the shortest mate you held here was mate in ${shortest}, but it took ${length} more ${pluralizeWord(length, "move")} to close it out.`;
+}
+
+// The technique tip half of the same fact -- what to actually DO about a
+// mate that keeps getting slower, the owner's stated learning goal made
+// procedural (same discipline as missedWinText's watch-next sibling).
+function conversionWatchNextText(tp: TurningPoint): string {
+  const startMove = moveNumberForPly(tp.ply);
+  const endMove = moveNumberForPly(tp.plyEnd ?? tp.ply);
+  const length = Math.max(endMove - startMove, 0);
+  return `moves ${startMove} to ${endMove}: it took ${length} ${pluralizeWord(length, "move")} to land a mate you already had lined up. recount the fastest mate every move instead of playing the first check you see.`;
 }
 
 // Coach truth-speed round (2026-07-27): the positive counterpart to
@@ -586,6 +625,35 @@ function buildCouldBeBetter(
     });
   }
 
+  // Game-160 RCA round, Task K1 (2026-07-31): FORCED for the same reason
+  // missed-win is -- deltaP 0 by construction. Naming the shortest mate she
+  // held and how long the run actually took is the direct fix for the
+  // empty-debrief bug this round exists to close (game 160: 123 plies of a
+  // held mate that kept getting slower, zero mate-in-1 misses, an empty
+  // debrief before this).
+  //
+  // Suppressed when an "unconverted" point ALSO exists (a held mate that
+  // slipped AND was never delivered because the game ended in a repetition/
+  // draw/loss -- real game 151's exact shape): unconvertedCouldBeBetterText
+  // already tells that same underlying "you held a mate and didn't convert
+  // it" story with owner-ruled, game-151-specific copy (the repetition
+  // wording, "you had mate in twelve there instead"). Showing the generic
+  // conversion sentence ALONGSIDE it would repeat the same fact in two
+  // different voices in one debrief -- one story, one bullet.
+  const conversionTp = turningPoints.find((t) => t.kind === "conversion");
+  const hasUnconverted = turningPoints.some((t) => t.kind === "unconverted");
+  if (conversionTp && !hasUnconverted && !used.has(conversionTp.ply)) {
+    used.add(conversionTp.ply);
+    const conversionPhase = phases.phaseAt(conversionTp.ply);
+    out.push({
+      section: "could be better",
+      text: conversionCouldBeBetterText(conversionTp),
+      phase: conversionPhase,
+      category: endgameOrConversion(conversionPhase),
+      ply: conversionTp.ply,
+    });
+  }
+
   // Game-151 round (2026-07-29): FORCED for the same reason the missed-win
   // point is -- deltaP 0 by construction means any swing sort buries the
   // game's most important note.
@@ -718,6 +786,25 @@ function buildWatchNextTime(
       phase: missedWinPhase,
       category: endgameOrConversion(missedWinPhase),
       ply: missedWin.ply,
+    });
+  }
+
+  // Game-160 RCA round, Task K1 (2026-07-31): the technique half of the
+  // conversion fact -- what to actually do about a mate that keeps getting
+  // slower. FORCED alongside the could-be-better bullet, same as every
+  // other never-miss detector's watch-next sibling in this function.
+  // Suppressed when "unconverted" also fired -- see buildCouldBeBetter's
+  // matching gate for why (one story, one bullet).
+  const conversionTp = turningPoints.find((t) => t.kind === "conversion");
+  const hasUnconverted = turningPoints.some((t) => t.kind === "unconverted");
+  if (conversionTp && !hasUnconverted) {
+    const conversionPhase = phases.phaseAt(conversionTp.ply);
+    bullets.push({
+      section: "watch next time",
+      text: conversionWatchNextText(conversionTp),
+      phase: conversionPhase,
+      category: endgameOrConversion(conversionPhase),
+      ply: conversionTp.ply,
     });
   }
 

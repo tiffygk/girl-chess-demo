@@ -1299,6 +1299,34 @@ describe("missed-win bullets", () => {
     expect(wn.category).toBe("endgame technique");
   });
 
+  // C1 fix (union review, 2026-07-31): mateIn 1 alone (missedTp above)
+  // proves nothing -- "checkmate in one" was ALSO the old hardcoded text,
+  // so it can't discriminate "reads tp.mateIn" from "always says one". This
+  // uses game 160's real shape (ply 69, mateIn 4, missedCount 8): before
+  // this fix the bullet read "you had checkmate in one... was mate on the
+  // spot", flatly false -- she had mate in FOUR, and the best move only
+  // STARTS a four-move mate, it isn't mate on the spot.
+  it("reads the real mate distance and 'starts a forced mate' phrasing for mateIn > 1 (game 160's real shape)", () => {
+    const tp160 = {
+      rank: 4 as const, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win" as const, mateIn: 4, missedCount: 8,
+    };
+    const line69 = { ply: 69, pvSans: ["Qxg7+"], bestSan: "Qxg7+" };
+    const bullets = debriefBullets({
+      turningPoints: [tp160],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: GAME160_SANS,
+      turningLines: [line69],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toContain("you had checkmate in four.");
+    expect(b.text).toContain("started a forced mate in four");
+    expect(b.text).not.toContain("checkmate in one");
+    expect(b.text).not.toContain("was mate on the spot");
+  });
+
   it("keeps the episode bullet alongside the missed-win watch bullet (game 149 shape)", () => {
     const bullets = debriefBullets({
       turningPoints: [
@@ -1634,5 +1662,247 @@ describe("I1 fix: missed-win/unconverted category tracks the real phase, never h
     const b = bullets.find((x) => x.section === "watch next time" && x.ply === 55)!;
     expect(b.phase).toBe("endgame");
     expect(b.category).toBe("endgame technique");
+  });
+});
+
+// Game-160 RCA round, Task K1 (2026-07-31): the real game-160 SANs (187
+// plies, verified pre-tpv7-20260729-195853 backup), same shape convention
+// as GAME150_SANS above. This is the game the whole round is about: 123
+// plies of a held mate that kept getting slower, and an empty debrief
+// before this fix (RC1 -- "classification empty on all 187 game-160
+// moves"). The conversion TP's real numbers (ply 65, plyEnd 187, mateIn 2)
+// come from conversion.ts/turningPoints.ts's own real output on this game,
+// not a guess -- see server/annotator/conversion.test.ts's "episode spans
+// the whole mate run" assertion for the same numbers.
+const GAME160_SANS: SummaryMove[] = [
+  "c4", "d5", "cxd5", "Qxd5", "e3", "Nf6", "d4", "e5", "Nc3", "Qd6", "Qa4+", "Bd7",
+  "dxe5", "Bxa4", "exd6", "Bd1", "Nxd1", "Bxd6", "Be2", "O-O", "Nf3", "Na6", "O-O", "Rad8",
+  "Bd2", "Bc5", "Rc1", "Bd6", "a3", "g6", "g3", "Nc5", "Rc4", "Nce4", "Rd4", "Nxd2",
+  "Rxd2", "Ne4", "Rd4", "f5", "Bd3", "Nf6", "e4", "Bc5", "Rxd8", "fxe4", "Bc4+", "Kg7",
+  "Rxf8", "Bxf8", "Ne5", "a6", "Ne3", "b5", "Be6", "Ne8", "Rd1", "Kf6", "Nd7+", "Kxe6",
+  "Nxf8+", "Kf7", "Nxh7", "Kg7", "Rd7+", "Kg8", "Ng5", "Nd6", "Rxc7", "Nf7", "Nxf7", "a5",
+  "Nh6+", "Kf8", "Rf7+", "Ke8", "Rb7", "Kd8", "Nf7+", "Ke8", "Nd6+", "Kd8", "Nd5", "e3",
+  "fxe3", "g5", "Nf7+", "Ke8", "Nh8", "a4", "Nf6+", "Kd8", "Rd7+", "Kc8", "Rd5", "b4",
+  "Rxg5", "bxa3", "bxa3", "Kc7", "Nd5+", "Kd6", "Nf7+", "Ke6", "Nd8+", "Kd6", "Nb7+", "Ke6",
+  "Nc7+", "Kd7", "Na6", "Kc6", "Na5+", "Kb6", "Nb8", "Ka7", "Rg8", "Kb6", "Nc4+", "Kb7",
+  "Nd7", "Kc6", "Na5+", "Kxd7", "Rg7+", "Kd6", "Nb7+", "Kd5", "Rg5+", "Kc4", "Nc5", "Kb5",
+  "Ne4+", "Kc4", "Rc5+", "Kb3", "Ra5", "Kxa3", "Nc5", "Kb2", "Nxa4+", "Kb3", "Nc5+", "Kc3",
+  "Na4+", "Kd3", "Re5", "Kc4", "Nb6+", "Kc3", "Kf2", "Kd3", "Nd5", "Kc2", "Nb4+", "Kb2",
+  "Rd5", "Kb3", "Nd3", "Kc4", "Rd4+", "Kc3", "Nb4", "Kb3", "Nd5", "Kc2", "Nb4+", "Kc3",
+  "Na2+", "Kb3", "Nc1+", "Kc2", "Ne2", "Kb3", "e4", "Kc2", "e5", "Kb3", "e6", "Kc2",
+  "e7", "Kb3", "e8=Q", "Kc2", "Qa4+", "Kb2", "Rb4#",
+].map((san, i) => ({ ply: i + 1, san }));
+
+describe("conversion bullets (K1, game-160 RCA round)", () => {
+  const conversionTp: TurningPoint = tp({
+    rank: 5, ply: 65, plyEnd: 187, san: "Rd7+", label: "conversion", deltaP: 0,
+    kind: "conversion", mateIn: 2,
+  });
+  const missedWinTp: TurningPoint = tp({
+    rank: 4, ply: 95, san: "Rd5", label: "missed mate", deltaP: 0,
+    kind: "missed-win", mateIn: 5, missedCount: 8,
+  });
+
+  it("forces a could-be-better bullet naming the shortest mate held and the episode length", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedWinTp, conversionTp],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: GAME160_SANS,
+    });
+    const conv = bullets.find((x) => x.section === "could be better" && x.ply === 65)!;
+    expect(conv).toBeDefined();
+    expect(conv.text).toContain("mate in two");
+    expect(conv.text).toMatch(/\b61\b/); // episode length in moves: move 94 - move 33
+    expect(conv.category).toBe("endgame technique");
+  });
+
+  it("forces a watch-next-time technique bullet", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedWinTp, conversionTp],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: GAME160_SANS,
+    });
+    const wn = bullets.find((x) => x.section === "watch next time" && x.ply === 65);
+    expect(wn).toBeDefined();
+  });
+
+  it("makes both no-finding fallbacks unreachable on the real game-160 fixture", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedWinTp, conversionTp],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: GAME160_SANS,
+    });
+    const texts = bullets.map((b) => b.text).join(" | ");
+    expect(texts).not.toContain("no clear mistakes to flag here");
+    expect(texts).not.toContain("no repeat pattern showed up");
+  });
+});
+
+// visual gate (phase A, game 160 rca round): the gate drove the real app
+// against the owner's real games and caught "it took 1 moves" on game 145
+// (count of exactly 1 -- every other observed game had count >= 2, which is
+// why this shipped unseen). Both the mate-cost clause in missedWinText and
+// the two conversion-episode clauses in conversionCouldBeBetterText/
+// conversionWatchNextText build "${n} ... move(s)" without agreement. Each
+// case below pairs a count-of-1 fixture with a count-of-2 fixture so the
+// fix can't pass by hardcoding the singular.
+describe("counted-noun agreement at exactly one (visual gate phase A)", () => {
+  it("missedWinText mate-cost clause: 'took 1 more move' not 'moves' (mate branch)", () => {
+    // GAME150_SANS is a real, replayable 91-ply game ending "...Qc6#".
+    // ply 90 -> move 45; totalPlies 91 -> move 46; extra = 1.
+    const missedTp1 = {
+      rank: 3 as const, ply: 90, san: "Be7", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win" as const, mateIn: 1, missedCount: 1,
+    };
+    const line90 = { ply: 90, pvSans: ["Qc6#"], bestSan: "Qc6#" };
+    const bullets = debriefBullets({
+      turningPoints: [missedTp1],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line90],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toContain("and the win took 1 more move to land.");
+    expect(b.text).not.toContain("1 more moves");
+  });
+
+  it("missedWinText mate-cost clause: count of 2 stays 'moves' (proves agreement, not a hardcoded singular)", () => {
+    // ply 88 -> move 44; totalPlies 91 -> move 46; extra = 2.
+    const missedTp2 = {
+      rank: 3 as const, ply: 88, san: "Qxh5", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win" as const, mateIn: 1, missedCount: 1,
+    };
+    const line88 = { ply: 88, pvSans: ["Qc6#"], bestSan: "Qc6#" };
+    const bullets = debriefBullets({
+      turningPoints: [missedTp2],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [line88],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toContain("and the win took 2 more moves to land.");
+  });
+
+  it("missedWinText adjudication clause: 'ended 1 move later' not 'moves' (non-mate branch)", () => {
+    // Real game truncated before the mating move (adjudicated shape, same
+    // convention as the existing "adjudication shape" test above): last san
+    // has no '#'. ply 55 -> move 28; totalPlies 57 -> move 29; extra = 1.
+    const missedTp1 = {
+      rank: 3 as const, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win" as const, mateIn: 1, missedCount: 1,
+    };
+    const line55 = { ply: 55, pvSans: ["Qh8#"], bestSan: "Qh8#" };
+    const bullets = debriefBullets({
+      turningPoints: [missedTp1],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 57,
+      gameSans: GAME150_SANS.slice(0, 57),
+      turningLines: [line55],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toContain("but the game ended 1 move later without it.");
+    expect(b.text).not.toContain("1 moves later");
+  });
+
+  it("missedWinText adjudication clause: count of 2 stays 'moves'", () => {
+    // ply 55 -> move 28; totalPlies 59 -> move 30; extra = 2.
+    const missedTp2 = {
+      rank: 3 as const, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win" as const, mateIn: 1, missedCount: 1,
+    };
+    const line55 = { ply: 55, pvSans: ["Qh8#"], bestSan: "Qh8#" };
+    const bullets = debriefBullets({
+      turningPoints: [missedTp2],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 59,
+      gameSans: GAME150_SANS.slice(0, 59),
+      turningLines: [line55],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toContain("but the game ended 2 moves later without it.");
+  });
+
+  it("conversionCouldBeBetterText: 'took 1 more move' not 'moves' (game 145's real shape)", () => {
+    const conversionTp1: TurningPoint = tp({
+      rank: 5, ply: 61, plyEnd: 63, san: "Rxc1", label: "conversion", deltaP: 0,
+      kind: "conversion", mateIn: 1,
+    });
+    const bullets = debriefBullets({
+      turningPoints: [conversionTp1],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 63,
+      gameSans: GAME160_SANS.slice(0, 63),
+    });
+    const b = bullets.find((x) => x.section === "could be better" && x.ply === 61)!;
+    expect(b.text).toBe(
+      "move 31: the shortest mate you held here was mate in one, but it took 1 more move to close it out."
+    );
+  });
+
+  it("conversionCouldBeBetterText: episode length of 2 stays 'moves'", () => {
+    const conversionTp2: TurningPoint = tp({
+      rank: 5, ply: 61, plyEnd: 65, san: "Rxc1", label: "conversion", deltaP: 0,
+      kind: "conversion", mateIn: 1,
+    });
+    const bullets = debriefBullets({
+      turningPoints: [conversionTp2],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 65,
+      gameSans: GAME160_SANS.slice(0, 65),
+    });
+    const b = bullets.find((x) => x.section === "could be better" && x.ply === 61)!;
+    expect(b.text).toBe(
+      "move 31: the shortest mate you held here was mate in one, but it took 2 more moves to close it out."
+    );
+  });
+
+  it("conversionWatchNextText: 'it took 1 move to land' not 'moves' (game 145's real shape)", () => {
+    const conversionTp1: TurningPoint = tp({
+      rank: 5, ply: 61, plyEnd: 63, san: "Rxc1", label: "conversion", deltaP: 0,
+      kind: "conversion", mateIn: 1,
+    });
+    const bullets = debriefBullets({
+      turningPoints: [conversionTp1],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 63,
+      gameSans: GAME160_SANS.slice(0, 63),
+    });
+    const b = bullets.find((x) => x.section === "watch next time" && x.ply === 61)!;
+    expect(b.text).toBe(
+      "moves 31 to 32: it took 1 move to land a mate you already had lined up. recount the fastest mate every move instead of playing the first check you see."
+    );
+  });
+
+  it("conversionWatchNextText: episode length of 2 stays 'moves'", () => {
+    const conversionTp2: TurningPoint = tp({
+      rank: 5, ply: 61, plyEnd: 65, san: "Rxc1", label: "conversion", deltaP: 0,
+      kind: "conversion", mateIn: 1,
+    });
+    const bullets = debriefBullets({
+      turningPoints: [conversionTp2],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 65,
+      gameSans: GAME160_SANS.slice(0, 65),
+    });
+    const b = bullets.find((x) => x.section === "watch next time" && x.ply === 61)!;
+    expect(b.text).toBe(
+      "moves 31 to 33: it took 2 moves to land a mate you already had lined up. recount the fastest mate every move instead of playing the first check you see."
+    );
   });
 });
