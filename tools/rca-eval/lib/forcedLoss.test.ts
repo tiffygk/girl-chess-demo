@@ -68,4 +68,74 @@ describe("forcedMaterialLoss", () => {
     const result = forcedMaterialLoss(UP_A_ROOK_FEN);
     expect(result.baseline).toBe(5);
   });
+
+  // Instrument-audit catch (progress.md, "INSTRUMENT AUDIT CATCH"): the
+  // original implementation stopped counting material one ply after the
+  // opponent's reply and never let the side-to-move RECAPTURE. These four
+  // cases are the exact reproductions from that audit, run directly against
+  // the mined/motivating fixture fens (tools/coach-eval/fixtures.ts).
+  describe("recapture/quiescence resolution (instrument-audit catch)", () => {
+    // FK1: game 160, ply 56, white to move.
+    const FK1_FEN = "4nb2/2p3kp/p3B1p1/1p2N3/4p3/P3N1P1/1P3P1P/5RK1 w - - 2 29";
+    // FK3: game 160, ply 58, white to move -- the real, still-forced fork.
+    const FK3_FEN = "4nb2/2p4p/p3Bkp1/1p2N3/4p3/P3N1P1/1P3P1P/3R2K1 w - - 4 30";
+    // FK5: game 141, ply 14, white to move.
+    const FK5_FEN = "r1b1kb1r/p1p1n1pp/1pnp1q2/8/8/2PBPN2/PP3PPP/RNBQK2R w KQkq - 4 8";
+    // FK6: game 148, ply 12, white to move, in check from Bb4+.
+    const FK6_FEN = "r1bqk1nr/1ppp1p1p/n5p1/p7/1bPPN1P1/7P/PP2PP2/R1BQKBNR w KQkq - 1 7";
+
+    it("(a) FK1: a quiet king move (Kg2) is NOT falsely charged for Bxa3 -- b2 recaptures the bishop, a net GAIN for white, not a pawn loss", () => {
+      const result = forcedMaterialLoss(FK1_FEN);
+      const line = result.lines.find((l) => l.move === "Kg2");
+      expect(line).toBeDefined();
+      // Old buggy behavior: worstReplySan "Bxa3", delta -1 (a bare pawn loss,
+      // b2's recapture never counted). Corrected: b2xa3 answers it, so this
+      // branch is never the worst-case reply for black, and Kg2 is a
+      // genuine, fully safe escape (delta >= 0).
+      expect(line!.worstReplySan).not.toBe("Bxa3");
+      expect(line!.delta).toBeGreaterThanOrEqual(0);
+      // With that fixed, FK1 is not provably forced: quiet moves like Kg2 escape clean.
+      expect(result.forced).toBe(false);
+    });
+
+    it("(b) FK6: blocking check with Nc3 is NOT a piece loss -- Bxc3+ is answered by bxc3, an even minor-piece trade; 'forced' must fall out of the corrected math, not be assumed", () => {
+      const result = forcedMaterialLoss(FK6_FEN);
+      const nc3 = result.lines.find((l) => l.move === "Nc3");
+      const nd2 = result.lines.find((l) => l.move === "Nd2");
+      const bd2 = result.lines.find((l) => l.move === "Bd2");
+      expect(nc3).toBeDefined();
+      expect(nd2).toBeDefined();
+      expect(bd2).toBeDefined();
+      // Old buggy behavior: all three read as a bare piece loss (delta -3),
+      // never letting the pawn/queen recapture the checking bishop.
+      expect(nc3!.delta).toBeGreaterThanOrEqual(0);
+      expect(nd2!.delta).toBeGreaterThanOrEqual(0);
+      expect(bd2!.delta).toBeGreaterThanOrEqual(0);
+      // The one real blunder in this set (Qd2 blocks with the queen, which
+      // Bxd2+ then wins outright) must STILL read as a genuine loss -- the
+      // fix must not blind the verifier to real losses either.
+      const qd2 = result.lines.find((l) => l.move === "Qd2");
+      expect(qd2).toBeDefined();
+      expect(qd2!.delta).toBeLessThan(0);
+      // Three of the four legal replies to the check are fully safe, so this
+      // position does NOT meet the definition of forced.
+      expect(result.forced).toBe(false);
+    });
+
+    it("(c) FK5: Qxf3 never surfaces as a worst reply -- the f3 knight is defended twice (g2 pawn, and the queen through the empty e2 square), so capturing it loses the queen instead", () => {
+      const result = forcedMaterialLoss(FK5_FEN);
+      for (const line of result.lines) {
+        expect(line.worstReplySan).not.toBe("Qxf3");
+      }
+      expect(result.forced).toBe(false);
+    });
+
+    it("(d) FK3 stays forced under the corrected math: game 160's real fork survives recapture resolution -- every legal white move still loses material", () => {
+      const result = forcedMaterialLoss(FK3_FEN);
+      expect(result.forced).toBe(true);
+      for (const line of result.lines) {
+        expect(line.delta).toBeLessThan(0);
+      }
+    });
+  });
 });
