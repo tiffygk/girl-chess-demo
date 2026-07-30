@@ -20,6 +20,12 @@ import type { SummaryMove, TurningLine, MoveClassification, TurningPoint } from 
 import { fenAtPly } from "./Rewind";
 import { describeSanMove } from "../game/describeSanMove";
 import { followedBest } from "./followedBest";
+// C1 fix (union review, 2026-07-31): reuse the shared spelled-number
+// helper rather than a second number-to-word table. Imports from
+// ./numberWords, not ./debriefBullets -- this file had no dependency on
+// debriefBullets.ts before this fix, and numberWords.ts is the shared,
+// dependency-free module that exists so it doesn't need to gain one.
+import { numberWord } from "./numberWords";
 
 export type Verdict = "done well" | "could be better";
 // "missed-win" added 2026-07-28 after the visual gate caught a missed mate in
@@ -86,13 +92,26 @@ const DONE_WELL_NOTE = "nothing here was a mistake. trust the instinct that made
 // One line per severity tier, owner ruling 2026-07-28 -- the not-an-error
 // wording must not imply fault (measured: ~97% of her real moves carry no
 // classification at all).
-const SEVERITY_LINE: Record<Severity, (best: string) => string> = {
+const SEVERITY_LINE: Record<Severity, (best: string, mateIn?: number) => string> = {
   "not-an-error": (best) => `you just didn't pick the best move here. ${best} was the stronger move, and this cost you nothing.`,
   // Never "cost you nothing" -- a forced mate walked past is the most
   // expensive thing on this list, even when the eval barely moves because the
   // position was already won. Deliberately does not scold: the debrief's own
   // missed-win bullet carries the count and how much longer the win took.
-  "missed-win": (best) => `you had checkmate here. ${best} was mate on the spot, and the game went on without it.`,
+  //
+  // C1 fix (union review, 2026-07-31): mateIn can be 2-5 now (K1 widened
+  // this point's source to conversion.ts's depth-5 detector) -- "was mate
+  // on the spot" is only true for mate-in-one; a deeper miss means the best
+  // move STARTS a forced mate, it doesn't deliver it. mateIn defaults to 1
+  // only for a caller that omits it (never true in practice -- see
+  // severityFor's matching turning point, which always carries mateIn
+  // whenever severity is "missed-win").
+  "missed-win": (best, mateIn) => {
+    const n = mateIn ?? 1;
+    const distance = numberWord(n);
+    const startsMate = n === 1 ? `${best} was mate on the spot` : `${best} started a forced mate in ${distance}`;
+    return `you had checkmate in ${distance} here. ${startsMate}, and the game went on without it.`;
+  },
   inaccuracy: (best) => `this was an inaccuracy. ${best} would have held more of your edge.`,
   mistake: (best) => `this was a mistake. ${best} was the move the position needed.`,
   blunder: (best) => `this was a blunder. ${best} would have kept the game where it was.`,
@@ -115,6 +134,13 @@ function severityFor(
   return "not-an-error";
 }
 
+// C1 fix (union review, 2026-07-31): the missed-win turning point's own
+// mateIn at this exact ply, so SEVERITY_LINE's "missed-win" branch can name
+// the real distance instead of assuming one.
+function missedWinMateInAt(ply: number, turningPoints: TurningPoint[]): number | undefined {
+  return turningPoints.find((t) => t.kind === "missed-win" && t.ply === ply)?.mateIn ?? undefined;
+}
+
 export function buildHighlightedRows(input: BuildHighlightedRowsInput): HighlightedRow[] {
   const { highlightedPlies, gameSans, turningLines, classifications = [], turningPoints = [] } = input;
   const rows: HighlightedRow[] = [];
@@ -129,6 +155,7 @@ export function buildHighlightedRows(input: BuildHighlightedRowsInput): Highligh
     // ply falls outside the game -- none of those PROVE a better move
     // existed, so the honest default is "done well" (see file header).
     const severity = severityFor(ply, classifications, turningPoints);
+    const missedWinMateIn = severity === "missed-win" ? missedWinMateInAt(ply, turningPoints) : undefined;
     // A missed forced mate is never "done well", whatever followedBest can or
     // cannot prove. Without this, a missed-win ply that happens to carry no
     // TurningLine would fall through to DONE_WELL_NOTE and congratulate her
@@ -140,7 +167,7 @@ export function buildHighlightedRows(input: BuildHighlightedRowsInput): Highligh
     let note: string;
     if (verdict === "could be better" && fb?.bestSan) {
       const best = describedOrRaw(fb.bestSan, seedFenForLine(line, gameSans));
-      note = SEVERITY_LINE[severity](best);
+      note = SEVERITY_LINE[severity](best, missedWinMateIn);
     } else if (severity === "missed-win") {
       // Missed win with no line on record: still say what happened, just
       // without naming a move we cannot prove.

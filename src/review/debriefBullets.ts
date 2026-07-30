@@ -131,12 +131,13 @@ const CROSSING_GRADED_LABELS = new Set(["mistake", "inaccuracy"]);
 
 // Spelled distances for the mate copy (owner previews use words: "mate in
 // twelve", "mate in one"); counts stay digits ("this happened 5 times").
-export const NUMBER_WORDS = [
-  "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
-];
-export function numberWord(n: number): string {
-  return NUMBER_WORDS[n] ?? String(n);
-}
+// Union review fix (C1, 2026-07-31): moved into ./numberWords so
+// debriefLesson.ts/highlightedMoves.ts/debriefInvariants.ts can read it
+// without a hand-typed second copy or a new coupling onto THIS file --
+// re-exported here so every existing caller of debriefBullets.ts's own
+// numberWord/NUMBER_WORDS keeps compiling unchanged.
+export { NUMBER_WORDS, numberWord } from "./numberWords";
+import { numberWord } from "./numberWords";
 
 // san -> the piece that moved, for "the free {piece}" / "hung her {piece}"
 // phrasing. Deterministic from SAN's own first character; never a claim
@@ -283,25 +284,40 @@ function missedWinText(
   turningLines: TurningLine[] | undefined
 ): string {
   const n = moveNumberForPly(tp.ply);
+  // C1 fix (union review, 2026-07-31): K1 widened this point's source from
+  // missedWins.ts (depth 1, mate-in-1 only) to conversion.ts (depth 5), so
+  // tp.mateIn can now be 2-5 -- this used to hardcode "checkmate in one"
+  // regardless, which is flatly false on 8 of her real games (measured:
+  // 85, 130, 141, 143, 144, 145, 150, 160). numberWord already exists in
+  // this file (used by conversionCouldBeBetterText/unconvertedCouldBeBetterText
+  // below) -- reused here rather than a second number-to-word table.
+  const mateIn = tp.mateIn ?? 1;
+  const distance = numberWord(mateIn);
   const line = turningLines?.find((l) => l.ply === tp.ply);
   // bestSan is a move from the position she faced — fenBefore(tp.ply), the
   // same fen describedOrRaw derives (missed-win plies are always hers/odd,
   // where seedPly === tp.ply - 1). The sentence already says "checkmate in
-  // one", so the ", checkmate" suffix is stripped as redundant.
+  // {distance}", so the ", checkmate" suffix is stripped as redundant.
   const best = line?.bestSan
     ? stripRedundantCheckSuffix(describedOrRaw(line.bestSan, tp.ply, gameSans), "checkmate")
     : undefined;
   const count = tp.missedCount ?? 1;
   const repeat = count > 1 ? ` this happened ${count} times this game.` : "";
   if (!best || !gameSans || gameSans.length === 0) {
-    return `move ${n}: you had checkmate in one and played past it.${repeat}`;
+    return `move ${n}: you had checkmate in ${distance} and played past it.${repeat}`;
   }
   const lastSan = gameSans[gameSans.length - 1].san;
   const extra = moveNumberForPly(totalPlies) - n;
   const cost = lastSan.includes("#")
     ? `, and the win took ${extra} more moves to land.`
     : `, but the game ended ${extra} moves later without it.`;
-  return `move ${n}: you had checkmate in one. your ${best} was mate on the spot${cost}${repeat}`;
+  // "was mate on the spot" is only ever true for mate-in-one -- for a
+  // deeper miss the best move STARTS a forced mate, it isn't the mate
+  // itself (game 160's real bug: mateIn 4 rendered "was mate on the spot",
+  // false -- she had four moves of work left, not zero).
+  const startsMate =
+    mateIn === 1 ? `${best} was mate on the spot` : `${best} started a forced mate in ${distance}`;
+  return `move ${n}: you had checkmate in ${distance}. your ${startsMate}${cost}${repeat}`;
 }
 
 // Game-160 RCA round, Task K1 (2026-07-31): the conversion episode bullet
