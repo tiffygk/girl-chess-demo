@@ -26,18 +26,24 @@
 // reproduce the ruling's fixtures exactly — see turningPoints.test.ts.
 
 import { Chess } from "chess.js";
-import { detectMissedWins } from "./missedWins";
+import { detectConversion, type MoveEvalRow } from "./conversion";
 import { detectUnconverted, findRepetitionAnchor, repetitionEntryPlies } from "./unconverted";
 
 export interface TurningPoint {
-  rank: 1 | 2 | 3 | 4 | 5 | 6;
+  // Game-160 RCA round (2026-07-31): widened from a fixed 1..6 union to a
+  // plain number. A long, real game can carry more than 3 swing/backfill
+  // cards plus an episode plus an unconverted point plus a conversion
+  // point -- server/store/db.ts's own `rank: number` column already agreed
+  // with this; the fixed union here was the only place still narrower than
+  // what actually gets stored.
+  rank: number;
   ply: number;
   san: string;
   label: string; // exact lowercase vocabulary from the ruling
   punishSan?: string; // the "you punished with {san}" suffix source, when the guard passes
   deltaP: number; // signed, white perspective
   lowConfidence: boolean; // null-gap > TP_DEDUP_PLIES plies behind this point
-  kind: "swing" | "backfill" | "episode" | "missed-win" | "unconverted";
+  kind: "swing" | "backfill" | "episode" | "missed-win" | "unconverted" | "conversion";
   // debrief-v2, dedup fix: set on HER kept swing when the preceding kept
   // point in the same dedup cluster is an opponent-error label and her
   // swing is negative — the "missed punish" shape (she had a winning
@@ -85,6 +91,34 @@ export interface TurningPoint {
   // kind === "unconverted"; same "encode in types, not helpers" lesson as
   // ply-parity.
   anchorKind?: "repetition-entry" | "run-start";
+  // Game-160 RCA round, Task K1 (2026-07-31): set on kind === "conversion"
+  // only -- the shortest mate she ever held during the episode (mateIn,
+  // conversion.ts's ConversionEpisode.bestMissed) and where the held-mate
+  // run ended (plyEnd, already an existing field via the episode kind
+  // above).
+  //
+  // Union review fix (H1+H2, 2026-07-31): `ply` is conversion.ts's
+  // ConversionEpisode.bestMissedPly -- the ply she actually HELD the
+  // shortest mate at -- NOT the run's start (conversion.ts's fromPly, as
+  // this shipped originally). Two bugs collapsed into one fix: fromPly is
+  // whichever side's ply happened to carry the first mate reading in the
+  // run (mallow's in 7 of her 12 real conversion games -- H2, the same
+  // "encode parity in the data" lesson CLAUDE.md already names, applied
+  // here at the data layer since conversion.ts's own `side` field was
+  // already correct); and even where fromPly was hers, it welded the run's
+  // START ply to a mate distance (bestMissed) that was actually held at a
+  // LATER ply, producing a bullet naming one move but describing a fact
+  // true of a different one (H1, e.g. real game 160: fromPly 65 / move 33
+  // versus bestMissedPly 87 / move 44, where mate-in-2 was actually held).
+  // bestMissedPly is guaranteed hers by construction (conversion.ts's own
+  // loop filters `row.side === "her"` before ever considering a ply), so
+  // this point's `ply` can never again render mallow's move as her card.
+  // One point per game, and only when the run actually contains real slip
+  // evidence (a clean, unslipped mate march earns no card -- see the
+  // gating comment at this kind's push site below) AND clears
+  // conversion.ts's MIN_CONVERSION_RUN_PLIES span gate (M1 fix -- a
+  // handful of plies of a flickering evaluator is not a conversion
+  // episode; see that constant's own comment for real game 144's shape).
 }
 
 // debrief-v2: bumped when the turning-point algorithm changes shape in a way
@@ -102,7 +136,17 @@ export interface TurningPoint {
 // v6: game-151 round, unconverted-win point — a game that ended level or
 // lost from a held winning eval (result vs eval, invisible to every
 // delta-based detector above) gains one "unconverted win" point on heal.
-export const TP_ALGO_VERSION = 6;
+// v7: game-160 RCA round, Task K1 (2026-07-31, owner ruling 7 -- approved
+// across her whole corpus). Two shape changes: (1) the missed-win point's
+// SOURCE widens from missedWins.ts's depth-1, mate-only detector to
+// conversion.ts's depth-5, slip-aware one (MISSED_MATE_DEPTH 1 -> 5,
+// MATE_SLIP_MIN 2), so a game with real mate-DISTANCE slips but zero
+// mate-in-1 misses (game 160's actual shape) now gets a missed-win point
+// where it silently got none before; (2) a new "conversion" point, one per
+// game, naming the shortest mate she ever held during a mate run and how
+// long the run took, appended whenever that run shows real slip evidence.
+// Old games heal to pick up both on their next summary read.
+export const TP_ALGO_VERSION = 7;
 
 // Owner-calibratable: cp -> winprob steepness. This is the same constant as
 // chess.com's published win% formula (0.00368208, here to 3 sig figs per
@@ -607,7 +651,7 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   for (const point of selected) attachPunishSuffix(point, moves, series);
 
   const points: TurningPoint[] = selected.map((s, i) => ({
-    rank: (i + 1) as 1 | 2 | 3,
+    rank: i + 1,
     ply: s.ply,
     san: s.san,
     label: s.label,
@@ -629,7 +673,7 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   const episode = detectKingPressureEpisode(moves, series);
   if (episode) {
     points.push({
-      rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5 | 6,
+      rank: points.length + 1,
       ply: episode.plyStart,
       plyEnd: episode.plyEnd,
       san: episode.san,
@@ -640,25 +684,63 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
     });
   }
 
-  // Missed-win round (2026-07-28): a missed forced mate is invisible to the
-  // swing detector by construction (see TP_FLOOR's comment) — detected
-  // directly from the stored mate distances instead, and appended as one
-  // point per game so every turning-point surface (cards, arrows,
-  // try-the-line, notes, chat full-detail) lights up without new plumbing.
-  const missedEvents = detectMissedWins(moves);
-  if (missedEvents.length > 0) {
-    const anchor = missedEvents.find((e) => !points.some((p) => p.ply === e.ply));
+  // Game-160 RCA round, Task K1 (2026-07-31): a missed or slipped forced
+  // mate is invisible to the swing detector by construction (see TP_FLOOR's
+  // comment) -- detected directly from the stored mate distances via
+  // conversion.ts (own MISSED_MATE_DEPTH 5 / MATE_SLIP_MIN 2, wider than
+  // missedWins.ts's byte-stable depth-1 detector -- see that file's header
+  // for why the two stay separate). Kept as ONE aggregated point per game
+  // (same shape the missed-win round shipped -- the anchor-selection
+  // "already claimed" check stays an EXACT ply match, same as the old
+  // algorithm; widening it to a TP_DEDUP_PLIES proximity check was tried
+  // and reverted, see turningPoints.test.ts's "anchors on the first miss"
+  // fixture, where a proximity check wrongly excluded a real miss sitting
+  // two plies from an unrelated swing): a long held-mate run like game
+  // 160's can carry many separate missed-mate events (four well-separated
+  // pockets on the real data, 14-22 plies apart), and every consumer of
+  // this TP (debriefBullets.ts's forced could-be-better/watch-next bullets,
+  // debriefInvariants.ts's missed-mate-silent rule) is built around exactly
+  // one missed-win point telling the whole story, its `missedCount`
+  // counting every one of them. Splitting into per-cluster points would
+  // need a matching redesign of the bullet/invariant layer this round does
+  // not ask for and the corpus-wide replay-check gate would catch as silent
+  // detector fire the moment more than 2 such points existed for one game
+  // (buildCouldBeBetter/buildWatchNextTime each cap at 2 bullets).
+  const evalRows: MoveEvalRow[] = [...moves]
+    .sort((a, b) => a.ply - b.ply)
+    .map((m) => ({
+      ply: m.ply,
+      side: m.ply % 2 === 1 ? "her" : "mallow",
+      san: m.san,
+      evalCp: m.evalCp,
+      evalMate: m.evalMate,
+    }));
+  const gameSansForConversion = evalRows.map((r) => r.san);
+  const { events: conversionEvents, episode: conversionEpisode } = detectConversion(
+    evalRows,
+    gameSansForConversion
+  );
+
+  // "lost-mate" counts too, same union missedWins.ts's own delegation uses
+  // (see that file's header): whether the mate reading merely got slower
+  // (missed-mate) or vanished entirely (lost-mate), she failed to convert
+  // it, and the old shipped algorithm counted both without distinguishing.
+  const missedMateEvents = conversionEvents
+    .filter((e) => e.kind === "missed-mate" || e.kind === "lost-mate")
+    .sort((a, b) => a.ply - b.ply);
+  if (missedMateEvents.length > 0) {
+    const anchor = missedMateEvents.find((e) => !points.some((p) => p.ply === e.ply));
     if (anchor) {
       points.push({
-        rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5 | 6,
+        rank: points.length + 1,
         ply: anchor.ply,
-        san: anchor.san,
+        san: evalRows.find((r) => r.ply === anchor.ply)?.san ?? "",
         label: "missed mate",
         deltaP: 0,
         lowConfidence: false,
         kind: "missed-win",
-        mateIn: anchor.mateIn,
-        missedCount: missedEvents.length,
+        mateIn: anchor.mateBefore ?? undefined,
+        missedCount: missedMateEvents.length,
       });
     }
   }
@@ -742,7 +824,7 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
     if (resolvedPly != null) {
       const anchorSan = moves.find((m) => m.ply === resolvedPly)?.san ?? unconverted.san;
       points.push({
-        rank: (points.length + 1) as 1 | 2 | 3 | 4 | 5 | 6,
+        rank: points.length + 1,
         ply: resolvedPly,
         san: anchorSan,
         label: "unconverted win",
@@ -763,6 +845,84 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
         // mateIn unset while the ply is still genuinely proven).
         anchorKind: resolvedPly === anchorPly && anchorProven ? "repetition-entry" : "run-start",
       });
+    }
+  }
+
+  // Game-160 RCA round, Task K1: one "conversion" point per game, naming
+  // the shortest mate she ever held during a held-mate run (`mateIn`,
+  // conversion.ts's ConversionEpisode.bestMissed) and the run's span (`ply`
+  // = start, `plyEnd` = end, reusing the episode kind's existing field).
+  // Gated on the run actually containing real slip evidence (a mate-slip
+  // or missed-mate event somewhere in it) -- a clean, unslipped mate march
+  // is not a conversion lesson and would just be corpus noise.
+  //
+  // Union review DELTA fix (2026-07-31): pushed LAST, after every other
+  // point kind (including unconverted, immediately above), on purpose --
+  // its own collision guard (below) must see every other real fact already
+  // placed this game, not just the missed-win point. Moving conversion
+  // ahead of unconverted (as it originally shipped) let it steal the one
+  // remaining free ply unconverted's own collision-displacement scan needed
+  // in a narrow but real edge case (a short held-mate run with few candidate
+  // her-plies), silently dropping the unconverted point entirely even
+  // though detectUnconverted still says one is owed -- the exact
+  // "unpassable gate" failure mode that scan's own F2/F3 fix exists to
+  // prevent. Conversion has no fallback scan of its own (a single anchor
+  // ply, not a range) so it is the one that must yield when a real
+  // conflict exists, never the reverse.
+  if (conversionEpisode) {
+    const hasSlipEvidence = conversionEpisode.events.some(
+      (e) => e.kind === "mate-slip" || e.kind === "missed-mate"
+    );
+    // H1+H2 fix (union review, 2026-07-31): anchored on bestMissedPly (the
+    // ply she actually HELD the shortest mate at), never fromPly (the run's
+    // start, which is whichever side's ply happened to carry the first mate
+    // reading -- mallow's in 7 of her 12 real conversion games). Same
+    // parity-fix SHAPE as `unconverted`'s own anchorPly above (`ply % 2 ===
+    // 1 ? ply : ply + 1`) rather than a second, drifting mechanism --
+    // applied here to bestMissedPly instead of fromPly, since bestMissedPly
+    // is also where H1's welding bug (the sentence naming one move but
+    // describing a mate distance actually held at a different one) gets
+    // fixed. bestMissedPly is already guaranteed hers by construction
+    // (conversion.ts's own loop only ever considers `row.side === "her"`
+    // rows -- the explicit-field convention this module was built around),
+    // so this ternary's +1 branch is defense-in-depth, never expected to
+    // fire; conversion.test.ts's own parity fixture proves the field, not
+    // just asserts the type.
+    if (hasSlipEvidence && conversionEpisode.bestMissed != null && conversionEpisode.bestMissedPly != null) {
+      const anchorPly =
+        conversionEpisode.bestMissedPly % 2 === 1
+          ? conversionEpisode.bestMissedPly
+          : conversionEpisode.bestMissedPly + 1;
+      // Collision guard (union review DELTA, 2026-07-31): bestMissedPly and
+      // the missed-win point's own anchor are both "the shallowest mate in
+      // the run" hunts, so they land on the SAME ply whenever the shortest
+      // held mate is also the first missed mate -- measured on 5 of her 11
+      // real conversion games (85, 86, 132, 149, 159). Pushing unconditionally
+      // put two turning points on one ply: DebriefPage renders two cards for
+      // one move, and buildCouldBeBetter's `used.add(missedWin.ply)` then
+      // silently SUPPRESSES the conversion bullet -- the exact sentence H1
+      // exists to fix disappears on those 5 games instead of reading true.
+      // Same "one story, one bullet" reasoning the hasUnconverted suppression
+      // above already uses: when the missed-win (or, now, unconverted) point
+      // already owns this ply, its bullet already tells the real story, so
+      // the conversion point is redundant here, not merely inconvenient.
+      // Displacing to a neighbouring ply instead was considered and rejected
+      // -- that reintroduces H1 (a sentence whose ply and whose mate
+      // distance come from different moves).
+      const collides = points.some((p) => p.ply === anchorPly);
+      if (!collides) {
+        points.push({
+          rank: points.length + 1,
+          ply: anchorPly,
+          plyEnd: conversionEpisode.toPly,
+          san: evalRows.find((r) => r.ply === anchorPly)?.san ?? "",
+          label: "conversion",
+          deltaP: 0,
+          lowConfidence: false,
+          kind: "conversion",
+          mateIn: conversionEpisode.bestMissed,
+        });
+      }
     }
   }
 

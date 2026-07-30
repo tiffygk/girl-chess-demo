@@ -61,7 +61,17 @@ import {
 } from "../server/store/db";
 import { moveEndpoints } from "../server/annotator/moveEndpoints";
 import { computeTurningPoints, buildDeltaSeries, type MoveEval } from "../server/annotator/turningPoints";
-import { detectMissedWins, MISSED_MATE_DEPTH } from "../server/annotator/missedWins";
+// M2 fix (union review, 2026-07-31): this used to import MISSED_MATE_DEPTH
+// from missedWins.ts (the byte-stable depth-1 detector), whose comment
+// claimed "Task 6's widening tightens this automatically -- no gate edit
+// needed when the constant moves." That claim went false the moment K1
+// shipped: the widening happened in conversion.ts's OWN, separate
+// MISSED_MATE_DEPTH constant (5), so this cross-check kept validating
+// against a detector nothing renders any more (missedWins.ts's only
+// remaining consumer is this file's own byte-stability test) while the
+// depth-5 detector that drives every real surface had no independent
+// cross-check at all. Repointed at conversion.ts's constant and detector.
+import { detectConversion, MISSED_MATE_DEPTH, type MoveEvalRow } from "../server/annotator/conversion";
 import { UNCONVERTED_MIN_P, UNCONVERTED_MIN_RUN_PLIES } from "../server/annotator/unconverted";
 import { classifyMoves } from "../server/annotator/classifications";
 import { checkDefenseClaims, postMoveFen } from "../server/coach/defenseClaims";
@@ -160,25 +170,67 @@ export function unconvertedAnchorInvariant(
   return null;
 }
 
+// -- HARD invariant 1c (union review DELTA, 2026-07-31) ---------------------
+// No two turning points for one game may share a ply. DebriefPage.tsx maps
+// every persisted point to its own card, so a collision renders TWO cards
+// for one move -- and buildCouldBeBetter's `used` set means whichever
+// bullet builder runs second silently drops its own sentence, the exact
+// failure mode the conversion point's own collision guard
+// (turningPoints.ts, "Collision guard" comment) exists to prevent. This
+// invariant is the corpus-wide proof that guard actually holds -- nothing
+// caught the pre-fix 5-game collision (85, 86, 132, 149, 159) because this
+// check did not exist yet.
+export function noPlyCollisionInvariant(
+  gameId: number,
+  points: { kind: string; ply: number }[]
+): string | null {
+  const seen = new Map<number, string>();
+  for (const p of points) {
+    const prior = seen.get(p.ply);
+    if (prior) {
+      return `game ${gameId}: two turning points share ply ${p.ply} -- "${prior}" and "${p.kind}"`;
+    }
+    seen.set(p.ply, p.kind);
+  }
+  return null;
+}
+
 // -- HARD invariant 2 (rca B3) ----------------------------------------------
-// An independent formulation, deliberately NOT detectMissedWins' own
-// arithmetic -- (a) any mate-in-1 walked past must produce an event; (b) any
-// deep mate (<= MISSED_MATE_DEPTH) whose reading VANISHED on the very next
-// row (a cp reading replaces the mate reading) must produce an event. Same
+// An independent formulation, deliberately NOT detectConversion's/
+// conversion.ts's own arithmetic -- reproduces the SHAPE of "she failed to
+// keep a held mate on schedule" from scratch, not by importing conversion.ts's
+// slip computation: any deep mate (<= MISSED_MATE_DEPTH) whose reading (a)
+// VANISHED on the very next row (a cp reading replaces the mate reading), or
+// (b) did not stay AT LEAST as fast as one move faster than before (i.e. she
+// let the distance grow, or handed the reading to the wrong side entirely --
+// see the sign-convention comment below), must produce an event. Same
 // instrument, different arithmetic: if the detector and this drift apart,
-// one of them is wrong and the gate says so. Imports MISSED_MATE_DEPTH, so
-// Task 6's widening tightens this automatically -- no gate edit needed when
-// the constant moves.
+// one of them is wrong and the gate says so.
+//
+// M2 fix (union review, 2026-07-31): this now imports MISSED_MATE_DEPTH from
+// conversion.ts (5), the constant that actually governs every surface she
+// sees, and main() below feeds it detectConversion's own missed-mate/
+// lost-mate events -- NOT missedWins.ts's depth-1 events, which nothing
+// renders any more (see that import's own comment). Previously this checked
+// depth-1 only (a stale corner of missedWins.ts's byte-stable output), so
+// widening K1 shipped in a different module was never independently
+// verified at all -- exactly the coverage hole the review named.
 export function missedMateInvariant(moves: MoveEval[], events: { ply: number }[]): string | null {
   const byPly = new Map(moves.map((m) => [m.ply, m]));
   for (const mv of moves) {
     if (mv.ply % 2 !== 1 || mv.san.includes("#")) continue;
     const pre = byPly.get(mv.ply - 1);
     if (!pre || pre.evalMate == null || pre.evalMate < 1 || pre.evalMate > MISSED_MATE_DEPTH) continue;
-    const m1Missed = pre.evalMate === 1;
     const vanished = mv.evalMate == null && mv.evalCp != null;
-    if ((m1Missed || vanished) && !events.some((e) => e.ply === mv.ply)) {
-      return `ply ${mv.ply}: mate-in-${pre.evalMate} walked past and the detector is blind`;
+    // Sign convention (conversion.ts's header, same rows): after HER move,
+    // mallow is to move, so a NEGATIVE reading there means the mate is
+    // still hers, on schedule iff its magnitude is at most one move faster
+    // than it was before her move (mate-in-N before her move means, at
+    // best, mate-in-(N-1) after it). Anything else -- unchanged, slower, or
+    // (worst) a reading that flipped to mallow's favor -- counts as missed.
+    const stillOnSchedule = mv.evalMate != null && mv.evalMate < 0 && Math.abs(mv.evalMate) <= pre.evalMate - 1;
+    if ((vanished || !stillOnSchedule) && !events.some((e) => e.ply === mv.ply)) {
+      return `ply ${mv.ply}: mate-in-${pre.evalMate} walked past (vanished or slipped) and the detector is blind`;
     }
   }
   return null;
@@ -385,6 +437,7 @@ async function main() {
 
   const unconvertedViolations: string[] = [];
   const unconvertedAnchorViolations: string[] = [];
+  const plyCollisionViolations: string[] = [];
   const missedMateViolations: string[] = [];
   const debriefViolations: string[] = [];
   const debriefViolationsByGame = new Map<number, string[]>();
@@ -448,8 +501,28 @@ async function main() {
     const anchorViolation = unconvertedAnchorInvariant(gameId, tps);
     if (anchorViolation) unconvertedAnchorViolations.push(anchorViolation);
 
-    const missedEvents = detectMissedWins(moves);
-    const mv = missedMateInvariant(moves, missedEvents);
+    // Union review DELTA (2026-07-31): always checked, never allowlisted --
+    // a collision is exactly the kind of gap a listed game would hide.
+    const collisionViolation = noPlyCollisionInvariant(gameId, tps);
+    if (collisionViolation) plyCollisionViolations.push(collisionViolation);
+
+    // M2 fix (union review, 2026-07-31): cross-checks the depth-5 detector
+    // that actually drives her debrief (conversion.ts, via
+    // computeTurningPoints' missed-win point -- see turningPoints.ts's own
+    // `missedMateEvents` filter, mirrored here exactly: missed-mate OR
+    // lost-mate), not missedWins.ts's depth-1 output, which no surface
+    // renders any more.
+    const evalRowsForMissedMate: MoveEvalRow[] = moves.map((m) => ({
+      ply: m.ply,
+      side: m.ply % 2 === 1 ? "her" : "mallow",
+      san: m.san,
+      evalCp: m.evalCp,
+      evalMate: m.evalMate,
+    }));
+    const wideMissedEvents = detectConversion(evalRowsForMissedMate).events.filter(
+      (e) => e.kind === "missed-mate" || e.kind === "lost-mate"
+    );
+    const mv = missedMateInvariant(moves, wideMissedEvents);
     if (mv) missedMateViolations.push(`game ${gameId}: ${mv}`);
 
     // -- debrief-output invariants (HARD, the module's dev-time leg) --------
@@ -600,6 +673,9 @@ async function main() {
   console.log(`\nunconverted-anchor violations: ${unconvertedAnchorViolations.length} (must be 0, never allowlisted)`);
   for (const v of unconvertedAnchorViolations) console.log(`  ${v}`);
 
+  console.log(`\nply-collision violations: ${plyCollisionViolations.length} (must be 0, never allowlisted -- union review DELTA)`);
+  for (const v of plyCollisionViolations) console.log(`  ${v}`);
+
   console.log(`\nmissed-mate violations: ${missedMateViolations.length} (must be 0)`);
   for (const v of missedMateViolations) console.log(`  ${v}`);
 
@@ -634,6 +710,7 @@ async function main() {
   const ok =
     unconvertedViolations.length === 0 &&
     unconvertedAnchorViolations.length === 0 &&
+    plyCollisionViolations.length === 0 &&
     missedMateViolations.length === 0 &&
     emDashViolations.length === 0 &&
     defenseClaimViolations.length === 0 &&

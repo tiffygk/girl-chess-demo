@@ -250,15 +250,31 @@ function buildCouldImprove(
   // had and declined — see turningPoints.ts), so the eval-band nudge
   // vocabulary below never applies. Names the mate move when the line
   // carries it; states only the miss when it does not — never a guess.
+  //
+  // Union review ADDENDUM 2 fix (2026-07-31, the fourth C1 producer): K1
+  // widened this point's source to conversion.ts's depth-5 detector, so
+  // tp.mateIn can be 2-5 now -- this hardcoded "checkmate in one" AND "ends
+  // it on the spot" regardless, false on the same 8 real games C1 was about
+  // (measured: 85, 130, 141, 143, 144, 145, 150, 160). "ends it on the
+  // spot" is only ever true at mateIn 1 -- for a deeper miss the named move
+  // STARTS a forced mate, it doesn't deliver it. Reads tp.mateIn through
+  // this file's own local numberWord (line 76) -- the Parallel-safety
+  // contract in this file's header bars importing debriefBullets.ts, not
+  // reading tp.mateIn, and the word LIST already lives locally here on
+  // purpose (see numberWords.ts's own header for why this file is the one
+  // deliberate exception to that module's "one shared copy" rule).
   if (tp.kind === "missed-win") {
     const count = tp.missedCount ?? 1;
     const repeat = count > 1 ? ` this happened ${count} times this game.` : "";
+    const mateIn = tp.mateIn ?? 1;
+    const distance = numberWord(mateIn);
     const best = line?.bestSan
       ? stripRedundantCheckSuffix(describedOrRaw(line.bestSan, seedFen), "checkmate")
       : undefined;
+    const endsIt = mateIn === 1 ? `${best} ends it on the spot` : `${best} starts a forced mate in ${distance}`;
     return best
-      ? `you had checkmate in one here. your ${best} ends it on the spot. you played ${played} instead.${repeat}`
-      : `you had checkmate in one here. you played ${played} instead.${repeat}`;
+      ? `you had checkmate in ${distance} here. your ${endsIt}. you played ${played} instead.${repeat}`
+      : `you had checkmate in ${distance} here. you played ${played} instead.${repeat}`;
   }
   // Game-151 round (2026-07-29): owner ruling (feedback-unconverted-copy.md)
   // -- never a blame line by default (rca B5, "nothing hung" stays true:

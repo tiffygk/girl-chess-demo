@@ -1,6 +1,7 @@
 import { Chess, type Move, type Square } from "chess.js";
 import type { Evaluator } from "../engines/types";
 import { deriveThreatFacts, type ThreatFacts } from "./motifs";
+import { conversionForMove, type MoveConversionEvent } from "./conversion";
 
 // Wave C (hint escalation): "what was best instead" at the position BEFORE
 // the judged move — derived from the SAME before-position eval classifyMove
@@ -36,6 +37,15 @@ export interface Verdict {
   // from) and whenever the replay fails (same "no facts, no claim" contract
   // as `facts`).
   threat?: ThreatFacts;
+  // Task K2 (conversion-aware judge, owner ruling 1): set only on a
+  // "nudge" produced by the decided-position conversion path below (a
+  // mate-distance slip/missed-mate/lost-mate from conversionForMove, or a
+  // free-material giveaway derived from `threat`) — never on a nudge
+  // reached through the ordinary deltaCp threshold, which needs no extra
+  // copy the client doesn't already render generically. Lowercase, no
+  // em-dashes, no emojis, per CLAUDE.md's coach-copy rule (this text
+  // reaches the same judge surface, even though it isn't cookie's voice).
+  conversionCopy?: string;
 }
 
 // The user-facing "judge strictness" dial (how chatty the judge is; UI
@@ -89,6 +99,46 @@ const EVAL_MOVETIME_MS = 350;
 // any mate always compares as decisively better/worse than any plausible
 // material swing, while still ordering a faster mate ahead of a slower one.
 const MATE_SCORE_CP = 100_000;
+
+// Task K2 (owner ruling 1, context-v2-changes-and-contract.md section 2):
+// "decided" for the purpose of the conversion-aware judge below — the SEED
+// (before-move) eval is decided when it's already a mate, or |cp| is at
+// least this band. Deliberately a SEPARATE owner-calibratable constant from
+// adjudicate.ts's ADJUDICATE_WIN_CP (currently the same starting value,
+// 300) rather than an import of it: importing it would create a circular
+// dependency (adjudicate.ts already imports toMoverCp from this file), and
+// this codebase's own precedent (adjudicate.ts's ADJUDICATE_MOVETIME_MS
+// mirroring this file's EVAL_MOVETIME_MS) is exactly "two named constants,
+// same value today, free to diverge later" rather than a shared import.
+const DECIDED_BAND_CP = 300;
+
+// Piece-letter -> plain-English name, scoped to this file's own copy the
+// same way every other server/annotator/*.ts module keeps its own small
+// map (continuation.ts, opportunity.ts) rather than a shared import.
+const PIECE_NAMES: Record<string, string> = {
+  p: "pawn",
+  n: "knight",
+  b: "bishop",
+  r: "rook",
+  q: "queen",
+};
+
+// Owner ruling 1's own example, verbatim: "still winning, but that gives
+// back your knight for nothing." Lowercase, no em-dashes, no emojis.
+function freeMaterialCopyFor(pieceKind: string): string {
+  return `still winning, but that gives back your ${PIECE_NAMES[pieceKind] ?? "piece"} for nothing.`;
+}
+
+// mate-slip and missed-mate share this shape — the only difference between
+// the two ConversionEvent kinds is how shallow the mate was to begin with
+// (MISSED_MATE_DEPTH's gate in conversion.ts), not what she needs to hear.
+// lost-mate gets its own line since there's no "mate in N" left to name.
+function conversionCopyFor(event: MoveConversionEvent): string {
+  if (event.kind === "lost-mate") {
+    return "still winning, but the forced mate is gone for now.";
+  }
+  return `still winning, but there was a faster mate. mate in ${event.mateBefore} was there, now it's mate in ${event.mateAfter}.`;
+}
 
 // Exported for adjudicate.ts (Wave C, C-A): the "what governs when someone
 // wants to stop" decision reuses this exact mover-perspective/mate-folding
@@ -178,19 +228,6 @@ export async function classifyMove(
   const actualEvalCp = -toMoverCp(afterEval);
   const deltaCp = bestEvalCp - actualEvalCp;
 
-  let tier: Verdict["tier"];
-  if (mateForMover) {
-    // The move leaves the opponent walking into a forced mate — the best
-    // possible outcome, regardless of what the raw delta math says.
-    tier = "silent";
-  } else if (mateAgainst || deltaCp >= warningCp) {
-    tier = "warning";
-  } else if (deltaCp >= nudgeCp) {
-    tier = "nudge";
-  } else {
-    tier = "silent";
-  }
-
   // Computed for every non-checkmate verdict regardless of tier — cheap
   // (pure chess.js replay, no extra eval call) and the client already
   // gates rendering to nudge/warning, so there's no reason to withhold it
@@ -200,12 +237,107 @@ export async function classifyMove(
   // Same "computed for every non-checkmate verdict" reasoning as facts
   // above: cheap (pure chess.js replay of already-computed engine output),
   // and gating it to warning/nudge tiers would just make the client redo
-  // the same check for no benefit.
+  // the same check for no benefit. Moved above the tier decision (Task K2)
+  // because the free-material check below now reads it too — no new engine
+  // call either way, still the SAME already-paid-for afterEval.
   // Controller follow-up (issue A, 2026-07-22 truthfulness-leaks review):
   // move.captured is the literal fact for what HER OWN move captured (chess.js
   // sets this only on a capturing move) -- read here, threaded straight
   // through, never re-derived inside motifs.ts.
   const threat = deriveThreatFacts(chess.fen(), move.to, move.color, afterEval, move.captured);
 
-  return { tier, deltaCp, mateAgainst, latencyMs: Date.now() - start, facts, threat };
+  // Task K2 (owner ruling 1): "decided" reads the SEED (before-move) eval —
+  // already a mate, or already at/above DECIDED_BAND_CP — never the
+  // after-move eval, since the whole point is catching a move that THROWS
+  // AWAY a position that was already won, not one that merely lands in a
+  // winning one.
+  //
+  // Union review fix (H4, 2026-07-31): this used to be `beforeEval.mate !==
+  // null || Math.abs(beforeEval.cp ?? 0) >= DECIDED_BAND_CP` -- Math.abs
+  // made it SIGN-BLIND, so a position she is decidedly LOSING (cp -600, a
+  // mate reading against her) counted as "decided" exactly like a position
+  // she is decidedly winning. The only consumer this actually reaches is
+  // the free-material branches below, whose hardcoded copy ("still
+  // winning, but that gives back your {piece} for nothing.") is only ever
+  // true when SHE holds the lead. Made directional: a mate reading only
+  // counts when it favors the mover (mate > 0 -- mateForMover's own
+  // decided-mate branch already independently requires this via
+  // conversionForMove's `before.mate <= 0` bail, so this mate clause is
+  // belt-and-suspenders for that path, not load-bearing there), and the cp
+  // reading only counts as a genuine lead, never a genuine deficit.
+  const decided = (beforeEval.mate !== null && beforeEval.mate > 0) || (beforeEval.cp ?? 0) >= DECIDED_BAND_CP;
+
+  // Mate-distance conversion (missed-mate/mate-slip/lost-mate): the SAME
+  // math conversion.ts's detectMateEvents runs over a whole game, applied
+  // to this one move via conversionForMove — zero new engine calls, reuses
+  // beforeEval/afterEval exactly as computed above. Only ever attempted in
+  // a decided position (conversionForMove itself also independently
+  // requires before.mate > 0, so this gate is belt-and-suspenders, not
+  // load-bearing on its own).
+  const mateConversion = decided
+    ? conversionForMove({ cp: beforeEval.cp, mate: beforeEval.mate }, { cp: afterEval.cp, mate: afterEval.mate }, move.before, move.san)
+    : null;
+
+  // Free material for nothing: her move made no capture of its own
+  // (move.captured is the literal fact for what SHE captured — undefined
+  // means her move was quiet), and the opponent's already-computed best
+  // reply (threat, from the SAME afterEval) captures right back the exact
+  // piece she just moved, with no legal recapture available. That is a
+  // clean giveaway, not a trade — deliberately narrow (precision over
+  // recall, same discipline as motifs.ts's defender-grounding): an
+  // unfavorable TRADE (her move itself a capture, just an uneven one) is
+  // a different, not-yet-built check, never guessed at here.
+  const freeMaterialPieceKind =
+    decided && !move.captured && threat?.capturesHerJustMovedPiece === true && threat.capturedSquareDefended === false
+      ? threat.capturedPieceKind
+      : undefined;
+
+  let tier: Verdict["tier"];
+  let conversionCopy: string | undefined;
+  if (mateForMover) {
+    // Owner ruling 1: the move still keeps the mate for the mover — the
+    // best possible outcome — but that no longer short-circuits straight
+    // to silent unconditionally. A genuine mate-distance slip (or a clean
+    // free-material giveaway inside the same still-active mate run, e.g.
+    // game 160's plies 123-124) still gets a nudge; an on-schedule mate
+    // stays silent exactly as before.
+    if (mateConversion) {
+      tier = "nudge";
+      conversionCopy = conversionCopyFor(mateConversion);
+    } else if (freeMaterialPieceKind) {
+      tier = "nudge";
+      conversionCopy = freeMaterialCopyFor(freeMaterialPieceKind);
+    } else {
+      tier = "silent";
+    }
+  } else if (mateAgainst || deltaCp >= warningCp) {
+    tier = "warning";
+    // M4 fix (union review, 2026-07-31): conversionCopyFor's "lost-mate"
+    // branch was unreachable dead code -- its only call site sat inside the
+    // `if (mateForMover)` block above, which requires afterEval.mate !==
+    // null, but conversionForMove only ever RETURNS "lost-mate" when
+    // afterMate IS null (the mate reading vanished). The two conditions
+    // were mutually exclusive by construction, so the single most severe
+    // conversion failure -- throwing away a forced mate outright -- landed
+    // here instead, via the ordinary deltaCp/warningCp path (the
+    // MATE_SCORE_CP stand-in makes that delta enormous), with the generic
+    // "careful, this one hurts" badge and no conversionCopy at all. mateConversion
+    // is already computed above (decided-gated, zero new engine calls) --
+    // this just threads what it already found into the tier that's actually
+    // reachable, rather than leaving her losing-a-mate story untold.
+    if (mateConversion) conversionCopy = conversionCopyFor(mateConversion);
+  } else if (deltaCp >= nudgeCp) {
+    tier = "nudge";
+  } else if (decided && freeMaterialPieceKind) {
+    // The non-mate decided case: a big cp lead, no mate on the board, and
+    // the raw deltaCp math stayed under nudgeCp anyway (the saturated-eval
+    // shape this whole task exists to fix) — the free-material check below
+    // deltaCp's own threshold is what catches it.
+    tier = "nudge";
+    conversionCopy = freeMaterialCopyFor(freeMaterialPieceKind);
+  } else {
+    tier = "silent";
+  }
+
+  return { tier, deltaCp, mateAgainst, latencyMs: Date.now() - start, facts, threat, conversionCopy };
 }

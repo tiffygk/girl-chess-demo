@@ -54,7 +54,17 @@ describe("checkDebriefOutput on tonight's game 151 (the promise: checked before 
     // agree, not any particular phase value.
     const phases = phasesForGame(g151Facts.gameSans);
     for (const b of fixed.bullets) if (b.ply != null) b.phase = phases.phaseAt(b.ply);
-    expect(checkDebriefOutput(fixed, g151Facts)).toEqual([]);
+    // conversion-claim (K1, 2026-07-31): the bullet above literally claims
+    // "mate in nine" at ply 43 -- g151Facts's own unconverted point at that
+    // ply carries no mateIn, which the new rule correctly reads as an
+    // unbacked claim (the shared fixture predates that rule). Backed here,
+    // locally, rather than widening the shared g151Facts for every other
+    // test in this file that doesn't make a mate claim at all.
+    const facts = {
+      ...g151Facts,
+      turningPoints: g151Facts.turningPoints.map((tp: any) => (tp.ply === 43 ? { ...tp, mateIn: 9 } : tp)),
+    };
+    expect(checkDebriefOutput(fixed, facts)).toEqual([]);
   });
 });
 
@@ -374,5 +384,302 @@ describe("output.notes -- the module must check what DebriefPage actually render
     const out = { bullets: [], notes: [{ ply: 3, didWell: "Qh7 was the idea." }] } as any;
     const facts = { ...g151Facts, turningPoints: [], gameSans: [{ ply: 1, san: "e4" }], turningLines: [{ ply: 3, pvSans: ["Nf3"] }] } as any;
     expect(checkDebriefOutput(out, facts).map((v) => v.rule)).toContain("unknown-san");
+  });
+});
+
+// Game-160 RCA round, Task K1 (2026-07-31): conversion-claim -- any bullet
+// asserting a missed/slipped mate ("mate in N" / "checkmate in N") must be
+// backed by a same-ply turning point whose stored mate data actually
+// supports it. The debrief path has no LLM (CLAUDE.md), so a false mate
+// claim here is our own template contradicting our own data, same failure
+// class as every other contradiction rule in this file.
+describe("conversion-claim (K1, game-160 RCA round)", () => {
+  it("fires on a fabricated mate claim with no backing turning point (prove it red first)", () => {
+    const out = {
+      bullets: [
+        { section: "could be better", text: "move 33: the shortest mate you held here was mate in two, but it took 61 more moves to close it out.", phase: "endgame", category: "endgame technique", ply: 65 },
+      ],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [], // no turning point at ply 65 at all -- nothing backs the claim
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
+  it("stays silent when the same-ply turning point's mate data backs the claim", () => {
+    const out = {
+      bullets: [
+        { section: "could be better", text: "move 33: the shortest mate you held here was mate in two, but it took 61 more moves to close it out.", phase: "endgame", category: "endgame technique", ply: 65 },
+      ],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 65, plyEnd: 187, san: "Rd7+", label: "conversion", deltaP: 0, lowConfidence: false, kind: "conversion", mateIn: 2 },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
+  it("tolerates a game with no conversion turning points at all (only checks bullets that assert a mate claim)", () => {
+    const out = {
+      bullets: [{ section: "done well", text: "you brought the game home without a disaster. build from here.", phase: "endgame", category: "development" }],
+    } as any;
+    const facts = { result: "1-0", totalPlies: 40, gameSans: [], turningPoints: [] } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
+  // Union review fix (C1, 2026-07-31): this is the fixture that let C1
+  // through. Both tests above assert an IN-AGREEMENT bullet (mateIn 2 vs
+  // "mate in two", mateIn 1 vs "checkmate in one") -- neither can
+  // distinguish "checks the number agrees" from "checks mateIn is merely
+  // non-null", which is exactly the gap that shipped a false "checkmate in
+  // one" onto 8 of her real games. Today's game-160 shape: mateIn 4 at ply
+  // 69, but the (pre-fix) bullet text said "checkmate in one" -- a same-ply
+  // turning point exists and mateIn is non-null, so the OLD `backed` check
+  // (mateIn != null) passed and reported zero violations. Required
+  // red-proof: this test was run against the untightened rule FIRST and
+  // confirmed NOT to catch the mismatch (proving the old check really was
+  // non-null-only, not agreement), before conversion-claim was tightened
+  // to parse the asserted number and compare it to tp.mateIn.
+  it("fires when the bullet's asserted mate distance disagrees with the same-ply turning point's mateIn (game 160's real bug: mateIn 4, bullet said 'checkmate in one')", () => {
+    const out = {
+      bullets: [
+        {
+          section: "could be better",
+          text: "move 35: you had checkmate in one. your Qf7+ was mate on the spot, and the win took 59 more moves to land. this happened 8 times this game.",
+          phase: "endgame",
+          category: "endgame technique",
+          ply: 69,
+        },
+      ],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
+  // ADDENDUM 2 red-proof (union review, 2026-07-31): the fixture above only
+  // ever put the false claim in a BULLET. conversion-claim used to iterate
+  // `bullets.forEach` directly, so it was structurally blind to a false
+  // claim sitting in a card NOTE instead (turningPointNote.ts's own
+  // "checkmate in one"/"ends it on the spot" hardcoding, the fourth C1
+  // producer) -- `checkDebriefOutput` reported 0 violations over a corpus
+  // containing 8 real games with a false note, in the SAME run that this
+  // rule's bullet-side fix already passed. Required red-proof: this test
+  // must be run against the bullets-only version of the rule FIRST and
+  // confirmed to report NOTHING (proving notes really were invisible to
+  // it), before the rule is routed through outputTextUnits.
+  it("fires when a card NOTE (not a bullet) asserts a mate distance that disagrees with the same-ply turning point (the fourth C1 producer, turningPointNote.ts)", () => {
+    const out = {
+      bullets: [],
+      notes: [
+        {
+          ply: 69,
+          couldImprove:
+            "you had checkmate in one here. your Qh8+ ends it on the spot. you played rook takes on c7 instead. this happened 8 times this game.",
+        },
+      ],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
+  // A note whose claim genuinely agrees with its same-ply turning point
+  // must still stay silent -- proves the note-routing fix doesn't just
+  // flag every note that mentions a mate distance.
+  it("stays silent on a note whose mate claim agrees with the same-ply turning point", () => {
+    const out = {
+      bullets: [],
+      notes: [{ ply: 69, couldImprove: "you had checkmate in four here. your Qf7+ starts a forced mate in four." }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
+  // A mate claim with no resolvable ply (a malformed `where`, or a note
+  // whose ply matches no turning point at all) must be treated as UNBACKED,
+  // never silently skipped -- the coordinator's explicit requirement.
+  it("treats a mate claim with no matching turning point as unbacked, not silently skipped", () => {
+    const out = {
+      bullets: [],
+      notes: [{ ply: 999, couldImprove: "you had checkmate in four here." }],
+    } as any;
+    const facts = { result: "1-0", totalPlies: 187, gameSans: [], turningPoints: [] } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
+  // Gate-caught regression (union review, 2026-07-31): routing conversion-claim
+  // through outputTextUnits (ADDENDUM 2) surfaced a real corpus-wide false
+  // positive the very next gate run -- 13 games failed with "text asserts a
+  // mate claim... with no same-ply turning point mate data to back it" on
+  // opportunity.ts's own "leads to mate in N" clause (note.opportunity), a
+  // DIFFERENT, already honesty-gated claim that legitimately sits on an
+  // ordinary swing point carrying no mateIn at all. Required red-proof: this
+  // exact shape (a swing point, no mateIn, an opportunity note saying "leads
+  // to mate in 1") must NOT trip conversion-claim.
+  it("does not flag opportunity.ts's 'leads to mate in N' clause -- a different, already-verified claim, not a missed/slipped-mate assertion", () => {
+    const out = {
+      bullets: [],
+      notes: [{ ply: 8, opportunity: "this opens up: leads to mate in 1" }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 40,
+      gameSans: [],
+      turningPoints: [
+        { rank: 1, ply: 8, san: "Ba5", label: "opponent blunder", deltaP: 0.3, lowConfidence: false, kind: "swing" },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
+  // The exclusion must be scoped to the exact phrase, not blind to a real
+  // missed-mate claim that happens to share the word "mate in" -- a false
+  // claim right next to a legitimate opportunity clause must still fire.
+  it("still fires on a real missed-mate claim even when an opportunity clause sits in the same note", () => {
+    const out = {
+      bullets: [],
+      notes: [
+        {
+          ply: 69,
+          couldImprove: "you had checkmate in one here. your Qh8+ ends it on the spot.",
+          opportunity: "this opens up: leads to mate in 1",
+        },
+      ],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
+  // Residual hole found by the reviewer's own falsification pass
+  // (2026-07-31, third instance of "the check is narrower than the thing it
+  // claims to cover"): "ends it on the spot" / "was mate on the spot" assert
+  // mate-in-1 SEMANTICALLY, with no digit or number word anywhere in the
+  // sentence -- parseMateClaimNumbers alone cannot see them, proven by
+  // mutation against real turningPointNote.ts + replay-check.ts (see
+  // fix-phaseA-union.md for the exact reproduction and the games it caught):
+  // an unconditional "ends it on the spot" made replay-check exit 0, zero
+  // violations, on real games where mateIn was 2-5. This is the number-free
+  // counterpart to the mismatched-number test above -- no digit anywhere.
+  it("fires on a number-free 'ends it on the spot' claim when the same-ply turning point's mateIn is not 1", () => {
+    const out = {
+      bullets: [],
+      notes: [{ ply: 69, couldImprove: "you had checkmate here. your Qf7+ ends it on the spot. you played rook takes on c7 instead." }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
+  it("fires on the sibling number-free phrase 'was mate on the spot' too", () => {
+    const out = {
+      bullets: [{ section: "could be better", text: "move 35: you had checkmate here. your Qf7+ was mate on the spot, and the win took 59 more moves to land.", phase: "endgame", category: "endgame technique", ply: 69 }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
+  // Required negative case (the reviewer's own instruction): without this,
+  // the fix could pass by flagging the phrase UNCONDITIONALLY, which would
+  // be a false-positive machine on every correct mate-in-1 note. A note
+  // that legitimately says "ends it on the spot" at mateIn === 1 must stay
+  // silent.
+  it("does NOT fire on 'ends it on the spot' when the same-ply turning point's mateIn genuinely is 1", () => {
+    const out = {
+      bullets: [],
+      notes: [{ ply: 55, couldImprove: "you had checkmate here. your queen to h8 ends it on the spot. you played knight to f7, check instead." }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: [],
+      turningPoints: [
+        { rank: 3, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 1, missedCount: 5 },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
+  it("does NOT fire on 'was mate on the spot' when the same-ply turning point's mateIn genuinely is 1", () => {
+    const out = {
+      bullets: [{ section: "could be better", text: "move 28: you had checkmate here. your queen to h8 was mate on the spot, and the win took 18 more moves to land.", phase: "endgame", category: "endgame technique", ply: 55 }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: [],
+      turningPoints: [
+        { rank: 3, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 1, missedCount: 5 },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
+  it("also backs a missed-win bullet's checkmate claim (mateIn on the same-ply missed-win point)", () => {
+    const out = {
+      bullets: [{ section: "could be better", text: "move 28: you had checkmate in one and played past it.", phase: "endgame", category: "endgame technique", ply: 55 }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: [],
+      turningPoints: [
+        { rank: 3, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 1, missedCount: 5 },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
   });
 });
