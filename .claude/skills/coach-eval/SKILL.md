@@ -9,6 +9,8 @@ description: Use when measuring or comparing coach/model output quality, accurac
 
 Evaluating model output is a measurement, and a bad measurement is worse than none — it manufactures false findings and sends the owner chasing ghosts. Every rule here exists because it was violated in the 2026-07-22 coach eval and cost real time. The core principle: **trust the instrument only after you have audited it, and never let a display choice masquerade as a finding.**
 
+For the round-level harness AROUND this measurement — multiple suites, ground-truth ladders, baseline-vs-acceptance phasing, run discovery, the rollup — use eval-harness; it covers keeping the harness itself from manufacturing findings and cross-links back here for the answer-measurement rules.
+
 ## When to use
 
 - An A/B between models (Sonnet vs Opus) or configs, on the same inputs.
