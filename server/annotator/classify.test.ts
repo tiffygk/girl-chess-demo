@@ -382,6 +382,29 @@ describe("classifyMove — decided-position conversion (Task K2)", () => {
     expect(verdict.tier).toBe("silent"); // decided must now mean "decided FOR her", not "decided at all"
     expect(verdict.conversionCopy).toBeUndefined(); // never "still winning" while beforeEval.cp is negative
   });
+
+  // Union review fix (M4, 2026-07-31): conversionCopyFor's "lost-mate"
+  // branch was unreachable dead code -- its only call site required
+  // mateForMover (afterEval.mate !== null), but conversionForMove only ever
+  // returns "lost-mate" when afterMate IS null. She holds mate-in-5, plays a
+  // quiet move that lets the mate reading vanish entirely (afterEval.mate:
+  // null) -- the huge MATE_SCORE_CP-backed deltaCp routes this to "warning"
+  // via the ordinary mateAgainst/deltaCp path, not the mateForMover branch.
+  // A wrong (unfixed) implementation answers "warning" with NO
+  // conversionCopy (the generic "careful, this one hurts" badge and nothing
+  // else); the fix must thread the real "the forced mate is gone for now"
+  // story into the tier that's actually reachable.
+  it("losing a held mate entirely -> warning tier (not mateForMover) STILL carries the lost-mate copy", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 5, bestMove: "e1e2", pv: [] }, // beforeEval: mate-in-5 held
+      { cp: 500, mate: null, bestMove: "e8d8", pv: [] } // afterEval: the mate reading is GONE
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("warning"); // reached via mateAgainst/deltaCp, NOT the mateForMover branch
+    expect(verdict.conversionCopy).toBe("still winning, but the forced mate is gone for now.");
+  });
 });
 
 describe("classifyMove — real engine math", () => {
