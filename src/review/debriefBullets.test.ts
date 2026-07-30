@@ -1636,3 +1636,82 @@ describe("I1 fix: missed-win/unconverted category tracks the real phase, never h
     expect(b.category).toBe("endgame technique");
   });
 });
+
+// Game-160 RCA round, Task K1 (2026-07-31): the real game-160 SANs (187
+// plies, verified pre-tpv7-20260729-195853 backup), same shape convention
+// as GAME150_SANS above. This is the game the whole round is about: 123
+// plies of a held mate that kept getting slower, and an empty debrief
+// before this fix (RC1 -- "classification empty on all 187 game-160
+// moves"). The conversion TP's real numbers (ply 65, plyEnd 187, mateIn 2)
+// come from conversion.ts/turningPoints.ts's own real output on this game,
+// not a guess -- see server/annotator/conversion.test.ts's "episode spans
+// the whole mate run" assertion for the same numbers.
+const GAME160_SANS: SummaryMove[] = [
+  "c4", "d5", "cxd5", "Qxd5", "e3", "Nf6", "d4", "e5", "Nc3", "Qd6", "Qa4+", "Bd7",
+  "dxe5", "Bxa4", "exd6", "Bd1", "Nxd1", "Bxd6", "Be2", "O-O", "Nf3", "Na6", "O-O", "Rad8",
+  "Bd2", "Bc5", "Rc1", "Bd6", "a3", "g6", "g3", "Nc5", "Rc4", "Nce4", "Rd4", "Nxd2",
+  "Rxd2", "Ne4", "Rd4", "f5", "Bd3", "Nf6", "e4", "Bc5", "Rxd8", "fxe4", "Bc4+", "Kg7",
+  "Rxf8", "Bxf8", "Ne5", "a6", "Ne3", "b5", "Be6", "Ne8", "Rd1", "Kf6", "Nd7+", "Kxe6",
+  "Nxf8+", "Kf7", "Nxh7", "Kg7", "Rd7+", "Kg8", "Ng5", "Nd6", "Rxc7", "Nf7", "Nxf7", "a5",
+  "Nh6+", "Kf8", "Rf7+", "Ke8", "Rb7", "Kd8", "Nf7+", "Ke8", "Nd6+", "Kd8", "Nd5", "e3",
+  "fxe3", "g5", "Nf7+", "Ke8", "Nh8", "a4", "Nf6+", "Kd8", "Rd7+", "Kc8", "Rd5", "b4",
+  "Rxg5", "bxa3", "bxa3", "Kc7", "Nd5+", "Kd6", "Nf7+", "Ke6", "Nd8+", "Kd6", "Nb7+", "Ke6",
+  "Nc7+", "Kd7", "Na6", "Kc6", "Na5+", "Kb6", "Nb8", "Ka7", "Rg8", "Kb6", "Nc4+", "Kb7",
+  "Nd7", "Kc6", "Na5+", "Kxd7", "Rg7+", "Kd6", "Nb7+", "Kd5", "Rg5+", "Kc4", "Nc5", "Kb5",
+  "Ne4+", "Kc4", "Rc5+", "Kb3", "Ra5", "Kxa3", "Nc5", "Kb2", "Nxa4+", "Kb3", "Nc5+", "Kc3",
+  "Na4+", "Kd3", "Re5", "Kc4", "Nb6+", "Kc3", "Kf2", "Kd3", "Nd5", "Kc2", "Nb4+", "Kb2",
+  "Rd5", "Kb3", "Nd3", "Kc4", "Rd4+", "Kc3", "Nb4", "Kb3", "Nd5", "Kc2", "Nb4+", "Kc3",
+  "Na2+", "Kb3", "Nc1+", "Kc2", "Ne2", "Kb3", "e4", "Kc2", "e5", "Kb3", "e6", "Kc2",
+  "e7", "Kb3", "e8=Q", "Kc2", "Qa4+", "Kb2", "Rb4#",
+].map((san, i) => ({ ply: i + 1, san }));
+
+describe("conversion bullets (K1, game-160 RCA round)", () => {
+  const conversionTp: TurningPoint = tp({
+    rank: 5, ply: 65, plyEnd: 187, san: "Rd7+", label: "conversion", deltaP: 0,
+    kind: "conversion", mateIn: 2,
+  });
+  const missedWinTp: TurningPoint = tp({
+    rank: 4, ply: 95, san: "Rd5", label: "missed mate", deltaP: 0,
+    kind: "missed-win", mateIn: 5, missedCount: 8,
+  });
+
+  it("forces a could-be-better bullet naming the shortest mate held and the episode length", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedWinTp, conversionTp],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: GAME160_SANS,
+    });
+    const conv = bullets.find((x) => x.section === "could be better" && x.ply === 65)!;
+    expect(conv).toBeDefined();
+    expect(conv.text).toContain("mate in two");
+    expect(conv.text).toMatch(/\b61\b/); // episode length in moves: move 94 - move 33
+    expect(conv.category).toBe("endgame technique");
+  });
+
+  it("forces a watch-next-time technique bullet", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedWinTp, conversionTp],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: GAME160_SANS,
+    });
+    const wn = bullets.find((x) => x.section === "watch next time" && x.ply === 65);
+    expect(wn).toBeDefined();
+  });
+
+  it("makes both no-finding fallbacks unreachable on the real game-160 fixture", () => {
+    const bullets = debriefBullets({
+      turningPoints: [missedWinTp, conversionTp],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: GAME160_SANS,
+    });
+    const texts = bullets.map((b) => b.text).join(" | ");
+    expect(texts).not.toContain("no clear mistakes to flag here");
+    expect(texts).not.toContain("no repeat pattern showed up");
+  });
+});
