@@ -589,6 +589,85 @@ describe("conversion-claim (K1, game-160 RCA round)", () => {
     expect(violations.map((v) => v.rule)).toContain("conversion-claim");
   });
 
+  // Residual hole found by the reviewer's own falsification pass
+  // (2026-07-31, third instance of "the check is narrower than the thing it
+  // claims to cover"): "ends it on the spot" / "was mate on the spot" assert
+  // mate-in-1 SEMANTICALLY, with no digit or number word anywhere in the
+  // sentence -- parseMateClaimNumbers alone cannot see them, proven by
+  // mutation against real turningPointNote.ts + replay-check.ts (see
+  // fix-phaseA-union.md for the exact reproduction and the games it caught):
+  // an unconditional "ends it on the spot" made replay-check exit 0, zero
+  // violations, on real games where mateIn was 2-5. This is the number-free
+  // counterpart to the mismatched-number test above -- no digit anywhere.
+  it("fires on a number-free 'ends it on the spot' claim when the same-ply turning point's mateIn is not 1", () => {
+    const out = {
+      bullets: [],
+      notes: [{ ply: 69, couldImprove: "you had checkmate here. your Qf7+ ends it on the spot. you played rook takes on c7 instead." }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
+  it("fires on the sibling number-free phrase 'was mate on the spot' too", () => {
+    const out = {
+      bullets: [{ section: "could be better", text: "move 35: you had checkmate here. your Qf7+ was mate on the spot, and the win took 59 more moves to land.", phase: "endgame", category: "endgame technique", ply: 69 }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
+  // Required negative case (the reviewer's own instruction): without this,
+  // the fix could pass by flagging the phrase UNCONDITIONALLY, which would
+  // be a false-positive machine on every correct mate-in-1 note. A note
+  // that legitimately says "ends it on the spot" at mateIn === 1 must stay
+  // silent.
+  it("does NOT fire on 'ends it on the spot' when the same-ply turning point's mateIn genuinely is 1", () => {
+    const out = {
+      bullets: [],
+      notes: [{ ply: 55, couldImprove: "you had checkmate here. your queen to h8 ends it on the spot. you played knight to f7, check instead." }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: [],
+      turningPoints: [
+        { rank: 3, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 1, missedCount: 5 },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
+  it("does NOT fire on 'was mate on the spot' when the same-ply turning point's mateIn genuinely is 1", () => {
+    const out = {
+      bullets: [{ section: "could be better", text: "move 28: you had checkmate here. your queen to h8 was mate on the spot, and the win took 18 more moves to land.", phase: "endgame", category: "endgame technique", ply: 55 }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: [],
+      turningPoints: [
+        { rank: 3, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 1, missedCount: 5 },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
   it("also backs a missed-win bullet's checkmate claim (mateIn on the same-ply missed-win point)", () => {
     const out = {
       bullets: [{ section: "could be better", text: "move 28: you had checkmate in one and played past it.", phase: "endgame", category: "endgame technique", ply: 55 }],
