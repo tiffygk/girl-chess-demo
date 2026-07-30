@@ -51,7 +51,11 @@ const SEE_MAX_DEPTH = 32;
 // Material balance from `color`'s perspective: sum of color's own piece
 // values minus the opponent's, over the WHOLE board (both kings contribute
 // 0, so their presence/absence never perturbs the count).
-function materialBalance(chess: Chess, color: "w" | "b"): number {
+// Exported so engineLabel.ts (the engine-grade labeler, dispatch 4) reuses
+// this exact material count rather than a second implementation -- both
+// verifiers must agree on what "baseline material" means for their two
+// numbers to be comparable at all.
+export function materialBalance(chess: Chess, color: "w" | "b"): number {
   let balance = 0;
   for (const row of chess.board()) {
     for (const cell of row) {
