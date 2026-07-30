@@ -1,0 +1,113 @@
+{
+  "_comment": "Suite CT's ground truth for the K1/K2 conversion+missed-win turning-point layer, RE-DERIVED 2026-07-31 from the COMMITTED integration-branch behavior (superseding the original K1-brief-only, game-160-only version of this file, which was stale against the reviewed implementation's bestMissedPly anchoring, MIN_CONVERSION_RUN_PLIES=6 span gate, and ply-collision suppression). Not a second guess at what the code should do: captured by running the REAL computeTurningPoints() (server/annotator/turningPoints.ts, TP_ALGO_VERSION 7) against the verified pre-tpv7 backup copy, exactly per review-phaseA-union-DELTA-for-fixer.md's 'Verification harness' section. Cross-checked against that DELTA's measured table and its four falsification tests: full agreement, zero divergence -- see crossCheck below. Field shape per point: rank, ply, plyEnd (episode/conversion only), kind, label, mateIn, missedCount, endKind, anchorKind -- all read directly off the real TurningPoint objects, no re-derivation.",
+  "provenance": {
+    "integrationBranch": "integrate/2026-07-31-rca-phaseA",
+    "integrationCommit": "074a5f3",
+    "integrationCommitSubject": "fix(review): conversion-claim catches number-free 'ends it on the spot' / 'was mate on the spot' (residual hole)",
+    "backupFile": "data/backups/pre-tpv7-20260729-195853.{db,db-wal,db-shm}",
+    "backupCounts": { "games": 161, "moves": 1721, "turningPointsPreHeal": 60, "integrity": "ok" },
+    "date": "2026-07-31",
+    "method": "detached read-only worktree (git worktree add --detach wt-rca-evals-ctref integrate/2026-07-31-rca-phaseA) + a scratch .mts importing the real computeTurningPoints by absolute path, run against a gitignored scratch copy of the verified backup triple, opened readonly, counts re-verified via tools/dbCountSnapshot.ts's countDbSnapshot before trusting it",
+    "algoVersion": 7
+  },
+  "crossCheck": {
+    "verdict": "AGREE -- no divergence found against review-phaseA-union-DELTA-for-fixer.md",
+    "rules": [
+      { "rule": "collision games 85/86/132/149/159 show a SINGLE point (missed-win only, conversion suppressed)", "result": "agree" },
+      { "rule": "141/144 have no conversion point (span gate)", "result": "agree" },
+      { "rule": "game 160 = missed-win@69 (mateIn 4) + conversion@87 (mateIn 2)", "result": "agree" },
+      { "rule": "every conversion anchor ply is odd (hers)", "result": "agree -- 71,49,61,55,45,87 (games 130,143,145,150,151,160)" },
+      { "rule": "no two turning points share a ply, corpus-wide across the 14 games checked", "result": "agree" },
+      { "rule": "game 161 has zero conversion/missed-win/unconverted events", "result": "agree -- 3 swing points only" }
+    ]
+  },
+  "games": {
+    "85": [
+      { "rank": 1, "ply": 22, "kind": "swing", "label": "opponent mistake" },
+      { "rank": 2, "ply": 34, "kind": "swing", "label": "opponent mistake" },
+      { "rank": 3, "ply": 21, "kind": "swing", "label": "inaccuracy" },
+      { "rank": 4, "ply": 65, "kind": "missed-win", "label": "missed mate", "mateIn": 5, "missedCount": 2 }
+    ],
+    "86": [
+      { "rank": 1, "ply": 18, "kind": "swing", "label": "opponent mistake" },
+      { "rank": 2, "ply": 15, "kind": "swing", "label": "mistake" },
+      { "rank": 3, "ply": 22, "kind": "swing", "label": "opponent inaccuracy" },
+      { "rank": 4, "ply": 37, "kind": "missed-win", "label": "missed mate", "mateIn": 1, "missedCount": 11 }
+    ],
+    "130": [
+      { "rank": 1, "ply": 22, "kind": "swing", "label": "opponent blunder" },
+      { "rank": 2, "ply": 3, "kind": "swing", "label": "inaccuracy" },
+      { "rank": 3, "ply": 83, "kind": "backfill", "label": "checkmate" },
+      { "rank": 4, "ply": 63, "kind": "missed-win", "label": "missed mate", "mateIn": 4, "missedCount": 5 },
+      { "rank": 5, "ply": 71, "plyEnd": 83, "kind": "conversion", "label": "conversion", "mateIn": 1 }
+    ],
+    "132": [
+      { "rank": 1, "ply": 7, "kind": "swing", "label": "blunder" },
+      { "rank": 2, "ply": 20, "kind": "swing", "label": "opponent blunder" },
+      { "rank": 3, "ply": 24, "kind": "swing", "label": "opponent inaccuracy" },
+      { "rank": 4, "ply": 45, "kind": "missed-win", "label": "missed mate", "mateIn": 1, "missedCount": 1 }
+    ],
+    "141": [
+      { "rank": 1, "ply": 8, "kind": "swing", "label": "opponent mistake" },
+      { "rank": 2, "ply": 24, "kind": "swing", "label": "opponent inaccuracy" },
+      { "rank": 3, "ply": 43, "kind": "backfill", "label": "checkmate" },
+      { "rank": 4, "ply": 31, "kind": "missed-win", "label": "missed mate", "mateIn": 3, "missedCount": 1 }
+    ],
+    "143": [
+      { "rank": 1, "ply": 10, "kind": "swing", "label": "opponent blunder" },
+      { "rank": 2, "ply": 5, "kind": "swing", "label": "inaccuracy" },
+      { "rank": 3, "ply": 53, "kind": "backfill", "label": "checkmate" },
+      { "rank": 4, "ply": 41, "kind": "missed-win", "label": "missed mate", "mateIn": 3, "missedCount": 5 },
+      { "rank": 5, "ply": 49, "plyEnd": 53, "kind": "conversion", "label": "conversion", "mateIn": 1 }
+    ],
+    "144": [
+      { "rank": 1, "ply": 10, "kind": "swing", "label": "opponent blunder" },
+      { "rank": 2, "ply": 65, "kind": "swing", "label": "inaccuracy" },
+      { "rank": 3, "ply": 24, "kind": "swing", "label": "opponent inaccuracy" },
+      { "rank": 4, "ply": 37, "kind": "missed-win", "label": "missed mate", "mateIn": 3, "missedCount": 8 }
+    ],
+    "145": [
+      { "rank": 1, "ply": 24, "kind": "swing", "label": "opponent mistake" },
+      { "rank": 2, "ply": 20, "kind": "swing", "label": "opponent inaccuracy" },
+      { "rank": 3, "ply": 63, "kind": "backfill", "label": "checkmate" },
+      { "rank": 4, "ply": 45, "kind": "missed-win", "label": "missed mate", "mateIn": 5, "missedCount": 8 },
+      { "rank": 5, "ply": 61, "plyEnd": 63, "kind": "conversion", "label": "conversion", "mateIn": 1 }
+    ],
+    "149": [
+      { "rank": 1, "ply": 6, "kind": "swing", "label": "opponent inaccuracy" },
+      { "rank": 2, "ply": 40, "kind": "swing", "label": "opponent inaccuracy" },
+      { "rank": 3, "ply": 5, "kind": "swing", "label": "inaccuracy" },
+      { "rank": 4, "ply": 30, "plyEnd": 35, "kind": "episode", "label": "king pressure" },
+      { "rank": 5, "ply": 65, "kind": "missed-win", "label": "missed mate", "mateIn": 1, "missedCount": 17 }
+    ],
+    "150": [
+      { "rank": 1, "ply": 20, "kind": "swing", "label": "opponent blunder" },
+      { "rank": 2, "ply": 91, "kind": "backfill", "label": "checkmate" },
+      { "rank": 3, "ply": 51, "kind": "missed-win", "label": "missed mate", "mateIn": 2, "missedCount": 14 },
+      { "rank": 4, "ply": 55, "plyEnd": 91, "kind": "conversion", "label": "conversion", "mateIn": 1 }
+    ],
+    "151": [
+      { "rank": 1, "ply": 12, "kind": "swing", "label": "opponent mistake" },
+      { "rank": 2, "ply": 43, "kind": "unconverted", "label": "unconverted win", "mateIn": 12, "endKind": "repetition", "anchorKind": "repetition-entry" },
+      { "rank": 3, "ply": 45, "plyEnd": 50, "kind": "conversion", "label": "conversion", "mateIn": 9 }
+    ],
+    "159": [
+      { "rank": 1, "ply": 20, "kind": "swing", "label": "opponent mistake" },
+      { "rank": 2, "ply": 14, "kind": "swing", "label": "opponent inaccuracy" },
+      { "rank": 3, "ply": 89, "kind": "backfill", "label": "checkmate" },
+      { "rank": 4, "ply": 53, "kind": "missed-win", "label": "missed mate", "mateIn": 1, "missedCount": 15 }
+    ],
+    "160": [
+      { "rank": 1, "ply": 16, "kind": "swing", "label": "opponent mistake" },
+      { "rank": 2, "ply": 46, "kind": "swing", "label": "opponent inaccuracy" },
+      { "rank": 3, "ply": 187, "kind": "backfill", "label": "checkmate" },
+      { "rank": 4, "ply": 69, "kind": "missed-win", "label": "missed mate", "mateIn": 4, "missedCount": 8 },
+      { "rank": 5, "ply": 87, "plyEnd": 187, "kind": "conversion", "label": "conversion", "mateIn": 2 }
+    ],
+    "161": [
+      { "rank": 1, "ply": 22, "kind": "swing", "label": "opponent inaccuracy" },
+      { "rank": 2, "ply": 38, "kind": "swing", "label": "opponent inaccuracy" },
+      { "rank": 3, "ply": 7, "kind": "swing", "label": "inaccuracy" }
+    ]
+  }
+}

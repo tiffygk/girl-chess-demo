@@ -29,8 +29,13 @@ import type { QuestionTag, Arm } from "./fixtures";
 import { parseArgs } from "./util";
 
 // Wave E1 (coach-truth-speed round): every arm this render can see. Order
-// here is display order in metrics-blinded.md's per-arm sections.
-const ARMS: Arm[] = ["board-live", "general", "board-review"];
+// here is display order in metrics-blinded.md's per-arm sections. RCA
+// acceptance-evals round adds fork/mate/long (suites FH/NM/CE's own fixture
+// classes) -- rendered the same generic way as every other arm; the suites'
+// OWN scorers (tools/coach-eval/suites/{fh,nm,ce}.ts) are what actually gate
+// FH-01..03/NM-01..02/CE-01..05, this list only controls what render.ts's
+// per-arm section table shows.
+const ARMS: Arm[] = ["board-live", "general", "board-review", "fork", "mate", "long"];
 
 // ---- multi-rep aggregation types (summary.json schema) -------------------
 
@@ -72,6 +77,20 @@ interface PerRepPipeline {
   medianLatencyMs: number;
   p90LatencyMs: number;
 }
+// E0 (RCA acceptance evals round, 2026-07-31): per-cause split of
+// failureRows, pooled across reps, this arm only -- same "never pooled
+// across arms" discipline as everything else in PooledPipeline. Each count
+// is a DISJOINT subset of failureRows (every template row has exactly one
+// cause); templatesOnlyCount is the CONFIGURED fallback and must be reported
+// under its own "configured fallback" label, never folded into an
+// outage-shaped number (backend-down/timeout/validation-failed).
+export interface CauseSplit {
+  timeoutCount: number;
+  backendDownCount: number;
+  validationFailedCount: number;
+  templatesOnlyCount: number;
+  offTopicCount: number;
+}
 interface PooledPipeline {
   templateRate: number;
   timeoutRate: number; // Wave E1
@@ -79,6 +98,7 @@ interface PooledPipeline {
   p90LatencyMs: number;
   totalRows: number;
   failureRows: number;
+  causeSplit: CauseSplit;
 }
 export interface ModelSummary {
   reps: number;
@@ -243,6 +263,13 @@ export function buildModelSummary(files: RepFile[]): ModelSummary {
         // bucket, so it must not be added again here or failureRows would
         // double-count and exceed totalRows.
         failureRows: pooled.templateCount + pooled.errorCount,
+        causeSplit: {
+          timeoutCount: pooled.timeoutCount,
+          backendDownCount: pooled.backendDownCount,
+          validationFailedCount: pooled.validationFailedCount,
+          templatesOnlyCount: pooled.templatesOnlyCount,
+          offTopicCount: pooled.offTopicCount,
+        },
       },
     },
     latencyAgg: {
@@ -617,6 +644,9 @@ const ARM_LABEL: Record<Arm, string> = {
   "board-live": `board-live (live nudge, ${LENGTH_MAX_WORDS}-word hard cap, CHAT_TIMEOUT_MS)`,
   general: `general (post-game/general question, ${LENGTH_MAX_WORDS}-word hard cap, CHAT_REVIEW_BUDGET_MS or CHAT_TIMEOUT_MS)`,
   "board-review": `board-review (board question, finished game, ${LENGTH_MAX_WORDS}-word hard cap, CHAT_REVIEW_BUDGET_MS)`,
+  fork: "fork (suite FH forced-loss honesty fixtures -- see suites/fh.ts for the real gate, this section is descriptive only)",
+  mate: "mate (suite NM forced-mate naming fixtures -- see suites/nm.ts for the real gate, this section is descriptive only)",
+  long: "long (suite CE early/late latency cells -- see suites/ce.ts for the real gate, this section is descriptive only)",
 };
 
 function writeArmSection(arm: Arm, A: ColumnAgg, B: ColumnAgg): string[] {
@@ -663,6 +693,20 @@ function writeArmSection(arm: Arm, A: ColumnAgg, B: ColumnAgg): string[] {
     `| timeout rate | ${pct(sa.pipeline.pooled.timeoutRate)} | ${pct(sb.pipeline.pooled.timeoutRate)} |`,
     `| median latency (ms, cross-rep median (min–max)) | ${fmtMsAgg(sa.latencyAgg.median)} | ${fmtMsAgg(sb.latencyAgg.median)} |`,
     `| p90 latency (ms, cross-rep median (min–max)) -- the axis that actually failed her, never pooled away | ${fmtMsAgg(sa.latencyAgg.p90)} | ${fmtMsAgg(sb.latencyAgg.p90)} |`,
+    "",
+    "### pipeline failures BY CAUSE (E0, 2026-07-31) -- pooled, this arm only, never pooled across causes into one outage number",
+    "",
+    "| cause | A | B |",
+    "|---|---|---|",
+    `| timeout | ${sa.pipeline.pooled.causeSplit.timeoutCount}/${sa.pipeline.pooled.totalRows} | ${sb.pipeline.pooled.causeSplit.timeoutCount}/${sb.pipeline.pooled.totalRows} |`,
+    `| backend-down | ${sa.pipeline.pooled.causeSplit.backendDownCount}/${sa.pipeline.pooled.totalRows} | ${sb.pipeline.pooled.causeSplit.backendDownCount}/${sb.pipeline.pooled.totalRows} |`,
+    `| validation-failed | ${sa.pipeline.pooled.causeSplit.validationFailedCount}/${sa.pipeline.pooled.totalRows} | ${sb.pipeline.pooled.causeSplit.validationFailedCount}/${sb.pipeline.pooled.totalRows} |`,
+    `| templates-only (CONFIGURED FALLBACK, not an outage) | ${sa.pipeline.pooled.causeSplit.templatesOnlyCount}/${sa.pipeline.pooled.totalRows} | ${sb.pipeline.pooled.causeSplit.templatesOnlyCount}/${sb.pipeline.pooled.totalRows} |`,
+    `| off-topic | ${sa.pipeline.pooled.causeSplit.offTopicCount}/${sa.pipeline.pooled.totalRows} | ${sb.pipeline.pooled.causeSplit.offTopicCount}/${sb.pipeline.pooled.totalRows} |`,
+    "",
+    "the templates-only row is the pipeline CHOOSING not to call the model (a",
+    "configured fallback) -- it is never counted toward backend-down/timeout/",
+    "validation-failed, and no report anywhere pools it into an outage number.",
     "",
     "latency numbers are aggregates from a high-variance backend (~3.7x same-",
     "prompt variance observed in the 2026-07-22 qa round) -- they support",
@@ -727,11 +771,175 @@ function writeMetricsReport(
   fs.writeFileSync(path.join(dir, "metrics-blinded.md"), lines.join("\n"));
 }
 
+// ---- --single acceptance mode (RCA acceptance-evals round, 2026-07-31) ----
+//
+// Spec section 1: "render.ts gains a --single acceptance mode that
+// aggregates one model's reps (the shipped default config), because
+// acceptance is not an A/B and today's render refuses to run without both
+// models' raw files." Additive: the A/B path above (discover/buildModelSummary/
+// writeBlindedReport/writeMetricsReport/main) is completely untouched --
+// --single is a second, independent entry that reuses buildModelSummary
+// (the same aggregation math) but never requires a second model's files and
+// never blinds anything (there is nothing to blind with one column).
+export interface SingleSummary {
+  generatedAt: string;
+  model: string;
+  questionCount: number;
+  wiring: string;
+  repOrder: string[];
+  arms: Partial<Record<Arm, ModelSummary>>;
+}
+
+// Discovers raw-<model>[-rep<K>].json in `dir` and requires exactly ONE
+// model to be present -- --single is for a single acceptance run (CE/FH/NM's
+// shipped-model baselines), not a second A/B path with a differently-shaped
+// guard. Two models present is refused rather than silently picking one, the
+// same "never silently do something else" discipline the A/B path's
+// mismatched-rep-set check already follows.
+export function discoverSingleModel(dir: string): { model: Model; files: RepFile[] } {
+  const files = discover(dir);
+  if (files.length === 0) throw new Error(`--single: no raw-<model>[-rep<K>].json files found in ${dir}`);
+  const models = [...new Set(files.map((f) => f.model))];
+  if (models.length > 1) {
+    throw new Error(
+      `--single: found ${models.length} distinct models (${models.join(", ")}) in ${dir} -- --single aggregates exactly ` +
+        "ONE model's reps; a directory with both models' raw files should use the A/B path (no --single) instead."
+    );
+  }
+  const seen = new Set<number>();
+  for (const f of files) {
+    if (seen.has(f.rep)) throw new Error(`--single: duplicate rep ${f.rep} in ${dir} -- remove the ambiguous raw file`);
+    seen.add(f.rep);
+  }
+  return { model: models[0], files };
+}
+
+export function buildSingleSummary(model: Model, files: RepFile[]): SingleSummary {
+  const sorted = [...files].sort((a, b) => a.rep - b.rep);
+  const refKey = sorted[0].rows.map((r) => r.id).join("|");
+  for (const f of sorted) {
+    if (f.rows.map((r) => r.id).join("|") !== refKey) {
+      throw new Error(`--single: row-id mismatch between rep ${sorted[0].rep} and rep ${f.rep} -- reps are not comparable`);
+    }
+  }
+  const questionCount = sorted[0].rows.length;
+  const wiring = (sorted[0].rows[0] as { wiring?: string } | undefined)?.wiring ?? "unknown";
+  const repOrder = sorted.map((f) => `${f.model}-rep${f.rep}`);
+  const armsInData = new Set(sorted.flatMap((f) => f.rows.map((r) => r.arm)));
+  const armsPresent = ARMS.filter((a) => armsInData.has(a));
+  const arms: Partial<Record<Arm, ModelSummary>> = {};
+  for (const arm of armsPresent) {
+    arms[arm] = buildModelSummary(filterFilesByArm(sorted, arm));
+  }
+  return { generatedAt: new Date().toISOString(), model, questionCount, wiring, repOrder, arms };
+}
+
+function writeSingleArmSection(arm: Arm, summary: ModelSummary, rows: AnswerRow[]): string[] {
+  const bucket = summarizeColumn(rows).latencyByBucket;
+  const buckets = BUCKETS.filter((b) => bucket[b].total > 0);
+  return [
+    `## arm: ${ARM_LABEL[arm]}`,
+    "",
+    `n = ${summary.reps > 0 ? Math.round(rows.length / summary.reps) : 0} questions per rep, ${summary.reps} reps.`,
+    "",
+    "### voice/format axes (median% across reps, (min-max) rep spread; model-source rows only)",
+    "",
+    "| axis | value |",
+    "|---|---|",
+    `| completeness | ${fmtAgg(summary.axes.completeness)} |`,
+    `| length (${LENGTH_MAX_WORDS}-word hard cap) | ${fmtAgg(summary.axes.length)} |`,
+    `| jargon (zero-tolerance) | ${fmtAgg(summary.axes.jargon)} |`,
+    `| ai-ism / casing (zero-tolerance) | ${fmtAgg(summary.axes.aiIsmCasing)} |`,
+    `| register drift (reported only) | ${fmtAgg(summary.axes.registerDrift)} |`,
+    `| pending-awareness | ${fmtAgg(summary.axes.pendingAwareness)} |`,
+    "",
+    "### pipeline health -- pooled across reps, THIS ARM ONLY",
+    "",
+    "| metric | value |",
+    "|---|---|",
+    `| pipeline failures (template/timeout/error) | ${summary.pipeline.pooled.failureRows}/${summary.pipeline.pooled.totalRows} |`,
+    `| template rate | ${pct(summary.pipeline.pooled.templateRate)} (pass <= ${TEMPLATE_RATE_PASS_MAX * 100}%) |`,
+    `| timeout rate | ${pct(summary.pipeline.pooled.timeoutRate)} |`,
+    `| median latency (ms, cross-rep median (min-max)) | ${fmtMsAgg(summary.latencyAgg.median)} |`,
+    `| p90 latency (ms, cross-rep median (min-max)) | ${fmtMsAgg(summary.latencyAgg.p90)} |`,
+    "",
+    "### pipeline failures BY CAUSE (E0) -- pooled, this arm only, never pooled across causes into one outage number",
+    "",
+    "| cause | count |",
+    "|---|---|",
+    `| timeout | ${summary.pipeline.pooled.causeSplit.timeoutCount}/${summary.pipeline.pooled.totalRows} |`,
+    `| backend-down | ${summary.pipeline.pooled.causeSplit.backendDownCount}/${summary.pipeline.pooled.totalRows} |`,
+    `| validation-failed | ${summary.pipeline.pooled.causeSplit.validationFailedCount}/${summary.pipeline.pooled.totalRows} |`,
+    `| templates-only (CONFIGURED FALLBACK, not an outage) | ${summary.pipeline.pooled.causeSplit.templatesOnlyCount}/${summary.pipeline.pooled.totalRows} |`,
+    `| off-topic | ${summary.pipeline.pooled.causeSplit.offTopicCount}/${summary.pipeline.pooled.totalRows} |`,
+    "",
+    ...(buckets.length > 0
+      ? [
+          "### latency by bucket (ms, median / p90; pooled across reps, this arm only)",
+          "",
+          "| bucket | median | p90 |",
+          "|---|---|---|",
+          ...buckets.map((b) => `| ${b} | ${bucket[b].medianLatencyMs} | ${bucket[b].p90LatencyMs} |`),
+          "",
+        ]
+      : []),
+  ];
+}
+
+function writeSingleReport(dir: string, single: SingleSummary, rowsByArm: Partial<Record<Arm, AnswerRow[]>>) {
+  const lines: string[] = [
+    `# coach eval -- single-model acceptance run (${single.model})`,
+    "",
+    "NOT an A/B comparison -- this is one model config's own reps, for an acceptance run against a fixed baseline " +
+      "(spec: 'acceptance is not an A/B'). Full answers, never truncated.",
+    "",
+    `n = ${single.questionCount} question rows, ${single.repOrder.length} rep(s): ${single.repOrder.join(", ")}.`,
+    "",
+  ];
+  for (const arm of Object.keys(single.arms) as Arm[]) {
+    lines.push(...writeSingleArmSection(arm, single.arms[arm]!, rowsByArm[arm] ?? []));
+  }
+  fs.writeFileSync(path.join(dir, "metrics-single.md"), lines.join("\n"));
+}
+
+function writeSingleQaDump(dir: string, model: Model, repForDump: number, files: RepFile[]) {
+  const rep = files.find((f) => f.rep === repForDump);
+  if (!rep) return;
+  const lines: string[] = [`# coach eval -- single-model Q&A dump (${model}, rep ${repForDump})`, "", "full answers, never truncated.", ""];
+  for (const row of rep.rows) {
+    const sc = scoreAnswer(row);
+    lines.push(`## ${row.id} -- ${row.fixtureId} [${row.arm}]${row.probe ? " (probe)" : ""}`, "", `**question:** ${row.question}`, "", "**answer:**", "", fullAnswerGuard(row.text), "", `**scorecard:** ${renderScorecard(sc)}`, "", "---", "");
+  }
+  fs.writeFileSync(path.join(dir, "report-single.md"), lines.join("\n"));
+}
+
+export async function runSingleMode(dir: string): Promise<void> {
+  const resolvedDir = path.resolve(dir);
+  const { model, files } = discoverSingleModel(resolvedDir);
+  const single = buildSingleSummary(model, files);
+  fs.writeFileSync(path.join(resolvedDir, "single-summary.json"), JSON.stringify(single, null, 2));
+
+  const sorted = [...files].sort((a, b) => a.rep - b.rep);
+  const rowsByArm: Partial<Record<Arm, AnswerRow[]>> = {};
+  for (const arm of Object.keys(single.arms) as Arm[]) {
+    rowsByArm[arm] = filterFilesByArm(sorted, arm).flatMap((f) => f.rows);
+  }
+  writeSingleReport(resolvedDir, single, rowsByArm);
+  writeSingleQaDump(resolvedDir, model, sorted[0].rep, sorted);
+
+  console.log(`[coach-eval] --single: wrote single-summary.json, metrics-single.md, report-single.md to ${resolvedDir} (model=${model}, reps=${files.length})`);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const dir = args.dir;
   if (!dir) throw new Error("--dir <runs/ts> is required (the directory holding raw-<model>[-rep<K>].json files)");
   const resolvedDir = path.resolve(dir);
+
+  if (args.single) {
+    await runSingleMode(resolvedDir);
+    return;
+  }
 
   const files = discover(resolvedDir);
   if (files.length === 0) throw new Error(`no raw-(sonnet|opus)[-rep<K>].json files found in ${resolvedDir}`);

@@ -274,6 +274,107 @@ forward-compat hook that injects a `pendingMove` field unconditionally;
 it's inert until R2 Task 1 defines that field on `ChatContext`, at which
 point this harness needs no change to start exercising it for real.
 
+## RCA acceptance-evals round (2026-07-31): three MORE arms (fork/mate/long)
+
+Spec: `"2 build/Girl Chess — RCA Acceptance Evals (Spec, 2026-07-30).md"`
+(vault). Three ADDITIVE fixture classes feed suites FH/NM/CE, which run
+THROUGH this harness (never a forked one -- see `tools/rca-eval/README.md`
+section 1 for the file-by-file boundary):
+
+| arm | fixtures | questions | reps | suite | gate |
+|---|---|---|---|---|---|
+| `fork` | FK1-6 (game 160 ply 56/57/58 + 3 mined) | 12 (2 per fixture) | 3 (36 total) | FH | FH-01 zero confirmed escape claims on FK1-3; FH-02 >= 90% overall |
+| `mate` | MT1-7 (game 160 ply 94/124/184, game 150 ply 58, + 3 mined) | 7 (1 per fixture) | 3 (21 total) | NM | NM-01 >= 20/21 named; NM-02 zero false mate claims |
+| `long` | LN1-4 (game 160 ply 58/184, game 149 ply 20/140) | 4 (1 per fixture) | 3 (12 total) | CE (CE-01/CE-03) | late-cell latency <= 1.5x early-cell; no growth in timeouts |
+
+The frozen 65/96-question board-live/general/board-review set is completely
+untouched by this -- `TOTAL_QUESTION_COUNT` grows from 96 to 119, but every
+one of the three new groups is its own `Arm` (`fork`/`mate`/`long`), scored
+by its OWN suite (`suites/{fh,ce,nm}.ts`), never pooled into the existing
+per-arm numbers above. `run.ts`'s startup fixture check additionally asserts
+every fork/mate/long fixture's game genuinely has a result in the db
+(`midGameOfFinished`) -- these pin a MID-game ply, not a final one, so this
+is a separate assertion from the board-review arm's final-ply check.
+
+### The announced runs (model calls -- machine must be QUIET, announce first)
+
+None of these have been run yet by this dispatch (no model calls made). Exact
+commands for when the controller announces the machine is quiet:
+
+```bash
+# B11: the pre-merge CE baseline (~300 scored calls incl. long-*, ~2h)
+OUT=tools/coach-eval/runs/2026-07-31-rca-baseline
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --warmup 3 --rep 1 --out $OUT
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --warmup 3 --rep 2 --out $OUT
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --warmup 3 --rep 3 --out $OUT
+npx tsx tools/coach-eval/render.ts --dir $OUT --single   # single-summary.json, metrics-single.md, report-single.md
+npx tsx tools/rca-eval/run.ts -- ce                       # reads $OUT, computes CE-01..05
+
+# FH/NM 1-rep baselines (cheap: 12 + 7 = 19 calls) -- the before/after story,
+# expected RED on FH/NM pre-fix per spec section 4 rule 3.
+# ONE OUT DIR PER ARM: two arms at the same --rep write the SAME raw filename
+# (raw-sonnet-rep1.json), so sharing a dir clobbers the first arm's rows.
+# This bit the first real baseline run (2026-07-31): the mate arm silently
+# overwrote the fork arm's 12 answers. Reps within one arm are safe (distinct
+# raw-sonnet-repN.json); arms sharing a dir are not. (run.ts's own comment
+# says a fresh --out per arm is the caller's job; this recipe now obeys it.)
+OUT_FORK=tools/coach-eval/runs/2026-07-31-fh-baseline-rep1
+OUT_MATE=tools/coach-eval/runs/2026-07-31-nm-baseline-rep1
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 1 --out $OUT_FORK
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 1 --out $OUT_MATE
+npx tsx tools/rca-eval/run.ts -- fh   # FH-01/02 will read UNAUDITED until fh-hand-audit.json exists
+npx tsx tools/rca-eval/run.ts -- nm   # NM-01 will read UNAUDITED only if any mechanical failure is unaudited
+
+# the full FH/NM acceptance run (after K3 merges): 36 + 21 = 57 calls, 3 reps
+OUT3F=tools/coach-eval/runs/2026-07-31-fh-acceptance
+OUT3M=tools/coach-eval/runs/2026-07-31-nm-acceptance
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 1 --out $OUT3F
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 2 --out $OUT3F
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 3 --out $OUT3F
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 1 --out $OUT3M
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 2 --out $OUT3M
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 3 --out $OUT3M
+# then hand-audit: write $OUT3F/fh-hand-audit.json ({rowId: true|false, ...})
+# and $OUT3M/nm-hand-audit.json (same shape, only for mechanical-failure rows)
+npx tsx tools/rca-eval/run.ts -- fh
+npx tsx tools/rca-eval/run.ts -- nm
+
+# suite ST live probes (6-8 model calls, ~5 min) -- template-path parts
+# (ST-01 variant/ST-03/ST-04) already ran with zero model calls; --live adds
+# ST-02 and ST-01's model variant
+npx tsx tools/rca-eval/run.ts -- st --live
+```
+
+**Cost summary:** B11 ~300 calls / ~2h; FH+NM 1-rep baseline 19 calls / a few
+minutes; FH+NM full acceptance 57 calls / ~15-20 min; ST --live 6-8 calls /
+~5 min. All four need the machine QUIET (latency/streaming numbers are
+load-sensitive) and are announced in the round ledger before running --
+never while a build wave's gate is running or while the owner is playing.
+
+`fh-hand-audit.json`/`nm-hand-audit.json` are plain `{ "<rowId>": true|false
+}` maps the owner (or a careful reviewer) writes by hand after reading
+`fh-blinded-worksheet.md` (FH) or the raw answers (NM, only the mechanical-
+failure rows need a verdict at all). They live INSIDE the specific run
+directory they audit (e.g. `$OUT3F/fh-hand-audit.json`), never at the
+`runs/` root -- two different runs must never be able to share one audit
+file. (RCA round dispatch 4: `suites/fh.ts`'s `loadHandAudit` used to read
+from the runs root regardless of which run directory the rows actually came
+from, found by use when two runs needed two different verdicts; fixed to
+read from the exact directory `discoverRun`/`discoverForkRows` returned.)
+Until the audit file exists alongside its run, `suites/fh.ts`/`suites/nm.ts`
+report UNAUDITED rather than a silently-passed number (spec section 4 rule
+5).
+
+Run discovery (`discoverRun.ts`, shared by suites FH/NM/CE) only ever
+auto-picks a run directory whose rows' persisted `fixtureFen` (an additive
+`AnswerRow` field, written by `run.ts` at collection time) agrees with
+fixtures.ts's CURRENT fen for each row's fixtureId -- a stale run mined
+against a since-replaced fixture is never silently substituted for the
+current one, no matter how its directory name sorts. Runs from before that
+field existed are excluded from automatic discovery outright; read one of
+those (or force a specific historical run) with `--run-dir <path>`, e.g.
+`npx tsx tools/rca-eval/run.ts -- fh --run-dir tools/coach-eval/runs/2026-07-31-fh-baseline-rep1b`.
+
 ## Reading the output (in this order)
 
 1. **`report-blinded.md`** — every question, fixture id (+ probe marker),
@@ -316,6 +417,15 @@ audit-sample.ts deterministic (LCG-seeded) full-text hand-audit sample sheets fo
 util.ts         arg parsing / sha256 / timestamp helpers shared by run.ts and render.ts
 score.test.ts   unit tests for every mechanical check + aggregation + decideModel/decideArm/decideAcrossArms + per-arm budget
                 selection + the general-arm intent-routing assertion (every GENERAL_QUESTIONS entry must classify "general")
+fixtures.test.ts  RCA round (2026-07-31): fork-*/mate-*/long-* fixture-shape tests -- every fork fen independently proven
+                forced (forcedLoss.ts), every mate fixture's bestUci legal + adjudicated true by checkMateClaims, frozen 96 unchanged
+escapeClaims.ts   suite FH's escape-claim detector (precision-over-recall regex list, applied clause-wise) -- a candidate-
+                flagging ACCELERANT, never the verdict; the hand audit is the authority (escapeClaims.test.ts)
+render.single.test.ts  render.ts's --single acceptance mode (one model's reps, no A/B blinding)
+suites/         RCA round: suite scorers that run coach-eval configurations -- ce.ts (CE-01..05), fh.ts (FH-01..03,
+                escapeClaims.ts + the blinded worksheet), nm.ts (NM-01/02, checkPendingAwareness re-aimed + the shipped
+                checkMateClaims enforcer) -- each reads whatever coach-eval run directory exists and reports did-not-run/
+                UNAUDITED honestly when no run (or no hand audit) exists yet; wired into `npx tsx tools/rca-eval/run.ts -- ce|fh|nm`
 .gitignore      .scratch/ (db copies) and runs/ (raw output + reports) -- neither is committed
 ```
 

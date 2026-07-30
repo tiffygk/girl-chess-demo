@@ -356,7 +356,14 @@ export function regenLegOk(
 // logic under test. Duplicated rather than imported because truth-check's
 // version lives inside its own isMain-guarded main(); reconstructPvLine
 // itself (the one non-trivial piece) IS imported, never reimplemented.
-function buildTurningLines(
+// Exported (RCA acceptance-evals round, dispatch 6) so tools/rca-eval/
+// suites/ct.ts's CT-04 can drive the SAME turningLines assembly this file's
+// own debrief-output invariant check uses, over its own game selection
+// (every row in `games`, not just listFinishedGames' result-is-not-null
+// filter -- CT-04's spec wants the corpus's full 161-game denominator
+// asserted, examined, not the "finished" subset this file's live report
+// scopes to). No behavior here changed by exporting it.
+export function buildTurningLines(
   gameId: number,
   tps: { rank: number; ply: number; san: string }[],
   gameSans: SummaryMove[]
