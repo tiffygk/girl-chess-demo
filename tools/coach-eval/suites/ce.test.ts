@@ -124,7 +124,7 @@ describe("computeCe04 (regen pressure)", () => {
 
   it("gates success rate once n >= 10 regens", () => {
     const rows: AnswerRow[] = Array.from({ length: 200 }, (_, i) =>
-      row({ id: `r${i}`, fixtureId: "LN1", regenCount: i < 10 ? 1 : 0, source: i < 10 && i < 6 ? "model" : i < 10 ? "template" : "model" })
+      row({ id: `r${i}`, fixtureId: "LN1", regenCount: i < 10 ? 1 : 0, source: i < 6 ? "model" : i < 10 ? "template" : "model" })
     );
     const result = computeCe04(rows);
     expect(result.detail).toMatch(/regen success/);
