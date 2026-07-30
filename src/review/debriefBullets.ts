@@ -137,7 +137,7 @@ const CROSSING_GRADED_LABELS = new Set(["mistake", "inaccuracy"]);
 // re-exported here so every existing caller of debriefBullets.ts's own
 // numberWord/NUMBER_WORDS keeps compiling unchanged.
 export { NUMBER_WORDS, numberWord } from "./numberWords";
-import { numberWord } from "./numberWords";
+import { numberWord, pluralizeWord } from "./numberWords";
 
 // san -> the piece that moved, for "the free {piece}" / "hung her {piece}"
 // phrasing. Deterministic from SAN's own first character; never a claim
@@ -309,8 +309,8 @@ function missedWinText(
   const lastSan = gameSans[gameSans.length - 1].san;
   const extra = moveNumberForPly(totalPlies) - n;
   const cost = lastSan.includes("#")
-    ? `, and the win took ${extra} more moves to land.`
-    : `, but the game ended ${extra} moves later without it.`;
+    ? `, and the win took ${extra} more ${pluralizeWord(extra, "move")} to land.`
+    : `, but the game ended ${extra} ${pluralizeWord(extra, "move")} later without it.`;
   // "was mate on the spot" is only ever true for mate-in-one -- for a
   // deeper miss the best move STARTS a forced mate, it isn't the mate
   // itself (game 160's real bug: mateIn 4 rendered "was mate on the spot",
@@ -330,7 +330,7 @@ function conversionCouldBeBetterText(tp: TurningPoint): string {
   const endMove = moveNumberForPly(tp.plyEnd ?? tp.ply);
   const length = Math.max(endMove - startMove, 0);
   const shortest = tp.mateIn != null ? numberWord(tp.mateIn) : "some";
-  return `move ${startMove}: the shortest mate you held here was mate in ${shortest}, but it took ${length} more moves to close it out.`;
+  return `move ${startMove}: the shortest mate you held here was mate in ${shortest}, but it took ${length} more ${pluralizeWord(length, "move")} to close it out.`;
 }
 
 // The technique tip half of the same fact -- what to actually DO about a
@@ -340,7 +340,7 @@ function conversionWatchNextText(tp: TurningPoint): string {
   const startMove = moveNumberForPly(tp.ply);
   const endMove = moveNumberForPly(tp.plyEnd ?? tp.ply);
   const length = Math.max(endMove - startMove, 0);
-  return `moves ${startMove} to ${endMove}: it took ${length} moves to land a mate you already had lined up. recount the fastest mate every move instead of playing the first check you see.`;
+  return `moves ${startMove} to ${endMove}: it took ${length} ${pluralizeWord(length, "move")} to land a mate you already had lined up. recount the fastest mate every move instead of playing the first check you see.`;
 }
 
 // Coach truth-speed round (2026-07-27): the positive counterpart to
