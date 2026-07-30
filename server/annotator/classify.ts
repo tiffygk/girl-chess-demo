@@ -312,6 +312,20 @@ export async function classifyMove(
     }
   } else if (mateAgainst || deltaCp >= warningCp) {
     tier = "warning";
+    // M4 fix (union review, 2026-07-31): conversionCopyFor's "lost-mate"
+    // branch was unreachable dead code -- its only call site sat inside the
+    // `if (mateForMover)` block above, which requires afterEval.mate !==
+    // null, but conversionForMove only ever RETURNS "lost-mate" when
+    // afterMate IS null (the mate reading vanished). The two conditions
+    // were mutually exclusive by construction, so the single most severe
+    // conversion failure -- throwing away a forced mate outright -- landed
+    // here instead, via the ordinary deltaCp/warningCp path (the
+    // MATE_SCORE_CP stand-in makes that delta enormous), with the generic
+    // "careful, this one hurts" badge and no conversionCopy at all. mateConversion
+    // is already computed above (decided-gated, zero new engine calls) --
+    // this just threads what it already found into the tier that's actually
+    // reachable, rather than leaving her losing-a-mate story untold.
+    if (mateConversion) conversionCopy = conversionCopyFor(mateConversion);
   } else if (deltaCp >= nudgeCp) {
     tier = "nudge";
   } else if (decided && freeMaterialPieceKind) {
