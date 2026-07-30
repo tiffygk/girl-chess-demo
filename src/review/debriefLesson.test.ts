@@ -149,4 +149,20 @@ describe("debriefLesson", () => {
     );
     expect(lesson).toBe("today's lesson: you had checkmate in one on move 33 and played past it. hunt the finish when you are winning.");
   });
+
+  // C1 fix (union review, 2026-07-31): mateIn 1 alone proves nothing here --
+  // "checkmate in one" was ALSO the (wrong) hardcoded text before this fix,
+  // so a mateIn:1 fixture cannot tell "reads tp.mateIn" apart from "always
+  // says one". Game 160's real shape: ply 69, mateIn 4 -- before this fix
+  // the lesson line read "checkmate in one" here, flatly false (she had
+  // mate in FOUR).
+  it("reads the real mate distance, not a hardcoded 'one' (game 160's real shape: mateIn 4)", () => {
+    const lesson = debriefLesson(
+      [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ] as any,
+      "1-0"
+    );
+    expect(lesson).toBe("today's lesson: you had checkmate in four on move 35 and played past it. hunt the finish when you are winning.");
+  });
 });

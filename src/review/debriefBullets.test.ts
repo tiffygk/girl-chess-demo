@@ -1299,6 +1299,34 @@ describe("missed-win bullets", () => {
     expect(wn.category).toBe("endgame technique");
   });
 
+  // C1 fix (union review, 2026-07-31): mateIn 1 alone (missedTp above)
+  // proves nothing -- "checkmate in one" was ALSO the old hardcoded text,
+  // so it can't discriminate "reads tp.mateIn" from "always says one". This
+  // uses game 160's real shape (ply 69, mateIn 4, missedCount 8): before
+  // this fix the bullet read "you had checkmate in one... was mate on the
+  // spot", flatly false -- she had mate in FOUR, and the best move only
+  // STARTS a four-move mate, it isn't mate on the spot.
+  it("reads the real mate distance and 'starts a forced mate' phrasing for mateIn > 1 (game 160's real shape)", () => {
+    const tp160 = {
+      rank: 4 as const, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win" as const, mateIn: 4, missedCount: 8,
+    };
+    const line69 = { ply: 69, pvSans: ["Qxg7+"], bestSan: "Qxg7+" };
+    const bullets = debriefBullets({
+      turningPoints: [tp160],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: GAME160_SANS,
+      turningLines: [line69],
+    });
+    const b = bullets.find((x) => x.section === "could be better")!;
+    expect(b.text).toContain("you had checkmate in four.");
+    expect(b.text).toContain("started a forced mate in four");
+    expect(b.text).not.toContain("checkmate in one");
+    expect(b.text).not.toContain("was mate on the spot");
+  });
+
   it("keeps the episode bullet alongside the missed-win watch bullet (game 149 shape)", () => {
     const bullets = debriefBullets({
       turningPoints: [

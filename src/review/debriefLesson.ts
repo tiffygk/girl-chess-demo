@@ -20,6 +20,14 @@
 //      null/unknown) -> the draw-neutral line.
 
 import type { TurningPoint } from "../game/api";
+// C1 fix (union review, 2026-07-31): reuse the shared spelled-number
+// helper rather than a second number-to-word table. Imports from
+// ./numberWords, NOT ./debriefBullets -- debriefBullets.ts already imports
+// moveNumberForPly FROM this file, so reaching back into debriefBullets.ts
+// here would add a new circular coupling between the two that didn't exist
+// before this fix. numberWords.ts has no dependents of its own, so this
+// stays a one-way import.
+import { numberWord } from "./numberWords";
 
 // Her own negative move labels — see classifications.ts / turningPoints.ts's
 // labelForSwing: these are the only labels a HER move (odd ply) can carry
@@ -68,7 +76,11 @@ export function debriefLesson(turningPoints: TurningPoint[], result: GameResult)
   const missedWin = turningPoints.find((t) => t.kind === "missed-win");
   if (missedWin) {
     const n = moveNumberForPly(missedWin.ply);
-    return `today's lesson: you had checkmate in one on move ${n} and played past it. hunt the finish when you are winning.`;
+    // C1 fix (union review, 2026-07-31): mateIn can be 2-5 now (K1 widened
+    // this point's source to conversion.ts's depth-5 detector) -- this
+    // hardcoded "checkmate in one" regardless, false on 8 of her real games.
+    const distance = numberWord(missedWin.mateIn ?? 1);
+    return `today's lesson: you had checkmate in ${distance} on move ${n} and played past it. hunt the finish when you are winning.`;
   }
 
   const ownMistakes = turningPoints.filter((t) => HER_NEGATIVE_LABELS.has(t.label));
