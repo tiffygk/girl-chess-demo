@@ -3,10 +3,18 @@ import { Chess } from "chess.js";
 // timeline) -- the SAME module the debrief renders from, imported, not
 // hand-mirrored. The old convention ("server never imports src, mirror
 // the constant") is what produced two divergent phase algorithms lying
-// to the owner differently on the same game; tsc -b never compiled
-// server code anyway, and tsx/vitest resolve this import fine. Phase
-// logic is imported, never mirrored. If you are about to copy a phase
-// threshold into this file, stop: phaseParity.test.ts will fail.
+// to the owner differently on the same game. This server-to-src edge IS
+// now covered by tsc -b (tsconfig.server.json's program includes this
+// file plus gamePhases.ts/phase.ts/api.ts, verified with --listFiles), so
+// a nullable-shape mistake at this seam is caught at build time, not just
+// by tsx/vitest resolving the import at runtime. The one thing tsc still
+// cannot see: it cannot tell a `GamePhase`-only `import type` from a
+// runtime value import, so converting gamePhases.ts's or phase.ts's
+// `import type { SummaryMove }` to a value import type-checks fine but
+// would pull src/game/api.ts's browser-only `fetch` code into this
+// process and break the dev server. Phase logic is imported, never
+// mirrored. If you are about to copy a phase threshold into this file,
+// stop: phaseParity.test.ts will fail.
 import { phasesForGame, type GamePhase } from "../../src/review/gamePhases";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
 import type { CoachBackend } from "./backends/types";
