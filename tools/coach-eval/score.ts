@@ -46,6 +46,13 @@ export interface AnswerRow {
   latencyMs: number;
   traceId?: number;
   pending?: PendingRef;
+  // RCA round dispatch 4: the fixture's own fen at collection time,
+  // additive so old runs (undefined here) stay parseable. discoverRun.ts's
+  // fixturesFingerprintMatches uses this to refuse auto-discovering a run
+  // whose data no longer matches fixtures.ts's CURRENT fen for the row's
+  // fixtureId (a stale-fixture run silently picked up over the current one
+  // -- the defect this field exists to make mechanically impossible).
+  fixtureFen?: string;
 }
 
 export interface AxisResult {

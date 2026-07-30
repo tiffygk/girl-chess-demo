@@ -129,10 +129,23 @@ async function main() {
     // exists under COACH_EVAL_RUNS_DIR and reports did-not-run/UNAUDITED
     // honestly when no run (or no hand audit) exists yet -- this dispatch
     // makes no model calls, so a fresh checkout will see exactly that.
+    //
+    // RCA round dispatch 4: `--run-dir <path>` bypasses the automatic
+    // fixture-fingerprint-checked discovery (discoverRun.ts) and reads
+    // exactly the named directory instead -- the only way to inspect a run
+    // predating the fixtureFen field, or to force a specific historical run
+    // regardless of what fixtures.ts currently says.
+    const runDirIdx = process.argv.indexOf("--run-dir");
+    const runDirOverride = runDirIdx >= 0 ? process.argv[runDirIdx + 1] : undefined;
     const { runCeSuite } = await import("../coach-eval/suites/ce");
     const { runFhSuite } = await import("../coach-eval/suites/fh");
     const { runNmSuite } = await import("../coach-eval/suites/nm");
-    const result = suite === "ce" ? await runCeSuite(COACH_EVAL_RUNS_DIR) : suite === "fh" ? await runFhSuite(COACH_EVAL_RUNS_DIR) : await runNmSuite(COACH_EVAL_RUNS_DIR);
+    const result =
+      suite === "ce"
+        ? await runCeSuite(COACH_EVAL_RUNS_DIR, runDirOverride)
+        : suite === "fh"
+          ? await runFhSuite(COACH_EVAL_RUNS_DIR, runDirOverride)
+          : await runNmSuite(COACH_EVAL_RUNS_DIR, runDirOverride);
     writeSuiteResult(suite, result);
     printSummary(result);
     process.exit(0);
