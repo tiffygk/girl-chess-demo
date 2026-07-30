@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import { auditFhRows, summarizeFhAudit, computeFh01, computeFh02, computeFh03, writeFhBlindedWorksheet, runFhSuite } from "./fh";
 import type { AnswerRow } from "../score";
+import { FIXTURES } from "../fixtures";
 
 function makeRow(id: string, fixtureId: string, text: string): AnswerRow {
   return {
@@ -148,6 +149,57 @@ describe("runFhSuite (did-not-run honesty when no coach-eval run exists on disk)
     expect(result.suite).toBe("FH");
     expect(result.expectedCount).toBe(3);
     expect(result.results.length).toBe(3);
+    expect(result.results.every((r) => r.verdict === "did-not-run")).toBe(true);
+  });
+});
+
+describe("runFhSuite fixture-fingerprint discovery (RCA round dispatch 4, harness defect (b))", () => {
+  // Reproduces the exact bug found by use: a retired run mined against
+  // STALE fixture fens (pre-instrument-audit-catch FK3, a different
+  // position than fixtures.ts says today) sorts alphabetically AFTER the
+  // current, correctly-labeled run -- so the old "pick the alphabetically-
+  // last directory with matching-arm rows" logic would return the stale
+  // run's data, never the current run's, silently. A stale run's rows must
+  // never be auto-discovered once a real fixture has moved on.
+  it("never discovers a stale-fixture run over the current one, even when the stale dir sorts alphabetically later", () => {
+    const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "gc-fh-fingerprint-"));
+    const currentDir = path.join(runsDir, "2026-07-31-fh-current");
+    const staleDir = path.join(runsDir, "9999-fh-stale-sorts-after");
+    fs.mkdirSync(currentDir);
+    fs.mkdirSync(staleDir);
+
+    // Stale: wrong fen for FK3 (as if mined before a fixture replacement),
+    // confirmed-dishonest -- if this were ever picked, FH-01 would go RED.
+    const staleRows: AnswerRow[] = [
+      { ...makeRow("fork-03a", "FK3", DISHONEST), fixtureFen: "8/8/8/8/8/8/8/8 w - - 0 1" },
+    ];
+    fs.writeFileSync(path.join(staleDir, "raw-sonnet-rep1.json"), JSON.stringify(staleRows));
+    fs.writeFileSync(path.join(staleDir, "fh-hand-audit.json"), JSON.stringify({ "fork-03a": true }));
+
+    // Current: real fen for FK3, honest, confirmed clean -- must be the row
+    // set actually scored.
+    const currentRows: AnswerRow[] = [
+      { ...makeRow("fork-03a", "FK3", HONEST), fixtureFen: FIXTURES.FK3.fen },
+    ];
+    fs.writeFileSync(path.join(currentDir, "raw-sonnet-rep1.json"), JSON.stringify(currentRows));
+    fs.writeFileSync(path.join(currentDir, "fh-hand-audit.json"), JSON.stringify({ "fork-03a": false }));
+
+    const result = runFhSuite(runsDir);
+    const fh01 = result.results.find((r) => r.id === "FH-01")!;
+    // If the stale (confirmed-dishonest) rows had been picked, this would
+    // be "red". Picking the current (confirmed-clean) rows must be "pass".
+    expect(fh01.verdict).toBe("pass");
+  });
+
+  it("excludes a run with NO fixtureFen at all (pre-fingerprint-field data) from automatic discovery", () => {
+    const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "gc-fh-nofingerprint-"));
+    const oldDir = path.join(runsDir, "2020-01-01-pre-fingerprint");
+    fs.mkdirSync(oldDir);
+    const oldRows: AnswerRow[] = [makeRow("fork-03a", "FK3", HONEST)]; // no fixtureFen field at all
+    fs.writeFileSync(path.join(oldDir, "raw-sonnet-rep1.json"), JSON.stringify(oldRows));
+    const result = runFhSuite(runsDir);
+    // No auto-discoverable run exists -- must report did-not-run, never
+    // silently trust the unverifiable old data.
     expect(result.results.every((r) => r.verdict === "did-not-run")).toBe(true);
   });
 });

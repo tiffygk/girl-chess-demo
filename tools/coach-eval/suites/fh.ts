@@ -21,6 +21,7 @@ import type { AnswerRow } from "../score";
 import type { EvalResult, SuiteResult } from "../../rca-eval/lib/types";
 import { assertDenominator, proveRedAtStartup } from "../../rca-eval/lib/assertRan";
 import { detectEscapeClaims, KNOWN_BAD_ESCAPE_CLAIM, type EscapeClaimFlag } from "../escapeClaims";
+import { discoverRun } from "./discoverRun";
 
 // Instrument-audit catch (2026-07-31, RCA round progress.md "INSTRUMENT
 // AUDIT CATCH"): forcedLoss.ts's corrected recapture/quiescence math proved
@@ -205,25 +206,24 @@ export function writeFhBlindedWorksheet(dir: string, rows: AnswerRow[]): { works
   return { worksheetPath, keyPath };
 }
 
-function discoverForkRows(coachEvalRunsDir: string): AnswerRow[] | undefined {
-  if (!fs.existsSync(coachEvalRunsDir)) return undefined;
-  const dirs = fs
-    .readdirSync(coachEvalRunsDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => path.join(coachEvalRunsDir, d.name))
-    .sort();
-  for (const dir of dirs.reverse()) {
-    const rawFiles = fs.readdirSync(dir).filter((f) => /^raw-(sonnet|opus)(-rep\d+)?\.json$/.test(f));
-    if (rawFiles.length === 0) continue;
-    const rows: AnswerRow[] = rawFiles.flatMap((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8")));
-    const forkRows = rows.filter((r) => r.arm === "fork");
-    if (forkRows.length > 0) return forkRows;
-  }
-  return undefined;
+// RCA round dispatch 4, harness defect (b): discovery now goes through the
+// shared discoverRun (fixture-fingerprint-checked -- see discoverRun.ts's
+// own header) instead of a bespoke "alphabetically-last directory" scan
+// duplicated three times across fh.ts/nm.ts/ce.ts. `runDirOverride` (wired
+// from run.ts's `--run-dir` flag) bypasses the fingerprint check entirely
+// for a caller who names a specific directory on purpose.
+function discoverForkRows(coachEvalRunsDir: string, runDirOverride?: string) {
+  return discoverRun(coachEvalRunsDir, (rows) => rows.filter((r) => r.arm === "fork"), runDirOverride);
 }
 
-function loadHandAudit(coachEvalRunsDir: string): Record<string, boolean> | undefined {
-  const p = path.join(coachEvalRunsDir, "fh-hand-audit.json");
+// Harness defect (a): this used to read `fh-hand-audit.json` from the runs
+// ROOT (coachEvalRunsDir), while the README always documented it living
+// ALONGSIDE a specific run -- found by use when two different runs' data
+// needed two different verdicts and there was only one root file to hold
+// them. Now takes the exact run directory the rows came from (never the
+// root), so two runs can never share one audit file.
+function loadHandAudit(runDir: string): Record<string, boolean> | undefined {
+  const p = path.join(runDir, "fh-hand-audit.json");
   if (!fs.existsSync(p)) return undefined;
   try {
     return JSON.parse(fs.readFileSync(p, "utf-8"));
@@ -239,11 +239,11 @@ function fhDetectorLooksFine(text: string): boolean {
   return detectEscapeClaims(text).length === 0;
 }
 
-export function runFhSuite(coachEvalRunsDir: string): SuiteResult {
+export function runFhSuite(coachEvalRunsDir: string, runDirOverride?: string): SuiteResult {
   proveRedAtStartup("FH escape-claim detector", fhDetectorLooksFine, KNOWN_BAD_ESCAPE_CLAIM);
 
-  const forkRows = discoverForkRows(coachEvalRunsDir);
-  if (!forkRows) {
+  const discovered = discoverForkRows(coachEvalRunsDir, runDirOverride);
+  if (!discovered) {
     const results: EvalResult[] = [
       { id: "FH-01", verdict: "did-not-run", detail: "no coach-eval run with arm 'fork' rows found on disk yet -- suite FH needs a real run (spec: model-graded, no model calls in this dispatch)." },
       { id: "FH-02", verdict: "did-not-run", detail: "same as FH-01 -- no fork-arm run exists yet." },
@@ -258,14 +258,16 @@ export function runFhSuite(coachEvalRunsDir: string): SuiteResult {
     };
   }
 
-  const handAudit = loadHandAudit(coachEvalRunsDir);
+  const { dir, rows: forkRows } = discovered;
+  const handAudit = loadHandAudit(dir);
   const audits = auditFhRows(forkRows, handAudit ?? {});
-  const results: EvalResult[] = [computeFh01(audits), computeFh02(audits), computeFh03(undefined)];
+  const worksheetPath = path.join(dir, "fh-blinded-worksheet.md");
+  const results: EvalResult[] = [computeFh01(audits), computeFh02(audits), computeFh03(fs.existsSync(worksheetPath) ? worksheetPath : undefined)];
   return {
     suite: "FH",
     expectedCount: 3,
     results: assertDenominator(results, 3, "FH"),
     ranAt: new Date().toISOString(),
-    notes: handAudit ? [] : ["no fh-hand-audit.json found alongside the run -- FH-01/02 report UNAUDITED per honesty rule 5."],
+    notes: handAudit ? [] : [`no fh-hand-audit.json found alongside ${dir} -- FH-01/02 report UNAUDITED per honesty rule 5.`],
   };
 }
