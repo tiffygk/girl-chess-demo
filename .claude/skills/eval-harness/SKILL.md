@@ -30,6 +30,11 @@ written once, in coach-eval's "Works in conjunction" section.
 - Labeling ground truth for fixtures (forced/mate/expected-conversion) that a gate rests on.
 - Writing the rollup the owner reads. Not for a single-answer A/B -- that is coach-eval.
 
+The end-to-end sequence (this skill, coach-eval, and the dashboard rendering step with the
+dataviz / build-dashboard / analyze skills) is laid out once in the vault:
+`2 build/Girl Chess — Eval Process (2026-07-30).md`. Follow it for the loop; follow the
+skills for the rules.
+
 ## The rules, each tied to the failure it earned
 
 **1. Fix the instrument before you report a number; the fix gets its own failing test
