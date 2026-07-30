@@ -79,6 +79,21 @@ describe("assembleChatFactList: perPlyAnalysis (Task 3, R1a)", () => {
     expect(facts.perPlyAnalysis![0].phase).toBe("middlegame");
   });
 
+  // Union review F2 (2026-07-30 fix wave): the pin above asserts the label
+  // AT the boundary but never the boundary itself -- a wrong threshold
+  // (e.g. MIDGAME_MAJORS_MINORS_MAX drifted from 10 to 12) would move the
+  // real latch from ply 20 to ply 10 and this suite would stay green,
+  // because nothing ever checked that ply 19 -- one before the real latch
+  // -- is still "opening". This closes that: it fails on the ply-12 mutant
+  // and passes on shipped code.
+  it("ply 19 -- one before the midgame latch -- is still opening, not a moved boundary", () => {
+    const perPly = [
+      { ply: 19, san: "Bxf6", evalCp: -40, evalMate: null, bestSan: "Bxf6", pvSans: [] },
+    ];
+    const facts = assembleChatFactList(moves(MATERIAL_FORCED_GAME), {}, undefined, perPly);
+    expect(facts.perPlyAnalysis![0].phase).toBe("opening");
+  });
+
   it("tags the ply where majorsAndMinors first drops to 6 or fewer as endgame (MATERIAL_FORCED_GAME ply 29)", () => {
     const perPly = [
       { ply: 29, san: "gxf5", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
