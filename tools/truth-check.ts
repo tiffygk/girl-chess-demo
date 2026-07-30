@@ -55,7 +55,6 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Chess } from "chess.js";
-import Database from "better-sqlite3";
 import {
   openDb,
   getGameMoves,
@@ -71,7 +70,21 @@ import {
 // from ./dbCountSnapshot (not from ./replay-check) because replay-check.ts
 // itself imports resolveRealDbPath/copyScratchDb/reconstructPvLine from
 // THIS file -- importing the other way would create a cycle.
-import { countDbSnapshot, checkDbIntact } from "./dbCountSnapshot";
+//
+// resolveRealDbPath itself now LIVES in ./dbCountSnapshot too (union
+// finding U2, fix wave 1) -- moved out of this file so tools/gate.ts can
+// import it without triggering this module's own top-level
+// `resolveRealDbPath(REPO_ROOT)` call below as an import-time side effect.
+// Re-exported here so replay-check.ts's and truth-check.test.ts's existing
+// `from "./truth-check"` imports keep working unchanged.
+import {
+  countDbSnapshot,
+  checkDbIntact,
+  resolveRealDbPath,
+  type DbResolution,
+} from "./dbCountSnapshot";
+export { resolveRealDbPath };
+export type { DbResolution };
 import { moveEndpoints } from "../server/annotator/moveEndpoints";
 import { followedBest } from "../src/review/followedBest";
 import { buildTurningPointNote } from "../src/review/turningPointNote";
@@ -80,78 +93,10 @@ import type { TurningLine, TurningPoint, MoveClassification, SummaryMove } from 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, "..");
 
-// The owner plays on the MAIN worktree; every OTHER worktree (this one
-// included) has no data/girlchess.db of its own by default. Without this,
-// `npm run gate` inside a worktree throws "real db not found" instead of
-// checking her real history.
-//
-// Fix-wave F2 (2026-07-29): the old order tried <repoRoot>/data/
-// girlchess.db BEFORE the main worktree, with no freshness or size check --
-// data/* is gitignored, so a stale/demo snapshot dropped in a worktree
-// (exactly the state Task 0 itself found and deleted) silently became the
-// entire corpus every downstream check ran against, and printed nothing to
-// say so. Resolution is now live-db-first:
-//   1. GC_DB_PATH env override -- an explicit escape hatch (tests, CI).
-//   2. the main worktree's db -- the source of truth whenever it exists.
-//      Never written to (see copyScratchDb below); only ever the COPY
-//      SOURCE for a WAL-safe scratch snapshot.
-//   3. <repoRoot>/data/girlchess.db -- last resort, only when the main
-//      worktree db is genuinely absent (a fresh clone, CI, a worktree
-//      deliberately given its own copy), and only once it proves itself
-//      non-empty by COUNTING games (never by hashing -- the project's
-//      standing rule for her db).
-// Every caller of resolveRealDbPath is expected to log the returned
-// `source` once, at the top of its run, so a stale read is visible instead
-// of silent.
-const MAIN_WORKTREE_DB =
-  "/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/data/girlchess.db";
-
-export interface DbResolution {
-  path: string;
-  source: string;
-}
-
-// Readonly, count-based, never a hash. Returns null (not 0) when the file
-// is missing or not a real/openable sqlite db, so "0 games" and "not a db"
-// are distinguishable in the caller's error message.
-function countGamesReadonly(p: string): number | null {
-  if (!fs.existsSync(p)) return null;
-  try {
-    const db = new Database(p, { readonly: true });
-    try {
-      return (db.prepare("SELECT COUNT(*) c FROM games").get() as { c: number }).c;
-    } finally {
-      db.close();
-    }
-  } catch {
-    return null;
-  }
-}
-
-export function resolveRealDbPath(
-  repoRoot: string,
-  mainWorktreeDb: string = MAIN_WORKTREE_DB
-): DbResolution {
-  if (process.env.GC_DB_PATH) {
-    return { path: process.env.GC_DB_PATH, source: "GC_DB_PATH override" };
-  }
-  if (fs.existsSync(mainWorktreeDb)) {
-    return { path: mainWorktreeDb, source: "main worktree (live db, source of truth)" };
-  }
-  const local = path.join(repoRoot, "data", "girlchess.db");
-  const localGames = countGamesReadonly(local);
-  if (localGames != null && localGames > 0) {
-    return {
-      path: local,
-      source: `local worktree copy (main worktree db not found at ${mainWorktreeDb}; verified ${localGames} games by count, not hash)`,
-    };
-  }
-  throw new Error(
-    `no usable db found: main worktree db missing at ${mainWorktreeDb}, and local ${local} is ` +
-      `${localGames == null ? "missing or unreadable" : "empty (0 games)"} -- nothing to copy from`
-  );
-}
-
+// resolveRealDbPath (owner-plays-on-the-main-worktree resolution, live-db-
+// first with GC_DB_PATH/main-worktree/local-fallback order, F2's stale-
+// local-copy fix) now lives in ./dbCountSnapshot -- see the import above
+// and that module's own header for the full rationale and history.
 const dbResolution = resolveRealDbPath(REPO_ROOT);
 const REAL_DB_PATH = dbResolution.path;
 const SCRATCH_DB_PATH = path.join(TOOL_DIR, ".truth-check-scratch", "girlchess.db");
@@ -262,6 +207,32 @@ function fmtLineId(l: LineId): string {
   return `game ${l.gameId} ply ${l.ply}`;
 }
 
+// union finding U4 (review-union.md minor, fix wave 1): an empty-but-valid
+// db (0 games, valid schema, integrity_check "ok") passed checkDbIntact
+// trivially -- before and after counts are both 0, nothing shrank -- and
+// then listFinishedGames() returned [], the loop below never ran, and
+// main() printed "VERDICT: PASS" having examined nothing. A gate that can
+// pass having verified zero games is worse than no gate: it reads as proof
+// the counterfactual-suppression fix holds across her real history, when
+// it was never checked at all. This does NOT touch the count-based
+// isolation approach (checkDbIntact/countDbSnapshot) -- that a same-or-
+// higher count can still hide a corruption that inserts garbage rows is a
+// separate, documented, accepted tradeoff (see dbCountSnapshot.ts) and
+// stays that way. This only closes the "examined nothing, said PASS" gap.
+// Pure and exported so it's testable without a real db.
+export function assertGamesExamined(gameCount: number, dbPath: string, source: string): void {
+  if (gameCount === 0) {
+    throw new Error(
+      `truth-check examined ZERO finished games from ${dbPath} (${source}) -- this db resolved ` +
+        `successfully and passed the count/integrity check, but listFinishedGames() returned nothing ` +
+        `to verify. A truth-check that prints VERDICT: PASS having examined nothing is a false green, ` +
+        `not a legitimate pass. If this db is genuinely and legitimately empty (a fresh clone with no ` +
+        `play history), that is a state this check refuses to pass in -- point GC_DB_PATH at a db with ` +
+        `finished games instead.`
+    );
+  }
+}
+
 async function main() {
   console.log(`[truth-check] db source: ${REAL_DB_PATH} (${dbResolution.source})`);
   if (!fs.existsSync(REAL_DB_PATH)) {
@@ -295,6 +266,7 @@ async function main() {
   }
 
   const games = listFinishedGames(1_000_000) as { id: number }[];
+  assertGamesExamined(games.length, REAL_DB_PATH, dbResolution.source);
 
   let totalLines = 0;
   let followedCount = 0;

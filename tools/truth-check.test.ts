@@ -14,7 +14,13 @@ import os from "os";
 import path from "path";
 import Database from "better-sqlite3";
 import { Chess } from "chess.js";
-import { reconstructPvLine, toTurningPoint, resolveRealDbPath, type RawTurningPointRow } from "./truth-check";
+import {
+  reconstructPvLine,
+  toTurningPoint,
+  resolveRealDbPath,
+  assertGamesExamined,
+  type RawTurningPointRow,
+} from "./truth-check";
 import * as truthCheckModule from "./truth-check";
 import { checkDbIntact, type DbCountSnapshot } from "./dbCountSnapshot";
 
@@ -286,5 +292,36 @@ describe("union finding 2: truth-check's isolation check is count-based, not sha
 
     const afterCorrupt: DbCountSnapshot = { games: 160, moves: 1420, integrity: "corruption found" };
     expect(checkDbIntact(before, afterCorrupt)).toMatch(/integrity_check returned/);
+  });
+});
+
+// union finding U4 (review-union.md minor, fix wave 1): an empty-but-valid
+// db (0 games, integrity "ok") passed checkDbIntact trivially -- both
+// before and after counts are 0, nothing shrank -- and then main()'s
+// listFinishedGames() returned [], the loop never ran, and the tool
+// printed "VERDICT: PASS" having examined zero games. assertGamesExamined
+// is the guard main() now calls right after listFinishedGames() (see
+// truth-check.ts) so that state throws instead of silently passing.
+describe("union finding 4: truth-check cannot print VERDICT: PASS having examined zero games", () => {
+  it("throws, naming the resolved db path and source, when zero finished games are found", () => {
+    expect(() => assertGamesExamined(0, "/tmp/some/girlchess.db", "main worktree (live db, source of truth)")).toThrow(
+      /examined ZERO finished games/
+    );
+    try {
+      assertGamesExamined(0, "/tmp/some/girlchess.db", "main worktree (live db, source of truth)");
+      throw new Error("should have thrown");
+    } catch (err) {
+      const msg = (err as Error).message;
+      // Requirement: name the actual cause -- the db it resolved AND that
+      // it found no finished games to examine -- not a generic message.
+      expect(msg).toMatch(/\/tmp\/some\/girlchess\.db/);
+      expect(msg).toMatch(/main worktree \(live db, source of truth\)/);
+      expect(msg).toMatch(/listFinishedGames\(\) returned nothing/);
+    }
+  });
+
+  it("does not throw, and is silent, when at least one finished game was found -- the legitimate-pass case stays untouched", () => {
+    expect(() => assertGamesExamined(1, "/tmp/some/girlchess.db", "main worktree")).not.toThrow();
+    expect(() => assertGamesExamined(160, "/tmp/some/girlchess.db", "main worktree")).not.toThrow();
   });
 });
