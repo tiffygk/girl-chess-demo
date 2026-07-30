@@ -75,7 +75,36 @@ export type ConversionEpisode = {
   toPly: number;
   events: ConversionEvent[];
   bestMissed: number | null; // shortest mate she ever held in the run
+  // Union review fix (H1+H2, 2026-07-31): the ply she actually HELD
+  // bestMissed at -- her own ply, always odd, computed in the SAME loop
+  // that finds bestMissed (filtered on `row.side === "her"` already, so
+  // this is guaranteed hers by construction, never a `% 2` re-derivation).
+  // Exists so turningPoints.ts can anchor the conversion point's own `ply`
+  // here instead of `fromPly` (the run's start, which is whichever side's
+  // ply happened to carry the first mate reading -- mallow's in 7 of her
+  // 12 real conversion games). Anchoring on fromPly welded two different
+  // moments into one sentence (H1: "the shortest mate you held here" named
+  // the run's START move, not the move that actually held the shortest
+  // mate) AND broke ply parity (H2: a mallow ply rendered as her card).
+  // Both collapse to this one fix. Null only when bestMissed is (both are
+  // set together, in the same conditional, at the same loop iteration).
+  bestMissedPly: number | null;
 };
+
+// Union review fix (M1, 2026-07-31): a mate-reading run shorter than this
+// many plies is more likely the evaluator flickering between a mate
+// reading and a plain cp reading than a genuine held-mate episode she is
+// failing to convert. Real game 144: the mate reading breaks at ply 37,
+// flickers back in for exactly plies 40-44 (5 plies), and breaks again --
+// that 5-ply run minted a conversion bullet ("it took 2 more moves to
+// close it out") sitting next to the missed-win bullet's "this happened 8
+// times", contradicting it in the same debrief. Gated on the run's own ply
+// span, not mateIn/deltaP -- a short run can still hold a very shallow
+// mate, so length is the only honest signal it was ever "held" for any
+// meaningful stretch. Owner-calibratable, chosen with a real-data margin:
+// the shortest genuine conversion run measured across her whole corpus is
+// game 132's 8 plies (40-47); game 144's noise-run is 5 plies (40-44).
+export const MIN_CONVERSION_RUN_PLIES = 6;
 
 // Owner ruling 2 (context-v2-changes-and-contract.md section 2): widened
 // from missedWins.ts's original MISSED_MATE_DEPTH (1) -- that depth-1
@@ -218,15 +247,25 @@ export function detectConversion(
   let episode: ConversionEpisode | null = null;
   const freeMaterialEvents: ConversionEvent[] = [];
 
-  if (episodeRun) {
+  // M1 fix: a run shorter than MIN_CONVERSION_RUN_PLIES never becomes an
+  // episode at all -- not a shorter/quieter version of one. This does NOT
+  // touch missedMateEvents/missed-win (those come from mateEvents, computed
+  // over every row above, independent of episode formation) -- only the
+  // conversion point and its free-material sub-detection are gated.
+  const runPlies = episodeRun ? episodeRun.toPly - episodeRun.fromPly + 1 : 0;
+  if (episodeRun && runPlies >= MIN_CONVERSION_RUN_PLIES) {
     const byPly = byPlyMap(rows);
     let bestMissed: number | null = null;
+    let bestMissedPly: number | null = null;
     for (const row of episodeRun.rows) {
       if (row.side !== "her") continue;
       if (row.san.includes("#")) continue;
       const pre = byPly.get(row.ply - 1);
       if (pre && pre.evalMate != null && pre.evalMate > 0) {
-        if (bestMissed == null || pre.evalMate < bestMissed) bestMissed = pre.evalMate;
+        if (bestMissed == null || pre.evalMate < bestMissed) {
+          bestMissed = pre.evalMate;
+          bestMissedPly = row.ply;
+        }
       }
     }
 
@@ -245,6 +284,7 @@ export function detectConversion(
       toPly: episodeRun.toPly,
       events: episodeEvents,
       bestMissed,
+      bestMissedPly,
     };
   }
 

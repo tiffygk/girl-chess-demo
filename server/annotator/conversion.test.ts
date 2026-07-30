@@ -5,6 +5,7 @@ import {
   detectConversion,
   MISSED_MATE_DEPTH,
   MATE_SLIP_MIN,
+  MIN_CONVERSION_RUN_PLIES,
   type MoveEvalRow,
 } from "./conversion";
 import { detectMissedWins } from "./missedWins";
@@ -56,6 +57,21 @@ describe("detectConversion — game 160 (real data)", () => {
   it("episode spans the whole mate run with the shortest mate she held", () => {
     const { episode } = detectConversion(rows160);
     expect(episode).toMatchObject({ fromPly: 65, toPly: 187, bestMissed: 2 });
+  });
+
+  // Union review fix (H1+H2, 2026-07-31): bestMissedPly is the ply she
+  // ACTUALLY held mate-in-2 at, not the run's start (fromPly, 65 -- a
+  // different, earlier moment). Verified independently against the raw
+  // fixture: row 86 (mallow's g5) reads evalMate 2, the position she then
+  // faces at her ply 87 (Nf7+) -- pre.evalMate=2 is the smallest positive
+  // "before" reading anywhere in the run, so bestMissedPly must be exactly
+  // 87 (move 44 -- the review's own "held at move 44" number), never 65
+  // (move 33, where the OLD code anchored the bullet, welding two
+  // different moments into one false-reading sentence).
+  it("bestMissedPly is the her-ply she held the shortest mate at (87), not the run's start (65)", () => {
+    const { episode } = detectConversion(rows160);
+    expect(episode?.bestMissedPly).toBe(87);
+    expect(episode!.bestMissedPly! % 2).toBe(1); // her side, always -- guaranteed by construction
   });
 
   it("free material: ply 123 gave the d7 knight for nothing", () => {
@@ -115,6 +131,58 @@ describe("detectConversion — parity/guard fixtures", () => {
     const { events, episode } = detectConversion(rows);
     expect(events).toEqual([]);
     expect(episode).toBeNull();
+  });
+
+  // Union review fix (H2, 2026-07-31, data-layer instance): the run's
+  // FIRST ply with a mate reading (fromPly) is mallow's here (60, even) --
+  // real shape in 7 of her 12 conversion games. A wrong implementation that
+  // anchors the episode on fromPly (what shipped originally) would render
+  // MALLOW's move as her turning-point card. bestMissedPly must stay hers
+  // (odd) regardless, because it is computed by filtering `row.side ===
+  // "her"` before ever looking at a ply -- this fixture proves that
+  // filter, not just asserts a type.
+  it("bestMissedPly stays her side even when the mate run's first ply (fromPly) is mallow's", () => {
+    const rows: MoveEvalRow[] = [
+      { ply: 60, side: "mallow", san: "Kg8", evalCp: null, evalMate: 6 },
+      { ply: 61, side: "her", san: "Qh5+", evalCp: null, evalMate: -8 },
+      { ply: 62, side: "mallow", san: "Kf8", evalCp: null, evalMate: 8 },
+      { ply: 63, side: "her", san: "Rd7", evalCp: null, evalMate: -8 },
+      { ply: 64, side: "mallow", san: "Ke8", evalCp: null, evalMate: 8 },
+      { ply: 65, side: "her", san: "Rb7", evalCp: null, evalMate: -9 },
+    ];
+    const { episode } = detectConversion(rows);
+    expect(episode?.fromPly).toBe(60); // the run genuinely starts on mallow's ply
+    expect(episode?.bestMissedPly).toBe(61); // but the anchor is hers
+    expect(episode!.bestMissedPly! % 2).toBe(1);
+  });
+
+  // Union review fix (M1, 2026-07-31): real game 144's shape -- a mate
+  // reading that flickers in for exactly 5 plies is not a conversion
+  // episode. MIN_CONVERSION_RUN_PLIES is 6.
+  it("MIN_CONVERSION_RUN_PLIES is 6, and a 5-ply mate run never becomes an episode", () => {
+    expect(MIN_CONVERSION_RUN_PLIES).toBe(6);
+    const rows: MoveEvalRow[] = [
+      { ply: 40, side: "her", san: "Qh5+", evalCp: null, evalMate: -5 },
+      { ply: 41, side: "mallow", san: "Kg8", evalCp: null, evalMate: 5 },
+      { ply: 42, side: "her", san: "Rd7", evalCp: null, evalMate: -5 },
+      { ply: 43, side: "mallow", san: "Kf8", evalCp: null, evalMate: 5 },
+      { ply: 44, side: "her", san: "Rb7", evalCp: null, evalMate: -4 },
+    ];
+    const { episode } = detectConversion(rows);
+    expect(episode).toBeNull();
+  });
+
+  it("a 6-ply mate run (the same shape, one ply longer) DOES become an episode", () => {
+    const rows: MoveEvalRow[] = [
+      { ply: 40, side: "her", san: "Qh5+", evalCp: null, evalMate: -5 },
+      { ply: 41, side: "mallow", san: "Kg8", evalCp: null, evalMate: 5 },
+      { ply: 42, side: "her", san: "Rd7", evalCp: null, evalMate: -5 },
+      { ply: 43, side: "mallow", san: "Kf8", evalCp: null, evalMate: 5 },
+      { ply: 44, side: "her", san: "Rb7", evalCp: null, evalMate: -4 },
+      { ply: 45, side: "mallow", san: "Ke8", evalCp: null, evalMate: 4 },
+    ];
+    const { episode } = detectConversion(rows);
+    expect(episode).not.toBeNull();
   });
 
   it("game 150 still yields exactly the shipped missed-win result (parity with detectMissedWins on 150)", () => {
