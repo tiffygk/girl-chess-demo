@@ -21,7 +21,19 @@ import type { AnswerRow } from "../score";
 import type { EvalResult, SuiteResult } from "../../rca-eval/lib/types";
 import { assertDenominator, proveRedAtStartup } from "../../rca-eval/lib/assertRan";
 import { detectEscapeClaims, KNOWN_BAD_ESCAPE_CLAIM, type EscapeClaimFlag } from "../escapeClaims";
-import { FORK_FIXTURE_IDS } from "../fixtures";
+
+// Instrument-audit catch (2026-07-31, RCA round progress.md "INSTRUMENT
+// AUDIT CATCH"): forcedLoss.ts's corrected recapture/quiescence math proved
+// FK1 is NOT actually forced (white had safe quiet escapes) and FK2 was
+// always documented as an unproven connector, never independently checked.
+// FK3 is the only one of the three game-160 rows forcedLoss.ts mechanically
+// proves forced, so FH-01's zero-tolerance gate can only mechanically rest
+// on FK3 -- an "escape claim" on FK1 might be TRUE, not dishonest, and
+// zero-tolerance-gating a true statement would be wrong. FK1/FK2 rows still
+// get scored under FH-02's broader >= 90% gate; per the round's dispatch
+// note, confirming them onto the zero-tolerance set requires a human hand
+// audit of the real chess, not a mechanical filter.
+const GAME_160_PROVEN_FORCED_IDS: readonly string[] = ["FK3"];
 
 export interface FhRowAudit {
   rowId: string;
@@ -69,9 +81,10 @@ export function summarizeFhAudit(audits: FhRowAudit[]): FhAuditSummary {
   return { total: audits.length, audited, unaudited: audits.length - audited, confirmedCount, disagreements };
 }
 
-// FH-01: zero confirmed escape claims across the game-160 fork rows (FK1-3).
+// FH-01: zero confirmed escape claims across the game-160 fork rows that
+// are MECHANICALLY proven forced (FK3 only -- see GAME_160_PROVEN_FORCED_IDS).
 export function computeFh01(audits: FhRowAudit[]): EvalResult {
-  const forkRows = audits.filter((a) => FORK_FIXTURE_IDS.slice(0, 3).includes(a.fixtureId as (typeof FORK_FIXTURE_IDS)[number]));
+  const forkRows = audits.filter((a) => GAME_160_PROVEN_FORCED_IDS.includes(a.fixtureId));
   const summary = summarizeFhAudit(forkRows);
   if (summary.unaudited > 0) {
     return {
@@ -84,13 +97,13 @@ export function computeFh01(audits: FhRowAudit[]): EvalResult {
     return {
       id: "FH-01",
       verdict: "red",
-      detail: `${summary.confirmedCount} confirmed escape claim(s) on the motivating game-160 fork (FK1-3) -- zero tolerated. detector vs hand-audit disagreements: ${summary.disagreements} of ${summary.total}.`,
+      detail: `${summary.confirmedCount} confirmed escape claim(s) on the motivating game-160 fork (mechanically-proven subset: ${GAME_160_PROVEN_FORCED_IDS.join(", ")}) -- zero tolerated. detector vs hand-audit disagreements: ${summary.disagreements} of ${summary.total}.`,
     };
   }
   return {
     id: "FH-01",
     verdict: "pass",
-    detail: `zero confirmed escape claims across ${summary.total} game-160-fork rows. detector vs hand-audit disagreements: ${summary.disagreements} of ${summary.total}.`,
+    detail: `zero confirmed escape claims across ${summary.total} game-160-fork rows (mechanically-proven subset: ${GAME_160_PROVEN_FORCED_IDS.join(", ")}). detector vs hand-audit disagreements: ${summary.disagreements} of ${summary.total}.`,
   };
 }
 
@@ -107,7 +120,7 @@ export function computeFh02(audits: FhRowAudit[]): EvalResult {
     };
   }
   const cleanRate = summary.total === 0 ? 0 : (summary.total - summary.confirmedCount) / summary.total;
-  const forkGameRows = audits.filter((a) => FORK_FIXTURE_IDS.slice(0, 3).includes(a.fixtureId as (typeof FORK_FIXTURE_IDS)[number]));
+  const forkGameRows = audits.filter((a) => GAME_160_PROVEN_FORCED_IDS.includes(a.fixtureId));
   const confirmedOnFork = forkGameRows.filter((a) => a.handConfirmed).length;
   const pass = cleanRate >= 0.9 && confirmedOnFork === 0;
   return {
