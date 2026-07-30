@@ -161,8 +161,17 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     });
     expect(tps[3].deltaP).toBe(0);
 
+    // Union review fix (H1+H2, 2026-07-31): `ply` is now bestMissedPly (65
+    // -- the ply she actually held the shortest mate, mate-in-5, at) rather
+    // than fromPly (63, the run's start, welded incorrectly to a mate
+    // distance she held two plies later). Verified by hand against this
+    // fixture's own ladder: 63.Rxf8->M-9 (her, but its own "before" reading
+    // at ply 62 is a plain cp, not a mate, so it never qualifies) |
+    // 64.a5->M5 | 65.Bxf5->M-7 (her; pre = ply64's M5, the smallest
+    // positive "before" anywhere in this run) -- no later her-ply's "before"
+    // ever undercuts 5.
     expect(tps[4]).toMatchObject({
-      rank: 5, ply: 63, plyEnd: 74, label: "conversion", kind: "conversion", mateIn: 5,
+      rank: 5, ply: 65, plyEnd: 74, label: "conversion", kind: "conversion", mateIn: 5,
     });
     expect(tps[4].deltaP).toBe(0);
   });
@@ -219,8 +228,12 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     });
     expect(tps[3].deltaP).toBe(0);
 
+    // Union review fix (H1+H2, 2026-07-31): `ply` is now bestMissedPly (37
+    // -- her Qxe6+, the same ply the missed-win point above already
+    // anchors on, since that is where mate-in-1 was actually held) rather
+    // than fromPly (32, the run's start).
     expect(tps[4]).toMatchObject({
-      rank: 5, ply: 32, plyEnd: 72, label: "conversion", kind: "conversion", mateIn: 1,
+      rank: 5, ply: 37, plyEnd: 72, label: "conversion", kind: "conversion", mateIn: 1,
     });
     expect(tps[4].deltaP).toBe(0);
   });
@@ -684,7 +697,11 @@ describe("missed-win turning point", () => {
     // evidence at both plies 55 and 57) comes after it, so it is no longer
     // literally the LAST point once that lands, only the last BEFORE it.
     expect(missed[0].rank).toBe(points.length - 1);
-    expect(points[points.length - 1]).toMatchObject({ kind: "conversion", ply: 53, plyEnd: 58, mateIn: 1 });
+    // Union review fix (H1+H2, 2026-07-31): `ply` is bestMissedPly (55,
+    // where mate-in-1 was actually held), not fromPly (53, the run's
+    // start -- ply 53's own "before" reading is null, so it was never a
+    // real candidate for bestMissed in the first place).
+    expect(points[points.length - 1]).toMatchObject({ kind: "conversion", ply: 55, plyEnd: 58, mateIn: 1 });
   });
 
   it("emits nothing when no mate was missed", () => {
@@ -720,6 +737,52 @@ describe("missed-win turning point", () => {
   });
 });
 
+// Union review fix (H2, 2026-07-31): the conversion point's own `ply` must
+// always land on HER side, end to end through computeTurningPoints -- not
+// just at the conversion.ts unit level (conversion.test.ts already proves
+// bestMissedPly itself is always odd; this proves the FULL pipeline, incl.
+// the defensive anchorPly parity-fix mirroring unconverted's own shape,
+// never regresses that guarantee). Real shape: the mate-reading run's first
+// ply (fromPly) is mallow's -- measured on her real corpus, 7 of 12
+// conversion games anchor this way before the fix.
+describe("conversion turning point parity (H2, union review)", () => {
+  // Union review fix (M1, 2026-07-31): real game 144's shape -- a mate
+  // reading that flickers in for only 5 plies (40-44) never becomes a
+  // conversion point at all, end to end. This is what actually resolves
+  // the contradiction the review flagged (a "took 2 more moves" bullet
+  // sitting beside "this happened 8 times" in the same debrief): the short
+  // run simply mints no conversion card, so there is nothing left to
+  // contradict the missed-win bullet, which is untouched (it comes from
+  // mateEvents over every row, not from episode formation).
+  it("a 5-ply mate-reading flicker (game 144's shape) never mints a conversion point", () => {
+    const moves: MoveEval[] = [
+      { ply: 40, san: "Qh5+", evalCp: null, evalMate: -5 },
+      { ply: 41, san: "Kg8", evalCp: null, evalMate: 5 },
+      { ply: 42, san: "Rd7", evalCp: null, evalMate: -5 },
+      { ply: 43, san: "Kf8", evalCp: null, evalMate: 5 },
+      { ply: 44, san: "Rb7", evalCp: null, evalMate: -4 },
+    ];
+    const tps = computeTurningPoints(moves, "1-0");
+    expect(tps.some((t) => t.kind === "conversion")).toBe(false);
+  });
+
+  it("anchors on her ply even when the mate run's first ply (fromPly) is mallow's", () => {
+    const moves: MoveEval[] = [
+      { ply: 60, san: "Kg8", evalCp: null, evalMate: 6 },
+      { ply: 61, san: "Qh5+", evalCp: null, evalMate: -8 },
+      { ply: 62, san: "Kf8", evalCp: null, evalMate: 8 },
+      { ply: 63, san: "Rd7", evalCp: null, evalMate: -8 },
+      { ply: 64, san: "Ke8", evalCp: null, evalMate: 8 },
+      { ply: 65, san: "Rb7", evalCp: null, evalMate: -9 },
+    ];
+    const tps = computeTurningPoints(moves, "1-0");
+    const conv = tps.find((t) => t.kind === "conversion");
+    expect(conv).toBeDefined();
+    expect(conv!.ply % 2).toBe(1); // her side -- never mallow's ply 60 (fromPly)
+    expect(conv!.ply).toBe(61); // bestMissedPly: pre = ply 60's evalMate 6, the smallest "before" here
+  });
+});
+
 it("TP_ALGO_VERSION is 7 (game-160 RCA round, K1: conversion + wider missed-win heal old games on read)", () => {
   expect(TP_ALGO_VERSION).toBe(7);
 });
@@ -747,7 +810,14 @@ describe("computeTurningPoints — game 160 (real data, K1 conversion round)", (
     const missedWinTps = tps.filter((t) => t.kind === "missed-win");
     expect(conversionTps).toHaveLength(1);
     expect(missedWinTps.length).toBeGreaterThanOrEqual(1);
-    expect(conversionTps[0]).toMatchObject({ ply: 65, plyEnd: 187, mateIn: 2, kind: "conversion" });
+    // Union review fix (H1+H2, 2026-07-31): `ply` is 87 (bestMissedPly --
+    // her Nf7+, where mate-in-2 was actually held: pre = ply 86's evalMate
+    // 2, the smallest positive "before" anywhere in the run), not 65
+    // (fromPly, the run's start -- move 33, two different moments the old
+    // code welded into one sentence). moveNumberForPly(87) = 44, matching
+    // the union review's own "held at move 44" finding.
+    expect(conversionTps[0]).toMatchObject({ ply: 87, plyEnd: 187, mateIn: 2, kind: "conversion" });
+    expect(conversionTps[0].ply % 2).toBe(1); // her side, always
     // ply 185 must never surface as a claimed miss anywhere -- v1's
     // retracted claim (context-v2-changes-and-contract.md section 0.6).
     expect(tps.some((t) => t.ply === 185)).toBe(false);

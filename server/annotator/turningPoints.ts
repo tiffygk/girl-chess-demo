@@ -95,10 +95,30 @@ export interface TurningPoint {
   // only -- the shortest mate she ever held during the episode (mateIn,
   // conversion.ts's ConversionEpisode.bestMissed) and where the held-mate
   // run ended (plyEnd, already an existing field via the episode kind
-  // above). `ply` is the run's START (conversion.ts's fromPly). One point
-  // per game, and only when the run actually contains real slip evidence
-  // (a clean, unslipped mate march earns no card -- see the gating comment
-  // at this kind's push site below).
+  // above).
+  //
+  // Union review fix (H1+H2, 2026-07-31): `ply` is conversion.ts's
+  // ConversionEpisode.bestMissedPly -- the ply she actually HELD the
+  // shortest mate at -- NOT the run's start (conversion.ts's fromPly, as
+  // this shipped originally). Two bugs collapsed into one fix: fromPly is
+  // whichever side's ply happened to carry the first mate reading in the
+  // run (mallow's in 7 of her 12 real conversion games -- H2, the same
+  // "encode parity in the data" lesson CLAUDE.md already names, applied
+  // here at the data layer since conversion.ts's own `side` field was
+  // already correct); and even where fromPly was hers, it welded the run's
+  // START ply to a mate distance (bestMissed) that was actually held at a
+  // LATER ply, producing a bullet naming one move but describing a fact
+  // true of a different one (H1, e.g. real game 160: fromPly 65 / move 33
+  // versus bestMissedPly 87 / move 44, where mate-in-2 was actually held).
+  // bestMissedPly is guaranteed hers by construction (conversion.ts's own
+  // loop filters `row.side === "her"` before ever considering a ply), so
+  // this point's `ply` can never again render mallow's move as her card.
+  // One point per game, and only when the run actually contains real slip
+  // evidence (a clean, unslipped mate march earns no card -- see the
+  // gating comment at this kind's push site below) AND clears
+  // conversion.ts's MIN_CONVERSION_RUN_PLIES span gate (M1 fix -- a
+  // handful of plies of a flickering evaluator is not a conversion
+  // episode; see that constant's own comment for real game 144's shape).
 }
 
 // debrief-v2: bumped when the turning-point algorithm changes shape in a way
@@ -736,12 +756,31 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
     const hasSlipEvidence = conversionEpisode.events.some(
       (e) => e.kind === "mate-slip" || e.kind === "missed-mate"
     );
-    if (hasSlipEvidence && conversionEpisode.bestMissed != null) {
+    // H1+H2 fix (union review, 2026-07-31): anchored on bestMissedPly (the
+    // ply she actually HELD the shortest mate at), never fromPly (the run's
+    // start, which is whichever side's ply happened to carry the first mate
+    // reading -- mallow's in 7 of her 12 real conversion games). Same
+    // parity-fix SHAPE as `unconverted`'s own anchorPly two blocks below
+    // (`ply % 2 === 1 ? ply : ply + 1`) rather than a second, drifting
+    // mechanism -- applied here to bestMissedPly instead of fromPly, since
+    // bestMissedPly is also where H1's welding bug (the sentence naming one
+    // move but describing a mate distance actually held at a different one)
+    // gets fixed. bestMissedPly is already guaranteed hers by construction
+    // (conversion.ts's own loop only ever considers `row.side === "her"`
+    // rows -- the explicit-field convention this module was built around),
+    // so this ternary's +1 branch is defense-in-depth, never expected to
+    // fire; conversion.test.ts's own parity fixture proves the field, not
+    // just asserts the type.
+    if (hasSlipEvidence && conversionEpisode.bestMissed != null && conversionEpisode.bestMissedPly != null) {
+      const anchorPly =
+        conversionEpisode.bestMissedPly % 2 === 1
+          ? conversionEpisode.bestMissedPly
+          : conversionEpisode.bestMissedPly + 1;
       points.push({
         rank: points.length + 1,
-        ply: conversionEpisode.fromPly,
+        ply: anchorPly,
         plyEnd: conversionEpisode.toPly,
-        san: evalRows.find((r) => r.ply === conversionEpisode.fromPly)?.san ?? "",
+        san: evalRows.find((r) => r.ply === anchorPly)?.san ?? "",
         label: "conversion",
         deltaP: 0,
         lowConfidence: false,
