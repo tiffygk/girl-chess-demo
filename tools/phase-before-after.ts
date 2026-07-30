@@ -205,9 +205,26 @@ interface GameReport {
   gameId: number;
   totalPlies: number;
   turningPointChanges: TurningPointChange[];
-  turningPointVisibleChange: boolean; // a change at a ply with a CURRENTLY PERSISTED turning-point row -- what a debrief card would show her right now
+  turningPointVisibleChange: boolean; // a change at a ply with a CURRENTLY PERSISTED turning-point row, ANY direction -- what a debrief card would show her right now
+  // Important 6 / union F13 (2026-07-30 fix wave): a genuine SUBSET of
+  // turningPointVisibleChange, gated on the SAME direction mislabeledByOldFallback
+  // checks (old said endgame, new does not). The old single boolean conflated
+  // "any direction changed" with "the specific mislabel direction changed" --
+  // this is the field the "of those" report line must actually filter on.
+  turningPointVisibleMislabelChange: boolean;
   mislabeledByOldFallback: boolean; // any ply anywhere in the game where the old ply-fraction rule says "endgame" and the new material rule disagrees -- the actual "was this game's story ever told wrong" question, independent of whether a turning-point row happens to be persisted today
   mislabeledPlies: number[];
+  // Important 6 (2026-07-30 fix wave): the OTHER direction -- old did NOT
+  // say endgame, new says endgame. Unmeasured before this fix; the vault
+  // doc's headline only ever reported the mislabel direction above.
+  reverseMislabeledPlies: number[];
+  // Important 6: true if ANY ply anywhere in the game has a different
+  // phase word old vs new, either direction -- "did this game change at
+  // all", the honest denominator for "how many of her games changed".
+  anyPlyChanged: boolean;
+  // Corpus-wide transition histogram for this game, "oldPhase->newPhase" ->
+  // ply count, e.g. "middlegame->opening": 4.
+  transitionCounts: Record<string, number>;
   midgameStartPly: number | null;
   endgameStartPly: number | null;
   midgameTriggers: MidgameTrigger[];
@@ -218,6 +235,51 @@ interface GameReport {
   hasNoEndgame: boolean;
   coachDeltaCount: number;
   coachDeltaTotalPlies: number;
+  // Important 7 (2026-07-30 fix wave): approximate category-word movement
+  // at persisted turning-point plies. This replicates ONLY the two
+  // phase-dependent branches of debriefBullets.ts's categorize() (opening
+  // play requires phase "opening" AND a HER_NEG_LABELS label; endgame
+  // technique requires phase "endgame", any label) -- it does NOT replicate
+  // the higher-priority branches (episode window, missedPunish, capture
+  // tactics, defense window, opponent-punish/conversion), which this
+  // readonly, engine-free tool cannot reconstruct without the annotator's
+  // full turning-point context. So this is a LOWER BOUND / approximation:
+  // real category words can be identical even when this flags a "hint"
+  // change, if a higher-priority branch already decided the category
+  // either way. Reported and caveated as such, never asserted as the exact
+  // owner-visible category count.
+  categoryHintFlips: { ply: number; label: string; oldHint: string | null; newHint: string | null }[];
+}
+
+const HER_NEG_LABELS_FOR_CATEGORY_HINT = new Set(["blunder", "mistake", "inaccuracy"]);
+
+// See categoryHintFlips's own doc comment above for exactly what this does
+// and does not replicate.
+function categoryHint(phase: Phase, label: string): string | null {
+  if (phase === "opening" && HER_NEG_LABELS_FOR_CATEGORY_HINT.has(label)) return "opening play";
+  if (phase === "endgame") return "endgame technique";
+  return null;
+}
+
+// F12 (union review, 2026-07-30 fix wave): a game whose SAN list is not
+// fully replayable from the start position (real example: game 80, a
+// single persisted row "Ra8#" that chess.js rejects from the opening
+// position) used to be silently counted as "measured" and even as a
+// no-endgame game -- gamePhases.ts's own totalPlies field is read off the
+// RAW row count, not off how far the replay actually got, so a game that
+// breaks on move 1 still reported a phase for the ply it never legally
+// reached. This checks full replayability up front so main() can exclude
+// and log these explicitly instead of silently mismeasuring them.
+function replaysFully(gameSans: SummaryMove[]): boolean {
+  const chess = new Chess();
+  for (const m of gameSans) {
+    try {
+      chess.move(m.san);
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 function piecesByPly(gameSans: SummaryMove[]): Map<number, number> {
@@ -259,10 +321,17 @@ function measureGame(gameId: number, gameSans: SummaryMove[], tpRows: TurningPoi
     .sort((a, b) => a.ply - b.ply)
     .map((tp) => {
       const oldPhase = oldDebriefPhaseForPly(tp.ply, totalPlies, nearlyBare);
-      const newPhase = timeline.phaseAt(tp.ply);
+      // phaseAt cannot actually be null here: this game replayed fully (see
+      // replaysFully's call site in main()), so hasBoard is true.
+      const newPhase = timeline.phaseAt(tp.ply) ?? "opening";
       return { ply: tp.ply, san: tp.san, label: tp.label, kind: tp.kind, oldPhase, newPhase, changed: oldPhase !== newPhase };
     });
   const turningPointVisibleChange = turningPointChanges.some((c) => c.changed);
+  // Important 6 / union F13: the genuine subset -- same direction
+  // mislabeledByOldFallback checks (old said endgame, new does not).
+  const turningPointVisibleMislabelChange = turningPointChanges.some(
+    (c) => c.changed && c.oldPhase === "endgame" && c.newPhase !== "endgame"
+  );
 
   // The real "was this game's story ever told wrong" question: scan EVERY
   // ply, not just plies with a currently-persisted turning-point row (some
@@ -270,10 +339,23 @@ function measureGame(gameId: number, gameSans: SummaryMove[], tpRows: TurningPoi
   // yet to be healed on next open, which would otherwise hide a real
   // mislabel from this sweep).
   const mislabeledPlies: number[] = [];
+  // Important 6: the other direction -- old did NOT say endgame, new does.
+  const reverseMislabeledPlies: number[] = [];
+  let anyPlyChanged = false;
+  const transitionCounts: Record<string, number> = {};
   for (let ply = 1; ply <= totalPlies; ply++) {
     const oldPhase = oldDebriefPhaseForPly(ply, totalPlies, nearlyBare);
-    const newPhase = timeline.phaseAt(ply);
+    const newPhaseRaw = timeline.phaseAt(ply);
+    // phaseAt cannot actually be null here: totalPlies > 0 implies hasBoard
+    // is true for this timeline (it was built from this same gameSans).
+    const newPhase = newPhaseRaw ?? "opening";
     if (oldPhase === "endgame" && newPhase !== "endgame") mislabeledPlies.push(ply);
+    if (oldPhase !== "endgame" && newPhase === "endgame") reverseMislabeledPlies.push(ply);
+    if (oldPhase !== newPhase) {
+      anyPlyChanged = true;
+      const key = `${oldPhase}->${newPhase}`;
+      transitionCounts[key] = (transitionCounts[key] ?? 0) + 1;
+    }
   }
   const mislabeledByOldFallback = mislabeledPlies.length > 0;
 
@@ -302,13 +384,29 @@ function measureGame(gameId: number, gameSans: SummaryMove[], tpRows: TurningPoi
     if (oldCoach !== newPhase) coachDeltaCount++;
   }
 
+  // Important 7 (2026-07-30 fix wave): see categoryHintFlips's own doc
+  // comment on GameReport for exactly what this does and does not
+  // replicate.
+  const categoryHintFlips = turningPointChanges
+    .map((c) => ({
+      ply: c.ply,
+      label: c.label,
+      oldHint: categoryHint(c.oldPhase, c.label),
+      newHint: categoryHint(c.newPhase, c.label),
+    }))
+    .filter((c) => c.oldHint !== c.newHint);
+
   return {
     gameId,
     totalPlies,
     turningPointChanges,
     turningPointVisibleChange,
+    turningPointVisibleMislabelChange,
     mislabeledByOldFallback,
     mislabeledPlies,
+    reverseMislabeledPlies,
+    anyPlyChanged,
+    transitionCounts,
     midgameStartPly: timeline.midgameStartPly,
     endgameStartPly: timeline.endgameStartPly,
     midgameTriggers: timeline.midgameTriggers,
@@ -319,6 +417,7 @@ function measureGame(gameId: number, gameSans: SummaryMove[], tpRows: TurningPoi
     hasNoEndgame: timeline.endgameStartPly === null,
     coachDeltaCount,
     coachDeltaTotalPlies: totalPlies,
+    categoryHintFlips,
   };
 }
 
@@ -363,30 +462,87 @@ function main(): void {
      ORDER BY rank`
   );
 
+  // F12 (union review, 2026-07-30 fix wave): corpus selection used to admit
+  // or drop games silently. Two failure modes, both now logged explicitly:
+  // (a) a finished game with zero persisted moves rows (real examples:
+  // 106, 110, 125, all draw-adjudicated) used to vanish from the sweep with
+  // no line saying so; (b) a game whose SAN list is not fully replayable
+  // from the start position (real example: game 80, a lone "Ra8#" row)
+  // used to be counted as measured -- and even as a "no endgame" game --
+  // even though the replay broke on move 1 and nothing about its phase is
+  // actually known.
+  const droppedZeroMoves: number[] = [];
+  const droppedUnreplayable: number[] = [];
   const reports: GameReport[] = [];
   for (const { id: gameId } of finishedGames) {
     const movesRows = movesStmt.all(gameId) as { ply: number; san: string }[];
-    if (movesRows.length === 0) continue;
+    if (movesRows.length === 0) {
+      droppedZeroMoves.push(gameId);
+      continue;
+    }
     const gameSans: SummaryMove[] = movesRows.map((r) => ({ ply: r.ply, san: r.san }));
+    if (!replaysFully(gameSans)) {
+      droppedUnreplayable.push(gameId);
+      continue;
+    }
     const tpRows = tpStmt.all(gameId, gameId) as TurningPointRow[];
     reports.push(measureGame(gameId, gameSans, tpRows));
   }
+  console.log(
+    `[phase-before-after] excluded ${droppedZeroMoves.length} finished game(s) with zero persisted move rows: ${droppedZeroMoves.join(", ") || "(none)"}`
+  );
+  console.log(
+    `[phase-before-after] excluded ${droppedUnreplayable.length} finished game(s) whose SAN list does not fully replay from the start position (phase unknown, not measured): ${droppedUnreplayable.join(", ") || "(none)"}`
+  );
 
   const mislabeledGames = reports.filter((r) => r.mislabeledByOldFallback);
   const mislabeledIds = mislabeledGames.map((r) => r.gameId).sort((a, b) => a - b);
-  const turningPointVisibleGames = reports.filter((r) => r.turningPointVisibleChange);
+  // Important 6 / union F13 (2026-07-30 fix wave): the genuine subset of
+  // mislabeledIds -- gated on the SAME direction (old=endgame, new!=endgame)
+  // at a persisted turning-point ply, not "any direction changed at a
+  // turning-point ply" (the old, over-broad turningPointVisibleGames).
+  const turningPointVisibleMislabelGames = reports.filter((r) => r.turningPointVisibleMislabelChange);
+  // The other direction, corpus-wide: any game with >=1 ply where the old
+  // rule did NOT say endgame but the new rule does.
+  const reverseMislabeledGames = reports.filter((r) => r.reverseMislabeledPlies.length > 0);
+  const reverseMislabeledIds = reverseMislabeledGames.map((r) => r.gameId).sort((a, b) => a - b);
+  // Any-direction, any-ply: "did this game's phase labelling change AT ALL".
+  const anyChangedGames = reports.filter((r) => r.anyPlyChanged);
+  const unchangedGames = reports.filter((r) => !r.anyPlyChanged);
   const mixednessGames = reports.filter((r) => r.mixednessMovedBoundary);
   const noEndgameGames = reports.filter((r) => r.hasNoEndgame);
 
+  // Corpus-wide transition histogram (Important 6): sum every game's
+  // per-ply oldPhase->newPhase counts into one table.
+  const corpusTransitions: Record<string, number> = {};
+  for (const r of reports) {
+    for (const [key, count] of Object.entries(r.transitionCounts)) {
+      corpusTransitions[key] = (corpusTransitions[key] ?? 0) + count;
+    }
+  }
+
   console.log("\n[phase-before-after] ---- report ----");
-  console.log(`games measured (finished, with moves): ${reports.length}`);
+  console.log(`games measured (finished, with moves, fully replayable): ${reports.length}`);
   console.log(
     `games with >=1 ply anywhere the old ply-fraction fallback calls "endgame" and the new material rule disagrees (the real "was this game's story ever told wrong" sweep): ${mislabeledGames.length}`
   );
   console.log(`mislabeled game ids (full-corpus sweep): ${mislabeledIds.join(", ") || "(none)"}`);
   console.log(
-    `of those, games where a CURRENTLY PERSISTED turning-point row sits at a mislabeled ply (what a debrief card shows her right now): ${turningPointVisibleGames.map((r) => r.gameId).sort((a, b) => a - b).join(", ") || "(none)"}`
+    `of those, games where a CURRENTLY PERSISTED turning-point row sits at a mislabeled ply, same direction (what a debrief card shows her right now): ${turningPointVisibleMislabelGames.map((r) => r.gameId).sort((a, b) => a - b).join(", ") || "(none)"}`
   );
+
+  console.log("\n[phase-before-after] ---- Important 6: the fuller, both-directions picture ----");
+  console.log(
+    `games where ANY ply's phase word changed, either direction (the honest "did this game change at all" count): ${anyChangedGames.length} / ${reports.length}`
+  );
+  console.log(`unchanged games: ${unchangedGames.map((r) => r.gameId).sort((a, b) => a - b).join(", ") || "(none)"}`);
+  console.log(
+    `the OTHER direction -- old did NOT say endgame, new DOES -- game ids: ${reverseMislabeledIds.join(", ") || "(none)"}`
+  );
+  console.log("corpus-wide ply transition histogram (oldPhase->newPhase: ply count, summed over all measured games):");
+  for (const [key, count] of Object.entries(corpusTransitions).sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${key}: ${count}`);
+  }
 
   const predictedSet = new Set(SCOUT_PREDICTED_CHANGED_IDS);
   const actualSet = new Set(mislabeledIds);
@@ -439,6 +595,23 @@ function main(): void {
 
   console.log("\n[phase-before-after] ---- games with no endgame at all ----");
   console.log(`${noEndgameGames.length} / ${reports.length}: ${noEndgameGames.map((r) => r.gameId).join(", ") || "(none)"}`);
+
+  // Important 7 (2026-07-30 fix wave): the category-word movement Task 4's
+  // original sweep never measured. See categoryHint's own doc comment for
+  // the caveat -- this is a lower-bound approximation, not the exact
+  // owner-visible category count, because it cannot replicate categorize()'s
+  // higher-priority branches (episode/missedPunish/tactics/defense) without
+  // the full annotator context this readonly, engine-free tool doesn't have.
+  console.log("\n[phase-before-after] ---- Important 7: category-word movement at persisted turning-point plies (approximate, see code comment) ----");
+  const categoryFlipGames = reports.filter((r) => r.categoryHintFlips.length > 0);
+  console.log(
+    `games with >=1 persisted turning-point ply whose phase-derived category hint changes: ${categoryFlipGames.length} / ${reports.length}`
+  );
+  for (const r of categoryFlipGames) {
+    for (const f of r.categoryHintFlips) {
+      console.log(`  game ${r.gameId} ply ${f.ply} (${f.label}): ${f.oldHint ?? "(unaffected)"} -> ${f.newHint ?? "(unaffected)"}`);
+    }
+  }
 
   const totalCoachDeltaPlies = reports.reduce((a, r) => a + r.coachDeltaCount, 0);
   const totalPliesAll = reports.reduce((a, r) => a + r.coachDeltaTotalPlies, 0);
