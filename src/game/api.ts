@@ -139,6 +139,19 @@ export interface Verdict {
   latencyMs: number;
   facts?: MoveFacts;
   threat?: ThreatFacts;
+  // H3 fix, logic-only half (union review, 2026-07-31): mirrors
+  // classify.ts's own conversionCopy — set only on a "nudge" produced by
+  // the decided-position conversion path (a mate-distance slip/missed-
+  // mate/lost-mate, or a decided free-material giveaway). It was on the
+  // wire (server/game/manager.ts's judgeMove already returns the whole
+  // verdict) but absent from this mirror, so a move that tripped the
+  // conversion detector rendered only the generic "hm, you sure?" badge
+  // with no reason attached. Mirrored here and persisted (see manager.ts's
+  // insertVerdict call) so the Lab can audit what she was told; RENDERING
+  // it in GamePage.tsx is a separate K6 handoff (a surface she'll see needs
+  // the Fable visual gate + component-library reflection, CLAUDE.md's
+  // standing rule) and is deliberately not done here.
+  conversionCopy?: string;
 }
 
 export interface JudgeResponse {
