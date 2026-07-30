@@ -24,6 +24,11 @@
 import { Chess } from "chess.js";
 import type { TurningPoint, TurningLine, SummaryMove } from "../game/api";
 import { affordancesForBullet, type DebriefBullet, type ChessCategory } from "./debriefBullets";
+// C1 fix (union review, 2026-07-31): the word list for parsing an asserted
+// mate distance out of a bullet's text -- from the shared ./numberWords
+// module (the same one debriefBullets.ts's own numberWord now re-exports
+// from), not a fourth hand-typed copy.
+import { NUMBER_WORDS } from "./numberWords";
 import { phasesForGame, type GamePhase } from "./gamePhases";
 import { followedBest } from "./followedBest";
 
@@ -85,13 +90,40 @@ const SQUARE_RE = /[a-h][1-8]/g;
 // this constant) -- a third alternative here would be dead in this rule and
 // would misdescribe what actually fires it.
 const REASSURANCE_RE = /no clear mistakes|no repeat pattern/;
-// conversion-claim (K1): the two phrasings a bullet uses to assert a mate
-// distance -- missedWinText's "checkmate in one" and
-// conversionCouldBeBetterText's/unconvertedCouldBeBetterText's "mate in
-// {word}" (debriefBullets.ts). "(?:check)?mate in " catches both without
-// also matching unrelated prose ("checkmate" alone, with no "in", never
-// trips this).
-const MATE_CLAIM_RE = /(?:check)?mate in /i;
+// conversion-claim (K1, tightened 2026-07-31 union review fix): the two
+// phrasings a bullet uses to assert a mate distance -- missedWinText's
+// "checkmate in {word}" and conversionCouldBeBetterText's/
+// unconvertedCouldBeBetterText's "mate in {word}" (debriefBullets.ts).
+// "(?:check)?mate in " catches both without also matching unrelated prose
+// ("checkmate" alone, with no "in", never trips this). CAPTURES the
+// asserted number/word so the rule below can compare what was actually
+// SAID against the turning point's own mateIn -- the original version of
+// this rule only checked that SOME mate data existed at the ply
+// (`mateIn != null`), which is why it passed unchanged over 8 real games
+// where the bullet said "checkmate in one" and the turning point's mateIn
+// was 2-5 (C1, the flagship bug this whole round exists to fix). Reuses
+// debriefBullets.ts's own NUMBER_WORDS as the single source of truth for
+// how this codebase spells a mate distance, rather than a second,
+// hand-typed word list that could drift from it.
+const NUMBER_WORD_VALUES: Record<string, number> = Object.fromEntries(
+  NUMBER_WORDS.map((word, n) => [word, n])
+);
+const MATE_CLAIM_NUMBER_RE = new RegExp(`(?:check)?mate in (${NUMBER_WORDS.join("|")}|\\d+)`, "i");
+
+// Parses every "(check)mate in N" claim out of a bullet's text (a bullet
+// can carry at most one in practice, but this never assumes that -- global
+// match, never guesses past what's actually there).
+function parseMateClaimNumbers(text: string): number[] {
+  const re = new RegExp(MATE_CLAIM_NUMBER_RE.source, "gi");
+  const out: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const word = m[1].toLowerCase();
+    const n = NUMBER_WORD_VALUES[word] ?? (/^\d+$/.test(word) ? parseInt(word, 10) : undefined);
+    if (n != null) out.push(n);
+  }
+  return out;
+}
 
 // Integration review fix (2026-07-30, I1 + V1 -- mandatory union review):
 // two invariants closing one underlying problem -- a single bullet can name
@@ -365,27 +397,49 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
     }
   });
 
-  // conversion-claim (K1, game-160 RCA round, 2026-07-31): any bullet
-  // asserting a missed/slipped mate ("mate in N" / "checkmate in N") must
-  // be backed by a same-ply turning point whose stored mate data actually
-  // supports it -- the debrief path has no LLM (CLAUDE.md), so a false
-  // mate claim here is our own template contradicting our own data, same
-  // failure class as every other contradiction rule in this file. Backs
-  // BOTH the new "conversion" kind's bullet (mateIn = the episode's
-  // shortest held mate) and the existing "missed-win"/"unconverted"
-  // kinds' own mate clauses (mateIn is already the field both use).
-  // Tolerant of games with no conversion turning points at all -- only
-  // bullets that actually contain the phrase are checked.
+  // conversion-claim (K1, game-160 RCA round, 2026-07-31; TIGHTENED in the
+  // union review fix wave, same date): any bullet asserting a missed/
+  // slipped mate ("mate in N" / "checkmate in N") must be backed by a
+  // same-ply turning point whose stored mateIn AGREES with the number
+  // actually asserted -- the debrief path has no LLM (CLAUDE.md), so a
+  // false mate claim here is our own template contradicting our own data,
+  // same failure class as every other contradiction rule in this file.
+  //
+  // Originally shipped checking only that mate data EXISTED at the ply
+  // (`tp.mateIn != null`), never that the asserted number matched it. That
+  // is why `replay-check` reported PASS, 0 violations over a corpus
+  // containing 8 real games where the bullet said "checkmate in one" and
+  // the backing turning point's mateIn was 2-5 (C1). Backs BOTH the
+  // "conversion" kind's bullet (mateIn = the episode's shortest held mate)
+  // and the existing "missed-win"/"unconverted" kinds' own mate clauses
+  // (mateIn is already the field all three use). Tolerant of games with no
+  // conversion turning points at all -- only bullets that actually name a
+  // mate distance are checked; a bullet that also gets the PLY wrong
+  // (b.ply not matching any turning point) still reports the older
+  // "no backing at all" message, since there is nothing to compare the
+  // number against.
   bullets.forEach((b, i) => {
-    if (!MATE_CLAIM_RE.test(b.text)) return;
-    const backed = b.ply != null && facts.turningPoints.some((tp) => tp.ply === b.ply && tp.mateIn != null);
-    if (!backed) {
+    const claims = parseMateClaimNumbers(b.text);
+    if (claims.length === 0) return;
+    const tp = b.ply != null ? facts.turningPoints.find((t) => t.ply === b.ply && t.mateIn != null) : undefined;
+    if (!tp) {
       violations.push({
         kind: "contradiction",
         rule: "conversion-claim",
         where: bulletWhere(b, i),
         message: `bullet asserts a mate claim ("${b.text}") with no same-ply turning point mate data to back it`,
       });
+      return;
+    }
+    for (const n of claims) {
+      if (n !== tp.mateIn) {
+        violations.push({
+          kind: "contradiction",
+          rule: "conversion-claim",
+          where: bulletWhere(b, i),
+          message: `bullet asserts mate in ${n} but the same-ply turning point's mateIn is ${tp.mateIn}`,
+        });
+      }
     }
   });
 

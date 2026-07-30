@@ -435,6 +435,43 @@ describe("conversion-claim (K1, game-160 RCA round)", () => {
     expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
   });
 
+  // Union review fix (C1, 2026-07-31): this is the fixture that let C1
+  // through. Both tests above assert an IN-AGREEMENT bullet (mateIn 2 vs
+  // "mate in two", mateIn 1 vs "checkmate in one") -- neither can
+  // distinguish "checks the number agrees" from "checks mateIn is merely
+  // non-null", which is exactly the gap that shipped a false "checkmate in
+  // one" onto 8 of her real games. Today's game-160 shape: mateIn 4 at ply
+  // 69, but the (pre-fix) bullet text said "checkmate in one" -- a same-ply
+  // turning point exists and mateIn is non-null, so the OLD `backed` check
+  // (mateIn != null) passed and reported zero violations. Required
+  // red-proof: this test was run against the untightened rule FIRST and
+  // confirmed NOT to catch the mismatch (proving the old check really was
+  // non-null-only, not agreement), before conversion-claim was tightened
+  // to parse the asserted number and compare it to tp.mateIn.
+  it("fires when the bullet's asserted mate distance disagrees with the same-ply turning point's mateIn (game 160's real bug: mateIn 4, bullet said 'checkmate in one')", () => {
+    const out = {
+      bullets: [
+        {
+          section: "could be better",
+          text: "move 35: you had checkmate in one. your Qf7+ was mate on the spot, and the win took 59 more moves to land. this happened 8 times this game.",
+          phase: "endgame",
+          category: "endgame technique",
+          ply: 69,
+        },
+      ],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
   it("also backs a missed-win bullet's checkmate claim (mateIn on the same-ply missed-win point)", () => {
     const out = {
       bullets: [{ section: "could be better", text: "move 28: you had checkmate in one and played past it.", phase: "endgame", category: "endgame technique", ply: 55 }],
