@@ -529,7 +529,6 @@ function ct06(dbPath: string): EvalResult {
   let game: any;
   try {
     moveRows = db.prepare("SELECT ply, san, eval_cp as evalCp, eval_mate as evalMate FROM moves WHERE game_id=160 ORDER BY ply").all();
-    tpRows = db.prepare("SELECT * FROM turning_points WHERE game_id=160 ORDER BY rank").all();
     game = db.prepare("SELECT result FROM games WHERE id=160").get();
   } finally {
     db.close();
