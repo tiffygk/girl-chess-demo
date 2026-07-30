@@ -17,7 +17,10 @@ never look like a pass.**
 
 **REQUIRED BACKGROUND:** coach-eval is the sibling skill for measuring a single coach
 answer. This skill is the round-level harness around it; it cross-links coach-eval rather
-than restating it.
+than restating it. **Order of operations when both apply:** this skill first (suites, gates,
+ground truth, instrument fixes, baseline), coach-eval inside each model-answer suite, this
+skill again to close (phase-tagged runs, rollup, controller re-run) — the full sequence is
+written once, in coach-eval's "Works in conjunction" section.
 
 ## When to use
 

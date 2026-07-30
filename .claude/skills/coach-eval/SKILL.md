@@ -9,7 +9,28 @@ description: Use when measuring or comparing coach/model output quality, accurac
 
 Evaluating model output is a measurement, and a bad measurement is worse than none — it manufactures false findings and sends the owner chasing ghosts. Every rule here exists because it was violated in the 2026-07-22 coach eval and cost real time. The core principle: **trust the instrument only after you have audited it, and never let a display choice masquerade as a finding.**
 
-For the round-level harness AROUND this measurement — multiple suites, ground-truth ladders, baseline-vs-acceptance phasing, run discovery, the rollup — use eval-harness; it covers keeping the harness itself from manufacturing findings and cross-links back here for the answer-measurement rules.
+## Works in conjunction with eval-harness — and the order of operations
+
+This skill and eval-harness are two layers of one measurement, used together whenever coach
+answers are scored as part of a round's acceptance evals (owner directive 2026-07-30: the
+classic LLM-response evals run THROUGH this harness, framed BY that one). The order:
+
+1. **eval-harness FIRST**, at round level: define the suites and their pass gates, prove the
+   ground-truth labels on a rung strong enough for each claim, fix any instrument defect
+   (with its own failing test) before a number is reported, and capture the pre-fix BASELINE
+   run — a later acceptance green is meaningless without its earlier red.
+2. **coach-eval SECOND**, inside every model-answer suite that framework created: fixtures
+   through the production chat() pipeline, full output rendered, mechanical checks over LLM
+   judges, audited checkers, 3+ reps per cell, the subjective axis blinded to the owner.
+3. **eval-harness AGAIN to close**: phase-tagged runs feed the rollup; instrument separation
+   holds (eval-run vs live-trace, synthetic vs real); the controller re-runs what agents
+   report before any verdict reaches the owner.
+
+Practical test for which skill you are in: designing WHICH evals exist, what gates them, what
+counts as ground truth, or how runs are discovered and compared — eval-harness. Producing or
+scoring the ANSWERS inside one of those evals — this skill. A standalone model A/B with no
+round attached uses this skill alone. When a rule seems to live in both, it is stated in one
+and cross-linked from the other; never restate.
 
 ## When to use
 
