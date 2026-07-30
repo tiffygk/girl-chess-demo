@@ -1197,14 +1197,20 @@
 
 /* Game-151 round (owner ruling 2026-07-29, REACTIVE): post-game, the three
    live-play reservations lose their min-height FLOORS -- each element's
-   height becomes content-driven. Genuinely empty -> collapses to zero and
-   the wordmark rides right up under the board; cookie narrating -> the
-   band keeps its natural height and the wordmark sits below it. NOTHING is
-   hidden while it has content; the only display:none is a status line
-   with literally no text. Live play keeps every floor exactly as today
-   (anti-reflow guards -- the board must never jump when the judge/coach
-   bands fill). The board itself cannot move: --board-size is a fixed
-   viewport formula (see :24) that never measures these siblings. */
+   height becomes content-driven and collapses to zero, so the wordmark
+   rides right up under the board.
+   owner ruling 2026-07-29: cookie does not speak below the board after
+   the game ends -- her post-game conversation is the chat, opened from
+   "ask about it". narrate() requires a live pending move and coachText
+   clears on confirm/retract, so nothing CAN render here post-game. the
+   :empty mechanism stays anyway because reactive beats blanket: a rule
+   that only collapses genuinely empty elements can never clip real
+   content, whereas display:none on the band would. keep it reactive;
+   do not add a ui path to fill this band post-game.
+   Live play keeps every floor exactly as today (anti-reflow guards --
+   the board must never jump when the judge/coach bands fill). The board
+   itself cannot move: --board-size is a fixed viewport formula (see :24)
+   that never measures these siblings. */
 .gc-app .game-page.postgame .action-slot { min-height: 0; }
 /* A5 review LOW 1: min-height:0 alone left a 52px floor -- the slot's own
    16px padding-top plus its always-present .action-slot-judge child's 20px

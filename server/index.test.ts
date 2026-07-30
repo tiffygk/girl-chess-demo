@@ -313,12 +313,14 @@ describe("api", () => {
   }, 20000);
 
   it("returns ok:false for hint logging on a nonexistent game", async () => {
+    await ready;
     const r = await request(app).post("/api/game/999999/hint")
       .send({ level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: "x" }).expect(200);
     expect(r.body.ok).toBe(false);
   });
 
   it("POST /api/game/:id/hint-facts returns deep hint facts", async () => {
+    await ready;
     const s = await request(app).post("/api/session").send({});
     const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 });
     const res = await request(app).post(`/api/game/${g.body.gameId}/hint-facts`).send({});
@@ -329,12 +331,14 @@ describe("api", () => {
   }, 40000);
 
   it("snaps a non-band elo to the nearest maia weights band", async () => {
+    await ready;
     const s = await request(app).post("/api/session").send({});
     const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1234 });
     expect(g.body.elo).toBe(1200);
   }, 30000);
 
   it("defaults garbage elo to 1100 and passes real bands through", async () => {
+    await ready;
     const s = await request(app).post("/api/session").send({});
     const bad = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: "mallow" });
     expect(bad.body.elo).toBe(1100);
@@ -388,11 +392,13 @@ describe("api", () => {
   }, 20000);
 
   it("rejects a highlight request with a non-boolean `highlighted`", async () => {
+    await ready;
     const r = await request(app).post("/api/game/1/move/1/highlight").send({ highlighted: "yes" }).expect(400);
     expect(r.body.error).toMatch(/boolean/);
   });
 
   it("returns an empty-but-ok summary for a nonexistent game (compute-on-read fallback)", async () => {
+    await ready;
     const r = await request(app).get("/api/game/999999/summary").expect(200);
     expect(r.body).toEqual({ ok: true, turningPoints: [], classifications: [], moves: [] });
   });

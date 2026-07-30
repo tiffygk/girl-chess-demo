@@ -23,7 +23,8 @@
 
 import { Chess } from "chess.js";
 import type { TurningPoint, TurningLine, SummaryMove } from "../game/api";
-import { phaseForPly, affordancesForBullet, type DebriefBullet } from "./debriefBullets";
+import { affordancesForBullet, type DebriefBullet, type ChessCategory } from "./debriefBullets";
+import { phasesForGame, type GamePhase } from "./gamePhases";
 import { followedBest } from "./followedBest";
 
 export interface DebriefFacts {
@@ -32,7 +33,6 @@ export interface DebriefFacts {
   gameSans: SummaryMove[];
   turningLines?: TurningLine[]; // absent -> san/square/try-line checks SKIP (never guess)
   totalPlies: number;
-  endgamePlies?: Set<number>;
 }
 
 export interface DebriefOutput {
@@ -85,6 +85,33 @@ const SQUARE_RE = /[a-h][1-8]/g;
 // this constant) -- a third alternative here would be dead in this rule and
 // would misdescribe what actually fires it.
 const REASSURANCE_RE = /no clear mistakes|no repeat pattern/;
+
+// Integration review fix (2026-07-30, I1 + V1 -- mandatory union review):
+// two invariants closing one underlying problem -- a single bullet can name
+// one phase in its prose, a different phase in its metadata, and a third in
+// its category, because the debrief path has no LLM to hallucinate this:
+// it is our own template contradicting our own data. Both rules tolerate
+// `phase: null` by design (DebriefBullet.phase's own comment in
+// debriefBullets.ts): null means "the board cannot prove a phase," and
+// every render site legitimately omits the phase word in that case -- that
+// omission must never itself be reported as a mismatch.
+
+// Category names that assert a specific phase by their own wording -- the
+// only two ChessCategory values that do (see debriefBullets.ts's
+// ChessCategory union). Extend here, never invent a phase-shaped category
+// without adding its mapping.
+const CATEGORY_IMPLIES_PHASE: Partial<Record<ChessCategory, GamePhase>> = {
+  "endgame technique": "endgame",
+  "opening play": "opening",
+};
+
+// A phase word literally spelled out in a bullet's own prose. The only two
+// spots in debriefBullets.ts that ever interpolate one are buildDoneWell's
+// unconverted branch ("your {phase} is working") and buildWatchNextTime's
+// unconverted branch ("the {phase} is where this one slipped") -- no other
+// bullet text spells "opening"/"middlegame"/"endgame" as an English word, so
+// this has nothing else to misfire against in the real copy.
+const PHASE_WORD_RE = /\b(opening|middlegame|endgame)\b/i;
 
 function kindOf(tp: TurningPoint): string {
   return tp.kind as unknown as string;
@@ -201,6 +228,12 @@ function outputTextUnits(output: DebriefOutput): TextUnit[] {
 export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): DebriefViolation[] {
   const violations: DebriefViolation[] = [];
   const bullets = output.bullets ?? [];
+  // Phase round (2026-07-30): built once per invocation, straight off the
+  // same real chess.js replay of facts.gameSans that debriefBullets.ts's
+  // own builder runs -- a genuine board fact (lichess divider + nearly-bare
+  // override), not the old ply-arithmetic guess this rule used to import
+  // and re-run against itself.
+  const phases = phasesForGame(facts.gameSans);
 
   // -- contradictions --------------------------------------------------
 
@@ -265,13 +298,62 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
 
   bullets.forEach((b, i) => {
     if (b.ply == null) return;
-    const expected = phaseForPly(b.ply, facts.totalPlies, facts.endgamePlies);
+    // V1 fix (2026-07-30 integration review): buildDoneWell's/buildWatchNextTime's
+    // unconverted-branch bullets deliberately phase themselves from a
+    // DIFFERENT ply (her own run-start ply) than b.ply (kept as the rewind
+    // anchor, pointing at the actual turning point) whenever their own
+    // prose names that phase explicitly -- see debriefBullets.ts's V1 fix
+    // comment. When the bullet's own text already asserts a phase word,
+    // phase-word-vs-field (below) is the authoritative, more direct check
+    // on that claim; comparing b.phase against b.ply's timeline lookup here
+    // would flag a ply this phase claim was never about.
+    if (PHASE_WORD_RE.test(b.text)) return;
+    const expected = phases.phaseAt(b.ply);
     if (b.phase !== expected) {
       violations.push({
         kind: "contradiction",
         rule: "phase-mismatch",
         where: bulletWhere(b, i),
-        message: `phase "${b.phase}" tagged at ply ${b.ply} but phaseForPly says "${expected}"`,
+        message: `phase "${b.phase}" tagged at ply ${b.ply} but the phase timeline says "${expected}"`,
+      });
+    }
+  });
+
+  // phase-vs-category (I1): a bullet's category must not name a phase
+  // different from the bullet's own phase field. Catches e.g. category
+  // "endgame technique" sitting on a bullet whose phase is "middlegame" --
+  // the chip that read "middlegame · endgame technique" on her real games
+  // 151/143/132 this round.
+  bullets.forEach((b, i) => {
+    const impliedPhase = CATEGORY_IMPLIES_PHASE[b.category];
+    if (impliedPhase && b.phase != null && b.phase !== impliedPhase) {
+      violations.push({
+        kind: "contradiction",
+        rule: "phase-vs-category",
+        where: bulletWhere(b, i),
+        message: `category "${b.category}" implies phase "${impliedPhase}" but the bullet's phase is "${b.phase}"`,
+      });
+    }
+  });
+
+  // phase-word-vs-field (V1): a bullet's phase field must agree with any
+  // phase word its own prose literally asserts. Unlike phase-mismatch
+  // (above), which compares the bullet's phase to the TIMELINE's phase for
+  // the same ply and stays silent once both sides come from phasesForGame,
+  // this compares the bullet against ITSELF -- the exact class the visual
+  // gate caught live on game 151 (chip "middlegame" over the text "your
+  // opening is working").
+  bullets.forEach((b, i) => {
+    if (b.phase == null) return; // no board to prove a phase -- legitimately silent
+    const m = b.text.match(PHASE_WORD_RE);
+    if (!m) return; // prose asserts no phase word -- nothing to compare
+    const word = m[1].toLowerCase();
+    if (word !== b.phase) {
+      violations.push({
+        kind: "contradiction",
+        rule: "phase-word-vs-field",
+        where: bulletWhere(b, i),
+        message: `bullet text names phase "${word}" but the bullet's phase field is "${b.phase}"`,
       });
     }
   });

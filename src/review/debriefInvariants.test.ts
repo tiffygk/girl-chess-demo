@@ -6,7 +6,8 @@
 // standing proof the module would have caught it before she saw it.
 import { describe, it, expect, vi } from "vitest";
 import { checkDebriefOutput } from "./debriefInvariants";
-import { phaseForPly, affordancesForBullet } from "./debriefBullets";
+import { affordancesForBullet } from "./debriefBullets";
+import { phasesForGame } from "./gamePhases";
 import { followedBest } from "./followedBest";
 import * as followedBestModule from "./followedBest";
 import * as debriefBulletsModule from "./debriefBullets";
@@ -44,18 +45,30 @@ describe("checkDebriefOutput on tonight's game 151 (the promise: checked before 
         { section: "watch next time", text: "when you are winning big, make every move new progress: a fresh threat, a check from a new square, or a pawn step. if the position looks like one you have already had, change the plan before it repeats.", phase: "endgame", category: "endgame technique", ply: 43 },
       ],
     } as any;
-    // phase values must agree with phaseForPly for the fixture's plies --
-    // compute them in the test with the real phaseForPly rather than
-    // hard-coding, so this case cannot rot into a wrong-phase fixture.
-    for (const b of fixed.bullets) if (b.ply != null) b.phase = phaseForPly(b.ply, 50, undefined);
+    // phase values must agree with the real phase timeline for the
+    // fixture's plies -- compute them in the test with the real
+    // phasesForGame rather than hard-coding, so this case cannot rot into a
+    // wrong-phase fixture. g151Facts.gameSans is empty, so every ply
+    // degrades to "opening" (the documented no-input behavior) -- the point
+    // of this test is that the checker's own computation and the fixture
+    // agree, not any particular phase value.
+    const phases = phasesForGame(g151Facts.gameSans);
+    for (const b of fixed.bullets) if (b.ply != null) b.phase = phases.phaseAt(b.ply);
     expect(checkDebriefOutput(fixed, g151Facts)).toEqual([]);
   });
 });
 
 describe("individual rules", () => {
-  it("phase-mismatch: a bullet's phase tag must agree with phaseForPly on its own ply", () => {
-    const out = { bullets: [{ section: "could be better", text: "x", phase: "opening", category: "tactics", ply: 49 }] } as any;
-    expect(checkDebriefOutput(out, { ...g151Facts, turningPoints: [] }).map((v) => v.rule)).toContain("phase-mismatch");
+  it("phase-mismatch: a bullet's phase tag must agree with the phase timeline on its own ply", () => {
+    // Phase round (2026-07-30): a real, minimal gameSans (just two opening
+    // moves) so the phase timeline has an actual board to derive a fact
+    // from -- majorsAndMinors is still full material at ply 2, so the real
+    // phase is "opening"; the bullet falsely claims "endgame".
+    const sans = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
+    const out = { bullets: [{ section: "could be better", text: "x", phase: "endgame", category: "tactics", ply: 2 }] } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: sans, totalPlies: 2 };
+    expect(phasesForGame(sans).phaseAt(2)).toBe("opening"); // ground truth, independent of the checker
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).toContain("phase-mismatch");
   });
   it("reassurance-vs-detector fires only on its own two phrases, not on win-copy-on-non-win's phrase", () => {
     // review-0.md minor 6: REASSURANCE_RE used to carry a third alternative
@@ -113,7 +126,7 @@ describe("individual rules", () => {
     const bullet = {
       section: "could be better",
       text: "x",
-      phase: phaseForPly(2, 50, undefined),
+      phase: phasesForGame(gameSans).phaseAt(2),
       category: "tactics",
       ply: 2,
     } as any;
@@ -149,7 +162,7 @@ describe("individual rules", () => {
     const bullet = {
       section: "could be better",
       text: "x",
-      phase: phaseForPly(2, 50, undefined),
+      phase: phasesForGame(gameSans).phaseAt(2),
       category: "tactics",
       ply: 2,
     } as any;
@@ -192,7 +205,7 @@ describe("individual rules", () => {
     } as any;
     const out = {
       bullets: [
-        { section: "could be better", text: "cost you nothing, keep playing this clean.", phase: phaseForPly(22, 50, undefined), category: "endgame technique", ply: 22 },
+        { section: "could be better", text: "cost you nothing, keep playing this clean.", phase: phasesForGame(g151Facts.gameSans).phaseAt(22), category: "endgame technique", ply: 22 },
       ],
     } as any;
     expect(checkDebriefOutput(out, facts)).toContainEqual({
@@ -213,10 +226,11 @@ describe("individual rules", () => {
     expect(rules).toContain("missed-mate-silent");
   });
   it("unknown-square: a bare square in bullet text that appears nowhere verifiable, only when turning lines are supplied", () => {
+    const squareTestSans = [{ ply: 1, san: "e4" }];
     const out = {
-      bullets: [{ section: "could be better", text: "watch out for b5 next time", phase: phaseForPly(3, 50, undefined), category: "tactics", ply: 3 }],
+      bullets: [{ section: "could be better", text: "watch out for b5 next time", phase: phasesForGame(squareTestSans).phaseAt(3), category: "tactics", ply: 3 }],
     } as any;
-    const facts = { ...g151Facts, turningPoints: [], gameSans: [{ ply: 1, san: "e4" }] };
+    const facts = { ...g151Facts, turningPoints: [], gameSans: squareTestSans };
     // no turningLines supplied -> skip (never guess), same discipline as unknown-san
     expect(checkDebriefOutput(out, facts).some((v) => v.rule === "unknown-square")).toBe(false);
     // turningLines supplied, b5 is not in the replayed game, any line endpoint, or a detail -> fires
@@ -227,6 +241,91 @@ describe("individual rules", () => {
       where: "bullet:could be better:0",
       message: 'square "b5" is not in the replayed game, a line\'s endpoints, or a detector\'s own detail',
     });
+  });
+});
+
+describe("integration review fixes (2026-07-30): phase-vs-category and phase-word-vs-field", () => {
+  // I1: a bullet's category must never name a phase (endgame technique ->
+  // endgame, opening play -> opening) different from the bullet's own
+  // phase field. Reproduces the exact class the debriefBullets.ts fix
+  // closes at the producer -- this is the instrument that keeps it closed
+  // over her whole corpus via replay-check.ts.
+  it("phase-vs-category: 'endgame technique' asserted on a bullet whose own phase is middlegame", () => {
+    const out = { bullets: [{ section: "could be better", text: "x", phase: "middlegame", category: "endgame technique", ply: 30 }] } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 30 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).toContain("phase-vs-category");
+  });
+  it("phase-vs-category: agreeing category/phase pairs never fire", () => {
+    const out = {
+      bullets: [
+        { section: "could be better", text: "x", phase: "endgame", category: "endgame technique", ply: 30 },
+        { section: "could be better", text: "y", phase: "middlegame", category: "conversion", ply: 30 },
+      ],
+    } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 30 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("phase-vs-category");
+  });
+  it("phase-vs-category tolerates a null phase (no board to prove a phase) -- never a false mismatch", () => {
+    const out = { bullets: [{ section: "could be better", text: "x", phase: null, category: "endgame technique", ply: 30 }] } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 30 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("phase-vs-category");
+  });
+
+  // V1: a bullet's phase field must agree with any phase word its own
+  // prose literally asserts ("your {phase} is working" / "the {phase} is
+  // where this one slipped") -- the exact class the visual gate caught live
+  // on game 151 (chip "middlegame" over text "your opening is working").
+  // Nothing in the codebase related rendered prose to metadata before this;
+  // phase-mismatch (above) compares the bullet's phase to the TIMELINE's
+  // phase for the ply, not to the bullet's own text, so it stays silent
+  // here even though both sides come from phasesForGame.
+  it("phase-word-vs-field: prose names middlegame but the phase field says endgame", () => {
+    const out = {
+      bullets: [
+        {
+          section: "done well",
+          text: "your middlegame is working: you were winning this one from move 6 to move 22.",
+          phase: "endgame",
+          category: "conversion",
+          ply: 43,
+        },
+      ],
+    } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 50 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).toContain("phase-word-vs-field");
+  });
+  it("phase-word-vs-field: agreeing prose/field never fires", () => {
+    const out = {
+      bullets: [
+        {
+          section: "watch next time",
+          text: "the endgame is where this one slipped. slow down and finish it.",
+          phase: "endgame",
+          category: "endgame technique",
+          ply: 43,
+        },
+      ],
+    } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 50 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("phase-word-vs-field");
+  });
+  it("phase-word-vs-field tolerates prose naming no phase word at all, regardless of the field's value", () => {
+    const out = {
+      bullets: [
+        { section: "done well", text: "you took the free knight on move 4 when she dropped it.", phase: "middlegame", category: "conversion", ply: 4 },
+      ],
+    } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 50 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("phase-word-vs-field");
+  });
+  it("phase-word-vs-field tolerates a null phase field even when the text names a phase word -- never a false mismatch", () => {
+    const out = {
+      bullets: [
+        { section: "done well", text: "your middlegame is working: great stretch.", phase: null, category: "conversion", ply: 4 },
+      ],
+    } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 50 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("phase-word-vs-field");
   });
 });
 
