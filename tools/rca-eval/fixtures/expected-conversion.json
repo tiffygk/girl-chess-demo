@@ -1,0 +1,44 @@
+{
+  "_comment": "K1's own expected conversion events/turning points for game 160, transcribed from the K1 brief (.superpowers/sdd/rounds/2026-07-31-game160-rca/brief-K1.md)'s failing-tests-first list -- the shared ground truth suite CT reads against once K1 merges (server/annotator/conversion.ts's detectConversion). Not re-derived independently: this is K1's own committed contract, quoted so CT-01/CT-02/CT-03/CT-07 have one source of truth to check the merged code against, never a second guess at what K1 should produce.",
+  "gameId": 160,
+  "expectedEvents": [
+    {
+      "ply": 95,
+      "kind": "missed-mate",
+      "mateBefore": 5,
+      "slip": 5,
+      "note": "she had mate-in-5 and slipped to 9"
+    },
+    {
+      "ply": 125,
+      "kind": "mate-slip",
+      "mateBefore": 10,
+      "mateAfter": 16,
+      "slip": 7,
+      "note": "the worst slip: mate-in-10 became mate-in-16"
+    },
+    {
+      "ply": 123,
+      "kind": "free-material",
+      "piece": "n",
+      "note": "gave the d7 knight for nothing"
+    }
+  ],
+  "expectedNonEvents": [
+    {
+      "ply": 185,
+      "note": "Qa4+ kept the mate on schedule -- must NOT be an event"
+    }
+  ],
+  "expectedEpisode": {
+    "fromPly": 65,
+    "toPly": 187,
+    "bestMissed": 2,
+    "note": "episode spans the whole mate run with the shortest mate she held"
+  },
+  "otherFixtureRequirements": [
+    "mallow's even-ply regressions never emit (side encoded in the row)",
+    "a game with no mates emits nothing (undecided path untouched)",
+    "game 150 still yields exactly the shipped missed-win result (parity with detectMissedWins)"
+  ]
+}
