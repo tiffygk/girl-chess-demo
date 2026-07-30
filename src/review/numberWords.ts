@@ -23,3 +23,15 @@ export const NUMBER_WORDS = [
 export function numberWord(n: number): string {
   return NUMBER_WORDS[n] ?? String(n);
 }
+
+// Visual gate, phase A (2026-07-30, game-160 rca round): the gate drove the
+// real app against the owner's real games and caught "it took 1 moves" on
+// game 145 -- a count of exactly one, the one arity every counted-noun
+// clause in this round's templates forgot to special-case. Every "N
+// move(s)"/"N time(s)" clause in debriefBullets.ts routes through this
+// instead of hand-writing its own ternary, so a count-of-1 fixture can only
+// pass by handling the singular for real (see debriefBullets.test.ts's
+// "counted-noun agreement" describe block).
+export function pluralizeWord(n: number, singular: string, plural: string = `${singular}s`): string {
+  return n === 1 ? singular : plural;
+}
