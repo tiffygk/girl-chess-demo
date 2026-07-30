@@ -308,15 +308,21 @@ function db06(): EvalResult {
   };
 }
 
-// DB-07: canonical resolution -- deriveMainWorktreeDbFromGit run from THIS
-// real worktree (a genuine linked worktree, git-plumbing-verified, zero
-// fabrication) must resolve to the MAIN worktree's data/girlchess.db, not
-// this worktree's own; and server/index.ts's source must carry the
-// NODE_ENV=test -> ":memory:" ternary. Both read-only; nothing is opened.
+// DB-07: canonical resolution -- deriveMainWorktreeDbFromGit run from the
+// CURRENT checkout (worktree or main, cwd-independent) must resolve to the
+// MAIN worktree's data/girlchess.db; and server/index.ts's source must carry
+// the NODE_ENV=test -> ":memory:" ternary. Both read-only; nothing is opened.
+// The original predicate required derived to sit OUTSIDE this checkout's
+// root -- true from a linked worktree, false by definition when the suite
+// runs from main itself (caught by the post-merge gate on main, 2026-07-30).
+// The cwd-independent formulation is positive: the derived path's checkout
+// root must be the one whose .git is a DIRECTORY (main), not a file (worktree).
 function db07(): EvalResult {
   const derived = deriveMainWorktreeDbFromGit(REPO_ROOT);
   const expectedSuffix = path.join("data", "girlchess.db");
-  const resolvesToMainData = !!derived && derived.endsWith(expectedSuffix) && !derived.startsWith(REPO_ROOT);
+  const derivedRoot = derived ? path.dirname(path.dirname(derived)) : "";
+  const rootIsMainCheckout = !!derivedRoot && fs.existsSync(path.join(derivedRoot, ".git")) && fs.statSync(path.join(derivedRoot, ".git")).isDirectory();
+  const resolvesToMainData = !!derived && derived.endsWith(expectedSuffix) && rootIsMainCheckout;
   const indexSrc = fs.readFileSync(path.join(REPO_ROOT, "server", "index.ts"), "utf-8");
   const forcesMemoryInTest = /NODE_ENV\s*===\s*"test"\s*\?\s*":memory:"/.test(indexSrc);
   if (resolvesToMainData && forcesMemoryInTest) {
