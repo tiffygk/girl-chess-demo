@@ -34,8 +34,13 @@
 //     that could drift.
 //   - Asserts the opened db's own resolved file (PRAGMA database_list)
 //     equals the scratch path -- aborts before reading anything if not.
-//   - Records sha256 of the real db before and after the run; throws if
-//     they differ.
+//   - Counts games/moves and checks integrity_check on the real db before
+//     and after the run (countDbSnapshot/checkDbIntact, from
+//     ./dbCountSnapshot, re-exported below); throws only on a real shrink
+//     or a broken integrity_check. Counts are expected to GROW -- she can
+//     play on the main worktree while this runs -- a hash would false-fail
+//     on that same growth, and also on a WAL checkpoint that touches no
+//     data at all.
 //   - Never deletes/checkpoints the real db, starts no server, spawns no
 //     engine process, makes no LLM call and no Stockfish evaluator-queue
 //     call anywhere in this file's paths.
