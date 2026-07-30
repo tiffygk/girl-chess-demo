@@ -54,7 +54,17 @@ describe("checkDebriefOutput on tonight's game 151 (the promise: checked before 
     // agree, not any particular phase value.
     const phases = phasesForGame(g151Facts.gameSans);
     for (const b of fixed.bullets) if (b.ply != null) b.phase = phases.phaseAt(b.ply);
-    expect(checkDebriefOutput(fixed, g151Facts)).toEqual([]);
+    // conversion-claim (K1, 2026-07-31): the bullet above literally claims
+    // "mate in nine" at ply 43 -- g151Facts's own unconverted point at that
+    // ply carries no mateIn, which the new rule correctly reads as an
+    // unbacked claim (the shared fixture predates that rule). Backed here,
+    // locally, rather than widening the shared g151Facts for every other
+    // test in this file that doesn't make a mate claim at all.
+    const facts = {
+      ...g151Facts,
+      turningPoints: g151Facts.turningPoints.map((tp: any) => (tp.ply === 43 ? { ...tp, mateIn: 9 } : tp)),
+    };
+    expect(checkDebriefOutput(fixed, facts)).toEqual([]);
   });
 });
 
@@ -374,5 +384,69 @@ describe("output.notes -- the module must check what DebriefPage actually render
     const out = { bullets: [], notes: [{ ply: 3, didWell: "Qh7 was the idea." }] } as any;
     const facts = { ...g151Facts, turningPoints: [], gameSans: [{ ply: 1, san: "e4" }], turningLines: [{ ply: 3, pvSans: ["Nf3"] }] } as any;
     expect(checkDebriefOutput(out, facts).map((v) => v.rule)).toContain("unknown-san");
+  });
+});
+
+// Game-160 RCA round, Task K1 (2026-07-31): conversion-claim -- any bullet
+// asserting a missed/slipped mate ("mate in N" / "checkmate in N") must be
+// backed by a same-ply turning point whose stored mate data actually
+// supports it. The debrief path has no LLM (CLAUDE.md), so a false mate
+// claim here is our own template contradicting our own data, same failure
+// class as every other contradiction rule in this file.
+describe("conversion-claim (K1, game-160 RCA round)", () => {
+  it("fires on a fabricated mate claim with no backing turning point (prove it red first)", () => {
+    const out = {
+      bullets: [
+        { section: "could be better", text: "move 33: the shortest mate you held here was mate in two, but it took 61 more moves to close it out.", phase: "endgame", category: "endgame technique", ply: 65 },
+      ],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [], // no turning point at ply 65 at all -- nothing backs the claim
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
+  it("stays silent when the same-ply turning point's mate data backs the claim", () => {
+    const out = {
+      bullets: [
+        { section: "could be better", text: "move 33: the shortest mate you held here was mate in two, but it took 61 more moves to close it out.", phase: "endgame", category: "endgame technique", ply: 65 },
+      ],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 65, plyEnd: 187, san: "Rd7+", label: "conversion", deltaP: 0, lowConfidence: false, kind: "conversion", mateIn: 2 },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
+  it("tolerates a game with no conversion turning points at all (only checks bullets that assert a mate claim)", () => {
+    const out = {
+      bullets: [{ section: "done well", text: "you brought the game home without a disaster. build from here.", phase: "endgame", category: "development" }],
+    } as any;
+    const facts = { result: "1-0", totalPlies: 40, gameSans: [], turningPoints: [] } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
+  it("also backs a missed-win bullet's checkmate claim (mateIn on the same-ply missed-win point)", () => {
+    const out = {
+      bullets: [{ section: "could be better", text: "move 28: you had checkmate in one and played past it.", phase: "endgame", category: "endgame technique", ply: 55 }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: [],
+      turningPoints: [
+        { rank: 3, ply: 55, san: "Nf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 1, missedCount: 5 },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
   });
 });

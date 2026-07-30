@@ -85,6 +85,13 @@ const SQUARE_RE = /[a-h][1-8]/g;
 // this constant) -- a third alternative here would be dead in this rule and
 // would misdescribe what actually fires it.
 const REASSURANCE_RE = /no clear mistakes|no repeat pattern/;
+// conversion-claim (K1): the two phrasings a bullet uses to assert a mate
+// distance -- missedWinText's "checkmate in one" and
+// conversionCouldBeBetterText's/unconvertedCouldBeBetterText's "mate in
+// {word}" (debriefBullets.ts). "(?:check)?mate in " catches both without
+// also matching unrelated prose ("checkmate" alone, with no "in", never
+// trips this).
+const MATE_CLAIM_RE = /(?:check)?mate in /i;
 
 // Integration review fix (2026-07-30, I1 + V1 -- mandatory union review):
 // two invariants closing one underlying problem -- a single bullet can name
@@ -354,6 +361,30 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
         rule: "phase-word-vs-field",
         where: bulletWhere(b, i),
         message: `bullet text names phase "${word}" but the bullet's phase field is "${b.phase}"`,
+      });
+    }
+  });
+
+  // conversion-claim (K1, game-160 RCA round, 2026-07-31): any bullet
+  // asserting a missed/slipped mate ("mate in N" / "checkmate in N") must
+  // be backed by a same-ply turning point whose stored mate data actually
+  // supports it -- the debrief path has no LLM (CLAUDE.md), so a false
+  // mate claim here is our own template contradicting our own data, same
+  // failure class as every other contradiction rule in this file. Backs
+  // BOTH the new "conversion" kind's bullet (mateIn = the episode's
+  // shortest held mate) and the existing "missed-win"/"unconverted"
+  // kinds' own mate clauses (mateIn is already the field both use).
+  // Tolerant of games with no conversion turning points at all -- only
+  // bullets that actually contain the phrase are checked.
+  bullets.forEach((b, i) => {
+    if (!MATE_CLAIM_RE.test(b.text)) return;
+    const backed = b.ply != null && facts.turningPoints.some((tp) => tp.ply === b.ply && tp.mateIn != null);
+    if (!backed) {
+      violations.push({
+        kind: "contradiction",
+        rule: "conversion-claim",
+        where: bulletWhere(b, i),
+        message: `bullet asserts a mate claim ("${b.text}") with no same-ply turning point mate data to back it`,
       });
     }
   });

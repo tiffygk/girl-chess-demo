@@ -20,11 +20,38 @@
 // constant AND add the slower/lost comparison (-evalMate[p] > mateIn - 1,
 // or evalMate[p] null/positive) that depth 1 makes unnecessary — at depth
 // 1, "she didn't play a '#' move" IS the complete miss condition.
-
+//
+// Game-160 RCA round, Task K1 (2026-07-31): "widening later" arrived, but
+// NOT here. ./conversion.ts owns the actual widened detector (its own
+// MISSED_MATE_DEPTH is 5, its own MATE_SLIP_MIN is 2 — a materially
+// different, slip-aware algorithm) and turningPoints.ts now calls it
+// directly for the real "missed-win"/"conversion" turning points the app
+// shows her. This module's OWN constant stays 1, and its OWN shipped
+// game-150 result (five misses anchored at ply 55) stays byte-stable — the
+// brief's explicit requirement, and this file's existing tests are the
+// regression net that proves it. What changed is HOW that answer gets
+// computed: this now delegates to detectConversion rather than
+// re-implementing the before/after lookup, so there is exactly one place
+// in the codebase that reads a "before" mate reading off the prior row.
+// This delegation is provably equivalent to the old direct-loop
+// implementation for every ply at depth 1: `before` can only ever be
+// exactly 1 there (2..5 are filtered out below, same cutoff as before),
+// and whenever `before` is 1 and she doesn't deliver the mate herself,
+// detectConversion's "missed-mate" kind fires whenever a mate reading is
+// still present after her move (slip is trivially >= 1 whenever
+// |after| >= 1, which it always is unless her move itself was the mate —
+// already excluded by the san-# check inside detectConversion) and its
+// "lost-mate" kind fires on the one edge case the old loop didn't even ask
+// about: the reading vanishing entirely. So unioning missed-mate +
+// lost-mate at mateBefore <= 1 is a superset-safe reproduction of the old
+// direct loop, not a narrower approximation of it.
+import { detectConversion, type MoveEvalRow } from "./conversion";
 import type { MoveEval } from "./turningPoints";
 
 // Owner-calibratable: only misses of a mate-in-<=N trigger. 1 = the
-// rock-solid case (see header).
+// rock-solid case (see header). Deliberately NOT imported from
+// conversion.ts — see this file's header for why the two same-named
+// constants are intentionally different values in different modules.
 export const MISSED_MATE_DEPTH = 1;
 
 export interface MissedWinEvent {
@@ -35,15 +62,21 @@ export interface MissedWinEvent {
 
 export function detectMissedWins(moves: MoveEval[]): MissedWinEvent[] {
   const byPly = new Map(moves.map((m) => [m.ply, m]));
+  const rows: MoveEvalRow[] = moves.map((m) => ({
+    ply: m.ply,
+    side: m.ply % 2 === 1 ? "her" : "mallow",
+    san: m.san,
+    evalCp: m.evalCp,
+    evalMate: m.evalMate,
+  }));
+  const { events } = detectConversion(rows);
   const out: MissedWinEvent[] = [];
-  for (const mv of [...moves].sort((a, b) => a.ply - b.ply)) {
-    if (mv.ply % 2 !== 1) continue; // her (white) plies only
-    if (mv.san.includes("#")) continue; // she delivered a mate: nothing missed
-    const pre = byPly.get(mv.ply - 1); // eval of the position she faced
-    if (!pre || pre.evalMate == null) continue; // ply 1, or no reading: never guess
-    const mateIn = pre.evalMate; // white to move there: her perspective as-is
-    if (mateIn < 1 || mateIn > MISSED_MATE_DEPTH) continue;
-    out.push({ ply: mv.ply, san: mv.san, mateIn });
+  for (const e of events) {
+    if (e.kind !== "missed-mate" && e.kind !== "lost-mate") continue;
+    if (e.mateBefore == null || e.mateBefore < 1 || e.mateBefore > MISSED_MATE_DEPTH) continue;
+    const mv = byPly.get(e.ply);
+    if (!mv) continue; // never guess a san we don't have
+    out.push({ ply: e.ply, san: mv.san, mateIn: e.mateBefore });
   }
-  return out;
+  return out.sort((a, b) => a.ply - b.ply);
 }
