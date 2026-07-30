@@ -212,10 +212,12 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     ply: 58,
     fen: "4nb2/2p4p/p3Bkp1/1p2N3/4p3/P3N1P1/1P3P1P/3R2K1 w - - 4 30",
     phase:
-      "fork (game 160, ply 58) -- the position immediately after Kf6, white to move; corrected forcedMaterialLoss " +
-      "proof: w to move, baseline 7, STILL forced after full recapture/quiescence resolution -- every legal move " +
-      "concedes at least a piece (most -3 via .../Kxe5 or .../Kxe6; worst -5, Rd6 -> Nxd6), zero escape. " +
-      "DISPATCH-4 ENGINE-GRADE FINDING (2026-07-31, flagged for the controller, NOT acted on here -- changing this " +
+      "fork (game 160, ply 58) -- the position immediately after Kf6, white to move; horizon-free ground truth " +
+      "(CONTROLLER RULING, 2026-07-31): both the e6 bishop and the e5 knight are attacked and no single move keeps " +
+      "both safe -- a forced TRADE, not a forced net loss, engine-confirmed via the Nd7+ deflection. The SEE-level " +
+      "forcedMaterialLoss proof below (baseline 7, every legal move concedes at least a piece via .../Kxe5 or " +
+      ".../Kxe6, worst -5 via Rd6 -> Nxd6) undercounts this as a net loss because it cannot see the Nd7+ recapture " +
+      "line. DISPATCH-4 ENGINE-GRADE FINDING (2026-07-31, flagged for the controller, NOT acted on here -- changing this " +
       "fixture's role in FH-01's zero-tolerance gate is outside this dispatch's remit): the app's own Stockfish " +
       "(engineLabel.ts, movetime 800-6000ms, all agreeing) finds a full escape SEE cannot see -- Nd7+ (check!), " +
       "and after the only legal reply .../Kxe6 (capturing the bishop -- SEE's search stops here, since it only " +
