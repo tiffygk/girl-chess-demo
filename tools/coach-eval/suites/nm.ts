@@ -21,6 +21,7 @@ import { checkMateClaims } from "../../../server/coach/mateClaims";
 import { FIXTURES, MATE_FACTS, MATE_FIXTURE_IDS, type MateFixtureId } from "../fixtures";
 import fs from "fs";
 import path from "path";
+import { discoverRun } from "./discoverRun";
 
 // Decodes a mate fixture's persisted best_move (uci) into the SAME
 // PendingRef shape checkPendingAwareness already expects (pieceKind/from/to)
@@ -119,22 +120,12 @@ function nm02CheckerLooksFine(_unused: null): boolean {
   return checkMateClaims(KNOWN_BAD_NM02_MATE_CLAIM, [{ evalMate: 5 }], [5]).length === 0;
 }
 
-function discoverMateRows(coachEvalRunsDir: string): AnswerRow[] | undefined {
-  if (!fs.existsSync(coachEvalRunsDir)) return undefined;
-  const dirs = fs
-    .readdirSync(coachEvalRunsDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => path.join(coachEvalRunsDir, d.name))
-    .sort()
-    .reverse();
-  for (const dir of dirs) {
-    const rawFiles = fs.readdirSync(dir).filter((f) => /^raw-(sonnet|opus)(-rep\d+)?\.json$/.test(f));
-    if (rawFiles.length === 0) continue;
-    const rows: AnswerRow[] = rawFiles.flatMap((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8")));
-    const mateRows = rows.filter((r) => r.arm === "mate");
-    if (mateRows.length > 0) return mateRows;
-  }
-  return undefined;
+// RCA round dispatch 4, harness defect (b): goes through the shared,
+// fixture-fingerprint-checked discoverRun (see discoverRun.ts's own header)
+// instead of a bespoke "alphabetically-last directory" scan -- the same fix
+// as fh.ts's discoverForkRows/ce.ts's discoverCeRows.
+function discoverMateRows(coachEvalRunsDir: string, runDirOverride?: string) {
+  return discoverRun(coachEvalRunsDir, (rows) => rows.filter((r) => r.arm === "mate"), runDirOverride);
 }
 
 function loadHandAudit(coachEvalRunsDir: string): Record<string, boolean> | undefined {
@@ -147,11 +138,12 @@ function loadHandAudit(coachEvalRunsDir: string): Record<string, boolean> | unde
   }
 }
 
-export function runNmSuite(coachEvalRunsDir: string): SuiteResult {
+export function runNmSuite(coachEvalRunsDir: string, runDirOverride?: string): SuiteResult {
   proveRedAtStartup("NM-01 pending-awareness checker", nm01CheckerLooksFine, pendingRefForMateFixture(MATE_FIXTURE_IDS[0]));
   proveRedAtStartup("NM-02 mate-claim checker", nm02CheckerLooksFine, null);
 
-  const mateRows = discoverMateRows(coachEvalRunsDir);
+  const discovered = discoverMateRows(coachEvalRunsDir, runDirOverride);
+  const mateRows = discovered?.rows;
   if (!mateRows) {
     const results: EvalResult[] = [
       { id: "NM-01", verdict: "did-not-run", detail: "no coach-eval run with arm 'mate' rows found on disk yet." },

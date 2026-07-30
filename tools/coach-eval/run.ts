@@ -596,6 +596,7 @@ async function main() {
       latencyMs,
       traceId: outcome.traceId,
       pending: question.pending,
+      fixtureFen: fixture.fen,
       model,
       wiring,
       measuredLatencyMs,

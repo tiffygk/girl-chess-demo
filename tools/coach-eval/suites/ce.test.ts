@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import { longCellPairs, computeCe01, computeCe02, computeCe03, computeCe04, computeCe05, runCeSuite } from "./ce";
 import type { AnswerRow } from "../score";
+import { FIXTURES } from "../fixtures";
 
 function row(overrides: Partial<AnswerRow> & { id: string; fixtureId: string }): AnswerRow {
   return {
@@ -164,5 +165,37 @@ describe("runCeSuite (did-not-run honesty when no coach-eval run exists on disk)
     const result = runCeSuite(dir);
     // Must NOT compute real pass/red verdicts against the stale, unrelated data.
     expect(result.results.every((r) => r.verdict === "did-not-run")).toBe(true);
+  });
+});
+
+describe("runCeSuite fixture-fingerprint discovery (RCA round dispatch 4, harness defect (b))", () => {
+  it("never discovers a stale-fixture run over the current one, even when the stale dir sorts alphabetically later", () => {
+    const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "gc-ce-fingerprint-"));
+    const currentDir = path.join(runsDir, "2026-07-31-ce-current");
+    const staleDir = path.join(runsDir, "9999-ce-stale-sorts-after");
+    fs.mkdirSync(currentDir);
+    fs.mkdirSync(staleDir);
+
+    // Stale: wrong fen for LN1/LN2, and a 5x late/early ratio -- if this
+    // were ever picked, CE-01 would go RED.
+    const staleRows: AnswerRow[] = [
+      { ...row({ id: "a", fixtureId: "LN1", latencyMs: 1000 }), fixtureFen: "8/8/8/8/8/8/8/8 w - - 0 1" },
+      { ...row({ id: "b", fixtureId: "LN2", latencyMs: 5000 }), fixtureFen: "8/8/8/8/8/8/8/8 w - - 0 1" },
+    ];
+    fs.writeFileSync(path.join(staleDir, "raw-sonnet.json"), JSON.stringify(staleRows));
+
+    // Current: real fens for LN1/LN2, a 1.2x ratio -- must be the row set
+    // actually scored.
+    const currentRows: AnswerRow[] = [
+      { ...row({ id: "a", fixtureId: "LN1", latencyMs: 1000 }), fixtureFen: FIXTURES.LN1.fen },
+      { ...row({ id: "b", fixtureId: "LN2", latencyMs: 1200 }), fixtureFen: FIXTURES.LN2.fen },
+    ];
+    fs.writeFileSync(path.join(currentDir, "raw-sonnet.json"), JSON.stringify(currentRows));
+
+    const result = runCeSuite(runsDir);
+    const ce01 = result.results.find((r) => r.id === "CE-01")!;
+    // If the stale (5x-ratio) rows had been picked, this would be "red".
+    // Picking the current (1.2x-ratio) rows must be "pass".
+    expect(ce01.verdict).toBe("pass");
   });
 });

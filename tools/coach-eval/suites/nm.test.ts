@@ -3,7 +3,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { pendingRefForMateFixture, checkNmRows, computeNm01, computeNm02, runNmSuite, KNOWN_BAD_NM01_ANSWER, KNOWN_BAD_NM02_MATE_CLAIM } from "./nm";
-import { MATE_FIXTURE_IDS, MATE_FACTS } from "../fixtures";
+import { MATE_FIXTURE_IDS, MATE_FACTS, FIXTURES } from "../fixtures";
 import { checkPendingAwareness } from "../score";
 import { checkMateClaims } from "../../../server/coach/mateClaims";
 import type { AnswerRow } from "../score";
@@ -125,5 +125,31 @@ describe("runNmSuite (did-not-run honesty when no coach-eval run exists on disk)
     expect(result.expectedCount).toBe(2);
     expect(result.results.length).toBe(2);
     expect(result.results.every((r) => r.verdict === "did-not-run")).toBe(true);
+  });
+});
+
+describe("runNmSuite fixture-fingerprint discovery (RCA round dispatch 4, harness defect (b))", () => {
+  it("never discovers a stale-fixture run over the current one, even when the stale dir sorts alphabetically later", () => {
+    const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "gc-nm-fingerprint-"));
+    const currentDir = path.join(runsDir, "2026-07-31-nm-current");
+    const staleDir = path.join(runsDir, "9999-nm-stale-sorts-after");
+    fs.mkdirSync(currentDir);
+    fs.mkdirSync(staleDir);
+
+    // Stale: wrong fen for MT1, and a false mate-distance claim -- if this
+    // were ever picked, NM-02 (mechanical, no audit needed) would go RED.
+    const staleRows: AnswerRow[] = [{ ...makeRow("mate-01", "MT1", "this is actually mate in 99 for you."), fixtureFen: "8/8/8/8/8/8/8/8 w - - 0 1" }];
+    fs.writeFileSync(path.join(staleDir, "raw-sonnet-rep1.json"), JSON.stringify(staleRows));
+
+    // Current: real fen for MT1, a correct claim -- must be the row set
+    // actually scored.
+    const currentRows: AnswerRow[] = [{ ...makeRow("mate-01", "MT1", "this is mate in 5, play the knight to f7."), fixtureFen: FIXTURES.MT1.fen }];
+    fs.writeFileSync(path.join(currentDir, "raw-sonnet-rep1.json"), JSON.stringify(currentRows));
+
+    const result = runNmSuite(runsDir);
+    const nm02 = result.results.find((r) => r.id === "NM-02")!;
+    // If the stale (false-mate-claim) rows had been picked, this would be
+    // "red". Picking the current (correct-claim) rows must be "pass".
+    expect(nm02.verdict).toBe("pass");
   });
 });

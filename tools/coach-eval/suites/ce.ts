@@ -17,6 +17,7 @@ import type { EvalResult, SuiteResult } from "../../rca-eval/lib/types";
 import { assertDenominator } from "../../rca-eval/lib/assertRan";
 import fs from "fs";
 import path from "path";
+import { discoverRun } from "./discoverRun";
 
 const TIMEOUT_RATE_MAX = 0.05; // CE-02, spec section 3
 const REGEN_RATE_MAX = 0.1; // CE-04
@@ -224,21 +225,15 @@ export function computeCe05(rows: AnswerRow[]): EvalResult {
 // run, which is real data but from a different round entirely and must
 // never be silently substituted in here; discovered the hard way running
 // this suite by hand against the repo's existing runs/ directory).
-function discoverCeRows(coachEvalRunsDir: string): AnswerRow[] | undefined {
-  if (!fs.existsSync(coachEvalRunsDir)) return undefined;
-  const dirs = fs
-    .readdirSync(coachEvalRunsDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => path.join(coachEvalRunsDir, d.name))
-    .sort()
-    .reverse();
-  for (const dir of dirs) {
-    const rawFiles = fs.readdirSync(dir).filter((f) => /^raw-(sonnet|opus)(-rep\d+)?\.json$/.test(f));
-    if (rawFiles.length === 0) continue;
-    const rows: AnswerRow[] = rawFiles.flatMap((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8")));
-    if (rows.length > 0 && rows.some((r) => r.arm === "long")) return rows;
-  }
-  return undefined;
+// RCA round dispatch 4, harness defect (b): goes through the shared,
+// fixture-fingerprint-checked discoverRun (see discoverRun.ts's own header)
+// instead of a bespoke "alphabetically-last directory" scan -- the same fix
+// as fh.ts's discoverForkRows/nm.ts's discoverMateRows. The "must carry an
+// arm:'long' row" fingerprint (this suite's own pre-existing regression
+// guard, see the comment above) stays as the FIRST filter; the fixture-fen
+// fingerprint is a second, independent check on top of it.
+function discoverCeRows(coachEvalRunsDir: string, runDirOverride?: string) {
+  return discoverRun(coachEvalRunsDir, (rows) => (rows.length > 0 && rows.some((r) => r.arm === "long") ? rows : []), runDirOverride);
 }
 
 function loadBaselineMedians(coachEvalRunsDir: string): BaselineArmMedian[] | undefined {
@@ -255,8 +250,9 @@ function loadBaselineMedians(coachEvalRunsDir: string): BaselineArmMedian[] | un
   }
 }
 
-export function runCeSuite(coachEvalRunsDir: string): SuiteResult {
-  const rows = discoverCeRows(coachEvalRunsDir);
+export function runCeSuite(coachEvalRunsDir: string, runDirOverride?: string): SuiteResult {
+  const discovered = discoverCeRows(coachEvalRunsDir, runDirOverride);
+  const rows = discovered?.rows;
   if (!rows) {
     const results: EvalResult[] = ["CE-01", "CE-02", "CE-03", "CE-04", "CE-05"].map((id) => ({
       id,
