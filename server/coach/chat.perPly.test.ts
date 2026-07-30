@@ -560,3 +560,53 @@ describe("the shared phase timeline — nearly-bare side (missed-win round, 2026
     expect(phases[55]).toBe("endgame");
   });
 });
+
+// Integration-round fix (2026-07-30): phasesForGame.phaseAt returns null
+// when there is no board to prove a phase from (gameSans absent or empty --
+// see src/review/gamePhases.ts's own header comment, "Important 5 / union
+// F1"). assembleChatFactList tags every perPlyAnalysis entry with
+// phases.phaseAt(p.ply), so a caller that hands perPly entries while
+// gameMoves itself is empty (the one situation where hasBoard is false)
+// produces perPlyAnalysis entries whose phase is genuinely unprovable. The
+// debrief round already stopped fabricating "opening" for this exact case;
+// the coach must not reintroduce the same lie on the other side of the
+// seam by leaking a literal "phase":null (or any placeholder) into the
+// model-facing prompt. This must fail for a real board (a game with real
+// moves, seen elsewhere in this file, always has a provable phase).
+describe("an unprovable phase (no board to derive it from) is omitted, never fabricated or leaked as a placeholder", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  it("perPlyAnalysis.phase is null, not a fabricated phase string, when gameMoves is empty", () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 1, san: "e4", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    // gameMoves is deliberately empty -- the one condition (Important 5 /
+    // union F1) under which phasesForGame has no board to replay at all.
+    const facts = assembleChatFactList([], {}, undefined, perPly);
+    expect(facts.perPlyAnalysis![0].phase).toBeNull();
+  });
+
+  it("the model-facing prompt never carries a phase key -- and never the strings null/undefined/none -- for a ply with no provable phase", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 1, san: "e4", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+    ];
+    const facts = assembleChatFactList([], {}, undefined, perPly);
+    expect(facts.perPlyAnalysis![0].phase).toBeNull(); // fixture sanity: this really is the unprovable case
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "e4 opens things up nicely for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("how did i do?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    // The whole point: the coach's fact list must OMIT phase for this ply,
+    // not state it falsely and not state it as an empty/placeholder value.
+    expect(capturedPrompt).not.toContain('"phase"');
+    expect(capturedPrompt).not.toMatch(/"phase"\s*:\s*"?(null|undefined|none)"?/i);
+  });
+});

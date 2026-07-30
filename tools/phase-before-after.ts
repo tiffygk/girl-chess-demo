@@ -38,7 +38,7 @@ import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
 import { Chess } from "chess.js";
 import { phasesForGame, type MidgameTrigger } from "../src/review/gamePhases";
-import { nearlyBarePlies, ENDGAME_BARE_PIECE_MAX } from "../src/review/phase";
+import { nearlyBarePlies } from "../src/review/phase";
 import type { SummaryMove } from "../src/game/api";
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -88,10 +88,20 @@ function oldDebriefPhaseForPly(ply: number, totalPlies: number, endgamePlies: Se
 // saw; never import or re-export this
 const OLD_COACH_OPENING_PLY_MAX = 20;
 const OLD_COACH_ENDGAME_PIECE_MAX = 12;
-// Hand-duplicates src/review/phase.ts's ENDGAME_BARE_PIECE_MAX the same way
-// the real dead code did (server code never imported from src/) -- imported
-// here for the VALUE only (both must equal 1), never for behavior.
-const OLD_COACH_ENDGAME_BARE_PIECE_MAX = ENDGAME_BARE_PIECE_MAX;
+// Integration-round finding (2026-07-30): the old coach derivePhase's own
+// bare-piece constant (CHAT_ENDGAME_BARE_PIECE_MAX, server/coach/chat.ts:47
+// at defee63) was 1, with the SAME min(nonPawnNonKing(w), nonPawnNonKing(b))
+// <= 1 formula boardNearlyBare below still uses -- verified by hand against
+// the pre-deletion diff (commit 9c6dcb9). ENDGAME_BARE_PIECE_MAX is still 1
+// today, so the caller below (measureGame) passing the ONE shared
+// nearlyBarePlies(gameSans) result into both oldDebriefPhaseForPly and
+// oldCoachDerivePhase reproduces the old coach's own nearlyBare bit for bit
+// -- there is no second, hand-duplicated constant to keep here, and no
+// wiring gap in the coach's before/after column. A local
+// OLD_COACH_ENDGAME_BARE_PIECE_MAX used to sit here as a documentation-only
+// echo of that equality (never read by any calculation or assertion);
+// deleted rather than kept unused, per the value-not-behavior comment it
+// carried -- see the round's report for the by-hand verification.
 
 function oldCoachDerivePhase(ply: number, pieceCount: number, nearlyBare: boolean): Phase {
   if (nearlyBare) return "endgame";
