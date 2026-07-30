@@ -39,14 +39,13 @@ tools/.truth-check-scratch/
 tools/.replay-check-scratch/
 
 # nested agent worktrees (owner reorg 2026-07-28) — registered via git worktree,
-# never committed as directories into the parent repo
+# never committed as directories into the parent repo. vite.config.ts already
+# ignores dev-server watching with the wt-* pattern (union finding 7,
+# 2026-07-29); .gitignore now matches instead of hardcoding each worktree
+# name, so any future wt-* is ignored automatically.
 /girl-chess-eval3/
 /girl-chess-r2/
-/wt-highlight/
-/wt-forward/
-/wt-missedwin/
-/wt-truth/
-/wt-visual/
+/wt-*/
 
 # vite dep-optimizer cache, recreated on every dev start (2026-07-29)
 .vite/

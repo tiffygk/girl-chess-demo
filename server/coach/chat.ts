@@ -1119,7 +1119,7 @@ const VOICE_KIND_GUIDANCE: Record<string, string> = {
   "voice-number": "never state a number for the position.",
 };
 
-function correctiveSuffix(violations: string[]): string {
+function correctiveSuffix(violations: readonly string[]): string {
   const lines = [
     "",
     "",

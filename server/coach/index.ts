@@ -342,7 +342,7 @@ export function buildPrompt(facts: CoachFactList, persona: Persona): string {
   ].join("\n");
 }
 
-function correctiveSuffix(violations: string[]): string {
+function correctiveSuffix(violations: readonly string[]): string {
   return [
     "",
     "",
