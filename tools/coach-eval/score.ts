@@ -246,6 +246,23 @@ export interface PipelineSummary {
   regenCounts: number[];
   medianLatencyMs: number;
   p90LatencyMs: number;
+  // E0 (RCA acceptance evals round, 2026-07-31): per-cause split of
+  // templateCount's superset. Before this, every non-model row landed in one
+  // undifferentiated pipelineFailure bucket -- a true-fact template fallback
+  // (cause "templates-only") was indistinguishable in every report from a
+  // real backend outage (cause "backend-down"), which defeated this round's
+  // whole point of measuring fallbacks BY CAUSE. These four are each a
+  // DISJOINT subset of templateCount (every template row has exactly one
+  // cause), same "subset, not a fourth bucket" discipline timeoutCount
+  // already established -- callers summing them must not also add
+  // templateCount a second time. templatesOnlyCount is the CONFIGURED
+  // fallback (the pipeline choosing not to call the model at all, e.g. a
+  // short affirmation) and must never be pooled into an outage-shaped
+  // number by any caller.
+  backendDownCount: number;
+  validationFailedCount: number;
+  templatesOnlyCount: number;
+  offTopicCount: number;
 }
 
 // Rows this pipeline actually produces (server/coach/chat.ts's return type,
@@ -290,6 +307,14 @@ export function summarizePipeline(rows: { source: string; cause?: string; regenC
   const templateRate = total === 0 ? 0 : templateCount / total;
   const regenCounts = rows.map((r) => r.regenCount);
   const sortedLatencies = [...rows.map((r) => r.latencyMs)].sort((a, b) => a - b);
+  // E0: each cause bucket is read straight off `cause` -- exact-string match,
+  // no fuzzy fallback -- so a row whose cause is a value none of these four
+  // (or "timeout", counted above) recognize simply falls into none of them,
+  // rather than being guessed into the wrong bucket.
+  const backendDownCount = rows.filter((r) => r.cause === "backend-down").length;
+  const validationFailedCount = rows.filter((r) => r.cause === "validation-failed").length;
+  const templatesOnlyCount = rows.filter((r) => r.cause === "templates-only").length;
+  const offTopicCount = rows.filter((r) => r.cause === "off-topic").length;
   return {
     total,
     templateCount,
@@ -299,6 +324,10 @@ export function summarizePipeline(rows: { source: string; cause?: string; regenC
     regenCounts,
     medianLatencyMs: percentile(sortedLatencies, 0.5),
     p90LatencyMs: percentile(sortedLatencies, 0.9),
+    backendDownCount,
+    validationFailedCount,
+    templatesOnlyCount,
+    offTopicCount,
   };
 }
 

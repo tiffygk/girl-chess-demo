@@ -72,6 +72,20 @@ interface PerRepPipeline {
   medianLatencyMs: number;
   p90LatencyMs: number;
 }
+// E0 (RCA acceptance evals round, 2026-07-31): per-cause split of
+// failureRows, pooled across reps, this arm only -- same "never pooled
+// across arms" discipline as everything else in PooledPipeline. Each count
+// is a DISJOINT subset of failureRows (every template row has exactly one
+// cause); templatesOnlyCount is the CONFIGURED fallback and must be reported
+// under its own "configured fallback" label, never folded into an
+// outage-shaped number (backend-down/timeout/validation-failed).
+export interface CauseSplit {
+  timeoutCount: number;
+  backendDownCount: number;
+  validationFailedCount: number;
+  templatesOnlyCount: number;
+  offTopicCount: number;
+}
 interface PooledPipeline {
   templateRate: number;
   timeoutRate: number; // Wave E1
@@ -79,6 +93,7 @@ interface PooledPipeline {
   p90LatencyMs: number;
   totalRows: number;
   failureRows: number;
+  causeSplit: CauseSplit;
 }
 export interface ModelSummary {
   reps: number;
@@ -243,6 +258,13 @@ export function buildModelSummary(files: RepFile[]): ModelSummary {
         // bucket, so it must not be added again here or failureRows would
         // double-count and exceed totalRows.
         failureRows: pooled.templateCount + pooled.errorCount,
+        causeSplit: {
+          timeoutCount: pooled.timeoutCount,
+          backendDownCount: pooled.backendDownCount,
+          validationFailedCount: pooled.validationFailedCount,
+          templatesOnlyCount: pooled.templatesOnlyCount,
+          offTopicCount: pooled.offTopicCount,
+        },
       },
     },
     latencyAgg: {
@@ -663,6 +685,20 @@ function writeArmSection(arm: Arm, A: ColumnAgg, B: ColumnAgg): string[] {
     `| timeout rate | ${pct(sa.pipeline.pooled.timeoutRate)} | ${pct(sb.pipeline.pooled.timeoutRate)} |`,
     `| median latency (ms, cross-rep median (min–max)) | ${fmtMsAgg(sa.latencyAgg.median)} | ${fmtMsAgg(sb.latencyAgg.median)} |`,
     `| p90 latency (ms, cross-rep median (min–max)) -- the axis that actually failed her, never pooled away | ${fmtMsAgg(sa.latencyAgg.p90)} | ${fmtMsAgg(sb.latencyAgg.p90)} |`,
+    "",
+    "### pipeline failures BY CAUSE (E0, 2026-07-31) -- pooled, this arm only, never pooled across causes into one outage number",
+    "",
+    "| cause | A | B |",
+    "|---|---|---|",
+    `| timeout | ${sa.pipeline.pooled.causeSplit.timeoutCount}/${sa.pipeline.pooled.totalRows} | ${sb.pipeline.pooled.causeSplit.timeoutCount}/${sb.pipeline.pooled.totalRows} |`,
+    `| backend-down | ${sa.pipeline.pooled.causeSplit.backendDownCount}/${sa.pipeline.pooled.totalRows} | ${sb.pipeline.pooled.causeSplit.backendDownCount}/${sb.pipeline.pooled.totalRows} |`,
+    `| validation-failed | ${sa.pipeline.pooled.causeSplit.validationFailedCount}/${sa.pipeline.pooled.totalRows} | ${sb.pipeline.pooled.causeSplit.validationFailedCount}/${sb.pipeline.pooled.totalRows} |`,
+    `| templates-only (CONFIGURED FALLBACK, not an outage) | ${sa.pipeline.pooled.causeSplit.templatesOnlyCount}/${sa.pipeline.pooled.totalRows} | ${sb.pipeline.pooled.causeSplit.templatesOnlyCount}/${sb.pipeline.pooled.totalRows} |`,
+    `| off-topic | ${sa.pipeline.pooled.causeSplit.offTopicCount}/${sa.pipeline.pooled.totalRows} | ${sb.pipeline.pooled.causeSplit.offTopicCount}/${sb.pipeline.pooled.totalRows} |`,
+    "",
+    "the templates-only row is the pipeline CHOOSING not to call the model (a",
+    "configured fallback) -- it is never counted toward backend-down/timeout/",
+    "validation-failed, and no report anywhere pools it into an outage number.",
     "",
     "latency numbers are aggregates from a high-variance backend (~3.7x same-",
     "prompt variance observed in the 2026-07-22 qa round) -- they support",

@@ -364,6 +364,54 @@ describe("summarizePipeline", () => {
   });
 });
 
+// E0 (RCA acceptance evals round, 2026-07-31): score.ts today scores ANY
+// non-model row as one undifferentiated pipelineFailure, and summarizePipeline
+// only ever split out timeoutCount -- every other cause (backend-down,
+// validation-failed, templates-only, off-topic) was invisible, so a true-fact
+// template fallback was indistinguishable in every report from a real backend
+// outage. Watched red against pre-E0 score.ts: none of these five fields
+// existed on PipelineSummary, so every assertion below failed with
+// "summary.backendDownCount is not a function"/undefined !== number.
+describe("summarizePipeline per-cause counts (E0, 2026-07-31)", () => {
+  it("a five-row set carrying one of each cause yields five distinct nonzero per-cause counts, and the templates-only row raises no outage-shaped counter", () => {
+    const rows = [
+      { source: "template", cause: "timeout", regenCount: 0, latencyMs: 45001 },
+      { source: "template", cause: "backend-down", regenCount: 0, latencyMs: 5000 },
+      { source: "template", cause: "validation-failed", regenCount: 1, latencyMs: 6000 },
+      { source: "template", cause: "templates-only", regenCount: 0, latencyMs: 3000 },
+      { source: "template", cause: "off-topic", regenCount: 0, latencyMs: 2000 },
+    ];
+    const summary = summarizePipeline(rows);
+    // five distinct nonzero per-cause counts
+    expect(summary.timeoutCount).toBe(1);
+    expect(summary.backendDownCount).toBe(1);
+    expect(summary.validationFailedCount).toBe(1);
+    expect(summary.templatesOnlyCount).toBe(1);
+    expect(summary.offTopicCount).toBe(1);
+    // templateCount keeps its existing superset meaning (v2/v3 comparisons hold)
+    expect(summary.templateCount).toBe(5);
+    // the templates-only row must not raise any OUTAGE-shaped counter --
+    // backendDownCount/timeoutCount/validationFailedCount must each stay at
+    // exactly the one row that is actually that cause, never 2.
+    expect(summary.backendDownCount).not.toBe(2);
+    expect(summary.timeoutCount).not.toBe(2);
+    expect(summary.validationFailedCount).not.toBe(2);
+  });
+
+  it("does not miscount when every row shares one cause", () => {
+    const rows = [
+      { source: "template", cause: "templates-only", regenCount: 0, latencyMs: 1000 },
+      { source: "template", cause: "templates-only", regenCount: 0, latencyMs: 1200 },
+    ];
+    const summary = summarizePipeline(rows);
+    expect(summary.templatesOnlyCount).toBe(2);
+    expect(summary.backendDownCount).toBe(0);
+    expect(summary.timeoutCount).toBe(0);
+    expect(summary.validationFailedCount).toBe(0);
+    expect(summary.offTopicCount).toBe(0);
+  });
+});
+
 describe("medianOf", () => {
   it("returns the middle value of an odd-length set", () => {
     expect(medianOf([0.6, 0.9, 0.7])).toBe(0.7);
