@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { sideNearlyBare, nearlyBarePlies, ENDGAME_BARE_PIECE_MAX } from "./phase";
+import { Chess } from "chess.js";
+import { boardNearlyBare, nearlyBarePlies, ENDGAME_BARE_PIECE_MAX } from "./phase";
 
 // Game 150 (2026-07-28), her real 91-ply win. Ply 55 (Nf7+) declined Qh8#.
 const GAME150_SANS = [
@@ -12,16 +13,20 @@ const GAME150_SANS = [
   "Qh6+","Kd5","Be7","Kc4","Qc6#",
 ].map((san, i) => ({ ply: i + 1, san }));
 
-describe("sideNearlyBare", () => {
+// Minor 8 (2026-07-30 fix wave): sideNearlyBare (the fen-in, bool-out
+// wrapper) is deleted -- it had zero production callers and was a live
+// candidate for the next hand-rolled phase check to latch onto. Same
+// coverage, against the exported predicate directly.
+describe("boardNearlyBare", () => {
   it("is false for the start position", () => {
-    expect(sideNearlyBare("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")).toBe(false);
+    expect(boardNearlyBare(new Chess("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))).toBe(false);
   });
   it("is true for game 150's real move-28 position (black: bare king + pawns)", () => {
-    expect(sideNearlyBare("Q7/4B3/4p2k/4Np1p/5P1P/3B4/P4PP1/RN3RK1 w - - 1 28")).toBe(true);
+    expect(boardNearlyBare(new Chess("Q7/4B3/4p2k/4Np1p/5P1P/3B4/P4PP1/RN3RK1 w - - 1 28"))).toBe(true);
   });
   it("is true when one side is down to a single piece (game 149 shape)", () => {
     expect(ENDGAME_BARE_PIECE_MAX).toBe(1);
-    expect(sideNearlyBare("4b1k1/8/8/8/8/8/4RQ2/6K1 w - - 0 1")).toBe(true);
+    expect(boardNearlyBare(new Chess("4b1k1/8/8/8/8/8/4RQ2/6K1 w - - 0 1"))).toBe(true);
   });
 });
 
