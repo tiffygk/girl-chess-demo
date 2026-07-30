@@ -93,4 +93,11 @@ export class UciEngine {
     try { this.send("quit"); } catch { /* already dead */ }
     this.proc.kill();
   }
+
+  // Test/observability seam only: lets a test verify quit() actually
+  // terminates the OS process it spawned, not just that this wrapper
+  // flags itself dead. No production call site.
+  get pid(): number | undefined {
+    return this.proc.pid;
+  }
 }

@@ -1,5 +1,5 @@
 // server/game/manager.test.ts
-import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { Chess } from "chess.js";
 import {
   openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces,
@@ -27,6 +27,12 @@ describe("GameManager", () => {
     gm = new GameManager();
     await gm.init();
   }, 40000);
+
+  // Gate-determinism fix (2026-07-31): this file's shared `gm` spawns a
+  // real stockfish process (plus one real maia/lc0 per elo used below) and
+  // never killed it -- see GameManager.shutdown()'s comment in manager.ts
+  // for the full leak this closes across four files.
+  afterAll(() => gm.shutdown());
 
   it("plays a move, gets a legal reply, and records both moves", async () => {
     const g = await gm.newGame(sessionId, 1100);
@@ -1498,4 +1504,40 @@ describe("GameManager", () => {
       expect(capturedPrompt).toContain('"ply":55,"san":"Nf7+","side":"you","bestSan":"Qh8#"');
     }, 20000);
   });
+});
+
+// Gate-determinism fix (2026-07-31): a separate, LOCAL GameManager -- never
+// the shared `gm` above -- because exercising shutdown() on the shared
+// instance would kill the engine every other test in this file depends on.
+describe("GameManager.shutdown() -- test-teardown seam", () => {
+  it("kills the real stockfish process the constructor spawned, even though init() was never called", async () => {
+    // The bug this closes: `evaluator = new StockfishEvaluator()` is a
+    // field initializer, so the real stockfish binary spawns the instant
+    // `new GameManager()` runs -- init() only performs the uci handshake on
+    // an already-running process. server/coach/chat.test.ts's beforeEach
+    // constructed a GameManager per test (21 of them) on exactly the
+    // opposite assumption ("no gm.init() here, so the real engine never
+    // starts") and never called anything to clean one up. Revert
+    // GameManager.shutdown() to a no-op (or delete the `this.evaluator
+    // .quit()` line inside it, manager.ts) and this test goes RED: the pid
+    // stays signalable past the 3s deadline and the assertion below fails.
+    const localGm = new GameManager();
+    const pid = localGm.getEvaluatorPidForTesting();
+    expect(pid).toBeTruthy();
+
+    localGm.shutdown();
+
+    const deadline = Date.now() + 3000;
+    let alive = true;
+    while (Date.now() < deadline) {
+      try {
+        process.kill(pid!, 0);
+        await new Promise((r) => setTimeout(r, 50));
+      } catch {
+        alive = false;
+        break;
+      }
+    }
+    expect(alive).toBe(false);
+  }, 5000);
 });
