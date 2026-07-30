@@ -745,51 +745,6 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
     }
   }
 
-  // Game-160 RCA round, Task K1: one "conversion" point per game, naming
-  // the shortest mate she ever held during a held-mate run (`mateIn`,
-  // conversion.ts's ConversionEpisode.bestMissed) and the run's span (`ply`
-  // = start, `plyEnd` = end, reusing the episode kind's existing field).
-  // Gated on the run actually containing real slip evidence (a mate-slip
-  // or missed-mate event somewhere in it) -- a clean, unslipped mate march
-  // is not a conversion lesson and would just be corpus noise.
-  if (conversionEpisode) {
-    const hasSlipEvidence = conversionEpisode.events.some(
-      (e) => e.kind === "mate-slip" || e.kind === "missed-mate"
-    );
-    // H1+H2 fix (union review, 2026-07-31): anchored on bestMissedPly (the
-    // ply she actually HELD the shortest mate at), never fromPly (the run's
-    // start, which is whichever side's ply happened to carry the first mate
-    // reading -- mallow's in 7 of her 12 real conversion games). Same
-    // parity-fix SHAPE as `unconverted`'s own anchorPly two blocks below
-    // (`ply % 2 === 1 ? ply : ply + 1`) rather than a second, drifting
-    // mechanism -- applied here to bestMissedPly instead of fromPly, since
-    // bestMissedPly is also where H1's welding bug (the sentence naming one
-    // move but describing a mate distance actually held at a different one)
-    // gets fixed. bestMissedPly is already guaranteed hers by construction
-    // (conversion.ts's own loop only ever considers `row.side === "her"`
-    // rows -- the explicit-field convention this module was built around),
-    // so this ternary's +1 branch is defense-in-depth, never expected to
-    // fire; conversion.test.ts's own parity fixture proves the field, not
-    // just asserts the type.
-    if (hasSlipEvidence && conversionEpisode.bestMissed != null && conversionEpisode.bestMissedPly != null) {
-      const anchorPly =
-        conversionEpisode.bestMissedPly % 2 === 1
-          ? conversionEpisode.bestMissedPly
-          : conversionEpisode.bestMissedPly + 1;
-      points.push({
-        rank: points.length + 1,
-        ply: anchorPly,
-        plyEnd: conversionEpisode.toPly,
-        san: evalRows.find((r) => r.ply === anchorPly)?.san ?? "",
-        label: "conversion",
-        deltaP: 0,
-        lowConfidence: false,
-        kind: "conversion",
-        mateIn: conversionEpisode.bestMissed,
-      });
-    }
-  }
-
   // Game-151 round: result vs eval. A game ending level (or lost) from a
   // held winning evaluation is invisible to the swing detector by
   // construction -- detected from the final readings vs the recorded
@@ -890,6 +845,84 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
         // mateIn unset while the ply is still genuinely proven).
         anchorKind: resolvedPly === anchorPly && anchorProven ? "repetition-entry" : "run-start",
       });
+    }
+  }
+
+  // Game-160 RCA round, Task K1: one "conversion" point per game, naming
+  // the shortest mate she ever held during a held-mate run (`mateIn`,
+  // conversion.ts's ConversionEpisode.bestMissed) and the run's span (`ply`
+  // = start, `plyEnd` = end, reusing the episode kind's existing field).
+  // Gated on the run actually containing real slip evidence (a mate-slip
+  // or missed-mate event somewhere in it) -- a clean, unslipped mate march
+  // is not a conversion lesson and would just be corpus noise.
+  //
+  // Union review DELTA fix (2026-07-31): pushed LAST, after every other
+  // point kind (including unconverted, immediately above), on purpose --
+  // its own collision guard (below) must see every other real fact already
+  // placed this game, not just the missed-win point. Moving conversion
+  // ahead of unconverted (as it originally shipped) let it steal the one
+  // remaining free ply unconverted's own collision-displacement scan needed
+  // in a narrow but real edge case (a short held-mate run with few candidate
+  // her-plies), silently dropping the unconverted point entirely even
+  // though detectUnconverted still says one is owed -- the exact
+  // "unpassable gate" failure mode that scan's own F2/F3 fix exists to
+  // prevent. Conversion has no fallback scan of its own (a single anchor
+  // ply, not a range) so it is the one that must yield when a real
+  // conflict exists, never the reverse.
+  if (conversionEpisode) {
+    const hasSlipEvidence = conversionEpisode.events.some(
+      (e) => e.kind === "mate-slip" || e.kind === "missed-mate"
+    );
+    // H1+H2 fix (union review, 2026-07-31): anchored on bestMissedPly (the
+    // ply she actually HELD the shortest mate at), never fromPly (the run's
+    // start, which is whichever side's ply happened to carry the first mate
+    // reading -- mallow's in 7 of her 12 real conversion games). Same
+    // parity-fix SHAPE as `unconverted`'s own anchorPly above (`ply % 2 ===
+    // 1 ? ply : ply + 1`) rather than a second, drifting mechanism --
+    // applied here to bestMissedPly instead of fromPly, since bestMissedPly
+    // is also where H1's welding bug (the sentence naming one move but
+    // describing a mate distance actually held at a different one) gets
+    // fixed. bestMissedPly is already guaranteed hers by construction
+    // (conversion.ts's own loop only ever considers `row.side === "her"`
+    // rows -- the explicit-field convention this module was built around),
+    // so this ternary's +1 branch is defense-in-depth, never expected to
+    // fire; conversion.test.ts's own parity fixture proves the field, not
+    // just asserts the type.
+    if (hasSlipEvidence && conversionEpisode.bestMissed != null && conversionEpisode.bestMissedPly != null) {
+      const anchorPly =
+        conversionEpisode.bestMissedPly % 2 === 1
+          ? conversionEpisode.bestMissedPly
+          : conversionEpisode.bestMissedPly + 1;
+      // Collision guard (union review DELTA, 2026-07-31): bestMissedPly and
+      // the missed-win point's own anchor are both "the shallowest mate in
+      // the run" hunts, so they land on the SAME ply whenever the shortest
+      // held mate is also the first missed mate -- measured on 5 of her 11
+      // real conversion games (85, 86, 132, 149, 159). Pushing unconditionally
+      // put two turning points on one ply: DebriefPage renders two cards for
+      // one move, and buildCouldBeBetter's `used.add(missedWin.ply)` then
+      // silently SUPPRESSES the conversion bullet -- the exact sentence H1
+      // exists to fix disappears on those 5 games instead of reading true.
+      // Same "one story, one bullet" reasoning the hasUnconverted suppression
+      // above already uses: when the missed-win (or, now, unconverted) point
+      // already owns this ply, its bullet already tells the real story, so
+      // the conversion point is redundant here, not merely inconvenient.
+      // Displacing to a neighbouring ply instead was considered and rejected
+      // -- that reintroduces H1 (a sentence whose ply and whose mate
+      // distance come from different moves).
+      const collides = points.some((p) => p.ply === anchorPly);
+      if (!collides) {
+        points.push({
+          rank: points.length + 1,
+          ply: anchorPly,
+          plyEnd: conversionEpisode.toPly,
+          san: evalRows.find((r) => r.ply === anchorPly)?.san ?? "",
+          label: "conversion",
+          deltaP: 0,
+          lowConfidence: false,
+          kind: "conversion",
+          mateIn: conversionEpisode.bestMissed,
+        });
+      }
     }
   }
 
