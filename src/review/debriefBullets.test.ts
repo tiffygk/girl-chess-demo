@@ -13,6 +13,7 @@
 
 import { describe, it, expect } from "vitest";
 import { debriefBullets, affordancesForBullet } from "./debriefBullets";
+import { checkDebriefOutput } from "./debriefInvariants";
 import { phasesForGame } from "./gamePhases";
 import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from "../game/api";
 
@@ -1418,6 +1419,26 @@ describe("the phase pair unlock (2026-07-30-phase round): distinct board-fact ph
     const watch = bullets.find((b) => b.section === "watch next time")!;
     expect(doneWell.text).toBe("your middlegame is working: you were winning this one from move 15 to move 25.");
     expect(watch.text.startsWith("the endgame is where this one slipped. ")).toBe(true);
+    // V1 fix (2026-07-30 integration review, visual gate finding): the
+    // done-well bullet's own CHIP must name the same phase its own TEXT
+    // just asserted ("your middlegame is working"). Before the fix this
+    // field was phases.phaseAt(unconvertedTp.ply) -- the SLIP ply (50,
+    // endgame) -- not herRunStartPly (31, middlegame), which is what the
+    // prose above is actually anchored to. Reproduced live on her real
+    // game 151, which rendered the chip "middlegame · conversion" directly
+    // above the text "your opening is working: ...".
+    expect(doneWell.phase).toBe("middlegame");
+    // The V1 fix deliberately makes this bullet's `phase` field describe a
+    // DIFFERENT ply (herRunStartPly, 31) than its `ply` field (unconvertedTp.ply,
+    // 50, kept as the rewind anchor) -- checkDebriefOutput's real invariants
+    // must treat that as coherent (the phase-word-vs-field rule confirms it
+    // against the bullet's own prose), not flag it as a phase-mismatch against
+    // the ply-50 timeline lookup, which was never what this phase claim is about.
+    const violations = checkDebriefOutput(
+      { bullets: [doneWell, watch] },
+      { result: "1/2-1/2", turningPoints: [openerPoint, anchorPoint], gameSans: GAME150_SANS, totalPlies: 91 }
+    );
+    expect(violations.filter((v) => v.rule.startsWith("phase"))).toEqual([]);
   });
 });
 
@@ -1493,5 +1514,125 @@ describe("same-phase suppression survives (2026-07-30-phase round): the pair nev
     expect(watch.text.startsWith("the endgame is where this one slipped. ")).toBe(true);
     expect(doneWell.text).not.toMatch(/^your (opening|middlegame|endgame) is working/);
     expect(doneWell.text).toBe("you were winning this one from move 25 to move 28.");
+  });
+});
+
+// I1 fix (2026-07-30 integration review, mandatory union review): the
+// missed-win and unconverted bullets in both could-be-better and
+// watch-next-time used to hardcode category "endgame technique" regardless
+// of the real phase timeline. phasesForGame never latches an endgame on 16
+// of her 29 finished games, so on those games the chip read e.g.
+// "middlegame · endgame technique" -- the same self-contradiction she
+// reported by name on 2026-07-27. Fix: derive the category from the same
+// ply's real phase the bullet's own `phase` field already carries --
+// "endgame technique" only when that phase truly is "endgame", else
+// "conversion" (already an existing ChessCategory, no new copy invented).
+// GAME150_SANS ply 30 is board-provably "middlegame" and ply 55 is
+// board-provably "endgame" (both reverified inline below, same fixture the
+// phase-pair-unlock tests above already trust).
+describe("I1 fix: missed-win/unconverted category tracks the real phase, never hardcoded", () => {
+  it("phases[30]=middlegame, phases[55]=endgame (fixture sanity, independent of debriefBullets)", () => {
+    const phases = phasesForGame(GAME150_SANS);
+    expect(phases.phaseAt(30)).toBe("middlegame");
+    expect(phases.phaseAt(55)).toBe("endgame");
+  });
+
+  it("could-be-better's missed-win bullet: middlegame ply -> category 'conversion', not 'endgame technique'", () => {
+    const missedWinPoint: TurningPoint = tp({
+      rank: 1, ply: 30, san: "Qh5", label: "the clincher", deltaP: 0, kind: "missed-win",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [missedWinPoint],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const b = bullets.find((x) => x.section === "could be better" && x.ply === 30)!;
+    expect(b.phase).toBe("middlegame");
+    expect(b.category).toBe("conversion");
+  });
+
+  it("could-be-better's missed-win bullet: a real endgame ply keeps category 'endgame technique'", () => {
+    const missedWinPoint: TurningPoint = tp({
+      rank: 1, ply: 55, san: "Nf7+", label: "the clincher", deltaP: 0, kind: "missed-win",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [missedWinPoint],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const b = bullets.find((x) => x.section === "could be better" && x.ply === 55)!;
+    expect(b.phase).toBe("endgame");
+    expect(b.category).toBe("endgame technique");
+  });
+
+  it("could-be-better's unconverted bullet: middlegame ply -> category 'conversion', not 'endgame technique'", () => {
+    const unconvertedPoint: TurningPoint = tp({
+      rank: 1, ply: 30, san: "Qg5+", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "repetition", anchorKind: "run-start",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [unconvertedPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const b = bullets.find((x) => x.section === "could be better" && x.ply === 30)!;
+    expect(b.phase).toBe("middlegame");
+    expect(b.category).toBe("conversion");
+  });
+
+  it("watch-next-time's missed-win bullet: middlegame ply -> category 'conversion', not 'endgame technique'", () => {
+    const missedWinPoint: TurningPoint = tp({
+      rank: 1, ply: 30, san: "Qh5", label: "the clincher", deltaP: 0, kind: "missed-win",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [missedWinPoint],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const b = bullets.find((x) => x.section === "watch next time" && x.ply === 30)!;
+    expect(b.phase).toBe("middlegame");
+    expect(b.category).toBe("conversion");
+  });
+
+  it("watch-next-time's unconverted bullet: middlegame ply -> category 'conversion', not 'endgame technique'", () => {
+    const unconvertedPoint: TurningPoint = tp({
+      rank: 1, ply: 30, san: "Qg5+", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "repetition", anchorKind: "run-start",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [unconvertedPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const b = bullets.find((x) => x.section === "watch next time" && x.ply === 30)!;
+    expect(b.phase).toBe("middlegame");
+    expect(b.category).toBe("conversion");
+  });
+
+  it("watch-next-time's unconverted bullet: a real endgame ply keeps category 'endgame technique'", () => {
+    const unconvertedPoint: TurningPoint = tp({
+      rank: 1, ply: 55, san: "Nf7+", label: "unconverted win", deltaP: 0, kind: "unconverted",
+      endKind: "repetition", anchorKind: "run-start",
+    });
+    const bullets = debriefBullets({
+      turningPoints: [unconvertedPoint],
+      classifications: [],
+      result: "1/2-1/2",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+    });
+    const b = bullets.find((x) => x.section === "watch next time" && x.ply === 55)!;
+    expect(b.phase).toBe("endgame");
+    expect(b.category).toBe("endgame technique");
   });
 });
