@@ -311,23 +311,31 @@ npx tsx tools/coach-eval/render.ts --dir $OUT --single   # single-summary.json, 
 npx tsx tools/rca-eval/run.ts -- ce                       # reads $OUT, computes CE-01..05
 
 # FH/NM 1-rep baselines (cheap: 12 + 7 = 19 calls) -- the before/after story,
-# expected RED on FH/NM pre-fix per spec section 4 rule 3
-OUT2=tools/coach-eval/runs/2026-07-31-fh-nm-baseline-rep1
-npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 1 --out $OUT2
-npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 1 --out $OUT2
+# expected RED on FH/NM pre-fix per spec section 4 rule 3.
+# ONE OUT DIR PER ARM: two arms at the same --rep write the SAME raw filename
+# (raw-sonnet-rep1.json), so sharing a dir clobbers the first arm's rows.
+# This bit the first real baseline run (2026-07-31): the mate arm silently
+# overwrote the fork arm's 12 answers. Reps within one arm are safe (distinct
+# raw-sonnet-repN.json); arms sharing a dir are not. (run.ts's own comment
+# says a fresh --out per arm is the caller's job; this recipe now obeys it.)
+OUT_FORK=tools/coach-eval/runs/2026-07-31-fh-baseline-rep1
+OUT_MATE=tools/coach-eval/runs/2026-07-31-nm-baseline-rep1
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 1 --out $OUT_FORK
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 1 --out $OUT_MATE
 npx tsx tools/rca-eval/run.ts -- fh   # FH-01/02 will read UNAUDITED until fh-hand-audit.json exists
 npx tsx tools/rca-eval/run.ts -- nm   # NM-01 will read UNAUDITED only if any mechanical failure is unaudited
 
 # the full FH/NM acceptance run (after K3 merges): 36 + 21 = 57 calls, 3 reps
-OUT3=tools/coach-eval/runs/2026-07-31-fh-nm-acceptance
-npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 1 --out $OUT3
-npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 2 --out $OUT3
-npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 3 --out $OUT3
-npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 1 --out $OUT3
-npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 2 --out $OUT3
-npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 3 --out $OUT3
-# then hand-audit: write $OUT3/fh-hand-audit.json ({rowId: true|false, ...})
-# and $OUT3/nm-hand-audit.json (same shape, only for mechanical-failure rows)
+OUT3F=tools/coach-eval/runs/2026-07-31-fh-acceptance
+OUT3M=tools/coach-eval/runs/2026-07-31-nm-acceptance
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 1 --out $OUT3F
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 2 --out $OUT3F
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm fork --rep 3 --out $OUT3F
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 1 --out $OUT3M
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 2 --out $OUT3M
+npx tsx tools/coach-eval/run.ts --model sonnet --wiring threaded --arm mate --rep 3 --out $OUT3M
+# then hand-audit: write $OUT3F/fh-hand-audit.json ({rowId: true|false, ...})
+# and $OUT3M/nm-hand-audit.json (same shape, only for mechanical-failure rows)
 npx tsx tools/rca-eval/run.ts -- fh
 npx tsx tools/rca-eval/run.ts -- nm
 
