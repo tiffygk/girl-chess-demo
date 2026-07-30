@@ -79,7 +79,20 @@ import { HighlightedMovesSection } from "./HighlightedMovesSection";
 // Missed-win round (2026-07-28): "missed mate" joins the negative-tint set —
 // a forced mate she had and played past is the game's alarm moment, exactly
 // as much as a blunder is.
-const NEGATIVE_CARD_LABELS = new Set(["blunder", "mistake", "inaccuracy", "the losing move", "missed mate"]);
+// Union review consistency fix (2026-07-31): "conversion" joins the same
+// set, on the same grounds "missed mate" did — she had a win and gave it
+// back is exactly the same class of fact, whether the card names the
+// mate distance directly (missed mate) or the run that let it slip
+// (conversion). Without this a pink "missed mate" card sat beside a plain
+// "conversion" card asserting the identical alarm.
+const NEGATIVE_CARD_LABELS = new Set([
+  "blunder",
+  "mistake",
+  "inaccuracy",
+  "the losing move",
+  "missed mate",
+  "conversion",
+]);
 
 function resultWord(result: string): string {
   if (result === "1-0") return "won";

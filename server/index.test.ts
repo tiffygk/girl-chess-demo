@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import { Chess } from "chess.js";
 import { app, ready, gm } from "./index";
@@ -6,6 +6,14 @@ import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages
 import { CHAT_MAX_LEN } from "./coach/chat";
 
 describe("api", () => {
+  // Gate-determinism fix (2026-07-31): `gm` here is the module-level
+  // singleton from ./index -- constructing it spawns a real stockfish
+  // process, and every /api/game call above 1100 elo spawns a real maia/lc0
+  // process too, none of which this file ever killed. See
+  // GameManager.shutdown()'s comment in server/game/manager.ts for the full
+  // leak this closes across four files.
+  afterAll(() => gm.shutdown());
+
   it("creates a session, a game, and plays a move", async () => {
     await ready;
     const s = await request(app).post("/api/session").expect(200);

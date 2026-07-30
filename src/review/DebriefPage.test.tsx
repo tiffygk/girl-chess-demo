@@ -140,3 +140,80 @@ describe("DebriefPage: highlighted plies in the move recap", () => {
     expect(html).not.toContain("highlighted");
   });
 });
+
+// Union review consistency fix (2026-07-31): NEGATIVE_CARD_LABELS gates the
+// pink alarm tint (.debrief-card-negative). The new "conversion" kind's
+// label was never added, so a "you did not convert" card rendered in the
+// same neutral lavender style as a positive one, sitting right next to a
+// pink "missed mate" card asserting the same class of fact (a win given
+// back). "missed mate" already earning the tint (2026-07-28) is the direct
+// precedent conversion follows here.
+describe("DebriefPage: the conversion card gets the negative tint (union review consistency fix)", () => {
+  const CONVERSION_POINT: TurningPoint = {
+    rank: 1,
+    ply: 3, // her own move (odd ply) -- Qh5, same fixture SCHOLARS_MATE_SANS already covers
+    plyEnd: 3,
+    san: "Qh5",
+    label: "conversion",
+    deltaP: 0,
+    lowConfidence: false,
+    kind: "conversion",
+    mateIn: 2,
+  };
+
+  // Matches the card's OWN opening tag exactly ("debrief-card" or
+  // "debrief-card debrief-card-negative", closed immediately by the `">`)
+  // -- a plain prefix/lastIndexOf search also matches nested siblings whose
+  // class NAME happens to start with the same string ("debrief-card-head",
+  // "debrief-card-kicker", "debrief-card-prose"...), which sit between the
+  // real card's opening tag and its text and would silently return the
+  // wrong (always non-negative) element.
+  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?">/g;
+
+  // Scoped to the "study ledger" turning-point CARD list (wrapped in
+  // `<div class="debrief-cards">`), never the whole page -- debriefBullets'
+  // OWN "could be better" section renders earlier and tags its own footer
+  // with the same "· {category}" text (e.g. "opening · conversion"), which
+  // is a different surface entirely (DebriefBulletList's `.debrief-bullet-tag`,
+  // not TurningPointCard's `.debrief-card-negative`). Scoping avoids that
+  // section supplying a false match.
+  function negativeClassOnCardContaining(html: string, needle: string): boolean {
+    const cardsSection = html.slice(html.indexOf('class="debrief-cards"'));
+    const idx = cardsSection.indexOf(needle);
+    expect(idx).toBeGreaterThan(-1); // the card itself must actually be on the page
+    const re = new RegExp(CARD_OPEN_TAG_RE.source, "g");
+    let match: RegExpExecArray | null;
+    let last: RegExpExecArray | null = null;
+    while ((match = re.exec(cardsSection)) && match.index < idx) {
+      last = match;
+    }
+    expect(last).not.toBeNull(); // the needle's own enclosing card tag must have been found
+    return !!last![1];
+  }
+
+  it("renders a conversion-labelled card with the negative (pink alarm) tint class", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: [CONVERSION_POINT] })} />
+    );
+    expect(negativeClassOnCardContaining(html, "· conversion<")).toBe(true);
+  });
+
+  // Discriminating negative case (required): a non-negative label must
+  // still render WITHOUT the class, so the fix cannot pass by tinting
+  // every card regardless of label.
+  it("a plain positive-outcome swing point (opponent mistake) does NOT get the negative tint", () => {
+    const opponentPoint: TurningPoint = {
+      rank: 1,
+      ply: 4,
+      san: "Nc6",
+      label: "opponent mistake",
+      deltaP: 0.15,
+      lowConfidence: false,
+      kind: "swing",
+    };
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: [opponentPoint] })} />
+    );
+    expect(negativeClassOnCardContaining(html, "· opponent mistake<")).toBe(false);
+  });
+});

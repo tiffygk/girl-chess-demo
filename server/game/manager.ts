@@ -116,6 +116,33 @@ export function deriveChatOutcome(
   return { result, winner, how, finalPly };
 }
 
+// H3 fix, logic-only half (union review, 2026-07-31): judgeMove's
+// insertVerdict call used to store `verdict.threat` alone
+// (`JSON.stringify(verdict.threat)` or null) — conversionCopy was on the
+// wire (returned to the caller) but never persisted, so a rewind or a Lab
+// audit could never recover what she was actually told on a conversion
+// nudge. Merges the two FLAT, never nested: manager.ts's own threatForPly
+// reads facts_json as `Partial<ThreatFacts>` and expects
+// refutationFromSquare/refutationToSquare at the TOP level, so nesting
+// threat under its own key would silently break that reader. The extra
+// `conversionCopy` key is simply additional data threatForPly's own
+// (unvalidated) cast ignores — harmless by construction, not by luck.
+// Pure and exported so it's unit-testable without a real evaluator or a
+// crafted mate position (see manager.test.ts) — the JSON shape is the only
+// thing this function is responsible for; classify.ts already owns
+// deciding what conversionCopy/threat actually say.
+export function buildVerdictFactsJson(
+  threat: ThreatFacts | undefined,
+  conversionCopy: string | undefined
+): string | null {
+  if (!threat && !conversionCopy) return null;
+  // JSON.stringify drops an undefined-valued key automatically, so a
+  // conversionCopy-less verdict serializes identically to the old
+  // `JSON.stringify(verdict.threat)` shape — no migration, no reader change
+  // needed for the common (non-conversion) case.
+  return JSON.stringify({ ...(threat ?? {}), conversionCopy });
+}
+
 export class GameManager {
   private games = new Map<number, LiveGame>();
   private evaluator = new StockfishEvaluator();
@@ -138,6 +165,42 @@ export class GameManager {
   private clock: () => number = () => Date.now();
 
   async init() { await this.evaluator.init(); }
+
+  // Test-teardown seam (gate-determinism fix, 2026-07-31): `evaluator`'s
+  // field initializer above constructs a REAL StockfishEvaluator, which in
+  // turn spawns the real `stockfish` binary SYNCHRONOUSLY in UciEngine's
+  // constructor -- before init() ever runs, before any game exists. Three
+  // real test files learned that the hard way: server/coach/chat.test.ts's
+  // "GameManager.chat (F16 integration)" describe block called
+  // `new GameManager()` in a per-TEST beforeEach (21 tests, so 21 spawned
+  // processes) on the documented-but-wrong assumption that "no gm.init()
+  // here" meant the real engine never starts; server/game/manager.test.ts's
+  // single file-level `gm` and server/index.ts's module-level `gm` (shared
+  // by index.test.ts and index.stream.test.ts) each leaked one more. None
+  // of the four ever killed what they spawned. Vitest's fork-pool workers
+  // are reused across many test FILES rather than respawned per file
+  // (confirmed by watching `ps` mid-run: the worker count stayed at the
+  // pool size while spawned `stockfish` processes kept accumulating), so
+  // every leaked process survives for the rest of that worker's run, not
+  // just its own file -- competing for real CPU with whichever test
+  // happens to run later in the same worker. That is the load-sensitivity
+  // that made server/index.stream.test.ts's "done frame" test flake with
+  // "socket hang up" under the full suite while passing 3/3 in isolation
+  // (where nothing else in the process had leaked anything yet). shutdown()
+  // is the missing teardown -- quit the evaluator and every cached
+  // opponent so nothing outlives its own test file. Unused in production
+  // (the real server process runs until it's killed).
+  shutdown(): void {
+    this.evaluator.quit();
+    for (const o of this.opponents.values()) o.quit();
+  }
+
+  // Test/observability seam only: lets a test verify shutdown() actually
+  // terminates the real spawned OS process, not just that this wrapper
+  // flags itself dead. No production call site.
+  getEvaluatorPidForTesting(): number | undefined {
+    return this.evaluator.pid;
+  }
 
   // Test seam only (Task 8, Fix 2): lets manager.test.ts control "now" for
   // the backend cache's TTL check below without a real sleep. Unused in
@@ -703,7 +766,7 @@ export class GameManager {
       latencyMs: verdict.latencyMs,
       adviceLevel: level,
       mode,
-      factsJson: verdict.threat ? JSON.stringify(verdict.threat) : null,
+      factsJson: buildVerdictFactsJson(verdict.threat, verdict.conversionCopy),
     });
     return { ok: true, verdict };
   }

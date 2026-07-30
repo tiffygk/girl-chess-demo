@@ -267,6 +267,146 @@ describe("isAdviceLevel", () => {
   });
 });
 
+// Task K2 (conversion-aware judge, context-v2-changes-and-contract.md
+// section 2, owner ruling 1): a mocked evaluator that scripts BOTH
+// classifyMove calls independently (unlike FixedDeltaEvaluator above, which
+// only controls a single deltaCp derived from a flat cp pair) -- these
+// tests need to control mate/bestMove on each call separately, since the
+// whole point is exercising the mate-distance and free-material paths that
+// FixedDeltaEvaluator's shape cannot express at all.
+class ScriptedEvaluator implements Evaluator {
+  private calls = 0;
+  constructor(
+    private beforeEval: Evaluation,
+    private afterEval: Evaluation
+  ) {}
+  async init() {}
+  async evaluate(_fen: string, _movetimeMs?: number): Promise<Evaluation> {
+    this.calls += 1;
+    return this.calls === 1 ? this.beforeEval : this.afterEval;
+  }
+  quit() {}
+}
+
+describe("classifyMove — decided-position conversion (Task K2)", () => {
+  // Discriminating fixture (a): a decided-won position (beforeEval.cp=500,
+  // no mate) where her quiet (non-capturing) knight move hangs the knight
+  // to the black rook, undefended. The deltaCp math alone is DELIBERATELY
+  // tuned to stay below nudgeCp (500 - 450 = 50 < 60) -- this is the exact
+  // saturated-eval shape the round exists to fix: raw cp delta stays small
+  // once a position is already decided, even though a whole piece just
+  // went for nothing. A wrong implementation that never adds the
+  // free-material check answers "silent" here (the CLAUDE.md-recorded bug);
+  // a correct one answers "nudge" with "for nothing" in the copy -- the two
+  // answers are visibly different, not a coincidental match.
+  it("decided-won position, quiet move hangs a knight for nothing -> nudge, copy says 'for nothing'", async () => {
+    const chess = new Chess("3rk3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet, not a capture
+    const evaluator = new ScriptedEvaluator(
+      { cp: 500, mate: null, bestMove: "e1e2", pv: [] }, // beforeEval: decided-won, |cp| >= 300
+      { cp: -450, mate: null, bestMove: "d8d5", pv: [] } // afterEval: Rxd5 undefended, still ~decided
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("nudge");
+    expect(verdict.deltaCp).toBe(50); // confirms this is NOT reachable via the existing nudgeCp(60) path
+    expect(verdict.conversionCopy).toBeDefined();
+    expect(verdict.conversionCopy).toContain("for nothing");
+    expect(verdict.conversionCopy).toContain("knight");
+  });
+
+  // Discriminating fixture (b): she holds mate-in-2 before her move; her
+  // quiet move keeps the mate but lets it slip all the way to mate-in-9.
+  // Under the OLD code, `mateForMover` alone short-circuits straight to
+  // "silent" regardless of how much the mate distance slipped -- so a wrong
+  // implementation (this exact branch, unfixed) answers "silent"; the
+  // correct one routes through conversionForMove and answers "nudge",
+  // naming both the held and the new mate distance in the copy.
+  it("mate-in-2 held, played move leaves mate-in-9 -> nudge naming the faster finish", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 2, bestMove: "e1e2", pv: [] }, // beforeEval: mate-in-2 held
+      { cp: 0, mate: -9, bestMove: "e8d8", pv: [] } // afterEval: opponent to move, mated in 9 (still hers, just slower)
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("nudge");
+    expect(verdict.mateAgainst).toBe(false); // still her mate -- never misreport this as against her
+    expect(verdict.conversionCopy).toBeDefined();
+    expect(verdict.conversionCopy).toContain("mate in 2");
+    expect(verdict.conversionCopy).toContain("mate in 9");
+  });
+
+  // Discriminating fixture (c): the same mate-in-2 setup, but this time the
+  // quiet move keeps the mate exactly on schedule (mate-in-2 -> mate-in-1,
+  // slip 0) and the opponent's best reply is not a capture of her
+  // just-moved piece either. This must stay silent -- proving the fix
+  // doesn't turn every decided position into noise (which would be worse
+  // than the original silence). A wrong implementation that nudges on ANY
+  // decided mateForMover position (ignoring the slip magnitude entirely)
+  // fails this one specifically.
+  it("mate-in-2 held, played move keeps mate-in-1 on schedule (slip 0) -> stays silent", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 2, bestMove: "e1e2", pv: [] }, // beforeEval: mate-in-2 held
+      { cp: 0, mate: -1, bestMove: "e8d8", pv: [] } // afterEval: on schedule, slip 0
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("silent");
+    expect(verdict.conversionCopy).toBeUndefined();
+  });
+
+  // Union review fix (H4, 2026-07-31): `decided` used Math.abs(beforeEval.cp)
+  // >= DECIDED_BAND_CP, which is SIGN-BLIND -- a position she is decidedly
+  // LOSING (cp -500) counted as "decided" exactly like a position she is
+  // decidedly winning, so the free-material branch's hardcoded copy ("still
+  // winning, but that gives back your {piece} for nothing.") could fire
+  // while she is down 500cp. Same board/move as the "decided-won" fixture
+  // above (fixture (a)), signs flipped: beforeEval.cp is now NEGATIVE
+  // (-500, decidedly LOSING) and afterEval is tuned so deltaCp stays under
+  // nudgeCp (mirroring fixture (a)'s exact saturated-eval shape), so this is
+  // reachable ONLY through the same last-else-if free-material branch
+  // fixture (a) exercises -- proving the fix, not a different code path. A
+  // wrong (unfixed) implementation answers "nudge" with "still winning..."
+  // here; the fixed one must never say she's winning while beforeEval.cp is
+  // negative -- visibly different, not a coincidental match.
+  it("decided-LOSING position (cp -500), quiet move hangs a knight for nothing -> never claims 'still winning'", async () => {
+    const chess = new Chess("3rk3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet, not a capture
+    const evaluator = new ScriptedEvaluator(
+      { cp: -500, mate: null, bestMove: "e1e2", pv: [] }, // beforeEval: decided-LOSING, cp < -DECIDED_BAND_CP
+      { cp: 450, mate: null, bestMove: "d8d5", pv: [] } // afterEval: Rxd5, deltaCp stays small (saturated-eval shape)
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.deltaCp).toBeLessThan(60); // confirms this is NOT reachable via the ordinary nudgeCp path
+    expect(verdict.tier).toBe("silent"); // decided must now mean "decided FOR her", not "decided at all"
+    expect(verdict.conversionCopy).toBeUndefined(); // never "still winning" while beforeEval.cp is negative
+  });
+
+  // Union review fix (M4, 2026-07-31): conversionCopyFor's "lost-mate"
+  // branch was unreachable dead code -- its only call site required
+  // mateForMover (afterEval.mate !== null), but conversionForMove only ever
+  // returns "lost-mate" when afterMate IS null. She holds mate-in-5, plays a
+  // quiet move that lets the mate reading vanish entirely (afterEval.mate:
+  // null) -- the huge MATE_SCORE_CP-backed deltaCp routes this to "warning"
+  // via the ordinary mateAgainst/deltaCp path, not the mateForMover branch.
+  // A wrong (unfixed) implementation answers "warning" with NO
+  // conversionCopy (the generic "careful, this one hurts" badge and nothing
+  // else); the fix must thread the real "the forced mate is gone for now"
+  // story into the tier that's actually reachable.
+  it("losing a held mate entirely -> warning tier (not mateForMover) STILL carries the lost-mate copy", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 5, bestMove: "e1e2", pv: [] }, // beforeEval: mate-in-5 held
+      { cp: 500, mate: null, bestMove: "e8d8", pv: [] } // afterEval: the mate reading is GONE
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("warning"); // reached via mateAgainst/deltaCp, NOT the mateForMover branch
+    expect(verdict.conversionCopy).toBe("still winning, but the forced mate is gone for now.");
+  });
+});
+
 describe("classifyMove — real engine math", () => {
   const sf = new StockfishEvaluator();
   beforeAll(async () => {
@@ -339,16 +479,31 @@ describe("classifyMove — real engine math", () => {
   }, 15000);
 
   it("a move that leaves the opponent walking into forced mate -> silent (mate FOR the mover)", async () => {
-    // White King g6, Rook b2, Black King h8 (cornered, only flight square
-    // g8 — g7/h7 are covered by the White king). Rb2-b6 is a quiet lift,
-    // not check: it forces ...Kg8, after which Rb8# is mate. So after this
-    // move, Black (to move) is walking into a forced mate.
-    const setup = new Chess("7k/8/6K1/8/8/8/1R6/8 w - - 0 1");
-    const move = setup.move({ from: "b2", to: "b6" });
+    // King + rook vs lone king, White King c6, Rook h2, Black King e8
+    // (mate-in-7 per Stockfish). Rh2-h7 IS the engine's own top choice at
+    // the before-position (confirmed live: beforeEval.bestMove === "h2h7"),
+    // and it keeps the mate distance exactly on schedule (mate-in-7 ->
+    // mate-in-6, zero slip) — never check, never a capture. This is Task
+    // K2's replacement for the prior fixture here (White King g6, Rook b2,
+    // Black King h8, Rb2-b6): that one's own claimed "only flight square
+    // g8" was true of the KING alone, but the rook's own attack line along
+    // the back rank also covers g8 once it lands there, so Rb2-b8 was
+    // actually an immediate mate-in-1 the whole time — meaning Rb6 was a
+    // real (if tiny) missed-mate under conversionForMove's own rules
+    // (MISSED_MATE_DEPTH gates on ANY slip when the held mate is shallow,
+    // by design — see conversion.ts's header), and correctly nudges under
+    // the new decided-position logic below. That fixture accidentally
+    // tested "does my move choice happen to dodge a hidden faster mate,"
+    // not "is an on-schedule mate silent" — this one tests the latter
+    // cleanly, by construction (the played move IS the fastest one).
+    const setup = new Chess("4k3/8/2K5/8/8/8/7R/8 w - - 0 1");
+    const move = setup.move({ from: "h2", to: "h7" });
     expect(setup.isCheckmate()).toBe(false);
+    expect(setup.inCheck()).toBe(false);
     const verdict = await classifyMove(setup, move, sf);
     expect(verdict.tier).toBe("silent");
     expect(verdict.mateAgainst).toBe(false);
+    expect(verdict.conversionCopy).toBeUndefined();
   }, 15000);
 
   it("never mutates the passed chess instance", async () => {

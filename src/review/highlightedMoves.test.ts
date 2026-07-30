@@ -113,6 +113,28 @@ describe("buildHighlightedRows", () => {
     expect(rows[0].note).toMatch(/checkmate/);
   });
 
+  // C1 fix (union review, 2026-07-31): mateIn 1 alone (the test above)
+  // proves nothing -- "was mate on the spot" was ALSO the old hardcoded
+  // text, so it can't discriminate "reads tp.mateIn" from "always assumes
+  // one". Game 160's real shape: mateIn 4 -- before this fix the note said
+  // "you had checkmate here. Nd5 was mate on the spot", false (she had
+  // mate in FOUR, and Nd5 only starts that mate).
+  it("names the real mate distance for a deeper miss, never 'mate on the spot' (game 160's real shape: mateIn 4)", () => {
+    const rows = buildHighlightedRows({
+      highlightedPlies: [17],
+      gameSans: sansWhere(17, "Re1"),
+      turningLines: lineWhere(17, { bestSan: "Nd5" }),
+      classifications: [],
+      turningPoints: [
+        { ply: 17, kind: "missed-win", mateIn: 4, missedCount: 8 } as never,
+      ],
+    });
+    expect(rows[0].note).toContain("checkmate in four");
+    expect(rows[0].note).toContain("started a forced mate in four");
+    expect(rows[0].note).not.toMatch(/mate on the spot/);
+    expect(rows[0].note).not.toMatch(/checkmate in one/);
+  });
+
   it("a missed win at a DIFFERENT ply does not bleed onto this row", () => {
     const rows = buildHighlightedRows({
       highlightedPlies: [17],

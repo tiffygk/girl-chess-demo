@@ -24,6 +24,11 @@
 import { Chess } from "chess.js";
 import type { TurningPoint, TurningLine, SummaryMove } from "../game/api";
 import { affordancesForBullet, type DebriefBullet, type ChessCategory } from "./debriefBullets";
+// C1 fix (union review, 2026-07-31): the word list for parsing an asserted
+// mate distance out of a bullet's text -- from the shared ./numberWords
+// module (the same one debriefBullets.ts's own numberWord now re-exports
+// from), not a fourth hand-typed copy.
+import { NUMBER_WORDS } from "./numberWords";
 import { phasesForGame, type GamePhase } from "./gamePhases";
 import { followedBest } from "./followedBest";
 
@@ -85,6 +90,87 @@ const SQUARE_RE = /[a-h][1-8]/g;
 // this constant) -- a third alternative here would be dead in this rule and
 // would misdescribe what actually fires it.
 const REASSURANCE_RE = /no clear mistakes|no repeat pattern/;
+// conversion-claim (K1, tightened 2026-07-31 union review fix): the
+// phrasings a bullet/note uses to assert a MISSED or SLIPPED mate --
+// missedWinText's "checkmate in {word}", conversionCouldBeBetterText's/
+// unconvertedCouldBeBetterText's/turningPointNote.ts's "mate in {word}"
+// (debriefBullets.ts, turningPointNote.ts). "(?:check)?mate in " catches
+// all of those without also matching unrelated prose ("checkmate" alone,
+// with no "in", never trips this). CAPTURES the asserted number/word so
+// the rule below can compare what was actually SAID against the turning
+// point's own mateIn -- the original version of this rule only checked
+// that SOME mate data existed at the ply (`mateIn != null`), which is why
+// it passed unchanged over 8 real games where the bullet said "checkmate
+// in one" and the turning point's mateIn was 2-5 (C1, the flagship bug
+// this whole round exists to fix). Reuses debriefBullets.ts's own
+// NUMBER_WORDS as the single source of truth for how this codebase spells
+// a mate distance, rather than a second, hand-typed word list that could
+// drift from it.
+//
+// The negative lookbehind is load-bearing, added after routing this rule
+// through outputTextUnits (ADDENDUM 2) surfaced a real false-positive:
+// opportunity.ts's deriveOpportunity emits "leads to mate in {N}" on the
+// `note.opportunity` field -- a DIFFERENT, already honesty-gated claim
+// (N is counted directly off a replay-proven, checkmate-ending pv, never
+// read from any TurningPoint's mateIn, and it can legitimately sit on an
+// ordinary swing/backfill point that carries no mateIn at all). Every
+// missed/slipped-mate producer this rule actually polices says "you had
+// mate in N" / "the shortest mate you held ... mate in N" / "mate in N
+// was on record" -- none of them ever say "leads to". Excluding that one
+// phrase keeps the rule scoped to what it is actually about (a stored
+// mateIn being contradicted) without silently swallowing a correct,
+// independently-verified claim about a completely different fact.
+const NUMBER_WORD_VALUES: Record<string, number> = Object.fromEntries(
+  NUMBER_WORDS.map((word, n) => [word, n])
+);
+const MATE_CLAIM_NUMBER_RE = new RegExp(
+  `(?<!leads to )(?:check)?mate in (${NUMBER_WORDS.join("|")}|\\d+)`,
+  "i"
+);
+
+// Parses every "(check)mate in N" claim out of a bullet's text (a bullet
+// can carry at most one in practice, but this never assumes that -- global
+// match, never guesses past what's actually there).
+function parseMateClaimNumbers(text: string): number[] {
+  const re = new RegExp(MATE_CLAIM_NUMBER_RE.source, "gi");
+  const out: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const word = m[1].toLowerCase();
+    const n = NUMBER_WORD_VALUES[word] ?? (/^\d+$/.test(word) ? parseInt(word, 10) : undefined);
+    if (n != null) out.push(n);
+  }
+  return out;
+}
+
+// Residual hole found by the reviewer's own falsification pass (2026-07-31,
+// third instance of "the check is narrower than the thing it claims to
+// cover"): "was mate on the spot" / "ends it on the spot" assert mate-in-1
+// SEMANTICALLY, with no digit or number word anywhere in the sentence, so
+// parseMateClaimNumbers cannot see them at all. Proven concretely: replacing
+// turningPointNote.ts's `mateIn === 1 ? ... ends it on the spot ... :
+// starts a forced mate in N` ternary with an unconditional "ends it on the
+// spot" made `replay-check` exit 0 with zero violations on real games where
+// mateIn was 2-5 -- the exact silent-pass shape C1 shipped through twice.
+//
+// Enumerated, not pattern-matched, on purpose -- same "precision over
+// recall" discipline server/coach/defenseClaims.ts's checkDefenseClaims
+// already uses for this codebase's other verify-before-send checks. This
+// list is EVERY number-free phrase actually in production that implies
+// mate-in-1 (grepped across src/review/*.ts and server/annotator/*.ts,
+// 2026-07-31: exactly these two, both containing "on the spot", nothing
+// else). It does NOT catch a paraphrase that isn't on this list ("delivers
+// the mate right there", "wins on the spot", "mates immediately", etc.) --
+// if a producer ever adds a new number-free immediate-mate phrase, it must
+// be added here too, in this one place, or this rule goes blind to it the
+// same way it went blind to these two. Understating this check's reach is
+// deliberate: a comment that overstates what it catches is how this class
+// of bug survived twice already.
+export const IMPLICIT_MATE_ONE_PHRASES = ["mate on the spot", "ends it on the spot"];
+
+function hasImplicitMateOneClaim(text: string): boolean {
+  return IMPLICIT_MATE_ONE_PHRASES.some((p) => text.includes(p));
+}
 
 // Integration review fix (2026-07-30, I1 + V1 -- mandatory union review):
 // two invariants closing one underlying problem -- a single bullet can name
@@ -197,6 +283,23 @@ function bulletWhere(b: DebriefBullet, i: number): string {
 
 function noteWhere(ply: number): string {
   return `note:${ply}`;
+}
+
+// ADDENDUM 2 fix (union review, 2026-07-31): conversion-claim needs the
+// PLY a text unit is about (to look up its backing turning point), but
+// outputTextUnits only carries the `where` string, not a numeric ply --
+// bullets encode an ARRAY INDEX in their `where` (bulletWhere's own
+// `i`), notes encode the ply DIRECTLY (noteWhere's `ply`). This is the one
+// place that decodes either shape back to a real ply, so the two formats
+// never have to be re-parsed ad hoc at each call site. `bullets` is the
+// same array outputTextUnits itself was built from -- same order, so the
+// index recovered from a bullet's `where` always resolves to the right one.
+function plyForWhere(where: string, bullets: DebriefBullet[]): number | undefined {
+  const noteMatch = /^note:(\d+)$/.exec(where);
+  if (noteMatch) return parseInt(noteMatch[1], 10);
+  const bulletMatch = /^bullet:.*:(\d+)$/.exec(where);
+  if (bulletMatch) return bullets[parseInt(bulletMatch[1], 10)]?.ply;
+  return undefined;
 }
 
 interface TextUnit {
@@ -354,6 +457,95 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
         rule: "phase-word-vs-field",
         where: bulletWhere(b, i),
         message: `bullet text names phase "${word}" but the bullet's phase field is "${b.phase}"`,
+      });
+    }
+  });
+
+  // conversion-claim (K1, game-160 RCA round, 2026-07-31; TIGHTENED twice in
+  // the union review fix wave, same date): any TEXT UNIT -- bullet, note,
+  // lesson, or highlighted row, ANYTHING on her screen -- asserting a
+  // missed/slipped mate ("mate in N" / "checkmate in N") must be backed by a
+  // same-ply turning point whose stored mateIn AGREES with the number
+  // actually asserted -- the debrief path has no LLM (CLAUDE.md), so a
+  // false mate claim here is our own template contradicting our own data,
+  // same failure class as every other contradiction rule in this file.
+  //
+  // First tightening: originally shipped checking only that mate data
+  // EXISTED at the ply (`tp.mateIn != null`), never that the asserted number
+  // matched it. That is why `replay-check` reported PASS, 0 violations over
+  // a corpus containing 8 real games where a bullet said "checkmate in one"
+  // and the backing turning point's mateIn was 2-5 (C1).
+  //
+  // Second tightening (ADDENDUM 2, ships the SAME commit as the fourth C1
+  // producer's copy fix, turningPointNote.ts): this rule iterated
+  // `bullets.forEach` directly, so it was structurally blind to card NOTE
+  // text (turningPointNote.ts's couldImprove field, rendered on every card
+  // by DebriefPage.tsx) -- the surface where the fourth "checkmate in one"
+  // producer actually lived. `checkDebriefOutput` reported 0 violations in
+  // the SAME run that produced 8 false notes, for the identical shape of
+  // reason the first tightening exists to fix: a check narrower than the
+  // thing it claims to cover. Now routes through `outputTextUnits(output)`,
+  // the SAME helper win-copy-on-non-win/unknown-san/unknown-square/voice-*
+  // already use, so it covers bullets AND notes (and, structurally, the
+  // lesson/highlighted-row text ANY future caller folds into `output` the
+  // same way) alike -- if a fifth producer appears, this routing is what
+  // catches it, not a fifth hand-written check. `plyForWhere` recovers the
+  // ply from either shape (`where`'s own encoding, see its comment); a
+  // TEXT UNIT WITH NO RESOLVABLE PLY IS TREATED AS UNBACKED, same as a ply
+  // that matches no turning point -- never silently skipped, since there is
+  // no way to verify an unanchored claim either way. Backs BOTH the
+  // "conversion" kind's bullet (mateIn = the episode's shortest held mate)
+  // and the existing "missed-win"/"unconverted" kinds' own mate clauses
+  // (mateIn is already the field all three use). Tolerant of games with no
+  // conversion turning points at all -- only text that actually names a
+  // mate distance is checked.
+  //
+  // Third tightening (reviewer's own falsification pass, 2026-07-31): a
+  // NUMBER-FREE mate-in-1 claim ("was mate on the spot" / "ends it on the
+  // spot") asserts the distance semantically, with no digit or number word
+  // for parseMateClaimNumbers to find -- proven by mutation: an
+  // unconditional "ends it on the spot" in turningPointNote.ts made
+  // replay-check exit 0 with zero violations on real games where mateIn was
+  // 2-5. IMPLICIT_MATE_ONE_PHRASES (above) is the enumerated, precision-
+  // over-recall fix -- exactly the two phrases actually in production, not
+  // a paraphrase matcher. HONEST LIMIT, stated plainly rather than
+  // overstated: this catches a WRONG NUMBER and this SPECIFIC enumerated
+  // phrase set. It does NOT catch an arbitrary future paraphrase ("wins on
+  // the spot", "mates immediately", etc.) -- a new number-free immediate-
+  // mate phrase must be added to IMPLICIT_MATE_ONE_PHRASES by hand, in that
+  // one place, or this rule goes blind to it exactly the way it went blind
+  // to these two.
+  outputTextUnits(output).forEach(({ text, where }) => {
+    const claims = parseMateClaimNumbers(text);
+    const impliesMateOne = hasImplicitMateOneClaim(text);
+    if (claims.length === 0 && !impliesMateOne) return;
+    const ply = plyForWhere(where, bullets);
+    const tp = ply != null ? facts.turningPoints.find((t) => t.ply === ply && t.mateIn != null) : undefined;
+    if (!tp) {
+      violations.push({
+        kind: "contradiction",
+        rule: "conversion-claim",
+        where,
+        message: `text asserts a mate claim ("${text}") with no same-ply turning point mate data to back it`,
+      });
+      return;
+    }
+    for (const n of claims) {
+      if (n !== tp.mateIn) {
+        violations.push({
+          kind: "contradiction",
+          rule: "conversion-claim",
+          where,
+          message: `text asserts mate in ${n} but the same-ply turning point's mateIn is ${tp.mateIn}`,
+        });
+      }
+    }
+    if (impliesMateOne && tp.mateIn !== 1) {
+      violations.push({
+        kind: "contradiction",
+        rule: "conversion-claim",
+        where,
+        message: `text asserts an immediate mate ("${text}") but the same-ply turning point's mateIn is ${tp.mateIn}`,
       });
     }
   });
