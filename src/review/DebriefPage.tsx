@@ -263,7 +263,17 @@ function DebriefBulletList({
                   <p className="debrief-bullet-text">{b.text}</p>
                   <div className="debrief-bullet-foot">
                     <span className="debrief-bullet-tag">
-                      {b.phase} · {b.category}
+                      {/* Important 5 / union F1 (2026-07-30 fix wave): b.phase is
+                          null when there is no board to derive a phase from
+                          (gameSans absent/empty) -- omit the phase word rather
+                          than printing a fact that was never proven. */}
+                      {b.phase ? (
+                        <>
+                          {b.phase} · {b.category}
+                        </>
+                      ) : (
+                        b.category
+                      )}
                     </span>
                     {aff.replay && (
                       <button
