@@ -217,6 +217,13 @@ export function computeCe05(rows: AnswerRow[]): EvalResult {
   };
 }
 
+// A run directory only counts as "this round's CE data" if it carries at
+// least one row from the NEW long-* fixture class (arm "long") -- a
+// fingerprint that the run was produced against THIS round's question set,
+// not an older round's (e.g. the pre-existing 2026-07-23-v3 65-question
+// run, which is real data but from a different round entirely and must
+// never be silently substituted in here; discovered the hard way running
+// this suite by hand against the repo's existing runs/ directory).
 function discoverCeRows(coachEvalRunsDir: string): AnswerRow[] | undefined {
   if (!fs.existsSync(coachEvalRunsDir)) return undefined;
   const dirs = fs
@@ -229,7 +236,7 @@ function discoverCeRows(coachEvalRunsDir: string): AnswerRow[] | undefined {
     const rawFiles = fs.readdirSync(dir).filter((f) => /^raw-(sonnet|opus)(-rep\d+)?\.json$/.test(f));
     if (rawFiles.length === 0) continue;
     const rows: AnswerRow[] = rawFiles.flatMap((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8")));
-    if (rows.length > 0) return rows;
+    if (rows.length > 0 && rows.some((r) => r.arm === "long")) return rows;
   }
   return undefined;
 }
