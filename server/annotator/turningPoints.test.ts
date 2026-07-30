@@ -131,7 +131,15 @@ describe("computeTurningPoints — acceptance fixtures", () => {
   // exactly this.
   it("reproduces game 85: two opponent errors with punish suffixes + her ply-21 inaccuracy (debrief-v2 dedup fix)", () => {
     const tps = computeTurningPoints(GAME_85, "1-0");
-    expect(tps).toHaveLength(3);
+    // Game-160 RCA round, Task K1 (2026-07-31): this fixture's own mate
+    // ladder (63. Rxf8 -> M-9 ... 74. bxa4 -> M14) carries real mate-DISTANCE
+    // slips the old depth-1 detector was structurally blind to (before=5 at
+    // plies 65/67, the exact failure class this round exists to fix) -- so
+    // length grows from 3 to 5: a missed-win point (K1 widens
+    // MISSED_MATE_DEPTH 1 -> 5) and a conversion point (episode summary),
+    // verified by direct computation against this fixture's own numbers,
+    // not assumed. The three swing assertions below are UNCHANGED.
+    expect(tps).toHaveLength(5);
 
     expect(tps[0]).toMatchObject({
       rank: 1, ply: 22, san: "Qd8", label: "opponent mistake", punishSan: "Nxe5", kind: "swing",
@@ -147,6 +155,16 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     expect(tps[2].deltaP).toBeCloseTo(-0.1166, 2);
     expect(tps[2].missedPunish).toBeFalsy();
     expect(tps[2].punishSan).toBeUndefined();
+
+    expect(tps[3]).toMatchObject({
+      rank: 4, ply: 65, label: "missed mate", kind: "missed-win", mateIn: 5, missedCount: 2,
+    });
+    expect(tps[3].deltaP).toBe(0);
+
+    expect(tps[4]).toMatchObject({
+      rank: 5, ply: 63, plyEnd: 74, label: "conversion", kind: "conversion", mateIn: 5,
+    });
+    expect(tps[4].deltaP).toBe(0);
   });
 
   it("reproduces game 86: three genuine swings including HER inaccuracy, no backfill needed, PLUS a real missed mate-in-1 (missed-win round, 2026-07-28)", () => {
@@ -156,13 +174,21 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     // ladder — ...35. Rd1 -> M-2 | 36. Bf8 -> M1 | 37. Qxe6+ -> M-6...
     // — carries a REAL missed mate-in-1 the old algorithm had no way to
     // see: after black's ply 36, white (her) had M1 and played the check
-    // Qxe6+ instead of mating, giving the distance back out to M6. A
-    // second miss recurs at ply 59 (after ply 58's M1). detectMissedWins
-    // correctly flags both; the anchor is the earlier one (ply 37) not
-    // already claimed by an existing turning point, with missedCount 2.
-    // This is a genuine, previously-invisible fact surfacing on 2026-07-28
-    // fixture data that predates this round — not a fixture change.
-    expect(tps).toHaveLength(4);
+    // Qxe6+ instead of mating, giving the distance back out to M6.
+    //
+    // Game-160 RCA round, Task K1 (2026-07-31): the OLD depth-1 detector
+    // only ever saw two of this ladder's misses (ply 37 and ply 59, both
+    // exactly mate-in-1). K1 widens MISSED_MATE_DEPTH to 5 and adds
+    // MATE_SLIP_MIN 2 (conversion.ts) — this fixture's own long, wobbly
+    // mate chase (mate distance bounces between 1 and 8 for 40 plies) turns
+    // out to carry ELEVEN qualifying missed-mate/lost-mate events at that
+    // wider depth, verified by direct computation against this fixture's
+    // own numbers, not assumed. The anchor stays the earliest one (ply 37)
+    // not already claimed by an existing turning point; missedCount now
+    // reports the true wider count (11), and a "conversion" point (episode
+    // summary, bestMissed 1 — she held mate-in-1 at least once in this run)
+    // is appended after it. The three swing assertions below are UNCHANGED.
+    expect(tps).toHaveLength(5);
     expect(tps.slice(0, 3).every((t) => t.kind === "swing")).toBe(true);
 
     expect(tps[0]).toMatchObject({ rank: 1, ply: 18, san: "c5", label: "opponent mistake", kind: "swing" });
@@ -189,9 +215,14 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     expect(tps[2].deltaP).toBeCloseTo(0.1003, 2);
 
     expect(tps[3]).toMatchObject({
-      rank: 4, ply: 37, san: "Qxe6+", label: "missed mate", kind: "missed-win", mateIn: 1, missedCount: 2,
+      rank: 4, ply: 37, san: "Qxe6+", label: "missed mate", kind: "missed-win", mateIn: 1, missedCount: 11,
     });
     expect(tps[3].deltaP).toBe(0);
+
+    expect(tps[4]).toMatchObject({
+      rank: 5, ply: 32, plyEnd: 72, label: "conversion", kind: "conversion", mateIn: 1,
+    });
+    expect(tps[4].deltaP).toBe(0);
   });
 });
 
@@ -648,8 +679,12 @@ describe("missed-win turning point", () => {
       deltaP: 0,
       lowConfidence: false,
     });
-    // Appended after the swing/backfill/episode points, rank sequential.
-    expect(missed[0].rank).toBe(points.length);
+    // Appended after the swing/backfill/episode points; a "conversion"
+    // point (K1, 2026-07-31 -- this fixture's mate run has real slip
+    // evidence at both plies 55 and 57) comes after it, so it is no longer
+    // literally the LAST point once that lands, only the last BEFORE it.
+    expect(missed[0].rank).toBe(points.length - 1);
+    expect(points[points.length - 1]).toMatchObject({ kind: "conversion", ply: 53, plyEnd: 58, mateIn: 1 });
   });
 
   it("emits nothing when no mate was missed", () => {
@@ -685,6 +720,42 @@ describe("missed-win turning point", () => {
   });
 });
 
-it("TP_ALGO_VERSION is 6 so old games heal on read", () => {
-  expect(TP_ALGO_VERSION).toBe(6);
+it("TP_ALGO_VERSION is 7 (game-160 RCA round, K1: conversion + wider missed-win heal old games on read)", () => {
+  expect(TP_ALGO_VERSION).toBe(7);
+});
+
+// Game-160 RCA round, Task K1 (2026-07-31): real db evals (verified
+// pre-tpv7-20260729-195853 backup, 187 rows), never hand-typed -- same
+// fixture conversion.test.ts uses. This is the game the whole round is
+// about: 123 plies of a held mate that kept getting slower, zero mate-in-1
+// misses (so the OLD depth-1 detector was silent), and one prior wrong
+// claim (v1's "missed mate-in-2 at ply 185") that the raw evals refute.
+describe("computeTurningPoints — game 160 (real data, K1 conversion round)", () => {
+  const raw = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "__fixtures__", "game160-evals.json"), "utf-8")
+  ) as { ply: number; san: string; eval_cp: number | null; eval_mate: number | null }[];
+  const moves160: MoveEval[] = raw.map((r) => ({
+    ply: r.ply,
+    san: r.san,
+    evalCp: r.eval_cp,
+    evalMate: r.eval_mate,
+  }));
+
+  it("yields exactly 1 conversion TP plus the missed-mate-derived missed-win TP", () => {
+    const tps = computeTurningPoints(moves160, "1-0");
+    const conversionTps = tps.filter((t) => t.kind === "conversion");
+    const missedWinTps = tps.filter((t) => t.kind === "missed-win");
+    expect(conversionTps).toHaveLength(1);
+    expect(missedWinTps.length).toBeGreaterThanOrEqual(1);
+    expect(conversionTps[0]).toMatchObject({ ply: 65, plyEnd: 187, mateIn: 2, kind: "conversion" });
+    // ply 185 must never surface as a claimed miss anywhere -- v1's
+    // retracted claim (context-v2-changes-and-contract.md section 0.6).
+    expect(tps.some((t) => t.ply === 185)).toBe(false);
+  });
+
+  it("is idempotent: re-running on the same input yields the same turning points", () => {
+    const first = computeTurningPoints(moves160, "1-0");
+    const second = computeTurningPoints(moves160, "1-0");
+    expect(second).toEqual(first);
+  });
 });

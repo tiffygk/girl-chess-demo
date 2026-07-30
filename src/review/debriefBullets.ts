@@ -304,6 +304,29 @@ function missedWinText(
   return `move ${n}: you had checkmate in one. your ${best} was mate on the spot${cost}${repeat}`;
 }
 
+// Game-160 RCA round, Task K1 (2026-07-31): the conversion episode bullet
+// -- naming the shortest mate she ever held during a held-mate run and how
+// long closing it out actually took. Every clause is a literal fact off
+// the TurningPoint (ply/plyEnd = the run's start/end, mateIn = the run's
+// shortest held mate, conversion.ts's ConversionEpisode.bestMissed).
+function conversionCouldBeBetterText(tp: TurningPoint): string {
+  const startMove = moveNumberForPly(tp.ply);
+  const endMove = moveNumberForPly(tp.plyEnd ?? tp.ply);
+  const length = Math.max(endMove - startMove, 0);
+  const shortest = tp.mateIn != null ? numberWord(tp.mateIn) : "some";
+  return `move ${startMove}: the shortest mate you held here was mate in ${shortest}, but it took ${length} more moves to close it out.`;
+}
+
+// The technique tip half of the same fact -- what to actually DO about a
+// mate that keeps getting slower, the owner's stated learning goal made
+// procedural (same discipline as missedWinText's watch-next sibling).
+function conversionWatchNextText(tp: TurningPoint): string {
+  const startMove = moveNumberForPly(tp.ply);
+  const endMove = moveNumberForPly(tp.plyEnd ?? tp.ply);
+  const length = Math.max(endMove - startMove, 0);
+  return `moves ${startMove} to ${endMove}: it took ${length} moves to land a mate you already had lined up. recount the fastest mate every move instead of playing the first check you see.`;
+}
+
 // Coach truth-speed round (2026-07-27): the positive counterpart to
 // couldBeBetterText, used when followedBest confirms a would-be
 // could-be-better candidate was actually the move she played.
@@ -586,6 +609,35 @@ function buildCouldBeBetter(
     });
   }
 
+  // Game-160 RCA round, Task K1 (2026-07-31): FORCED for the same reason
+  // missed-win is -- deltaP 0 by construction. Naming the shortest mate she
+  // held and how long the run actually took is the direct fix for the
+  // empty-debrief bug this round exists to close (game 160: 123 plies of a
+  // held mate that kept getting slower, zero mate-in-1 misses, an empty
+  // debrief before this).
+  //
+  // Suppressed when an "unconverted" point ALSO exists (a held mate that
+  // slipped AND was never delivered because the game ended in a repetition/
+  // draw/loss -- real game 151's exact shape): unconvertedCouldBeBetterText
+  // already tells that same underlying "you held a mate and didn't convert
+  // it" story with owner-ruled, game-151-specific copy (the repetition
+  // wording, "you had mate in twelve there instead"). Showing the generic
+  // conversion sentence ALONGSIDE it would repeat the same fact in two
+  // different voices in one debrief -- one story, one bullet.
+  const conversionTp = turningPoints.find((t) => t.kind === "conversion");
+  const hasUnconverted = turningPoints.some((t) => t.kind === "unconverted");
+  if (conversionTp && !hasUnconverted && !used.has(conversionTp.ply)) {
+    used.add(conversionTp.ply);
+    const conversionPhase = phases.phaseAt(conversionTp.ply);
+    out.push({
+      section: "could be better",
+      text: conversionCouldBeBetterText(conversionTp),
+      phase: conversionPhase,
+      category: endgameOrConversion(conversionPhase),
+      ply: conversionTp.ply,
+    });
+  }
+
   // Game-151 round (2026-07-29): FORCED for the same reason the missed-win
   // point is -- deltaP 0 by construction means any swing sort buries the
   // game's most important note.
@@ -718,6 +770,25 @@ function buildWatchNextTime(
       phase: missedWinPhase,
       category: endgameOrConversion(missedWinPhase),
       ply: missedWin.ply,
+    });
+  }
+
+  // Game-160 RCA round, Task K1 (2026-07-31): the technique half of the
+  // conversion fact -- what to actually do about a mate that keeps getting
+  // slower. FORCED alongside the could-be-better bullet, same as every
+  // other never-miss detector's watch-next sibling in this function.
+  // Suppressed when "unconverted" also fired -- see buildCouldBeBetter's
+  // matching gate for why (one story, one bullet).
+  const conversionTp = turningPoints.find((t) => t.kind === "conversion");
+  const hasUnconverted = turningPoints.some((t) => t.kind === "unconverted");
+  if (conversionTp && !hasUnconverted) {
+    const conversionPhase = phases.phaseAt(conversionTp.ply);
+    bullets.push({
+      section: "watch next time",
+      text: conversionWatchNextText(conversionTp),
+      phase: conversionPhase,
+      category: endgameOrConversion(conversionPhase),
+      ply: conversionTp.ply,
     });
   }
 

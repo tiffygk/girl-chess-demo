@@ -496,14 +496,20 @@ export function logHint(
 // 4 (the episode card sits after up to 3 swing/backfill cards) — mirrors
 // TP_ALGO_VERSION 2's additive shape exactly.
 export interface TurningPoint {
-  rank: 1 | 2 | 3 | 4 | 5 | 6;
+  // Game-160 RCA round, Task K1 (2026-07-31): widened from a fixed 1..6
+  // union to a plain number, mirroring the same widening in
+  // server/annotator/turningPoints.ts (see that file's comment) — a long
+  // real game can now carry more than 6 points (up to 3 swings/backfill +
+  // an episode + an unconverted point + a missed-win point + a conversion
+  // point).
+  rank: number;
   ply: number;
   san: string;
   label: string;
   punishSan?: string;
   deltaP: number;
   lowConfidence: boolean;
-  kind: "swing" | "backfill" | "episode" | "missed-win" | "unconverted";
+  kind: "swing" | "backfill" | "episode" | "missed-win" | "unconverted" | "conversion";
   missedPunish?: boolean;
   plyEnd?: number;
   // 2026-07-22: mirrors server TurningPoint's crossedAdvantage — see that
