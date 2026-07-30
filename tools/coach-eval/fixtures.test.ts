@@ -53,15 +53,28 @@ describe("fork-* fixtures (suite FH ground truth)", () => {
     }
   });
 
-  it("every WHITE-TO-MOVE fork fen is a REAL forced-material-loss position (chess.js depth-2 proof)", () => {
+  it("every WHITE-TO-MOVE fork fen is a REAL forced-material-loss position (SEE/quiescence-corrected proof), except the documented FK1/FK2 exceptions", () => {
     // FK2 is deliberately excluded: it's game 160's ply-57 fen, BLACK to move
     // (right after her own Rd1) -- forcedMaterialLoss answers "is the side to
-    // move forced to lose", and that's mallow's move there, not hers. It is
-    // the connecting snapshot between FK1 and FK3, both independently
-    // checked below and both genuinely forced for her.
+    // move forced to lose", and that's mallow's move there, not hers.
+    //
+    // FK1 is deliberately excluded too (instrument-audit catch, 2026-07-31):
+    // it IS white-to-move, but the corrected recapture-aware verifier proves
+    // it is NOT forced (white has safe quiet escapes once b2's recapture of
+    // Bxa3 is counted) -- the old buggy verifier's "forced" label for FK1
+    // was itself the defect this round fixed. FK1's own phase string
+    // documents the honest relabel; this test asserts the negative directly
+    // so a future regression in either direction (silently forced again, or
+    // silently dropped) goes red.
     for (const id of FORK_FIXTURE_IDS) {
       if (id === "FK2") {
         expect(FIXTURES.FK2.fen.split(" ")[1]).toBe("b"); // confirm it's still the documented exception, not silent drift
+        continue;
+      }
+      if (id === "FK1") {
+        expect(FIXTURES.FK1.fen.split(" ")[1]).toBe("w"); // FK1 IS white-to-move...
+        const result = forcedMaterialLoss(FIXTURES.FK1.fen);
+        expect(result.forced, "FK1 is documented as NOT forced under the corrected math").toBe(false); // ...but not forced
         continue;
       }
       const fen = FIXTURES[id].fen;

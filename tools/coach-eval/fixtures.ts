@@ -149,22 +149,48 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
 
   // ---- fork-* (suite FH ground truth, RCA acceptance-evals round) --------
   //
-  // FK1-3: game 160's real ply-56/57/58 bishop-and-knight fork (baseline row
-  // B8, the motivating case -- the owner's exact "not missing the different
-  // forks" complaint). FK4-6: three more positions mined READONLY from
-  // finished games via lib/forcedLoss.ts's chess.js depth-2 material search
-  // (tools/rca-eval/.gen-fixtures-scratch.ts, deleted after use, 2026-07-31)
-  // -- every one of these six is machine-PROVEN forced (every legal move
-  // loses material against the opponent's best reply), never eyeballed.
-  // Proof strings are quoted verbatim in each phase field so the "forced"
-  // label is auditable without re-running the verifier.
+  // INSTRUMENT-AUDIT CATCH (2026-07-31, RCA round progress.md "INSTRUMENT
+  // AUDIT CATCH"): lib/forcedLoss.ts originally stopped counting material
+  // one ply after the opponent's reply and never let the side to move
+  // RECAPTURE. That mislabeled FK1/FK4/FK5/FK6 forced when the "losing"
+  // line was actually an even trade or a net GAIN once the recapture was
+  // counted (b2xa3 answering Bxa3; bxc3/Qxd2's own recapture answering
+  // Bxc3+/Bxd2+; g2xf3 answering Qxf3, since f3 was defended twice over).
+  // forcedLoss.ts now resolves every capturing reply to quiescence with a
+  // static-exchange-evaluation (SEE) style search on the destination
+  // square before judging it. Re-running the fixed verifier against all
+  // six original fixture fens:
+  //   FK1: NOT forced any more (white has fully safe quiet escapes, e.g.
+  //     Kg2, once b2's recapture of Bxa3 is counted) -- relabeled honestly
+  //     below rather than deleted, since it's still a real, useful
+  //     "fork threatened, not yet materialized" data point.
+  //   FK2: unchanged -- never independently checked (documented connector).
+  //   FK3: STILL forced (the real game-160 fork survives recapture
+  //     resolution -- every legal white move still loses at least a piece).
+  //   FK4/FK5/FK6: no longer forced (their old fen/ply is now a documented
+  //     false positive) -- REPLACED below with three new positions mined
+  //     the same way (readonly, `data/girlchess.db`, `result IS NOT NULL
+  //     AND id NOT IN (149,150,160)`, `ply >= 10`, white to move, >= 10
+  //     pieces on the board), each independently proven forced under the
+  //     CORRECTED math. Mining query + full proof text: see
+  //     `tools/rca-eval/lib/forcedLoss.test.ts`'s instrument-audit-catch
+  //     describe block for the reproduction cases, and each fixture's own
+  //     `phase` string below for its individual proof.
+  // Proof strings are quoted from the verifier's own output (condensed to
+  // the representative lines) so the "forced"/"not forced" label is
+  // auditable without re-running anything.
   FK1: {
     id: "FK1",
     gameId: 160,
     ply: 56,
     fen: "4nb2/2p3kp/p3B1p1/1p2N3/4p3/P3N1P1/1P3P1P/5RK1 w - - 2 29",
     phase:
-      "fork (game 160, ply 56) -- white to move, right after mallow's Ne8 creates the fork; forcedMaterialLoss proof: w to move, baseline 7, every legal move concedes at least a pawn (Bxa3/exf3/gxf5/bxc4/Kxg6, worst -3)",
+      "fork threatened, not yet materialized (game 160, ply 56) -- white to move, right after mallow's Ne8; " +
+      "corrected forcedMaterialLoss proof: w to move, baseline 7, white has multiple fully safe escapes once the " +
+      "recapture is counted (e.g. Kg2 -> Nf6, delta +0; every quiet king/rook/queenside move is delta +0) -- Bxa3 " +
+      "is answered by b2xa3 (a bishop for a pawn, a NET GAIN for white, not the pawn loss the old buggy verifier " +
+      "reported). This position is NOT forced; the real forced fork lands two plies later, at FK3 (ply 58, after " +
+      "mallow's Kf6).",
     midGameOfFinished: true,
   },
   FK2: {
@@ -175,8 +201,9 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     phase:
       "fork (game 160, ply 57) -- black to move (right after her own Rd1), the position the owner asked her 7 questions " +
       "about; NOT independently re-run through forcedMaterialLoss (that verifier answers 'is the SIDE TO MOVE forced to " +
-      "lose', and it is mallow's move here, not hers) -- it is the connecting snapshot between FK1 and FK3, both of " +
-      "which ARE independently proven forced for her",
+      "lose', and it is mallow's move here, not hers) -- it is the connecting snapshot between FK1 and FK3; FK1 no " +
+      "longer independently proves forced under the corrected math (see FK1's own phase string), so this connector " +
+      "remains documented as unproven on the FK1 side and proven only via FK3",
     midGameOfFinished: true,
   },
   FK3: {
@@ -184,34 +211,53 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     gameId: 160,
     ply: 58,
     fen: "4nb2/2p4p/p3Bkp1/1p2N3/4p3/P3N1P1/1P3P1P/3R2K1 w - - 4 30",
-    phase: "fork (game 160, ply 58) -- the position immediately after Kf6, white to move",
+    phase:
+      "fork (game 160, ply 58) -- the position immediately after Kf6, white to move; corrected forcedMaterialLoss " +
+      "proof: w to move, baseline 7, STILL forced after full recapture/quiescence resolution -- every legal move " +
+      "concedes at least a piece (most -3 via .../Kxe5 or .../Kxe6; worst -5, Rd6 -> Nxd6), zero escape",
     midGameOfFinished: true,
   },
+  // FK4-6: replacements for the three fixtures the instrument-audit catch
+  // invalidated (see the block comment above). Mined 2026-07-31 from
+  // `data/girlchess.db` (readonly, count-verified 161 games / 1721 moves /
+  // integrity ok before mining), query: finished games (`result IS NOT
+  // NULL`) excluding 149/150/160, every move's `fen_after` with `ply >=
+  // 10`, white to move, >= 10 non-king pieces on the board, run through
+  // the CORRECTED forcedMaterialLoss and kept only where `forced === true`.
   FK4: {
     id: "FK4",
-    gameId: 134,
-    ply: 30,
-    fen: "r2qrnk1/pp3ppp/2p2n2/2b1NP2/2Pp4/PP1P4/1B3PPP/RN1Q1RK1 w - - 1 16",
+    gameId: 131,
+    ply: 16,
+    fen: "rnbqk2r/p1pp1ppp/1p2p3/2b1P3/P1P5/1P1P4/R3BnPP/1NBQK1NR w Kkq - 0 9",
     phase:
-      "mined forced-loss (game 134, ply 30) -- forcedMaterialLoss proof: w to move, baseline 1: every legal move loses >= a rook-for-knight/bishop trade or worse (Rxe5 or better recaptures the majority; worst-case Nxc6/Bxd4 concede a piece for two; the knight on e5 and the rook on e5-square both hang to Black's b4-bishop/f6-knight coordination)",
+      "mined forced-loss (game 131, ply 16) -- a textbook knight fork: black's knight on f2 forks white's queen " +
+      "(d1) and rook (h1). corrected forcedMaterialLoss proof: w to move, baseline -1, every legal move loses the " +
+      "queen for the knight (Nxd1, recaptured, delta -6) except moving the queen itself, which just loses the rook " +
+      "instead (Qc2/Qd2 -> Nxh1, delta -5) -- zero escape",
     midGameOfFinished: true,
   },
   FK5: {
     id: "FK5",
-    gameId: 141,
-    ply: 14,
-    fen: "r1b1kb1r/p1p1n1pp/1pnp1q2/8/8/2PBPN2/PP3PPP/RNBQK2R w KQkq - 4 8",
+    gameId: 140,
+    ply: 16,
+    fen: "r2qkb1r/1pp1ppp1/p1n4p/8/3PpBb1/2P1PN2/PP3PPP/RN1Q1RK1 w kq - 0 9",
     phase:
-      "mined forced-loss (game 141, ply 14) -- forcedMaterialLoss proof: w to move, baseline 1: black's queen on f6 forks the undefended knight on f3 with every other line also losing at least the f3-knight (Qxf3) or the f2-pawn with check; the only two lines that avoid Qxf3 (Ng1/Nfd2) still concede the f2-pawn to Qxf2+",
+      "mined forced-loss (game 140, ply 16) -- the f3 knight is attacked by black's e4-pawn and pinned to the g4-" +
+      "bishop's x-ray on d1; corrected forcedMaterialLoss proof: w to move, baseline 0, every legal move concedes " +
+      "at least a pawn once the recapture is counted (most lines: .../exf3 gxf3, delta -2), and moving the knight " +
+      "itself is far worse (Ne5/Ng5/Nh4/Nfd2 -> Bxd1 Rxd1, delta -6; Ne1 -> Bxd1, delta -9) -- zero escape",
     midGameOfFinished: true,
   },
   FK6: {
     id: "FK6",
-    gameId: 148,
-    ply: 12,
-    fen: "r1bqk1nr/1ppp1p1p/n5p1/p7/1bPPN1P1/7P/PP2PP2/R1BQKBNR w KQkq - 1 7",
+    gameId: 134,
+    ply: 42,
+    fen: "r4nk1/pp3pp1/2p5/2P2P1p/2Pp1q2/P2P4/1B1NQPPP/R4RK1 w - - 0 22",
     phase:
-      "mined forced-loss (game 148, ply 12) -- forcedMaterialLoss proof: w to move, baseline 1: black's Bb4+ check leaves exactly 4 legal replies (Nd2/Nc3/Bd2/Qd2), every one recaptured by Bxd2+/Bxc3+ for a piece (Qd2 concedes the queen outright, delta -9) -- a textbook check-and-fork with zero escape",
+      "mined forced-loss (game 134, ply 42) -- white's f5 pawn hangs to black's queen on f4 with nothing able to " +
+      "defend or ignore it for free; corrected forcedMaterialLoss proof: w to move, baseline 9, every legal move " +
+      "concedes at least a pawn (most lines -> Qxf5, delta -1), and moving the queen itself is far worse (e.g. Qe3 " +
+      "-> dxe3, delta -9) -- zero escape",
     midGameOfFinished: true,
   },
 
