@@ -251,7 +251,21 @@ export async function classifyMove(
   // after-move eval, since the whole point is catching a move that THROWS
   // AWAY a position that was already won, not one that merely lands in a
   // winning one.
-  const decided = beforeEval.mate !== null || Math.abs(beforeEval.cp ?? 0) >= DECIDED_BAND_CP;
+  //
+  // Union review fix (H4, 2026-07-31): this used to be `beforeEval.mate !==
+  // null || Math.abs(beforeEval.cp ?? 0) >= DECIDED_BAND_CP` -- Math.abs
+  // made it SIGN-BLIND, so a position she is decidedly LOSING (cp -600, a
+  // mate reading against her) counted as "decided" exactly like a position
+  // she is decidedly winning. The only consumer this actually reaches is
+  // the free-material branches below, whose hardcoded copy ("still
+  // winning, but that gives back your {piece} for nothing.") is only ever
+  // true when SHE holds the lead. Made directional: a mate reading only
+  // counts when it favors the mover (mate > 0 -- mateForMover's own
+  // decided-mate branch already independently requires this via
+  // conversionForMove's `before.mate <= 0` bail, so this mate clause is
+  // belt-and-suspenders for that path, not load-bearing there), and the cp
+  // reading only counts as a genuine lead, never a genuine deficit.
+  const decided = (beforeEval.mate !== null && beforeEval.mate > 0) || (beforeEval.cp ?? 0) >= DECIDED_BAND_CP;
 
   // Mate-distance conversion (missed-mate/mate-slip/lost-mate): the SAME
   // math conversion.ts's detectMateEvents runs over a whole game, applied

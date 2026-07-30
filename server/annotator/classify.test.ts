@@ -355,6 +355,33 @@ describe("classifyMove — decided-position conversion (Task K2)", () => {
     expect(verdict.tier).toBe("silent");
     expect(verdict.conversionCopy).toBeUndefined();
   });
+
+  // Union review fix (H4, 2026-07-31): `decided` used Math.abs(beforeEval.cp)
+  // >= DECIDED_BAND_CP, which is SIGN-BLIND -- a position she is decidedly
+  // LOSING (cp -500) counted as "decided" exactly like a position she is
+  // decidedly winning, so the free-material branch's hardcoded copy ("still
+  // winning, but that gives back your {piece} for nothing.") could fire
+  // while she is down 500cp. Same board/move as the "decided-won" fixture
+  // above (fixture (a)), signs flipped: beforeEval.cp is now NEGATIVE
+  // (-500, decidedly LOSING) and afterEval is tuned so deltaCp stays under
+  // nudgeCp (mirroring fixture (a)'s exact saturated-eval shape), so this is
+  // reachable ONLY through the same last-else-if free-material branch
+  // fixture (a) exercises -- proving the fix, not a different code path. A
+  // wrong (unfixed) implementation answers "nudge" with "still winning..."
+  // here; the fixed one must never say she's winning while beforeEval.cp is
+  // negative -- visibly different, not a coincidental match.
+  it("decided-LOSING position (cp -500), quiet move hangs a knight for nothing -> never claims 'still winning'", async () => {
+    const chess = new Chess("3rk3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet, not a capture
+    const evaluator = new ScriptedEvaluator(
+      { cp: -500, mate: null, bestMove: "e1e2", pv: [] }, // beforeEval: decided-LOSING, cp < -DECIDED_BAND_CP
+      { cp: 450, mate: null, bestMove: "d8d5", pv: [] } // afterEval: Rxd5, deltaCp stays small (saturated-eval shape)
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.deltaCp).toBeLessThan(60); // confirms this is NOT reachable via the ordinary nudgeCp path
+    expect(verdict.tier).toBe("silent"); // decided must now mean "decided FOR her", not "decided at all"
+    expect(verdict.conversionCopy).toBeUndefined(); // never "still winning" while beforeEval.cp is negative
+  });
 });
 
 describe("classifyMove — real engine math", () => {
