@@ -13,19 +13,19 @@ import type { SummaryMove } from "../game/api";
 // from ply 64, the ply before her missed Be6#).
 export const ENDGAME_BARE_PIECE_MAX = 1;
 
-function boardNearlyBare(chess: Chess): boolean {
+// Minor 8 (2026-07-30 fix wave): the fen-in, bool-out wrapper that used to
+// live here (sideNearlyBare) had zero production callers repo-wide -- only
+// its own test exercised it. A phase.ts export with tests and no callers is
+// exactly the kind of thing a future hand-rolled phase check latches onto
+// by mistake, so it's deleted rather than left dead. boardNearlyBare (the
+// real predicate) is exported directly instead, for ./gamePhases.ts to call
+// against a chess.js instance it is already replaying (Minor 11: avoids a
+// second full-game replay pass just to recompute this).
+export function boardNearlyBare(chess: Chess): boolean {
   const pieces = chess.board().flat().filter((p) => p != null);
   const count = (color: "w" | "b") =>
     pieces.filter((p) => p!.color === color && p!.type !== "k" && p!.type !== "p").length;
   return Math.min(count("w"), count("b")) <= ENDGAME_BARE_PIECE_MAX;
-}
-
-export function sideNearlyBare(fen: string): boolean {
-  try {
-    return boardNearlyBare(new Chess(fen));
-  } catch {
-    return false; // unparseable fen: never guess a phase claim
-  }
 }
 
 // One replay pass over the whole game (promotions handled naturally — a

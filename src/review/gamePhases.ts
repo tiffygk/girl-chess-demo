@@ -23,10 +23,22 @@
 // stays as a per-ply "endgame" override. Per-ply, not latched: a promotion
 // can un-bare a side, same as phase.ts today.
 //
-// There is deliberately NO fallback of any kind. If majorsAndMinors never
-// reaches 6 the game has no endgame -- the reference behavior, and exactly
-// what the old "late in the game means endgame" fallback got wrong on the
-// owner's game 151 (queens, rooks, and a minor piece still on at the end).
+// There is deliberately NO fallback that MANUFACTURES a phase from
+// something other than a board fact. If majorsAndMinors never reaches 6 the
+// game has no endgame -- the reference behavior, and exactly what the old
+// "late in the game means endgame" fallback got wrong on the owner's game
+// 151 (queens, rooks, and a minor piece still on at the end).
+//
+// Important 5 / union F1 (2026-07-30 fix wave): an earlier version of this
+// file DID have an undisclosed fallback -- phaseAt returned "opening" for
+// every ply whenever there was no board to replay (gameSans absent or
+// empty), which is indistinguishable, to every caller, from a genuinely
+// proven opening. That is a fallback; it just returned the least-alarming
+// value instead of the most-alarming one the old ply-arithmetic code did.
+// phaseAt now returns null in that case -- "I don't know", not "opening" --
+// so a caller with no board must decide explicitly what to do with an
+// absent phase rather than silently asserting one. hasBoard below is the
+// single source of that truth.
 //
 // A material-count rule is blind to decided-but-unconverted positions
 // (queens on, one side already winning) -- same shape as the "winprob
@@ -38,7 +50,7 @@
 
 import { Chess } from "chess.js";
 import type { SummaryMove } from "../game/api";
-import { nearlyBarePlies } from "./phase";
+import { boardNearlyBare } from "./phase";
 
 export type GamePhase = "opening" | "middlegame" | "endgame";
 export type MidgameTrigger = "majors" | "backrank" | "mixedness";
@@ -179,17 +191,32 @@ export interface PhaseTimeline {
   // answer -- flagged unverified in the research, so it is measured, not
   // assumed.
   midgameStartPlyWithoutMixedness: number | null;
-  nearlyBare: Set<number>; // per-ply override plies, from ./phase.ts
-  phaseAt(ply: number): GamePhase;
+  nearlyBare: Set<number>; // per-ply override plies, from ./phase.ts's boardNearlyBare
+  // Important 5 / union F1: null means "no board fact is available for this
+  // ply" (gameSans was absent, empty, or unreplayable before this ply) --
+  // never "opening". Every caller must handle null explicitly rather than
+  // treating a missing board the same as a proven one.
+  phaseAt(ply: number): GamePhase | null;
 }
 
 export function phasesForGame(gameSans: SummaryMove[] | undefined): PhaseTimeline {
   const sortedSans = gameSans ? [...gameSans].sort((a, b) => a.ply - b.ply) : [];
-  const nearlyBare = nearlyBarePlies(gameSans);
+  // Important 5 / union F1: the ONE fact that decides whether phaseAt may
+  // ever answer with a real label. False when there is nothing to replay at
+  // all -- gameSans undefined or empty. (An unreplayable-from-the-start
+  // game, i.e. the very first move throws, also leaves this true but every
+  // latch stays null, which phaseAt's own logic below already resolves to
+  // "opening" -- a real board fact about the position before any move.)
+  const hasBoard = sortedSans.length > 0;
   let midgameStartPly: number | null = null;
   let endgameStartPly: number | null = null;
   let midgameStartPlyWithoutMixedness: number | null = null;
   let midgameTriggers: MidgameTrigger[] = [];
+  // Minor 10 (2026-07-30 fix wave): nearlyBare used to come from a second,
+  // fully independent full-game replay (phase.ts's nearlyBarePlies calling
+  // its own fresh Chess() and re-walking every san). Folded into this same
+  // loop's own `chess` instance instead -- one replay pass, not two.
+  const nearlyBare = new Set<number>();
   const chess = new Chess();
   for (const m of sortedSans) {
     try {
@@ -197,15 +224,20 @@ export function phasesForGame(gameSans: SummaryMove[] | undefined): PhaseTimelin
     } catch {
       break; // unreplayable input: keep what latched before the bad san, never guess further (same discipline as phase.ts)
     }
+    if (boardNearlyBare(chess)) nearlyBare.add(m.ply);
     const majors = majorsAndMinors(chess);
-    const cheap = majors <= MIDGAME_MAJORS_MINORS_MAX || backrankSparse(chess);
+    // Minor 11 (2026-07-30 fix wave): backrankSparse(chess) used to be
+    // called twice per ply (once for `cheap`, again inside the trigger
+    // list) -- same position, same answer. Computed once and reused.
+    const sparse = backrankSparse(chess);
+    const cheap = majors <= MIDGAME_MAJORS_MINORS_MAX || sparse;
     if (midgameStartPlyWithoutMixedness === null && cheap) {
       midgameStartPlyWithoutMixedness = m.ply;
     }
     if (midgameStartPly === null) {
       const triggers: MidgameTrigger[] = [];
       if (majors <= MIDGAME_MAJORS_MINORS_MAX) triggers.push("majors");
-      if (backrankSparse(chess)) triggers.push("backrank");
+      if (sparse) triggers.push("backrank");
       if (mixedness(chess) > MIXEDNESS_ABOVE) triggers.push("mixedness");
       if (triggers.length > 0) {
         midgameStartPly = m.ply;
@@ -227,7 +259,8 @@ export function phasesForGame(gameSans: SummaryMove[] | undefined): PhaseTimelin
     midgameTriggers,
     midgameStartPlyWithoutMixedness,
     nearlyBare,
-    phaseAt(ply: number): GamePhase {
+    phaseAt(ply: number): GamePhase | null {
+      if (!hasBoard) return null;
       if (nearlyBare.has(ply)) return "endgame";
       if (endgameStartPly !== null && ply >= endgameStartPly) return "endgame";
       if (midgameStartPly !== null && ply >= midgameStartPly) return "middlegame";
