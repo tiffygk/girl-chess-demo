@@ -22,11 +22,15 @@ describe("renderRollup", () => {
     expect(md).toMatch(/run a suite first/);
   });
 
-  it("never shows solved/not-solved for a row whose mapped eval belongs to a suite not built this dispatch (CE/FH/NM/ST)", () => {
+  it("never shows solved/not-solved for a row whose mapped suite (CE/FH/NM/ST) has no run json on disk yet", () => {
+    // Dispatch 2 (2026-07-31): CE/FH/NM/ST are now BUILT (real evalRefs in
+    // ROWS), but this dispatch makes no model calls -- so with nothing on
+    // disk, every one of their rows must fall into the SAME "missing"
+    // handling every other unrun suite gets, never a fabricated verdict.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rollup-partial-"));
     const md = renderRollup(dir);
-    expect(md).toMatch(/mate-move naming.*not built in this dispatch/s);
-    expect(md).toMatch(/coach reasoning wrongness.*not built in this dispatch/s);
+    expect(md).toMatch(/mate-move naming.*not run this dispatch \(missing: NM\/NM-01, NM\/NM-02\)/s);
+    expect(md).toMatch(/coach reasoning wrongness.*not run this dispatch \(missing: FH\/FH-01, FH\/FH-02\)/s);
   });
 
   it("never shows solved/not-solved for a row with a did-not-run mapped eval", () => {
@@ -87,6 +91,28 @@ describe("renderRollup", () => {
     const md = renderRollup(dir);
     const row = md.split("\n").find((l) => l.startsWith("| empty debrief"))!;
     expect(row).toMatch(/not solved -- CT-06 red/);
+  });
+
+  it("shows 'solved' for mate-move naming once a real NM run passes both evals", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rollup-nm-"));
+    writeSuiteJson(dir, {
+      suite: "NM",
+      expectedCount: 2,
+      ranAt: "2026-07-31T00:00:00.000Z",
+      results: [
+        { id: "NM-01", verdict: "pass", detail: "21/21" },
+        { id: "NM-02", verdict: "pass", detail: "0 false claims" },
+      ],
+    });
+    const md = renderRollup(dir);
+    const row = md.split("\n").find((l) => l.startsWith('| mate-move naming'))!;
+    expect(row).toMatch(/solved -- NM-01, NM-02 all pass/);
+  });
+
+  it("shows 'not run this dispatch' for ST-mapped rows since no rollup row maps ST directly (ST feeds K6's row, not gated here)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rollup-st-"));
+    const md = renderRollup(dir);
+    expect(md).toMatch(/ui lifecycle.*K6's gate artifact, honestly labeled as such/s);
   });
 
   it("picks the NEWEST json per suite when multiple run files exist for the same suite", () => {
