@@ -189,10 +189,18 @@ function fmtPairMs(pair: DecidePair): string {
 
 // Per-arm budget label, purely for the reasoning string -- kept as a short
 // noun phrase so it reads cleanly inline in decideArm's sentence below.
+// RCA acceptance-evals round: fork/mate/long are single-model acceptance
+// arms (suites FH/NM/CE) -- decideArm/decideAcrossArms below are an A/B
+// decision path these arms never go through (there is no second model to
+// decide between in an acceptance run), so these three labels exist only to
+// satisfy Record<Arm, string>'s exhaustiveness and are never rendered.
 const ARM_BUDGET_LABEL: Record<Arm, string> = {
   "board-live": "live-nudge budget (CHAT_TIMEOUT_MS, 45s)",
   general: "budget (CHAT_TIMEOUT_MS live / CHAT_REVIEW_BUDGET_MS in review)",
   "board-review": "90s review budget (CHAT_REVIEW_BUDGET_MS)",
+  fork: "live-nudge budget (CHAT_TIMEOUT_MS, 45s) -- acceptance-only arm, decideArm never runs on it",
+  mate: "live-nudge budget (CHAT_TIMEOUT_MS, 45s) -- acceptance-only arm, decideArm never runs on it",
+  long: "live-nudge budget (CHAT_TIMEOUT_MS, 45s) -- acceptance-only arm, decideArm never runs on it",
 };
 
 export interface ArmDecisionInputs extends DecideInputs {

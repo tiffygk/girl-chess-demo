@@ -1,0 +1,9 @@
+{
+  "_comment": "game 160's plies 56-58 (fen_after + san), readonly-extracted from data/girlchess.db on 2026-07-31 via: SELECT ply, san, fen_after as fenAfter FROM moves WHERE game_id=160 AND ply IN (56,57,58) ORDER BY ply. Baseline row B8 -- the fork fixture fens (suite FH ground truth, per the spec's section 3/5).",
+  "gameId": 160,
+  "rows": [
+    { "ply": 56, "san": "Ne8", "fenAfter": "4nb2/2p3kp/p3B1p1/1p2N3/4p3/P3N1P1/1P3P1P/5RK1 w - - 2 29" },
+    { "ply": 57, "san": "Rd1", "fenAfter": "4nb2/2p3kp/p3B1p1/1p2N3/4p3/P3N1P1/1P3P1P/3R2K1 b - - 3 29" },
+    { "ply": 58, "san": "Kf6", "fenAfter": "4nb2/2p4p/p3Bkp1/1p2N3/4p3/P3N1P1/1P3P1P/3R2K1 w - - 4 30" }
+  ]
+}

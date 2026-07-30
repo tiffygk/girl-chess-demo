@@ -1,0 +1,754 @@
+{
+  "_comment": "A synthetic 187-ply legal chess game, generated 2026-07-31 via chess.js with a seeded LCG picking a pseudo-random legal move each ply until 187 plies are reached (no owner data; exists only to prove PC-01's budget check is not owned by one real game's quirks, per the spec's section 3 suite PC fixtures note).",
+  "plies": 187,
+  "sans": [
+    {
+      "ply": 1,
+      "san": "a4"
+    },
+    {
+      "ply": 2,
+      "san": "a5"
+    },
+    {
+      "ply": 3,
+      "san": "Ra2"
+    },
+    {
+      "ply": 4,
+      "san": "f5"
+    },
+    {
+      "ply": 5,
+      "san": "g4"
+    },
+    {
+      "ply": 6,
+      "san": "Kf7"
+    },
+    {
+      "ply": 7,
+      "san": "Bh3"
+    },
+    {
+      "ply": 8,
+      "san": "e5"
+    },
+    {
+      "ply": 9,
+      "san": "Bg2"
+    },
+    {
+      "ply": 10,
+      "san": "Kf6"
+    },
+    {
+      "ply": 11,
+      "san": "Ra3"
+    },
+    {
+      "ply": 12,
+      "san": "Ke7"
+    },
+    {
+      "ply": 13,
+      "san": "Bc6"
+    },
+    {
+      "ply": 14,
+      "san": "dxc6"
+    },
+    {
+      "ply": 15,
+      "san": "h4"
+    },
+    {
+      "ply": 16,
+      "san": "Nf6"
+    },
+    {
+      "ply": 17,
+      "san": "Re3"
+    },
+    {
+      "ply": 18,
+      "san": "Qd3"
+    },
+    {
+      "ply": 19,
+      "san": "Nh3"
+    },
+    {
+      "ply": 20,
+      "san": "g5"
+    },
+    {
+      "ply": 21,
+      "san": "f4"
+    },
+    {
+      "ply": 22,
+      "san": "Qa6"
+    },
+    {
+      "ply": 23,
+      "san": "O-O"
+    },
+    {
+      "ply": 24,
+      "san": "Ke6"
+    },
+    {
+      "ply": 25,
+      "san": "Kh2"
+    },
+    {
+      "ply": 26,
+      "san": "Bh6"
+    },
+    {
+      "ply": 27,
+      "san": "Kg2"
+    },
+    {
+      "ply": 28,
+      "san": "Nfd7"
+    },
+    {
+      "ply": 29,
+      "san": "Rb3"
+    },
+    {
+      "ply": 30,
+      "san": "Nb6"
+    },
+    {
+      "ply": 31,
+      "san": "d4"
+    },
+    {
+      "ply": 32,
+      "san": "Nd5"
+    },
+    {
+      "ply": 33,
+      "san": "Rg1"
+    },
+    {
+      "ply": 34,
+      "san": "Qb5"
+    },
+    {
+      "ply": 35,
+      "san": "Ra3"
+    },
+    {
+      "ply": 36,
+      "san": "Rd8"
+    },
+    {
+      "ply": 37,
+      "san": "Rc3"
+    },
+    {
+      "ply": 38,
+      "san": "Rh8"
+    },
+    {
+      "ply": 39,
+      "san": "fxg5"
+    },
+    {
+      "ply": 40,
+      "san": "Qxe2+"
+    },
+    {
+      "ply": 41,
+      "san": "Kh1"
+    },
+    {
+      "ply": 42,
+      "san": "Ne3"
+    },
+    {
+      "ply": 43,
+      "san": "g6"
+    },
+    {
+      "ply": 44,
+      "san": "Rg8"
+    },
+    {
+      "ply": 45,
+      "san": "gxf5+"
+    },
+    {
+      "ply": 46,
+      "san": "Kd7"
+    },
+    {
+      "ply": 47,
+      "san": "Qd2"
+    },
+    {
+      "ply": 48,
+      "san": "Kd8"
+    },
+    {
+      "ply": 49,
+      "san": "Rxc6"
+    },
+    {
+      "ply": 50,
+      "san": "Qc4"
+    },
+    {
+      "ply": 51,
+      "san": "dxe5+"
+    },
+    {
+      "ply": 52,
+      "san": "Qd4"
+    },
+    {
+      "ply": 53,
+      "san": "Rxc7"
+    },
+    {
+      "ply": 54,
+      "san": "Bf8"
+    },
+    {
+      "ply": 55,
+      "san": "Rc5"
+    },
+    {
+      "ply": 56,
+      "san": "Nd7"
+    },
+    {
+      "ply": 57,
+      "san": "Qf2"
+    },
+    {
+      "ply": 58,
+      "san": "Rh8"
+    },
+    {
+      "ply": 59,
+      "san": "Rg2"
+    },
+    {
+      "ply": 60,
+      "san": "Qxa4"
+    },
+    {
+      "ply": 61,
+      "san": "Kg1"
+    },
+    {
+      "ply": 62,
+      "san": "Bxc5"
+    },
+    {
+      "ply": 63,
+      "san": "b4"
+    },
+    {
+      "ply": 64,
+      "san": "Nf8"
+    },
+    {
+      "ply": 65,
+      "san": "bxc5"
+    },
+    {
+      "ply": 66,
+      "san": "Rb8"
+    },
+    {
+      "ply": 67,
+      "san": "c6"
+    },
+    {
+      "ply": 68,
+      "san": "Nc4"
+    },
+    {
+      "ply": 69,
+      "san": "Kh1"
+    },
+    {
+      "ply": 70,
+      "san": "Ne6"
+    },
+    {
+      "ply": 71,
+      "san": "Nf4"
+    },
+    {
+      "ply": 72,
+      "san": "b6"
+    },
+    {
+      "ply": 73,
+      "san": "c7+"
+    },
+    {
+      "ply": 74,
+      "san": "Kd7"
+    },
+    {
+      "ply": 75,
+      "san": "gxh7"
+    },
+    {
+      "ply": 76,
+      "san": "Bb7"
+    },
+    {
+      "ply": 77,
+      "san": "Qg1"
+    },
+    {
+      "ply": 78,
+      "san": "Bc8"
+    },
+    {
+      "ply": 79,
+      "san": "Nc3"
+    },
+    {
+      "ply": 80,
+      "san": "Rf8"
+    },
+    {
+      "ply": 81,
+      "san": "Be3"
+    },
+    {
+      "ply": 82,
+      "san": "Re8"
+    },
+    {
+      "ply": 83,
+      "san": "Rd2+"
+    },
+    {
+      "ply": 84,
+      "san": "Nd4"
+    },
+    {
+      "ply": 85,
+      "san": "h8=Q"
+    },
+    {
+      "ply": 86,
+      "san": "Ke7"
+    },
+    {
+      "ply": 87,
+      "san": "Rh2"
+    },
+    {
+      "ply": 88,
+      "san": "Qb4"
+    },
+    {
+      "ply": 89,
+      "san": "f6+"
+    },
+    {
+      "ply": 90,
+      "san": "Kd7"
+    },
+    {
+      "ply": 91,
+      "san": "Nb5"
+    },
+    {
+      "ply": 92,
+      "san": "Qd6"
+    },
+    {
+      "ply": 93,
+      "san": "cxb8=Q"
+    },
+    {
+      "ply": 94,
+      "san": "Nc6"
+    },
+    {
+      "ply": 95,
+      "san": "Qe1"
+    },
+    {
+      "ply": 96,
+      "san": "Rg8"
+    },
+    {
+      "ply": 97,
+      "san": "Qa8"
+    },
+    {
+      "ply": 98,
+      "san": "Rg7"
+    },
+    {
+      "ply": 99,
+      "san": "Qa7+"
+    },
+    {
+      "ply": 100,
+      "san": "Nxa7"
+    },
+    {
+      "ply": 101,
+      "san": "Qf2"
+    },
+    {
+      "ply": 102,
+      "san": "Qc7"
+    },
+    {
+      "ply": 103,
+      "san": "Nd4"
+    },
+    {
+      "ply": 104,
+      "san": "Qb7+"
+    },
+    {
+      "ply": 105,
+      "san": "Ng2"
+    },
+    {
+      "ply": 106,
+      "san": "Nd6"
+    },
+    {
+      "ply": 107,
+      "san": "Nf3"
+    },
+    {
+      "ply": 108,
+      "san": "Rf7"
+    },
+    {
+      "ply": 109,
+      "san": "Nf4"
+    },
+    {
+      "ply": 110,
+      "san": "Qa8"
+    },
+    {
+      "ply": 111,
+      "san": "Qg3"
+    },
+    {
+      "ply": 112,
+      "san": "Qd5"
+    },
+    {
+      "ply": 113,
+      "san": "Nd3"
+    },
+    {
+      "ply": 114,
+      "san": "Nc4"
+    },
+    {
+      "ply": 115,
+      "san": "Ne1"
+    },
+    {
+      "ply": 116,
+      "san": "Ba6"
+    },
+    {
+      "ply": 117,
+      "san": "Qgg7"
+    },
+    {
+      "ply": 118,
+      "san": "Nd2"
+    },
+    {
+      "ply": 119,
+      "san": "Bc5"
+    },
+    {
+      "ply": 120,
+      "san": "Kc6"
+    },
+    {
+      "ply": 121,
+      "san": "e6"
+    },
+    {
+      "ply": 122,
+      "san": "Qg5"
+    },
+    {
+      "ply": 123,
+      "san": "Be3"
+    },
+    {
+      "ply": 124,
+      "san": "Qg3"
+    },
+    {
+      "ply": 125,
+      "san": "Qxg3"
+    },
+    {
+      "ply": 126,
+      "san": "Nb5"
+    },
+    {
+      "ply": 127,
+      "san": "Qg4"
+    },
+    {
+      "ply": 128,
+      "san": "Nc7"
+    },
+    {
+      "ply": 129,
+      "san": "Qf8"
+    },
+    {
+      "ply": 130,
+      "san": "Kb7"
+    },
+    {
+      "ply": 131,
+      "san": "Qc4"
+    },
+    {
+      "ply": 132,
+      "san": "Rh7"
+    },
+    {
+      "ply": 133,
+      "san": "Qe4+"
+    },
+    {
+      "ply": 134,
+      "san": "Nd5"
+    },
+    {
+      "ply": 135,
+      "san": "Kg1"
+    },
+    {
+      "ply": 136,
+      "san": "b5"
+    },
+    {
+      "ply": 137,
+      "san": "Qe5"
+    },
+    {
+      "ply": 138,
+      "san": "Nf1"
+    },
+    {
+      "ply": 139,
+      "san": "Qh5"
+    },
+    {
+      "ply": 140,
+      "san": "Rh8"
+    },
+    {
+      "ply": 141,
+      "san": "Bh6"
+    },
+    {
+      "ply": 142,
+      "san": "Nd2"
+    },
+    {
+      "ply": 143,
+      "san": "c3"
+    },
+    {
+      "ply": 144,
+      "san": "a4"
+    },
+    {
+      "ply": 145,
+      "san": "Nd3"
+    },
+    {
+      "ply": 146,
+      "san": "Nxc3"
+    },
+    {
+      "ply": 147,
+      "san": "Nf2"
+    },
+    {
+      "ply": 148,
+      "san": "Nd5"
+    },
+    {
+      "ply": 149,
+      "san": "Qg6"
+    },
+    {
+      "ply": 150,
+      "san": "Nxf6"
+    },
+    {
+      "ply": 151,
+      "san": "Qff7+"
+    },
+    {
+      "ply": 152,
+      "san": "Kc8"
+    },
+    {
+      "ply": 153,
+      "san": "Nxd2"
+    },
+    {
+      "ply": 154,
+      "san": "Kb8"
+    },
+    {
+      "ply": 155,
+      "san": "Qb1"
+    },
+    {
+      "ply": 156,
+      "san": "Rh7"
+    },
+    {
+      "ply": 157,
+      "san": "Qe8+"
+    },
+    {
+      "ply": 158,
+      "san": "Nxe8"
+    },
+    {
+      "ply": 159,
+      "san": "Nc4"
+    },
+    {
+      "ply": 160,
+      "san": "Kc8"
+    },
+    {
+      "ply": 161,
+      "san": "Qe1"
+    },
+    {
+      "ply": 162,
+      "san": "Nd6"
+    },
+    {
+      "ply": 163,
+      "san": "Nd3"
+    },
+    {
+      "ply": 164,
+      "san": "Nxc4"
+    },
+    {
+      "ply": 165,
+      "san": "Qa5"
+    },
+    {
+      "ply": 166,
+      "san": "Nb2"
+    },
+    {
+      "ply": 167,
+      "san": "Nc1"
+    },
+    {
+      "ply": 168,
+      "san": "b4"
+    },
+    {
+      "ply": 169,
+      "san": "Qxa6+"
+    },
+    {
+      "ply": 170,
+      "san": "Kd8"
+    },
+    {
+      "ply": 171,
+      "san": "Rxb2"
+    },
+    {
+      "ply": 172,
+      "san": "Re7"
+    },
+    {
+      "ply": 173,
+      "san": "Bd2"
+    },
+    {
+      "ply": 174,
+      "san": "b3"
+    },
+    {
+      "ply": 175,
+      "san": "Kf1"
+    },
+    {
+      "ply": 176,
+      "san": "Rh7"
+    },
+    {
+      "ply": 177,
+      "san": "Rxb3"
+    },
+    {
+      "ply": 178,
+      "san": "Kc7"
+    },
+    {
+      "ply": 179,
+      "san": "Rb2"
+    },
+    {
+      "ply": 180,
+      "san": "a3"
+    },
+    {
+      "ply": 181,
+      "san": "Qd3"
+    },
+    {
+      "ply": 182,
+      "san": "Rh8"
+    },
+    {
+      "ply": 183,
+      "san": "Rb3"
+    },
+    {
+      "ply": 184,
+      "san": "Rf8+"
+    },
+    {
+      "ply": 185,
+      "san": "Ke1"
+    },
+    {
+      "ply": 186,
+      "san": "Rc8"
+    },
+    {
+      "ply": 187,
+      "san": "Rb5"
+    }
+  ]
+}

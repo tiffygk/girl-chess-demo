@@ -1,0 +1,5 @@
+{
+  "_comment": "game 160's chat_messages rows, readonly-extracted from data/girlchess.db on 2026-07-31 via: SELECT id, role, text FROM chat_messages WHERE game_id=160 ORDER BY id. `dupUserText` is the 3-consecutive-duplicate user row (ids 106/107/108), row B7 in the spec's baseline table (`WITH u AS (SELECT id, text, LAG(text) OVER (ORDER BY id) prev FROM chat_messages WHERE game_id=160 AND role='user') SELECT count(*) FROM u WHERE text=prev;` = 3).",
+  "dupUserText": "Can't the king move by taking my bishop because then he becomes safe?",
+  "dupRowIds": [106, 107, 108]
+}
