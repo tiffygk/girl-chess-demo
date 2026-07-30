@@ -22,14 +22,28 @@
 // arm. `arm` is the axis decide.ts and render.ts now score/aggregate BY;
 // `tag` (below) stays the bucket label it always was (open/narr/dir/pending/
 // affirmation), extended with "general" for the new arm's own rows.
-export type Arm = "board-live" | "general" | "board-review";
+// RCA acceptance-evals round (2026-07-31): three ADDITIVE arms, one per new
+// fixture class (spec section 1/3) -- "fork" (suite FH, forced-loss honesty),
+// "mate" (suite NM, forced-mate next-move naming), "long" (suite CE's
+// early/late latency cells). Each gets its own arm rather than folding into
+// board-live so a scoring/reporting bug in one class can never silently
+// change board-live's frozen 65-question numbers (same discipline "general"
+// and "board-review" already established in wave E1).
+export type Arm = "board-live" | "general" | "board-review" | "fork" | "mate" | "long";
 
 export type LiveFixtureId = "C1" | "C2" | "C3" | "C4" | "C5";
 // Eval-instrument-repair round (2026-07-28): the board-review arm's own
 // fixtures, pinned to the FINAL ply of games that genuinely finished. See
 // REVIEW_FIXTURE_IDS / the board-review section below for why they exist.
 export type ReviewFixtureId = "R1" | "R2" | "R3";
-export type FixtureId = LiveFixtureId | ReviewFixtureId;
+// RCA acceptance-evals round: fork-*/mate-*/long-* fixture ids. Unlike
+// R1-R3, these pin a MID-game ply of a finished game (not its final ply) --
+// see MidGameOfFinished below for why that needs its own assertion rather
+// than reusing `finished`.
+export type ForkFixtureId = "FK1" | "FK2" | "FK3" | "FK4" | "FK5" | "FK6";
+export type MateFixtureId = "MT1" | "MT2" | "MT3" | "MT4" | "MT5" | "MT6" | "MT7";
+export type LongFixtureId = "LN1" | "LN2" | "LN3" | "LN4";
+export type FixtureId = LiveFixtureId | ReviewFixtureId | ForkFixtureId | MateFixtureId | LongFixtureId;
 
 export interface Fixture {
   id: FixtureId;
@@ -43,6 +57,17 @@ export interface Fixture {
   // synthesizing one. Absent on C1-C5, which are mid-game positions in games
   // that continue well past the pinned ply.
   finished?: true;
+  // RCA acceptance-evals round (spec section 3, "New fixture class with its
+  // own startup assertion (game finished, pinned ply real) -- do NOT weaken
+  // run.ts's existing review-arm final-ply assertion"). Set on every fork-*/
+  // mate-*/long-* fixture: the referenced GAME really has a result in the db
+  // (asserted at startup, same as `finished`'s game-level check), but `ply`
+  // is a genuine MID-game ply, not the final one -- so run.ts must NOT apply
+  // the `rows.length !== fixture.ply` final-ply check `finished` triggers.
+  // Deliberately a separate field rather than overloading `finished`, so a
+  // future edit to the review-arm assertion can never accidentally start
+  // applying it to these fixtures (or vice versa).
+  midGameOfFinished?: true;
 }
 
 // Player is white in every fixture. C1-C5 are live, mid-game, white to move
@@ -121,6 +146,209 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     phase: "finished, 1-0 by adjudication: a 72-move rook-and-bishop endgame ended with the end-game button",
     finished: true,
   },
+
+  // ---- fork-* (suite FH ground truth, RCA acceptance-evals round) --------
+  //
+  // FK1-3: game 160's real ply-56/57/58 bishop-and-knight fork (baseline row
+  // B8, the motivating case -- the owner's exact "not missing the different
+  // forks" complaint). FK4-6: three more positions mined READONLY from
+  // finished games via lib/forcedLoss.ts's chess.js depth-2 material search
+  // (tools/rca-eval/.gen-fixtures-scratch.ts, deleted after use, 2026-07-31)
+  // -- every one of these six is machine-PROVEN forced (every legal move
+  // loses material against the opponent's best reply), never eyeballed.
+  // Proof strings are quoted verbatim in each phase field so the "forced"
+  // label is auditable without re-running the verifier.
+  FK1: {
+    id: "FK1",
+    gameId: 160,
+    ply: 56,
+    fen: "4nb2/2p3kp/p3B1p1/1p2N3/4p3/P3N1P1/1P3P1P/5RK1 w - - 2 29",
+    phase:
+      "fork (game 160, ply 56) -- white to move, right after mallow's Ne8 creates the fork; forcedMaterialLoss proof: w to move, baseline 7, every legal move concedes at least a pawn (Bxa3/exf3/gxf5/bxc4/Kxg6, worst -3)",
+    midGameOfFinished: true,
+  },
+  FK2: {
+    id: "FK2",
+    gameId: 160,
+    ply: 57,
+    fen: "4nb2/2p3kp/p3B1p1/1p2N3/4p3/P3N1P1/1P3P1P/3R2K1 b - - 3 29",
+    phase:
+      "fork (game 160, ply 57) -- black to move (right after her own Rd1), the position the owner asked her 7 questions " +
+      "about; NOT independently re-run through forcedMaterialLoss (that verifier answers 'is the SIDE TO MOVE forced to " +
+      "lose', and it is mallow's move here, not hers) -- it is the connecting snapshot between FK1 and FK3, both of " +
+      "which ARE independently proven forced for her",
+    midGameOfFinished: true,
+  },
+  FK3: {
+    id: "FK3",
+    gameId: 160,
+    ply: 58,
+    fen: "4nb2/2p4p/p3Bkp1/1p2N3/4p3/P3N1P1/1P3P1P/3R2K1 w - - 4 30",
+    phase: "fork (game 160, ply 58) -- the position immediately after Kf6, white to move",
+    midGameOfFinished: true,
+  },
+  FK4: {
+    id: "FK4",
+    gameId: 134,
+    ply: 30,
+    fen: "r2qrnk1/pp3ppp/2p2n2/2b1NP2/2Pp4/PP1P4/1B3PPP/RN1Q1RK1 w - - 1 16",
+    phase:
+      "mined forced-loss (game 134, ply 30) -- forcedMaterialLoss proof: w to move, baseline 1: every legal move loses >= a rook-for-knight/bishop trade or worse (Rxe5 or better recaptures the majority; worst-case Nxc6/Bxd4 concede a piece for two; the knight on e5 and the rook on e5-square both hang to Black's b4-bishop/f6-knight coordination)",
+    midGameOfFinished: true,
+  },
+  FK5: {
+    id: "FK5",
+    gameId: 141,
+    ply: 14,
+    fen: "r1b1kb1r/p1p1n1pp/1pnp1q2/8/8/2PBPN2/PP3PPP/RNBQK2R w KQkq - 4 8",
+    phase:
+      "mined forced-loss (game 141, ply 14) -- forcedMaterialLoss proof: w to move, baseline 1: black's queen on f6 forks the undefended knight on f3 with every other line also losing at least the f3-knight (Qxf3) or the f2-pawn with check; the only two lines that avoid Qxf3 (Ng1/Nfd2) still concede the f2-pawn to Qxf2+",
+    midGameOfFinished: true,
+  },
+  FK6: {
+    id: "FK6",
+    gameId: 148,
+    ply: 12,
+    fen: "r1bqk1nr/1ppp1p1p/n5p1/p7/1bPPN1P1/7P/PP2PP2/R1BQKBNR w KQkq - 1 7",
+    phase:
+      "mined forced-loss (game 148, ply 12) -- forcedMaterialLoss proof: w to move, baseline 1: black's Bb4+ check leaves exactly 4 legal replies (Nd2/Nc3/Bd2/Qd2), every one recaptured by Bxd2+/Bxc3+ for a piece (Qd2 concedes the queen outright, delta -9) -- a textbook check-and-fork with zero escape",
+    midGameOfFinished: true,
+  },
+
+  // ---- mate-* (suite NM ground truth, RCA acceptance-evals round) --------
+  //
+  // MT1-3: game 160's own persisted mate evals (baseline row B5) at plies
+  // 94/124/184 (mate in 5/10/2 respectively -- the exact "mate in 7, no
+  // move" shape the owner reported). MT4: game 150's documented missed-mate
+  // neighborhood, pinned at ply 58 (mate in 2, clean best_move/pv, inside
+  // the ply-54-66 near-mate cycle the owner's report names). MT5-7: three
+  // more mined READONLY (eval_mate between 2 and 7, best_move/pv both
+  // present, from finished games other than 149/150/160).
+  MT1: {
+    id: "MT1",
+    gameId: 160,
+    ply: 94,
+    fen: "2k4N/3R4/5N2/1p4p1/p7/P3P1P1/1P5P/6K1 w - - 4 48",
+    phase: "mate-in-5 for her (game 160, ply 94) -- persisted eval_mate 5, best_move h8f7 (Nf7)",
+    midGameOfFinished: true,
+  },
+  MT2: {
+    id: "MT2",
+    gameId: 160,
+    ply: 124,
+    fen: "6R1/3k4/8/N7/p7/P3P1P1/7P/6K1 w - - 0 63",
+    phase: "mate-in-10 for her (game 160, ply 124) -- persisted eval_mate 10, best_move g8g6 (Rg6)",
+    midGameOfFinished: true,
+  },
+  MT3: {
+    id: "MT3",
+    gameId: 160,
+    ply: 184,
+    fen: "4Q3/8/8/8/3R4/6P1/2k1NK1P/8 w - - 1 93",
+    phase: "mate-in-2 for her (game 160, ply 184) -- persisted eval_mate 2, best_move e8a4 (Qa4+) -- the exact 'mate in 7 [sic], no next move' shape from the owner's report",
+    midGameOfFinished: true,
+  },
+  MT4: {
+    id: "MT4",
+    gameId: 150,
+    ply: 58,
+    fen: "Q6N/4B2k/4p3/5p1p/5P1P/3B4/P4PP1/RN3RK1 w - - 5 30",
+    phase: "mate-in-2 for her (game 150, ply 58) -- the documented ply-54-66 missed-mate neighborhood; persisted eval_mate 2, best_move a8f8 (Qf8+)",
+    midGameOfFinished: true,
+  },
+  MT5: {
+    id: "MT5",
+    gameId: 24,
+    ply: 38,
+    fen: "r4br1/p3k3/Bp2p2p/2ppN3/Q2PnB1n/2P1P3/PP3PPP/RN3RK1 w - - 7 20",
+    phase: "mined mate-in-2 (game 24, ply 38) -- persisted eval_mate 2, best_move a4d7 (Qd7+)",
+    midGameOfFinished: true,
+  },
+  MT6: {
+    id: "MT6",
+    gameId: 144,
+    ply: 36,
+    fen: "r4r2/pp3kpp/2ppNN2/4n3/2P3Q1/3P4/P2B1PPP/1R3RK1 w - - 1 19",
+    phase: "mined mate-in-3 (game 144, ply 36) -- persisted eval_mate 3, best_move b1b7 (Rxb7+)",
+    midGameOfFinished: true,
+  },
+  MT7: {
+    id: "MT7",
+    gameId: 86,
+    ply: 38,
+    fen: "1r2bb1r/p1k4p/2P1Q1p1/5p2/8/4PN2/PPP2PPP/RN1R2K1 w - - 1 20",
+    phase: "mined mate-in-6 (game 86, ply 38) -- persisted eval_mate 6, best_move e6e5 (Qe5+)",
+    midGameOfFinished: true,
+  },
+
+  // ---- long-* (suite CE early/late latency cells, RCA acceptance-evals) --
+  //
+  // Deliberately reuses FK3/MT3's exact fens (LN1/LN2) -- the owner's own
+  // motivating late-ply prompt-size blowup (baseline row B3: 17,885 chars at
+  // ply 58 vs 32,451 at ply 184, same game) IS the early/late pair CE-01
+  // measures, so pinning a second copy under a new id would only invite the
+  // two numbers to drift. LN3/LN4 are game 149's own early/late pair (a
+  // second game, "so one game's quirks cannot own the result" per spec).
+  LN1: {
+    id: "LN1",
+    gameId: 160,
+    ply: 58,
+    fen: "4nb2/2p4p/p3Bkp1/1p2N3/4p3/P3N1P1/1P3P1P/3R2K1 w - - 4 30",
+    phase: "long-early (game 160, ply 58) -- baseline row B3: facts 16,297 / prompt 17,885 chars",
+    midGameOfFinished: true,
+  },
+  LN2: {
+    id: "LN2",
+    gameId: 160,
+    ply: 184,
+    fen: "4Q3/8/8/8/3R4/6P1/2k1NK1P/8 w - - 1 93",
+    phase: "long-late (game 160, ply 184) -- baseline row B3: facts 44,997 / prompt 32,451 chars",
+    midGameOfFinished: true,
+  },
+  LN3: {
+    id: "LN3",
+    gameId: 149,
+    ply: 20,
+    fen: "r1bqk1nr/4ppbp/1p1p2p1/p1pPn3/P1P1P3/1P5N/R3BPPP/1NBQ1RK1 w kq - 6 11",
+    phase: "long-early (game 149, ply 20) -- second game, so one game's quirks cannot own the result",
+    midGameOfFinished: true,
+  },
+  LN4: {
+    id: "LN4",
+    gameId: 149,
+    ply: 140,
+    fen: "8/8/2k5/5B2/3RK3/8/7P/8 w - - 11 71",
+    phase: "long-late (game 149, ply 140) -- second game's late cell",
+    midGameOfFinished: true,
+  },
+};
+
+// RCA acceptance-evals round: id lists for the three new fixture classes,
+// mirroring REVIEW_FIXTURE_IDS's own pattern -- run.ts's startup assertion
+// iterates these to confirm the referenced GAME really has a result in the
+// db (the `midGameOfFinished` check), without applying the review arm's
+// final-ply assertion.
+export const FORK_FIXTURE_IDS: ForkFixtureId[] = ["FK1", "FK2", "FK3", "FK4", "FK5", "FK6"];
+export const MATE_FIXTURE_IDS: MateFixtureId[] = ["MT1", "MT2", "MT3", "MT4", "MT5", "MT6", "MT7"];
+export const LONG_FIXTURE_IDS: LongFixtureId[] = ["LN1", "LN2", "LN3", "LN4"];
+
+// Per-mate-fixture ground truth for suite NM: the persisted mate distance and
+// the persisted best_move (uci), read once from the db (never re-derived by
+// a second guess). NM-01's checker decodes this into a PendingRef (piece
+// kind + from/to) via chess.js at the fixture's own fen, then reuses
+// checkPendingAwareness verbatim (score.ts) -- "the checkPendingAwareness
+// pattern re-aimed at the fixture's known best move" per spec section 3.
+// NM-02's checker (checkMateClaims, imported from server/coach/mateClaims.ts)
+// reads `mateN` as the one true fact this fixture's single-position "history"
+// vouches for.
+export const MATE_FACTS: Record<MateFixtureId, { mateN: number; bestUci: string }> = {
+  MT1: { mateN: 5, bestUci: "h8f7" },
+  MT2: { mateN: 10, bestUci: "g8g6" },
+  MT3: { mateN: 2, bestUci: "e8a4" },
+  MT4: { mateN: 2, bestUci: "a8f8" },
+  MT5: { mateN: 2, bestUci: "a4d7" },
+  MT6: { mateN: 3, bestUci: "b1b7" },
+  MT7: { mateN: 6, bestUci: "e6e5" },
 };
 
 // The board-review arm's fixtures, and the games those fixtures live in.
@@ -553,6 +781,84 @@ export const BOARD_REVIEW_QUESTIONS: BoardReviewQuestion[] = BOARD_REVIEW_QUESTI
   outcomeSource: "db" as const,
 }));
 
+// ---- arm: fork (suite FH, RCA acceptance-evals round) ---------------------
+//
+// Two questions per FK fixture (spec section 3, suite FH): "can i avoid
+// losing a piece here?" and "can i get out of this without a trade?" -- the
+// owner's own verbatim complaint about the game-160 fork, generalized to
+// both question shapes. 6 fixtures x 2 questions = 12 rows per rep; suite
+// FH's 36-answer run is exactly this x 3 reps. FH-01 (zero tolerance) reads
+// only the FK1-FK3 rows; FH-02 (>=90%) reads all 12.
+export interface ForkQuestion {
+  id: string;
+  arm: "fork";
+  tag: "dir";
+  ctx: ForkFixtureId;
+  probe: false;
+  q: string;
+}
+const FORK_QUESTION_TEXT = ["can i avoid losing a piece here?", "can i get out of this without a trade?"] as const;
+const FORK_QUESTIONS_RAW: { ctx: ForkFixtureId }[] = [{ ctx: "FK1" }, { ctx: "FK2" }, { ctx: "FK3" }, { ctx: "FK4" }, { ctx: "FK5" }, { ctx: "FK6" }];
+export const FORK_QUESTIONS: ForkQuestion[] = FORK_QUESTIONS_RAW.flatMap((f, i) =>
+  FORK_QUESTION_TEXT.map((q, j) => ({
+    id: `fork-${String(i + 1).padStart(2, "0")}${j === 0 ? "a" : "b"}`,
+    arm: "fork" as const,
+    tag: "dir" as const,
+    ctx: f.ctx,
+    probe: false as const,
+    q,
+  }))
+);
+
+// ---- arm: mate (suite NM, RCA acceptance-evals round) ----------------------
+//
+// One question per MT fixture (spec section 3, suite NM): the owner's own
+// "mate in 7, no move" gap -- "what should i play here?" against a position
+// with a persisted forced mate. 7 fixtures x 1 question = 7 rows per rep;
+// suite NM's 21-answer run is this x 3 reps.
+export interface MateQuestion {
+  id: string;
+  arm: "mate";
+  tag: "dir";
+  ctx: MateFixtureId;
+  probe: false;
+  q: string;
+}
+const MATE_FIXTURE_ORDER: MateFixtureId[] = ["MT1", "MT2", "MT3", "MT4", "MT5", "MT6", "MT7"];
+export const MATE_QUESTIONS: MateQuestion[] = MATE_FIXTURE_ORDER.map((ctx, i) => ({
+  id: `mate-${String(i + 1).padStart(2, "0")}`,
+  arm: "mate" as const,
+  tag: "dir" as const,
+  ctx,
+  probe: false as const,
+  q: "what should i play here?",
+}));
+
+// ---- arm: long (suite CE early/late latency cells, RCA acceptance-evals) --
+//
+// One question per LN fixture -- suite CE-01/CE-03 read pure latency/timeout
+// numbers off these rows, never voice/format axes, so question CONTENT
+// matters far less than pinning the SAME question at the early and late
+// cell of each game (a wording difference would confound the latency
+// comparison with a prompt-shape difference).
+export interface LongQuestion {
+  id: string;
+  arm: "long";
+  tag: "dir";
+  ctx: LongFixtureId;
+  probe: false;
+  q: string;
+}
+const LONG_FIXTURE_ORDER: LongFixtureId[] = ["LN1", "LN2", "LN3", "LN4"];
+export const LONG_QUESTIONS: LongQuestion[] = LONG_FIXTURE_ORDER.map((ctx, i) => ({
+  id: `long-${String(i + 1).padStart(2, "0")}`,
+  arm: "long" as const,
+  tag: "dir" as const,
+  ctx,
+  probe: false as const,
+  q: "what should i play here?",
+}));
+
 // chess.js piece-kind letter -> plain-language word, for the pending-
 // awareness mechanical check (methodology part 4, axis 5).
 export const PIECE_WORDS: Record<string, string> = {
@@ -580,4 +886,13 @@ export const NARR_HINT_TEXT = "there's a better option here.";
 export const BOARD_LIVE_QUESTION_COUNT = BASE_QUESTIONS.length + PENDING_QUESTIONS.length + AFFIRMATION_QUESTIONS.length; // 50 + 10 + 5 = 65
 export const GENERAL_QUESTION_COUNT = GENERAL_QUESTIONS.length; // 15
 export const BOARD_REVIEW_QUESTION_COUNT = BOARD_REVIEW_QUESTIONS.length; // 16
-export const TOTAL_QUESTION_COUNT = BOARD_LIVE_QUESTION_COUNT + GENERAL_QUESTION_COUNT + BOARD_REVIEW_QUESTION_COUNT;
+// RCA acceptance-evals round: the three ADDITIVE fixture classes (spec
+// section 1) -- fork (suite FH), mate (suite NM), long (suite CE's
+// early/late cells). BOARD_LIVE/GENERAL/BOARD_REVIEW above are UNTOUCHED
+// (96 total, byte-identical), so the frozen comparison to every prior
+// coach-eval round still holds; these three counts are added on top.
+export const FORK_QUESTION_COUNT = FORK_QUESTIONS.length; // 6 fixtures x 2 = 12
+export const MATE_QUESTION_COUNT = MATE_QUESTIONS.length; // 7
+export const LONG_QUESTION_COUNT = LONG_QUESTIONS.length; // 4
+export const TOTAL_QUESTION_COUNT =
+  BOARD_LIVE_QUESTION_COUNT + GENERAL_QUESTION_COUNT + BOARD_REVIEW_QUESTION_COUNT + FORK_QUESTION_COUNT + MATE_QUESTION_COUNT + LONG_QUESTION_COUNT;
