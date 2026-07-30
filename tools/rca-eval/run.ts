@@ -23,6 +23,7 @@ import { runDbSuite } from "./suites/db";
 import { runFmSuite } from "./suites/fm";
 import { runCtSuite } from "./suites/ct";
 import { runPcSuite } from "./suites/pc";
+import { runStSuite } from "./suites/st";
 import { renderRollup } from "./rollup";
 
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -94,11 +95,20 @@ async function main() {
   }
 
   if (suite === "st") {
-    console.error(
-      "[rca-eval] suite ST is scripted-live (starts its own server, calls the real model) and was not built in " +
-        "this dispatch's scope. Refusing to run rather than crash on a missing module or silently no-op."
-    );
-    process.exit(1);
+    // ST's template-path evals (ST-01 variant/ST-03/ST-04) run for real, zero
+    // model calls, always. Its model-dependent probes (ST-02, ST-01's model
+    // variant) are gated behind --live -- the controller passes this only
+    // when announced and the machine is quiet (spec: needs the machine
+    // QUIET, ~5 minutes, subscription usage). `st` is deliberately never
+    // inside all-deterministic (spec section 6) even in its --live form.
+    const live = process.argv.includes("--live");
+    if (live) {
+      console.log("[rca-eval] suite ST --live: ST-02 will call the real model backend. Machine should be quiet.");
+    }
+    const result = await runStSuite(live);
+    writeSuiteResult("st", result);
+    printSummary(result);
+    process.exit(0);
   }
 
   if (suite === "rollup") {
