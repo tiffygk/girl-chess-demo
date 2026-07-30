@@ -34,6 +34,7 @@
 // import lines had to change.
 import fs from "fs";
 import path from "path";
+import { execFileSync } from "child_process";
 import Database from "better-sqlite3";
 
 export interface DbCountSnapshot {
@@ -91,8 +92,51 @@ export function checkDbIntact(before: DbCountSnapshot, after: DbCountSnapshot): 
 //      non-empty by COUNTING games (never by hashing).
 // Every caller is expected to log the returned `source` once, at the top
 // of its run, so a stale read is visible instead of silent.
-const MAIN_WORKTREE_DB =
+//
+// union finding (review-union.md, fix wave 2): this used to be a HARDCODED
+// ABSOLUTE PATH containing the vault path. That is fragile on its face --
+// this repo has already moved once (the 2026-07-28 owner reorg made the old
+// ~/girl-chess path dead) and was displaced again by an agent on
+// 2026-07-29 (CLAUDE.md's Directory rule) -- and a silent move means
+// resolution falls through to the local-worktree-copy branch (or throws)
+// with no signal beyond a changed `source` string nobody is watching in
+// real time. Deriving the path from git instead means it self-corrects the
+// moment the repo moves: `git rev-parse --path-format=absolute
+// --git-common-dir` returns the shared .git directory regardless of which
+// worktree asks, and that directory's PARENT is always the main worktree
+// root (git puts the shared .git at <mainWorktreeRoot>/.git; linked
+// worktrees get <mainWorktreeRoot>/.git/worktrees/<name> instead, which is
+// why --git-common-dir -- not --git-dir -- is the one that always points
+// back to the shared root). The old literal is kept as FALLBACK_MAIN_
+// WORKTREE_DB and used ONLY if the git call itself fails (e.g. genuinely
+// not inside a git working tree), never as the first choice.
+const FALLBACK_MAIN_WORKTREE_DB =
   "/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/data/girlchess.db";
+
+// Pure with respect to program state (spawns `git`, touches no files) and
+// never throws -- returns null so callers can fall back rather than crash.
+// Exported for direct unit testing (tools/dbCountSnapshot.test.ts proves
+// this resolves correctly from a LINKED worktree, not just the main one,
+// since that's the only case that actually matters: every real caller runs
+// from inside a worktree).
+export function deriveMainWorktreeDbFromGit(repoRoot: string): string | null {
+  try {
+    const gitCommonDir = execFileSync(
+      "git",
+      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+      { cwd: repoRoot, encoding: "utf8" }
+    ).trim();
+    if (!gitCommonDir) return null;
+    const mainWorktreeRoot = path.dirname(gitCommonDir);
+    return path.join(mainWorktreeRoot, "data", "girlchess.db");
+  } catch {
+    return null;
+  }
+}
+
+function resolveMainWorktreeDbDefault(repoRoot: string): string {
+  return deriveMainWorktreeDbFromGit(repoRoot) ?? FALLBACK_MAIN_WORKTREE_DB;
+}
 
 export interface DbResolution {
   path: string;
@@ -116,9 +160,26 @@ function countGamesReadonly(p: string): number | null {
   }
 }
 
+// union finding (review-union.md, fix wave 2): a dedicated error subclass
+// so callers can tell "no usable db exists anywhere" (the legitimate
+// fresh-clone/CI case) apart from every OTHER way this function can throw,
+// STRUCTURALLY (instanceof), not by matching on the message text -- a
+// substring match on an English sentence is itself fragile and would break
+// silently the moment someone rewords the throw. This is the ONLY place
+// this module throws this type; any other exception surfacing from
+// resolveRealDbPath (a TypeError from a bad argument, a permissions error,
+// anything unanticipated) is deliberately a plain Error so it is NOT
+// mistaken for this one.
+export class NoDbFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NoDbFoundError";
+  }
+}
+
 export function resolveRealDbPath(
   repoRoot: string,
-  mainWorktreeDb: string = MAIN_WORKTREE_DB
+  mainWorktreeDb: string = resolveMainWorktreeDbDefault(repoRoot)
 ): DbResolution {
   if (process.env.GC_DB_PATH) {
     return { path: process.env.GC_DB_PATH, source: "GC_DB_PATH override" };
@@ -134,7 +195,7 @@ export function resolveRealDbPath(
       source: `local worktree copy (main worktree db not found at ${mainWorktreeDb}; verified ${localGames} games by count, not hash)`,
     };
   }
-  throw new Error(
+  throw new NoDbFoundError(
     `no usable db found: main worktree db missing at ${mainWorktreeDb}, and local ${local} is ` +
       `${localGames == null ? "missing or unreadable" : "empty (0 games)"} -- nothing to copy from`
   );
@@ -167,12 +228,26 @@ export function checkOwnerDb(repoRoot: string, mainWorktreeDb?: string): OwnerDb
   try {
     resolution = resolveRealDbPath(repoRoot, mainWorktreeDb);
   } catch (err) {
-    // resolveRealDbPath's only throw path is "no usable db found anywhere"
-    // -- a fresh clone or CI, the legitimate case the old gate.ts comment
-    // named. That is NOT the same thing as "ok": the check did not run,
-    // and must say so rather than printing a bare ok that reads identically
-    // to a check that verified her history.
-    return { status: "skipped", detail: (err as Error).message };
+    // union finding (review-union.md, fix wave 2): this used to return
+    // 'skipped' for ANY error resolveRealDbPath threw, on the claim that
+    // "no usable db found anywhere" was its only throw path. That claim was
+    // false -- demonstrated by calling checkOwnerDb with repoRoot undefined,
+    // which throws a Node TypeError from path.join deep inside the local-
+    // copy fallback, nowhere near "no db exists". 'skipped' does not fail
+    // the gate, so that bug silently disabled this entire check while `npm
+    // run gate` kept printing PASS: a BUG routed to the one status that
+    // passes. Only a genuine NoDbFoundError -- checked structurally via
+    // instanceof, never by matching on the message text, which would break
+    // the moment someone rewords the throw -- is the legitimate fresh-
+    // clone/CI case and gets 'skipped'. Anything else is a failure that
+    // must be surfaced, not swallowed.
+    if (err instanceof NoDbFoundError) {
+      return { status: "skipped", detail: err.message };
+    }
+    return {
+      status: "fail",
+      detail: `owner-db resolution failed unexpectedly (not "no db anywhere"): ${(err as Error).message}`,
+    };
   }
   const snap = countDbSnapshot(resolution.path); // readonly open, nothing else, ever
   if (snap.integrity !== "ok") {

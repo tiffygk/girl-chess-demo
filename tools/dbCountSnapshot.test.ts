@@ -17,8 +17,16 @@ import { describe, it, expect, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { execFileSync } from "child_process";
+import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
-import { checkOwnerDb, resolveRealDbPath, countDbSnapshot, checkDbIntact } from "./dbCountSnapshot";
+import {
+  checkOwnerDb,
+  resolveRealDbPath,
+  countDbSnapshot,
+  checkDbIntact,
+  deriveMainWorktreeDbFromGit,
+} from "./dbCountSnapshot";
 
 const tmpDirs: string[] = [];
 afterEach(() => {
@@ -97,6 +105,26 @@ describe("checkOwnerDb: the gate's owner-db precheck runs from any worktree", ()
     expect(result.detail).toMatch(/integrity_check returned/);
   });
 
+  it("union finding (review-union.md, fix wave 2): an unexpected internal error (not 'no db anywhere') does NOT return 'skipped'", () => {
+    // Reproduces the exact false green found by probing checkOwnerDb: pass
+    // repoRoot as undefined (a programming error, not "no db exists") with
+    // a genuinely-missing main worktree db so resolution falls through to
+    // the local-copy branch, where `path.join(undefined, "data",
+    // "girlchess.db")` throws a Node TypeError -- NOT the "no usable db
+    // found anywhere" condition. Before the fix, the catch block in
+    // checkOwnerDb treated every error identically and returned 'skipped',
+    // which does not fail the gate: a bug silently disabled the owner-db
+    // check while the gate still printed PASS. This must now come back as
+    // 'fail', never 'skipped'.
+    const missingMainDb = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "dbcount-nomain-")),
+      "girlchess.db"
+    );
+    const result = checkOwnerDb(undefined as unknown as string, missingMainDb);
+    expect(result.status).not.toBe("skipped");
+    expect(result.status).toBe("fail");
+  });
+
   it("opens the db readonly only -- never a write handle, not even to count rows", () => {
     // Every path checkOwnerDb can take (ok, fail-empty, fail-integrity)
     // routes through countDbSnapshot, which is the only place this module
@@ -136,5 +164,47 @@ describe("resolveRealDbPath/countDbSnapshot/checkDbIntact are importable from ./
     const before = countDbSnapshot(makeDb(2, 4));
     expect(before.games).toBe(2);
     expect(checkDbIntact(before, { games: 3, moves: 5, integrity: "ok" })).toBeUndefined();
+  });
+});
+
+// union finding (review-union.md, fix wave 2): MAIN_WORKTREE_DB used to be a
+// hardcoded absolute path containing the vault path -- fragile against the
+// repo moving again (it already has, twice: 2026-07-28 owner reorg, and an
+// agent displacement on 2026-07-29). deriveMainWorktreeDbFromGit derives the
+// same path from `git rev-parse --path-format=absolute --git-common-dir`
+// (the shared .git dir; its parent is the main worktree) instead.
+describe("deriveMainWorktreeDbFromGit: the main-worktree db path comes from git, not a hardcoded string", () => {
+  it("resolves to the real main worktree's data/girlchess.db when run from THIS worktree (not the main one)", () => {
+    // This test file itself runs from inside a worktree (wt-union), not the
+    // main worktree -- proving the derivation works from a linked worktree,
+    // which is the actual case that matters (every gate run happens from a
+    // worktree, never from the main checkout).
+    const thisFileDir = path.dirname(fileURLToPath(import.meta.url));
+    const derived = deriveMainWorktreeDbFromGit(thisFileDir);
+    expect(derived).not.toBeNull();
+
+    const gitCommonDir = execFileSync(
+      "git",
+      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+      { cwd: thisFileDir, encoding: "utf8" }
+    ).trim();
+    const expectedMainWorktreeRoot = path.dirname(gitCommonDir);
+    expect(derived).toBe(path.join(expectedMainWorktreeRoot, "data", "girlchess.db"));
+  });
+
+  it("returns null (not a throw) when repoRoot is not inside any git working tree", () => {
+    const nonGitDir = fs.mkdtempSync(path.join(os.tmpdir(), "dbcount-nongit-"));
+    tmpDirs.push(nonGitDir);
+    expect(deriveMainWorktreeDbFromGit(nonGitDir)).toBeNull();
+  });
+
+  it("resolveRealDbPath falls back to git derivation (not the removed hardcoded constant) when mainWorktreeDb is omitted", () => {
+    // Called from inside this real worktree with no explicit mainWorktreeDb
+    // override -- exercises the actual default-parameter production path
+    // gate.ts/truth-check.ts use, end to end, from a worktree.
+    const thisFileDir = path.dirname(fileURLToPath(import.meta.url));
+    const result = resolveRealDbPath(thisFileDir);
+    expect(result.source).toMatch(/main worktree/);
+    expect(fs.existsSync(result.path)).toBe(true);
   });
 });
