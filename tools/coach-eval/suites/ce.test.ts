@@ -154,4 +154,15 @@ describe("runCeSuite (did-not-run honesty when no coach-eval run exists on disk)
     expect(result.results.length).toBe(5);
     expect(result.results.every((r) => r.verdict === "did-not-run")).toBe(true);
   });
+
+  it("RED-then-fixed regression: a run with rows but NO 'long' arm (e.g. an older round's data) must be ignored, not silently substituted", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gc-ce-stale-"));
+    const staleRunDir = path.join(dir, "2026-01-01-old-round");
+    fs.mkdirSync(staleRunDir);
+    const staleRows = Array.from({ length: 50 }, (_, i) => row({ id: `old-${i}`, fixtureId: "C1", arm: "board-live", source: "model" }));
+    fs.writeFileSync(path.join(staleRunDir, "raw-sonnet.json"), JSON.stringify(staleRows));
+    const result = runCeSuite(dir);
+    // Must NOT compute real pass/red verdicts against the stale, unrelated data.
+    expect(result.results.every((r) => r.verdict === "did-not-run")).toBe(true);
+  });
 });
