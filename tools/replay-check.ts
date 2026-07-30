@@ -170,6 +170,31 @@ export function unconvertedAnchorInvariant(
   return null;
 }
 
+// -- HARD invariant 1c (union review DELTA, 2026-07-31) ---------------------
+// No two turning points for one game may share a ply. DebriefPage.tsx maps
+// every persisted point to its own card, so a collision renders TWO cards
+// for one move -- and buildCouldBeBetter's `used` set means whichever
+// bullet builder runs second silently drops its own sentence, the exact
+// failure mode the conversion point's own collision guard
+// (turningPoints.ts, "Collision guard" comment) exists to prevent. This
+// invariant is the corpus-wide proof that guard actually holds -- nothing
+// caught the pre-fix 5-game collision (85, 86, 132, 149, 159) because this
+// check did not exist yet.
+export function noPlyCollisionInvariant(
+  gameId: number,
+  points: { kind: string; ply: number }[]
+): string | null {
+  const seen = new Map<number, string>();
+  for (const p of points) {
+    const prior = seen.get(p.ply);
+    if (prior) {
+      return `game ${gameId}: two turning points share ply ${p.ply} -- "${prior}" and "${p.kind}"`;
+    }
+    seen.set(p.ply, p.kind);
+  }
+  return null;
+}
+
 // -- HARD invariant 2 (rca B3) ----------------------------------------------
 // An independent formulation, deliberately NOT detectConversion's/
 // conversion.ts's own arithmetic -- reproduces the SHAPE of "she failed to
@@ -412,6 +437,7 @@ async function main() {
 
   const unconvertedViolations: string[] = [];
   const unconvertedAnchorViolations: string[] = [];
+  const plyCollisionViolations: string[] = [];
   const missedMateViolations: string[] = [];
   const debriefViolations: string[] = [];
   const debriefViolationsByGame = new Map<number, string[]>();
@@ -474,6 +500,11 @@ async function main() {
     // being right is exactly what a listed game would be hiding.
     const anchorViolation = unconvertedAnchorInvariant(gameId, tps);
     if (anchorViolation) unconvertedAnchorViolations.push(anchorViolation);
+
+    // Union review DELTA (2026-07-31): always checked, never allowlisted --
+    // a collision is exactly the kind of gap a listed game would hide.
+    const collisionViolation = noPlyCollisionInvariant(gameId, tps);
+    if (collisionViolation) plyCollisionViolations.push(collisionViolation);
 
     // M2 fix (union review, 2026-07-31): cross-checks the depth-5 detector
     // that actually drives her debrief (conversion.ts, via
@@ -642,6 +673,9 @@ async function main() {
   console.log(`\nunconverted-anchor violations: ${unconvertedAnchorViolations.length} (must be 0, never allowlisted)`);
   for (const v of unconvertedAnchorViolations) console.log(`  ${v}`);
 
+  console.log(`\nply-collision violations: ${plyCollisionViolations.length} (must be 0, never allowlisted -- union review DELTA)`);
+  for (const v of plyCollisionViolations) console.log(`  ${v}`);
+
   console.log(`\nmissed-mate violations: ${missedMateViolations.length} (must be 0)`);
   for (const v of missedMateViolations) console.log(`  ${v}`);
 
@@ -676,6 +710,7 @@ async function main() {
   const ok =
     unconvertedViolations.length === 0 &&
     unconvertedAnchorViolations.length === 0 &&
+    plyCollisionViolations.length === 0 &&
     missedMateViolations.length === 0 &&
     emDashViolations.length === 0 &&
     defenseClaimViolations.length === 0 &&
