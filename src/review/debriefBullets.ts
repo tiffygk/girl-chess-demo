@@ -224,6 +224,24 @@ function categorize(fact: CategorizeFact, phase: GamePhase | null, episode: { pl
   return "development";
 }
 
+// I1 fix (2026-07-30 integration review, mandatory union review): the
+// missed-win and unconverted bullets below used to hardcode category
+// "endgame technique" regardless of the real phase timeline.
+// phasesForGame never latches an endgame on 16 of her 29 finished games
+// (majorsAndMinors never reaches 6), so on those games the card chip read
+// e.g. "middlegame · endgame technique" -- a bullet labelling itself as
+// belonging to a phase its own category says it does not. Same
+// self-contradiction she reported by name on 2026-07-27. Fixed by deriving
+// the category from the SAME ply's phase already used for the bullet's own
+// `phase` field, so the two can never disagree: real endgame -> "endgame
+// technique" (the existing category, unchanged meaning), anything else ->
+// "conversion" (already an existing ChessCategory -- capitalizing on an
+// advantage that later slipped is exactly what "conversion" already means
+// everywhere else in this file, e.g. buildDoneWell's punish-points branch).
+function endgameOrConversion(phase: GamePhase | null): ChessCategory {
+  return phase === "endgame" ? "endgame technique" : "conversion";
+}
+
 function missedPunishText(missPoint: TurningPoint, turningPoints: TurningPoint[]): string {
   const n = moveNumberForPly(missPoint.ply);
   const oppPoint = findPrecedingOpponentPoint(missPoint.ply, turningPoints);
@@ -439,7 +457,21 @@ function buildDoneWell(
     return {
       section: "done well",
       text: phaseClaim ? `your ${phaseClaim} is working: ${base}` : base,
-      phase: phases.phaseAt(unconvertedTp.ply),
+      // V1 fix (2026-07-30 integration review, visual gate finding): this
+      // field used to be phases.phaseAt(unconvertedTp.ply) -- the SLIP ply
+      // -- while the prose above is anchored to herRunStartPly (trustedPhase),
+      // HER own ply inside the winning run being praised (see the Critical 2
+      // comment above). That let the chip name a different phase than the
+      // bullet's own text: on her real game 151 it rendered the chip
+      // "middlegame · conversion" directly above "your opening is working:
+      // ...". The chip must always agree with whatever phase (if any) this
+      // bullet's own prose asserts, so it tracks trustedPhase even when
+      // phaseClaim itself is suppressed by the same-phase guard above (the
+      // suppression only silences the PROSE repeating watchNextTime's word;
+      // the underlying phase this bullet is about doesn't change). Falls
+      // back to the slip ply's phase only when there is no herRunStartPly at
+      // all (no startPoint -- not reachable on her real corpus today).
+      phase: trustedPhase ?? phases.phaseAt(unconvertedTp.ply),
       category: "conversion",
       ply: unconvertedTp.ply,
     };
@@ -544,11 +576,12 @@ function buildCouldBeBetter(
   const missedWin = turningPoints.find((t) => t.kind === "missed-win");
   if (missedWin) {
     used.add(missedWin.ply);
+    const missedWinPhase = phases.phaseAt(missedWin.ply);
     out.push({
       section: "could be better",
       text: missedWinText(missedWin, totalPlies, gameSans, turningLines),
-      phase: phases.phaseAt(missedWin.ply),
-      category: "endgame technique",
+      phase: missedWinPhase,
+      category: endgameOrConversion(missedWinPhase),
       ply: missedWin.ply,
     });
   }
@@ -559,11 +592,12 @@ function buildCouldBeBetter(
   const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
   if (unconvertedTp && !used.has(unconvertedTp.ply)) {
     used.add(unconvertedTp.ply);
+    const unconvertedPhase = phases.phaseAt(unconvertedTp.ply);
     out.push({
       section: "could be better",
       text: unconvertedCouldBeBetterText(unconvertedTp),
-      phase: phases.phaseAt(unconvertedTp.ply),
-      category: "endgame technique",
+      phase: unconvertedPhase,
+      category: endgameOrConversion(unconvertedPhase),
       ply: unconvertedTp.ply,
     });
   }
@@ -677,11 +711,12 @@ function buildWatchNextTime(
       count > 1
         ? `you had checkmate on the board ${count} times and played past it.`
         : `you had checkmate on the board and played past it.`;
+    const missedWinPhase = phases.phaseAt(missedWin.ply);
     bullets.push({
       section: "watch next time",
       text: `${opener} when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move.`,
-      phase: phases.phaseAt(missedWin.ply),
-      category: "endgame technique",
+      phase: missedWinPhase,
+      category: endgameOrConversion(missedWinPhase),
       ply: missedWin.ply,
     });
   }
@@ -720,11 +755,12 @@ function buildWatchNextTime(
         : "when you are winning big, the job changes from attacking to finishing. slow down and look for the line that actually ends it.";
     const proven = unconvertedTp.anchorKind === "repetition-entry";
     const trustedPhase = proven ? phases.phaseAt(unconvertedTp.ply) : null;
+    const unconvertedPhase = phases.phaseAt(unconvertedTp.ply);
     bullets.push({
       section: "watch next time",
       text: trustedPhase ? `the ${trustedPhase} is where this one slipped. ${base}` : base,
-      phase: phases.phaseAt(unconvertedTp.ply),
-      category: "endgame technique",
+      phase: unconvertedPhase,
+      category: endgameOrConversion(unconvertedPhase),
       ply: unconvertedTp.ply,
     });
   }

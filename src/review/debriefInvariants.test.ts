@@ -244,6 +244,91 @@ describe("individual rules", () => {
   });
 });
 
+describe("integration review fixes (2026-07-30): phase-vs-category and phase-word-vs-field", () => {
+  // I1: a bullet's category must never name a phase (endgame technique ->
+  // endgame, opening play -> opening) different from the bullet's own
+  // phase field. Reproduces the exact class the debriefBullets.ts fix
+  // closes at the producer -- this is the instrument that keeps it closed
+  // over her whole corpus via replay-check.ts.
+  it("phase-vs-category: 'endgame technique' asserted on a bullet whose own phase is middlegame", () => {
+    const out = { bullets: [{ section: "could be better", text: "x", phase: "middlegame", category: "endgame technique", ply: 30 }] } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 30 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).toContain("phase-vs-category");
+  });
+  it("phase-vs-category: agreeing category/phase pairs never fire", () => {
+    const out = {
+      bullets: [
+        { section: "could be better", text: "x", phase: "endgame", category: "endgame technique", ply: 30 },
+        { section: "could be better", text: "y", phase: "middlegame", category: "conversion", ply: 30 },
+      ],
+    } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 30 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("phase-vs-category");
+  });
+  it("phase-vs-category tolerates a null phase (no board to prove a phase) -- never a false mismatch", () => {
+    const out = { bullets: [{ section: "could be better", text: "x", phase: null, category: "endgame technique", ply: 30 }] } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 30 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("phase-vs-category");
+  });
+
+  // V1: a bullet's phase field must agree with any phase word its own
+  // prose literally asserts ("your {phase} is working" / "the {phase} is
+  // where this one slipped") -- the exact class the visual gate caught live
+  // on game 151 (chip "middlegame" over text "your opening is working").
+  // Nothing in the codebase related rendered prose to metadata before this;
+  // phase-mismatch (above) compares the bullet's phase to the TIMELINE's
+  // phase for the ply, not to the bullet's own text, so it stays silent
+  // here even though both sides come from phasesForGame.
+  it("phase-word-vs-field: prose names middlegame but the phase field says endgame", () => {
+    const out = {
+      bullets: [
+        {
+          section: "done well",
+          text: "your middlegame is working: you were winning this one from move 6 to move 22.",
+          phase: "endgame",
+          category: "conversion",
+          ply: 43,
+        },
+      ],
+    } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 50 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).toContain("phase-word-vs-field");
+  });
+  it("phase-word-vs-field: agreeing prose/field never fires", () => {
+    const out = {
+      bullets: [
+        {
+          section: "watch next time",
+          text: "the endgame is where this one slipped. slow down and finish it.",
+          phase: "endgame",
+          category: "endgame technique",
+          ply: 43,
+        },
+      ],
+    } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 50 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("phase-word-vs-field");
+  });
+  it("phase-word-vs-field tolerates prose naming no phase word at all, regardless of the field's value", () => {
+    const out = {
+      bullets: [
+        { section: "done well", text: "you took the free knight on move 4 when she dropped it.", phase: "middlegame", category: "conversion", ply: 4 },
+      ],
+    } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 50 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("phase-word-vs-field");
+  });
+  it("phase-word-vs-field tolerates a null phase field even when the text names a phase word -- never a false mismatch", () => {
+    const out = {
+      bullets: [
+        { section: "done well", text: "your middlegame is working: great stretch.", phase: null, category: "conversion", ply: 4 },
+      ],
+    } as any;
+    const facts = { ...g151Facts, turningPoints: [], gameSans: [], totalPlies: 50 };
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("phase-word-vs-field");
+  });
+});
+
 describe("output.notes -- the module must check what DebriefPage actually renders", () => {
   // review-0.md important 1: output.notes was never read, so the seven
   // output-scoped rules (win-copy-on-non-win, reassurance-vs-detector,
