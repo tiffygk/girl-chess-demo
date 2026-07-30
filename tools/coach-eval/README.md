@@ -354,9 +354,26 @@ never while a build wave's gate is running or while the owner is playing.
 `fh-hand-audit.json`/`nm-hand-audit.json` are plain `{ "<rowId>": true|false
 }` maps the owner (or a careful reviewer) writes by hand after reading
 `fh-blinded-worksheet.md` (FH) or the raw answers (NM, only the mechanical-
-failure rows need a verdict at all). Until that file exists alongside a run,
-`suites/fh.ts`/`suites/nm.ts` report UNAUDITED rather than a silently-passed
-number (spec section 4 rule 5).
+failure rows need a verdict at all). They live INSIDE the specific run
+directory they audit (e.g. `$OUT3F/fh-hand-audit.json`), never at the
+`runs/` root -- two different runs must never be able to share one audit
+file. (RCA round dispatch 4: `suites/fh.ts`'s `loadHandAudit` used to read
+from the runs root regardless of which run directory the rows actually came
+from, found by use when two runs needed two different verdicts; fixed to
+read from the exact directory `discoverRun`/`discoverForkRows` returned.)
+Until the audit file exists alongside its run, `suites/fh.ts`/`suites/nm.ts`
+report UNAUDITED rather than a silently-passed number (spec section 4 rule
+5).
+
+Run discovery (`discoverRun.ts`, shared by suites FH/NM/CE) only ever
+auto-picks a run directory whose rows' persisted `fixtureFen` (an additive
+`AnswerRow` field, written by `run.ts` at collection time) agrees with
+fixtures.ts's CURRENT fen for each row's fixtureId -- a stale run mined
+against a since-replaced fixture is never silently substituted for the
+current one, no matter how its directory name sorts. Runs from before that
+field existed are excluded from automatic discovery outright; read one of
+those (or force a specific historical run) with `--run-dir <path>`, e.g.
+`npx tsx tools/rca-eval/run.ts -- fh --run-dir tools/coach-eval/runs/2026-07-31-fh-baseline-rep1b`.
 
 ## Reading the output (in this order)
 
