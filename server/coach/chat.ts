@@ -7,7 +7,7 @@ import { Chess } from "chess.js";
 // server code anyway, and tsx/vitest resolve this import fine. Phase
 // logic is imported, never mirrored. If you are about to copy a phase
 // threshold into this file, stop: phaseParity.test.ts will fail.
-import { phasesForGame } from "../../src/review/gamePhases";
+import { phasesForGame, type GamePhase } from "../../src/review/gamePhases";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
 import type { CoachBackend } from "./backends/types";
 import { getPersona, type NarrateTraceContext } from "./index";
@@ -239,7 +239,15 @@ export interface ChatFactList {
     evalMate: number | null;
     bestSan: string | null;
     pvSans: string[];
-    phase: "opening" | "middlegame" | "endgame";
+    // Integration-round fix (2026-07-30): phasesForGame.phaseAt is honest
+    // about "I don't know" -- null when there is no board to derive a phase
+    // from (gameSans absent or empty; see src/review/gamePhases.ts's
+    // "Important 5 / union F1"). This field must tell the same truth, not
+    // paper over it with a non-null type that forces phases.phaseAt's
+    // result to be lied about at the assignment below. Every consumer
+    // (perPlyForModel below) must omit phase for a ply where this is null,
+    // never fabricate a phase or leak a placeholder string.
+    phase: GamePhase | null;
     then?: string;
   }[];
   // NOTE: no allowedSquares -- chat validation treats square names as free
@@ -949,7 +957,13 @@ function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
       san: p.san,
       side,
       bestSan: p.bestSan,
-      phase: p.phase,
+      // Integration-round fix (2026-07-30): p.phase is null when
+      // phasesForGame had no board to prove it from (see ChatFactList's own
+      // comment on this field). Omit the key entirely rather than send
+      // "phase":null, "undefined", or any placeholder -- a model reading a
+      // present-but-empty phase key could still state it as fact. No board
+      // means no phase claim, the same rule the debrief now follows.
+      ...(p.phase !== null ? { phase: p.phase } : {}),
       pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
       read,
       ...(p.then ? { then: p.then } : {}),
