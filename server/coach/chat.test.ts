@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Chess } from "chess.js";
 import {
   openDb, createSession, createGame, recordMove, finishGame,
@@ -657,14 +657,29 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     let gm: GameManager;
 
     beforeEach(() => {
-      // No gm.init() here: chat() never touches this.evaluator (only
-      // judgeMove/playerMove do), so the real stockfish/maia engines are
-      // never started for these tests. setCoachBackendForTesting is always
-      // called before any gm.chat() call below, which short-circuits
-      // pickCoachBackend's probe entirely — the real claude CLI is never
-      // invoked.
+      // Correction (gate-determinism fix, 2026-07-31): the comment this
+      // replaces claimed "no gm.init() here, so the real stockfish/maia
+      // engines are never started for these tests" -- that's wrong.
+      // `evaluator = new StockfishEvaluator()` in manager.ts is a field
+      // initializer: UciEngine's constructor calls child_process.spawn()
+      // SYNCHRONOUSLY, so the real stockfish binary starts the instant
+      // `new GameManager()` runs below, regardless of init(). What's true
+      // is narrower: chat() itself never touches this.evaluator (only
+      // judgeMove/playerMove do), so the spawned process is never SENT a
+      // search -- it just sits there, alive, unkilled. With 21 tests in
+      // this block that meant 21 leaked real stockfish processes per full
+      // run, all surviving to the end of whatever vitest worker happened
+      // to run this file (workers are reused across files, not respawned
+      // per file), which is exactly the load-sensitivity that made
+      // server/index.stream.test.ts's "done frame" test flake with
+      // "socket hang up" under the full suite. setCoachBackendForTesting is
+      // still always called before any gm.chat() call below, so the real
+      // claude CLI is still never invoked -- that part of the old comment
+      // was correct and is unchanged.
       gm = new GameManager();
     });
+
+    afterEach(() => gm.shutdown());
 
     it("(b) a reply naming a played san passes validation -> source model, writes both chat_messages rows and one advice_traces row kind chat", async () => {
       const gameId = seedGame(["e4"]);
