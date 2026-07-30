@@ -16,34 +16,25 @@
 // decide whether the branch is good, you are reintroducing the bug.
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import Database from "better-sqlite3";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { checkOwnerDb } from "./dbCountSnapshot";
 
-// The owner's real play history. The gate asserts it is INTACT, which is a
-// different question from "did the file change" -- the check this replaced.
-// A file fingerprint moves when SQLite merely folds its write-ahead log into
-// the main file (no data touched at all) and can sit still across changes
-// that live only in that log. Counting her games and asking SQLite to verify
-// its own structure answers the question that actually matters. Read-only by
-// construction: a read-write handle is itself what moved the file last time.
-const DB_PATH = "data/girlchess.db";
-
-function checkOwnerDb(): string | undefined {
-  if (!existsSync(DB_PATH)) return undefined; // fresh clone / CI, nothing to guard
-  const db = new Database(DB_PATH, { readonly: true });
-  try {
-    const integrity = (db.pragma("integrity_check") as { integrity_check: string }[])[0]
-      .integrity_check;
-    if (integrity !== "ok") return `sqlite integrity_check returned "${integrity}"`;
-    const games = (db.prepare("SELECT COUNT(*) c FROM games").get() as { c: number }).c;
-    const moves = (db.prepare("SELECT COUNT(*) c FROM moves").get() as { c: number }).c;
-    if (games === 0) return "the games table is EMPTY -- her history is gone";
-    process.stdout.write(`(${games} games, ${moves} moves, integrity ok) `);
-    return undefined;
-  } finally {
-    db.close();
-  }
-}
+// union finding U2 (review-union.md, fix wave 1): this used to hardcode
+// DB_PATH = "data/girlchess.db" resolved against process.cwd() -- a path
+// that exists in exactly zero git worktrees other than the main one. Every
+// gate run from inside a worktree (which is where this tool actually runs)
+// hit an existsSync(DB_PATH) === false branch and printed a bare "ok",
+// identical in appearance to a check that had actually opened and counted
+// her db. tools/truth-check.ts already solved this correctly with
+// resolveRealDbPath -- absolute-pathed, prefers the main worktree. checkOwnerDb
+// (in ./dbCountSnapshot, alongside resolveRealDbPath itself) reuses that
+// SAME resolution rather than a second one that could drift, and opens the
+// resolved db {readonly: true} and nothing else, ever -- a read-write
+// handle is itself what moved her database file once (see CLAUDE.md's
+// Integrity rule).
+const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(TOOL_DIR, "..");
 
 interface Step {
   name: string;
@@ -106,12 +97,18 @@ const failures: string[] = [];
 // should stop being about the code.
 process.stdout.write("[gate] owner db... ");
 try {
-  const dbReason = checkOwnerDb();
-  if (dbReason) {
-    failures.push(`owner db: ${dbReason}`);
-    process.stdout.write(`FAIL\n  ${dbReason}\n`);
+  const result = checkOwnerDb(REPO_ROOT);
+  if (result.status === "fail") {
+    failures.push(`owner db: ${result.detail}`);
+    process.stdout.write(`FAIL\n  ${result.detail}\n`);
+  } else if (result.status === "skipped") {
+    // Distinct from "ok" on purpose: a fresh clone or CI with no db
+    // anywhere is a legitimate case, but it must never print the same
+    // thing a check that actually ran and passed prints -- that
+    // distinction is the entire point of this fix.
+    process.stdout.write(`SKIPPED (${result.detail})\n`);
   } else {
-    process.stdout.write("ok\n");
+    process.stdout.write(`(${result.detail}) ok\n`);
   }
 } catch (err) {
   failures.push(`owner db: could not verify (${(err as Error).message})`);
