@@ -76,6 +76,12 @@ import {
   AFFIRMATION_QUESTIONS,
   GENERAL_QUESTIONS,
   BOARD_REVIEW_QUESTIONS,
+  FORK_QUESTIONS,
+  MATE_QUESTIONS,
+  LONG_QUESTIONS,
+  FORK_FIXTURE_IDS,
+  MATE_FIXTURE_IDS,
+  LONG_FIXTURE_IDS,
   ENGINE_BEST_UCI_BY_FIXTURE,
   NARR_HINT_LEVEL,
   NARR_HINT_TEXT,
@@ -218,7 +224,15 @@ function buildQuestionList(): EvalQuestion[] {
     ctx: r.ctx,
     probe: r.probe,
   }));
-  const all = [...base, ...pending, ...affirmation, ...general, ...boardReview];
+  // RCA acceptance-evals round: fork (suite FH)/mate (suite NM)/long (suite
+  // CE latency cells) -- same bare-context shape as [dir], graded as LIVE
+  // mid-game questions (buildContext's fallthrough branch) even though the
+  // underlying game has since finished; see fixtures.ts's midGameOfFinished
+  // comment for why that's a deliberate, separate assertion from board-review.
+  const fork: EvalQuestion[] = FORK_QUESTIONS.map((f) => ({ id: f.id, arm: f.arm, tag: f.tag, q: f.q, ctx: f.ctx, probe: f.probe }));
+  const mate: EvalQuestion[] = MATE_QUESTIONS.map((m) => ({ id: m.id, arm: m.arm, tag: m.tag, q: m.q, ctx: m.ctx, probe: m.probe }));
+  const long: EvalQuestion[] = LONG_QUESTIONS.map((l) => ({ id: l.id, arm: l.arm, tag: l.tag, q: l.q, ctx: l.ctx, probe: l.probe }));
+  const all = [...base, ...pending, ...affirmation, ...general, ...boardReview, ...fork, ...mate, ...long];
   if (all.length !== TOTAL_QUESTION_COUNT) {
     throw new Error(`question list drift: built ${all.length}, fixtures.ts declares ${TOTAL_QUESTION_COUNT}`);
   }
@@ -421,6 +435,29 @@ async function main() {
   }
   console.log(`[coach-eval] all ${Object.keys(FIXTURES).length} fixtures replay-verified against the scratch db`);
 
+  // ---- fork-*/mate-*/long-* startup assertion (spec section 3: "New fixture
+  // class with its own startup assertion (game finished, pinned ply real) --
+  // do NOT weaken run.ts's existing review-arm final-ply assertion"). The
+  // generic replay loop above already proves "pinned ply real" (the fen
+  // wouldn't match otherwise); this proves the OTHER half -- the referenced
+  // game genuinely has a result in the db -- without ever checking
+  // rows.length === fixture.ply (these are mid-game plies on purpose).
+  const midGameFixtureIds: FixtureId[] = [...FORK_FIXTURE_IDS, ...MATE_FIXTURE_IDS, ...LONG_FIXTURE_IDS];
+  for (const id of midGameFixtureIds) {
+    const fixture = FIXTURES[id];
+    if (!fixture.midGameOfFinished) {
+      throw new Error(`fixture ${id} is listed in a fork/mate/long id array but is missing midGameOfFinished:true`);
+    }
+    const game = getGame(fixture.gameId) as { result: string | null } | undefined;
+    if (!game?.result) {
+      throw new Error(
+        `fork/mate/long fixture ${id} claims game ${fixture.gameId} is finished, but the db has no result for it -- ` +
+          "this fixture class must only ever pin a ply inside a genuinely finished game"
+      );
+    }
+  }
+  console.log(`[coach-eval] all ${midGameFixtureIds.length} fork/mate/long fixtures confirmed to reference finished games`);
+
   // buildQuestionList()'s own drift assertion runs against the FULL,
   // unfiltered TOTAL_QUESTION_COUNT -- --arm filters AFTER that check, so a
   // single-arm re-run can never silently hide a fixture-count drift in one
@@ -433,7 +470,7 @@ async function main() {
   // files it discovers in one directory, so mixing a filtered and an
   // unfiltered run in the same --out would fail that check, correctly).
   const armFilter = args.arm as Arm | undefined;
-  const VALID_ARMS: Arm[] = ["board-live", "general", "board-review"];
+  const VALID_ARMS: Arm[] = ["board-live", "general", "board-review", "fork", "mate", "long"];
   if (armFilter && !VALID_ARMS.includes(armFilter)) {
     throw new Error(`--arm must be one of ${VALID_ARMS.join("|")} (got ${JSON.stringify(args.arm)})`);
   }
