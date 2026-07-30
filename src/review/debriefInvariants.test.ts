@@ -538,6 +538,57 @@ describe("conversion-claim (K1, game-160 RCA round)", () => {
     expect(violations.map((v) => v.rule)).toContain("conversion-claim");
   });
 
+  // Gate-caught regression (union review, 2026-07-31): routing conversion-claim
+  // through outputTextUnits (ADDENDUM 2) surfaced a real corpus-wide false
+  // positive the very next gate run -- 13 games failed with "text asserts a
+  // mate claim... with no same-ply turning point mate data to back it" on
+  // opportunity.ts's own "leads to mate in N" clause (note.opportunity), a
+  // DIFFERENT, already honesty-gated claim that legitimately sits on an
+  // ordinary swing point carrying no mateIn at all. Required red-proof: this
+  // exact shape (a swing point, no mateIn, an opportunity note saying "leads
+  // to mate in 1") must NOT trip conversion-claim.
+  it("does not flag opportunity.ts's 'leads to mate in N' clause -- a different, already-verified claim, not a missed/slipped-mate assertion", () => {
+    const out = {
+      bullets: [],
+      notes: [{ ply: 8, opportunity: "this opens up: leads to mate in 1" }],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 40,
+      gameSans: [],
+      turningPoints: [
+        { rank: 1, ply: 8, san: "Ba5", label: "opponent blunder", deltaP: 0.3, lowConfidence: false, kind: "swing" },
+      ],
+    } as any;
+    expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
+  });
+
+  // The exclusion must be scoped to the exact phrase, not blind to a real
+  // missed-mate claim that happens to share the word "mate in" -- a false
+  // claim right next to a legitimate opportunity clause must still fire.
+  it("still fires on a real missed-mate claim even when an opportunity clause sits in the same note", () => {
+    const out = {
+      bullets: [],
+      notes: [
+        {
+          ply: 69,
+          couldImprove: "you had checkmate in one here. your Qh8+ ends it on the spot.",
+          opportunity: "this opens up: leads to mate in 1",
+        },
+      ],
+    } as any;
+    const facts = {
+      result: "1-0",
+      totalPlies: 187,
+      gameSans: [],
+      turningPoints: [
+        { rank: 4, ply: 69, san: "Qf7+", label: "missed mate", deltaP: 0, lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 8 },
+      ],
+    } as any;
+    const violations = checkDebriefOutput(out, facts);
+    expect(violations.map((v) => v.rule)).toContain("conversion-claim");
+  });
+
   it("also backs a missed-win bullet's checkmate claim (mateIn on the same-ply missed-win point)", () => {
     const out = {
       bullets: [{ section: "could be better", text: "move 28: you had checkmate in one and played past it.", phase: "endgame", category: "endgame technique", ply: 55 }],
