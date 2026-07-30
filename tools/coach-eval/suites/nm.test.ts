@@ -89,7 +89,6 @@ describe("computeNm01 (>= 20 of 21, mandatory hand-audit of failures)", () => {
       ...checks,
       ...Array.from({ length: 20 }, (_, i) => {
         const id = passingIds[i % passingIds.length];
-        const ref = pendingRefForMateFixture(id);
         return { rowId: `pad-${i}`, fixtureId: id, namedMove: true, mateClaimViolations: [] };
       }),
     ];
