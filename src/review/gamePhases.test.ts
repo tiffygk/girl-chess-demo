@@ -142,10 +142,48 @@ describe("nearly-bare override", () => {
   });
 });
 
+// Union review F4 (2026-07-30 fix wave): mixedness -- the newest and most
+// error-prone third of the port, a 60-line hand-transcribed magic-number
+// table -- had zero behavioural coverage. Neither existing mixedness
+// fixture (0 on the start position, 35 on a two-king-two-pawn corner
+// position) comes anywhere near the 150 trigger, so deleting the predicate
+// outright, or breaking its interpenetration branches, left every test
+// green. This pins mixedness actually firing AS a midgame trigger, ahead of
+// both cheaper predicates, on an 18-ply prefix shared with
+// server/coach/phaseParity.test.ts's own LONG_GAME fixture.
+describe("mixedness as a midgame trigger (union review F4)", () => {
+  const LONG_GAME_PREFIX = [
+    "f4", "d6", "Nf3", "e6", "h3", "c6", "c4", "Qf6", "f5", "exf5", "h4", "Qxb2",
+    "Bxb2", "f6", "Bxf6", "Nxf6", "Nd4", "Ne4",
+  ];
+
+  it("latches midgame at ply 18 on mixedness alone -- majors/backrank haven't tripped yet", () => {
+    const timeline = phasesForGame(sans(LONG_GAME_PREFIX));
+    expect(timeline.midgameStartPly).toBe(18);
+    expect(timeline.midgameTriggers).toEqual(["mixedness"]);
+    expect(timeline.midgameStartPlyWithoutMixedness).toBeNull();
+  });
+});
+
 describe("no-input degradation", () => {
-  it("undefined game input yields opening at ply 1 and zero total plies", () => {
+  // Important 5 / union F1 (2026-07-30 fix wave): the timeline used to have
+  // no way to express "no board" -- with gameSans absent or empty every ply
+  // read "opening", and the copy layer asserted it as a fact ("the opening
+  // is where this one slipped" on a 50-ply game with no gameSans threaded
+  // through). "opening" is not a board fact when there is no board to
+  // derive it from -- it is a fallback dressed as a proven value. phaseAt
+  // now returns null whenever there is nothing to replay, so every caller
+  // must decide explicitly what "unknown" means rather than silently
+  // reading the least-alarming phase as though it were proven.
+  it("undefined game input yields no phase claim (null) at any ply and zero total plies", () => {
     const timeline = phasesForGame(undefined);
-    expect(timeline.phaseAt(1)).toBe("opening");
+    expect(timeline.phaseAt(1)).toBeNull();
+    expect(timeline.phaseAt(50)).toBeNull();
     expect(timeline.totalPlies).toBe(0);
+  });
+
+  it("empty gameSans array degrades the same way as undefined -- no board either way", () => {
+    const timeline = phasesForGame([]);
+    expect(timeline.phaseAt(1)).toBeNull();
   });
 });
