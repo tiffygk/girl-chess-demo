@@ -214,16 +214,71 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     phase:
       "fork (game 160, ply 58) -- the position immediately after Kf6, white to move; corrected forcedMaterialLoss " +
       "proof: w to move, baseline 7, STILL forced after full recapture/quiescence resolution -- every legal move " +
-      "concedes at least a piece (most -3 via .../Kxe5 or .../Kxe6; worst -5, Rd6 -> Nxd6), zero escape",
+      "concedes at least a piece (most -3 via .../Kxe5 or .../Kxe6; worst -5, Rd6 -> Nxd6), zero escape. " +
+      "DISPATCH-4 ENGINE-GRADE FINDING (2026-07-31, flagged for the controller, NOT acted on here -- changing this " +
+      "fixture's role in FH-01's zero-tolerance gate is outside this dispatch's remit): the app's own Stockfish " +
+      "(engineLabel.ts, movetime 800-6000ms, all agreeing) finds a full escape SEE cannot see -- Nd7+ (check!), " +
+      "and after the only legal reply .../Kxe6 (capturing the bishop -- SEE's search stops here, since it only " +
+      "resolves recaptures on the ONE square the last capture landed on), white plays Nxf8+, a capture on a " +
+      "DIFFERENT square recovering an even trade with tempo (confirmed fully legal via chess.js's own move " +
+      "generator, not just engine PV text). engineLabelForFen(FK3_FEN): forcedLossConfirmed=false, " +
+      "impliedLossCp=-84 to -87 (the engine's own read is BETTER than material implies, not worse). This directly " +
+      "undermines GAME_160_PROVEN_FORCED_IDS resting on FK3 alone -- see engineLabel.test.ts's own regression test " +
+      "and dispatch 4's report for the full line.",
     midGameOfFinished: true,
   },
-  // FK4-6: replacements for the three fixtures the instrument-audit catch
-  // invalidated (see the block comment above). Mined 2026-07-31 from
-  // `data/girlchess.db` (readonly, count-verified 161 games / 1721 moves /
-  // integrity ok before mining), query: finished games (`result IS NOT
-  // NULL`) excluding 149/150/160, every move's `fen_after` with `ply >=
-  // 10`, white to move, >= 10 non-king pieces on the board, run through
-  // the CORRECTED forcedMaterialLoss and kept only where `forced === true`.
+  // FK4-6: re-adjudicated with engine-grade labels (dispatch 4, RCA
+  // acceptance-evals round, 2026-07-31) -- forcedLoss.ts's SEE-on-
+  // destination-square proof has a proven horizon limit (it only resolves
+  // recaptures on the ONE square the last capture landed on, so it cannot
+  // see a QUIET counter-threat defense, or a capture-elsewhere deflection,
+  // a few plies deeper). `tools/rca-eval/lib/engineLabel.ts` asks the app's
+  // own Stockfish instead (movetime ~800ms, ENGINE_FORCED_LOSS_THRESHOLD_CP
+  // = 150cp): forcedLossConfirmed = true iff even the engine's OWN best
+  // move still leaves the position >= 150cp worse than the board's
+  // material count implies. Verdicts below (each cross-checked at multiple
+  // movetimes on a clean machine, no other CPU load, per the round's own
+  // methodology lesson -- an earlier read of FK6 done WHILE a background
+  // mining script was still running was itself a measurement artifact,
+  // corrected before being reported as fact):
+  //   FK4 (game 131): CONFIRMED -- ~280-310cp short of material, stable
+  //     across 800/1500/3000ms. KEPT as engine-confirmed ground truth.
+  //   FK5 (game 140): NOT CONFIRMED -- this is EXACTLY the position the
+  //     round's problem statement named ("the coach recommends the h3
+  //     bishop-kick and calls the position 'worst case even' -- plausibly
+  //     RIGHT"). The engine's own best move IS h2h3 (attacking the g4
+  //     bishop, defusing the pin on the f3 knight), and its eval sits
+  //     within a few cp of what material already implies at every
+  //     movetime tried (800/1500/3000ms) -- a real, fully adequate escape
+  //     SEE cannot see because SEE only ever evaluates CAPTURING replies,
+  //     never asks whether a quiet move sidesteps the exchange entirely.
+  //     Relabeled honestly below (FK1's own precedent) rather than
+  //     force-replaced with a weaker candidate.
+  //   FK6 (game 134): NOT RELIABLY CONFIRMED -- repeated clean-machine
+  //     800ms reads (the app's own default movetime) land RIGHT ON the
+  //     150cp threshold and flip the boolean run to run with the IDENTICAL
+  //     fen and movetime (5 independent runs: 148/159/145/164/145cp, mean
+  //     152.2 -- three below 150, two above). This is exactly the noise
+  //     band the threshold exists to stay clear of; a position search
+  //     depth resolves ambiguously is not conviction-grade ground truth.
+  //     Relabeled honestly below, same treatment as FK5.
+  //   Re-mining replacements for FK5/FK6: exhaustively re-attempted --
+  //   finished games excluding 149/150/160 (constraint) AND 131/134
+  //   (already used by FK4/FK6 above; a replacement must be a THIRD
+  //   distinct game), ply >= 6, EVERY non-king-piece-count floor tried
+  //   (10, 6, none) -- all three passes returned the IDENTICAL 13
+  //   SEE-forced candidates. Of those, four (game 86 plies 38/60, game 144
+  //   plies 54/58) are actually forced-MATE positions for white (the
+  //   engine finds mate, not a material loss -- forcedLoss.ts's material-
+  //   only lens misreads a winning attack as if it were a losing one, the
+  //   same SEE-horizon-limit class of bug in the opposite valence), one
+  //   (game 147 ply 28) is R1's own already-checkmate position, and the
+  //   remaining candidates (game 143, five plies) all read well under the
+  //   150cp threshold once measured on a clean machine (range -264 to
+  //   +130cp, decreasing as search deepens -- real escapes, not forced
+  //   losses). No third engine-confirmed candidate exists in the current
+  //   corpus under this exclusion set. See dispatch 4's report for the
+  //   full candidate table.
   FK4: {
     id: "FK4",
     gameId: 131,
@@ -233,7 +288,9 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
       "mined forced-loss (game 131, ply 16) -- a textbook knight fork: black's knight on f2 forks white's queen " +
       "(d1) and rook (h1). corrected forcedMaterialLoss proof: w to move, baseline -1, every legal move loses the " +
       "queen for the knight (Nxd1, recaptured, delta -6) except moving the queen itself, which just loses the rook " +
-      "instead (Qc2/Qd2 -> Nxh1, delta -5) -- zero escape",
+      "instead (Qc2/Qd2 -> Nxh1, delta -5) -- zero escape. DISPATCH-4 ENGINE LABEL: CONFIRMED -- " +
+      "engineLabelForFen at movetime 800/1500/3000ms all agree, impliedLossCp 288/292/311 (comfortably >= the " +
+      "150cp threshold, stable regardless of search depth). Kept as engine-confirmed ground truth.",
     midGameOfFinished: true,
   },
   FK5: {
@@ -245,7 +302,14 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
       "mined forced-loss (game 140, ply 16) -- the f3 knight is attacked by black's e4-pawn and pinned to the g4-" +
       "bishop's x-ray on d1; corrected forcedMaterialLoss proof: w to move, baseline 0, every legal move concedes " +
       "at least a pawn once the recapture is counted (most lines: .../exf3 gxf3, delta -2), and moving the knight " +
-      "itself is far worse (Ne5/Ng5/Nh4/Nfd2 -> Bxd1 Rxd1, delta -6; Ne1 -> Bxd1, delta -9) -- zero escape",
+      "itself is far worse (Ne5/Ng5/Nh4/Nfd2 -> Bxd1 Rxd1, delta -6; Ne1 -> Bxd1, delta -9). DISPATCH-4 ENGINE " +
+      "LABEL: NOT CONFIRMED -- this is the round's own named example (the 'h3 bishop-kick... plausibly RIGHT' " +
+      "concern from the problem statement). engineLabelForFen's own best move IS h2h3 (the bishop-kick), " +
+      "impliedLossCp -13/0/-11 at movetime 800/1500/3000ms (essentially even, not a loss) -- SEE cannot see a " +
+      "QUIET move as an escape because it only ever evaluates CAPTURING replies. Relabeled honestly (FK1's own " +
+      "precedent) rather than force-replaced; no engine-confirmed replacement exists in the corpus (see the block " +
+      "comment above) -- kept as a documented SEE-forced-but-not-engine-confirmed data point. An escape claim " +
+      "here (e.g. 'play h3, you're fine') is likely TRUE chess, not a lie.",
     midGameOfFinished: true,
   },
   FK6: {
@@ -257,7 +321,11 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
       "mined forced-loss (game 134, ply 42) -- white's f5 pawn hangs to black's queen on f4 with nothing able to " +
       "defend or ignore it for free; corrected forcedMaterialLoss proof: w to move, baseline 9, every legal move " +
       "concedes at least a pawn (most lines -> Qxf5, delta -1), and moving the queen itself is far worse (e.g. Qe3 " +
-      "-> dxe3, delta -9) -- zero escape",
+      "-> dxe3, delta -9). DISPATCH-4 ENGINE LABEL: NOT RELIABLY CONFIRMED -- five independent clean-machine " +
+      "800ms reads gave impliedLossCp 148/159/145/164/145 (mean 152.2), flipping the true/false boolean run to " +
+      "run on the IDENTICAL fen and movetime -- squarely the noise band the 150cp threshold exists to stay clear " +
+      "of, not a position search depth resolves one way with confidence. Relabeled honestly, same treatment as " +
+      "FK5; no engine-confirmed replacement exists in the corpus (see the block comment above).",
     midGameOfFinished: true,
   },
 
