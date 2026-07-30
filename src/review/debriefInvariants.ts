@@ -90,25 +90,43 @@ const SQUARE_RE = /[a-h][1-8]/g;
 // this constant) -- a third alternative here would be dead in this rule and
 // would misdescribe what actually fires it.
 const REASSURANCE_RE = /no clear mistakes|no repeat pattern/;
-// conversion-claim (K1, tightened 2026-07-31 union review fix): the two
-// phrasings a bullet uses to assert a mate distance -- missedWinText's
-// "checkmate in {word}" and conversionCouldBeBetterText's/
-// unconvertedCouldBeBetterText's "mate in {word}" (debriefBullets.ts).
-// "(?:check)?mate in " catches both without also matching unrelated prose
-// ("checkmate" alone, with no "in", never trips this). CAPTURES the
-// asserted number/word so the rule below can compare what was actually
-// SAID against the turning point's own mateIn -- the original version of
-// this rule only checked that SOME mate data existed at the ply
-// (`mateIn != null`), which is why it passed unchanged over 8 real games
-// where the bullet said "checkmate in one" and the turning point's mateIn
-// was 2-5 (C1, the flagship bug this whole round exists to fix). Reuses
-// debriefBullets.ts's own NUMBER_WORDS as the single source of truth for
-// how this codebase spells a mate distance, rather than a second,
-// hand-typed word list that could drift from it.
+// conversion-claim (K1, tightened 2026-07-31 union review fix): the
+// phrasings a bullet/note uses to assert a MISSED or SLIPPED mate --
+// missedWinText's "checkmate in {word}", conversionCouldBeBetterText's/
+// unconvertedCouldBeBetterText's/turningPointNote.ts's "mate in {word}"
+// (debriefBullets.ts, turningPointNote.ts). "(?:check)?mate in " catches
+// all of those without also matching unrelated prose ("checkmate" alone,
+// with no "in", never trips this). CAPTURES the asserted number/word so
+// the rule below can compare what was actually SAID against the turning
+// point's own mateIn -- the original version of this rule only checked
+// that SOME mate data existed at the ply (`mateIn != null`), which is why
+// it passed unchanged over 8 real games where the bullet said "checkmate
+// in one" and the turning point's mateIn was 2-5 (C1, the flagship bug
+// this whole round exists to fix). Reuses debriefBullets.ts's own
+// NUMBER_WORDS as the single source of truth for how this codebase spells
+// a mate distance, rather than a second, hand-typed word list that could
+// drift from it.
+//
+// The negative lookbehind is load-bearing, added after routing this rule
+// through outputTextUnits (ADDENDUM 2) surfaced a real false-positive:
+// opportunity.ts's deriveOpportunity emits "leads to mate in {N}" on the
+// `note.opportunity` field -- a DIFFERENT, already honesty-gated claim
+// (N is counted directly off a replay-proven, checkmate-ending pv, never
+// read from any TurningPoint's mateIn, and it can legitimately sit on an
+// ordinary swing/backfill point that carries no mateIn at all). Every
+// missed/slipped-mate producer this rule actually polices says "you had
+// mate in N" / "the shortest mate you held ... mate in N" / "mate in N
+// was on record" -- none of them ever say "leads to". Excluding that one
+// phrase keeps the rule scoped to what it is actually about (a stored
+// mateIn being contradicted) without silently swallowing a correct,
+// independently-verified claim about a completely different fact.
 const NUMBER_WORD_VALUES: Record<string, number> = Object.fromEntries(
   NUMBER_WORDS.map((word, n) => [word, n])
 );
-const MATE_CLAIM_NUMBER_RE = new RegExp(`(?:check)?mate in (${NUMBER_WORDS.join("|")}|\\d+)`, "i");
+const MATE_CLAIM_NUMBER_RE = new RegExp(
+  `(?<!leads to )(?:check)?mate in (${NUMBER_WORDS.join("|")}|\\d+)`,
+  "i"
+);
 
 // Parses every "(check)mate in N" claim out of a bullet's text (a bullet
 // can carry at most one in practice, but this never assumes that -- global
