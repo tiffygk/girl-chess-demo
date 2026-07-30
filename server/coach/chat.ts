@@ -1,4 +1,21 @@
 import { Chess } from "chess.js";
+// Phase comes from src/review/gamePhases (lichess divider, latching
+// timeline) -- the SAME module the debrief renders from, imported, not
+// hand-mirrored. The old convention ("server never imports src, mirror
+// the constant") is what produced two divergent phase algorithms lying
+// to the owner differently on the same game. This server-to-src edge IS
+// now covered by tsc -b (tsconfig.server.json's program includes this
+// file plus gamePhases.ts/phase.ts/api.ts, verified with --listFiles), so
+// a nullable-shape mistake at this seam is caught at build time, not just
+// by tsx/vitest resolving the import at runtime. The one thing tsc still
+// cannot see: it cannot tell a `GamePhase`-only `import type` from a
+// runtime value import, so converting gamePhases.ts's or phase.ts's
+// `import type { SummaryMove }` to a value import type-checks fine but
+// would pull src/game/api.ts's browser-only `fetch` code into this
+// process and break the dev server. Phase logic is imported, never
+// mirrored. If you are about to copy a phase threshold into this file,
+// stop: phaseParity.test.ts will fail.
+import { phasesForGame, type GamePhase } from "../../src/review/gamePhases";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
 import type { CoachBackend } from "./backends/types";
 import { getPersona, type NarrateTraceContext } from "./index";
@@ -230,7 +247,15 @@ export interface ChatFactList {
     evalMate: number | null;
     bestSan: string | null;
     pvSans: string[];
-    phase: "opening" | "middlegame" | "endgame";
+    // Integration-round fix (2026-07-30): phasesForGame.phaseAt is honest
+    // about "I don't know" -- null when there is no board to derive a phase
+    // from (gameSans absent or empty; see src/review/gamePhases.ts's
+    // "Important 5 / union F1"). This field must tell the same truth, not
+    // paper over it with a non-null type that forces phases.phaseAt's
+    // result to be lied about at the assignment below. Every consumer
+    // (perPlyForModel below) must omit phase for a ply where this is null,
+    // never fabricate a phase or leak a placeholder string.
+    phase: GamePhase | null;
     then?: string;
   }[];
   // NOTE: no allowedSquares -- chat validation treats square names as free
@@ -320,29 +345,6 @@ export interface ChatPerPlyInput {
   then?: string;
 }
 
-// Owner-calibratable starting values (Task 3, R1a): opening/endgame phase
-// tagging for perPlyAnalysis. Ply threshold checked first -- an early
-// piece-down position (e.g. a fast trade) still reads as "opening" for the
-// purpose of narrating what happened in the FIRST N plies, which is the
-// question this fact exists to answer ("was my opening okay?").
-const PHASE_OPENING_PLY_MAX = 20;
-const PHASE_ENDGAME_PIECE_MAX = 12;
-// Missed-win round (2026-07-28): hand-duplicates src/review/phase.ts's
-// ENDGAME_BARE_PIECE_MAX (server code never imports from src/ — same
-// hand-mirroring convention as api.ts's types). A side reduced to at most
-// this many non-pawn, non-king pieces makes the position an endgame no
-// matter how much the OTHER side kept — the owner's real game 150 finish
-// (her full army vs a lone king, 17 pieces total) never tripped the
-// pieceCount rule below and tagged every mate-in-1 miss "middlegame".
-const CHAT_ENDGAME_BARE_PIECE_MAX = 1;
-
-function derivePhase(ply: number, pieceCount: number, nearlyBare = false): "opening" | "middlegame" | "endgame" {
-  if (nearlyBare) return "endgame"; // a nearly-bare board is never usefully "opening"
-  if (ply <= PHASE_OPENING_PLY_MAX) return "opening";
-  if (pieceCount <= PHASE_ENDGAME_PIECE_MAX) return "endgame";
-  return "middlegame";
-}
-
 // Owner-calibratable starting values (Task 3b, R2 voice-enforcement round):
 // the cp thresholds bucketing perPlyAnalysis's per-ply eval into a plain-
 // language "read" for the MODEL-FACING projection only -- the voice rules
@@ -403,31 +405,21 @@ export function assembleChatFactList(
   const chess = new Chess();
   const ordered = [...gameMoves].sort((a, b) => a.ply - b.ply);
   const gameSans: string[] = [];
-  // Task 3: piece count after each ply, captured in the SAME replay pass
-  // that builds gameSans -- the phase tag below needs "how many pieces were
-  // on the board at ply N", and this is the one place that walks the game
-  // ply by ply already.
-  const pieceCountByPly = new Map<number, number>();
-  // Missed-win round (2026-07-28): captured in the same replay pass — see
-  // CHAT_ENDGAME_BARE_PIECE_MAX's comment.
-  const nearlyBareByPly = new Map<number, boolean>();
   for (const m of ordered) {
     const mv = chess.move(m.san);
     gameSans.push(mv.san);
-    const pieces = chess.board().flat().filter((p) => p != null);
-    pieceCountByPly.set(m.ply, pieces.length);
-    const nonPawn = (color: "w" | "b") =>
-      pieces.filter((p) => p!.color === color && p!.type !== "k" && p!.type !== "p").length;
-    nearlyBareByPly.set(m.ply, Math.min(nonPawn("w"), nonPawn("b")) <= CHAT_ENDGAME_BARE_PIECE_MAX);
   }
+  // Phase round (Task 3, 2026-07-30): the shared latching timeline, built
+  // once from the same ordered gameMoves the replay above just consumed --
+  // phaseAt(ply) answers "what phase is THIS ply" with the same lichess
+  // divider predicates the debrief renders from (src/review/gamePhases.ts's
+  // own header comment covers the algorithm; nothing about it is
+  // reimplemented here).
+  const phases = phasesForGame(ordered);
 
   const perPlyAnalysis = perPly?.map((p) => ({
     ...p,
-    // Falls back to a full board (32) when this ply isn't in the replay
-    // above -- defensive only; every real caller's perPly plies are a
-    // subset of the same gameMoves this function just replayed, but a
-    // missing lookup should read as "not yet endgame" rather than throw.
-    phase: derivePhase(p.ply, pieceCountByPly.get(p.ply) ?? 32, nearlyBareByPly.get(p.ply) ?? false),
+    phase: phases.phaseAt(p.ply),
   }));
 
   const { fen: currentFen, toMove, occupancy, legalSans, contested } = derivePositionFacts(chess);
@@ -973,7 +965,13 @@ function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
       san: p.san,
       side,
       bestSan: p.bestSan,
-      phase: p.phase,
+      // Integration-round fix (2026-07-30): p.phase is null when
+      // phasesForGame had no board to prove it from (see ChatFactList's own
+      // comment on this field). Omit the key entirely rather than send
+      // "phase":null, "undefined", or any placeholder -- a model reading a
+      // present-but-empty phase key could still state it as fact. No board
+      // means no phase claim, the same rule the debrief now follows.
+      ...(p.phase !== null ? { phase: p.phase } : {}),
       pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
       read,
       ...(p.then ? { then: p.then } : {}),
@@ -1119,7 +1117,7 @@ const VOICE_KIND_GUIDANCE: Record<string, string> = {
   "voice-number": "never state a number for the position.",
 };
 
-function correctiveSuffix(violations: string[]): string {
+function correctiveSuffix(violations: readonly string[]): string {
   const lines = [
     "",
     "",

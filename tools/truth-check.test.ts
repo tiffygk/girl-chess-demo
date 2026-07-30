@@ -14,7 +14,15 @@ import os from "os";
 import path from "path";
 import Database from "better-sqlite3";
 import { Chess } from "chess.js";
-import { reconstructPvLine, toTurningPoint, resolveRealDbPath, type RawTurningPointRow } from "./truth-check";
+import {
+  reconstructPvLine,
+  toTurningPoint,
+  resolveRealDbPath,
+  assertGamesExamined,
+  type RawTurningPointRow,
+} from "./truth-check";
+import * as truthCheckModule from "./truth-check";
+import { checkDbIntact, type DbCountSnapshot } from "./dbCountSnapshot";
 
 describe("reconstructPvLine", () => {
   it("replays a space-separated UCI pv into SANs from the given fen", () => {
@@ -66,6 +74,7 @@ describe("toTurningPoint", () => {
       end_kind: null,
       mate_in: null,
       missed_count: null,
+      anchor_kind: null,
     };
     expect(toTurningPoint(row)).toEqual({
       rank: 1,
@@ -98,6 +107,7 @@ describe("toTurningPoint", () => {
       end_kind: null,
       mate_in: null,
       missed_count: null,
+      anchor_kind: null,
     };
     const tp = toTurningPoint(row);
     expect(tp.punishSan).toBeUndefined();
@@ -107,6 +117,7 @@ describe("toTurningPoint", () => {
     expect(tp.lowConfidence).toBe(true);
     expect(tp.mateIn).toBeUndefined();
     expect(tp.missedCount).toBeUndefined();
+    expect(tp.anchorKind).toBeUndefined();
   });
 
   // F9 (review-2.md LOW): mate_in/missed_count were never mapped, so the
@@ -129,11 +140,46 @@ describe("toTurningPoint", () => {
       end_kind: "repetition",
       mate_in: 12,
       missed_count: null,
+      anchor_kind: "run-start",
     };
     const tp = toTurningPoint(row);
     expect(tp.mateIn).toBe(12);
     expect(tp.missedCount).toBeUndefined();
     expect(tp.endKind).toBe("repetition");
+    expect(tp.anchorKind).toBe("run-start");
+  });
+
+  // union finding 3 (review-union.md medium): anchor_kind was never mapped.
+  // Latent today because the only current consumer (this gate's own report)
+  // doesn't read it, but anchorKind is the field debriefBullets.ts gates an
+  // avoidable-blunder claim on ("repetition-entry" = a proven escape existed;
+  // "run-start" = none was ever proven) -- a truth tool blind to it cannot
+  // catch a debrief that claims an avoidable blunder without one.
+  it("union finding 3: maps anchor_kind to anchorKind, both proven values and null", () => {
+    const provenAnchor: RawTurningPointRow = {
+      rank: 1,
+      ply: 21,
+      san: "Nxe5",
+      label: "unconverted win",
+      punish_san: null,
+      delta_p: 0,
+      low_confidence: 0,
+      kind: "unconverted",
+      ply_end: null,
+      missed_punish: null,
+      crossed_advantage: null,
+      end_kind: "repetition",
+      mate_in: null,
+      missed_count: null,
+      anchor_kind: "repetition-entry",
+    };
+    expect(toTurningPoint(provenAnchor).anchorKind).toBe("repetition-entry");
+
+    const noProvenAnchor: RawTurningPointRow = { ...provenAnchor, anchor_kind: "run-start" };
+    expect(toTurningPoint(noProvenAnchor).anchorKind).toBe("run-start");
+
+    const nullAnchor: RawTurningPointRow = { ...provenAnchor, anchor_kind: null };
+    expect(toTurningPoint(nullAnchor).anchorKind).toBeUndefined();
   });
 });
 
@@ -212,5 +258,70 @@ describe("F2: resolveRealDbPath prefers the live main-worktree db over a stale l
     fs.copyFileSync(makeDbWithGames(0), path.join(repoDir, "data", "girlchess.db"));
 
     expect(() => resolveRealDbPath(repoDir, missingMainDb)).toThrow(/empty \(0 games\)/);
+  });
+});
+
+// union finding 2 (review-union.md medium, ACTIVELY BITING her while she
+// plays): truth-check used to sha256 the real db before and after the run
+// and throw "isolation was violated" the moment a single byte changed --
+// including a WAL checkpoint that folds already-committed rows into the
+// main file with zero data touched, and including her simply playing
+// another move while the gate runs. replay-check.ts and gate.ts already
+// had exactly this pattern removed (see their own 2026-07-29 headers);
+// truth-check kept it. Fixed by importing (never reimplementing)
+// replay-check's own countDbSnapshot/checkDbIntact -- the project's
+// standing rule is her db is verified by COUNTING, never hashing.
+describe("union finding 2: truth-check's isolation check is count-based, not sha256", () => {
+  it("no longer exports a sha256-based isolation helper", () => {
+    // sha256File used to be the isolation check itself (lines 256/367 of
+    // the pre-fix file). Its removal is the fix; this fails loudly if it
+    // (or an equivalent hash helper) ever creeps back in.
+    expect((truthCheckModule as Record<string, unknown>).sha256File).toBeUndefined();
+  });
+
+  it("counts growing while she keeps playing is NOT an isolation violation (the exact condition this finding exists to tolerate)", () => {
+    const before: DbCountSnapshot = { games: 160, moves: 1420, integrity: "ok" };
+    const afterSheKeptPlaying: DbCountSnapshot = { games: 162, moves: 1444, integrity: "ok" };
+    expect(checkDbIntact(before, afterSheKeptPlaying)).toBeUndefined();
+  });
+
+  it("a real count shrink, or a broken integrity_check, still throws", () => {
+    const before: DbCountSnapshot = { games: 160, moves: 1420, integrity: "ok" };
+    const afterLostRows: DbCountSnapshot = { games: 160, moves: 1410, integrity: "ok" };
+    expect(checkDbIntact(before, afterLostRows)).toMatch(/isolation was violated/);
+
+    const afterCorrupt: DbCountSnapshot = { games: 160, moves: 1420, integrity: "corruption found" };
+    expect(checkDbIntact(before, afterCorrupt)).toMatch(/integrity_check returned/);
+  });
+});
+
+// union finding U4 (review-union.md minor, fix wave 1): an empty-but-valid
+// db (0 games, integrity "ok") passed checkDbIntact trivially -- both
+// before and after counts are 0, nothing shrank -- and then main()'s
+// listFinishedGames() returned [], the loop never ran, and the tool
+// printed "VERDICT: PASS" having examined zero games. assertGamesExamined
+// is the guard main() now calls right after listFinishedGames() (see
+// truth-check.ts) so that state throws instead of silently passing.
+describe("union finding 4: truth-check cannot print VERDICT: PASS having examined zero games", () => {
+  it("throws, naming the resolved db path and source, when zero finished games are found", () => {
+    expect(() => assertGamesExamined(0, "/tmp/some/girlchess.db", "main worktree (live db, source of truth)")).toThrow(
+      /examined ZERO finished games/
+    );
+    try {
+      assertGamesExamined(0, "/tmp/some/girlchess.db", "main worktree (live db, source of truth)");
+      throw new Error("should have thrown");
+    } catch (err) {
+      const msg = (err as Error).message;
+      // Requirement: name the actual cause -- the db it resolved AND that
+      // it found no finished games to examine -- not a generic message.
+      expect(msg).toMatch(/\/tmp\/some\/girlchess\.db/);
+      expect(msg).toMatch(/main worktree \(live db, source of truth\)/);
+      expect(msg).toMatch(/listFinishedGames\(\) returned nothing/);
+    }
+  });
+
+  it("does not throw, and is silent, when at least one finished game was found -- the legitimate-pass case stays untouched", () => {
+    expect(() => assertGamesExamined(1, "/tmp/some/girlchess.db", "main worktree")).not.toThrow();
+    expect(() => assertGamesExamined(160, "/tmp/some/girlchess.db", "main worktree")).not.toThrow();
   });
 });

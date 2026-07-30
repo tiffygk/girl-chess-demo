@@ -34,8 +34,13 @@
 //     that could drift.
 //   - Asserts the opened db's own resolved file (PRAGMA database_list)
 //     equals the scratch path -- aborts before reading anything if not.
-//   - Records sha256 of the real db before and after the run; throws if
-//     they differ.
+//   - Counts games/moves and checks integrity_check on the real db before
+//     and after the run (countDbSnapshot/checkDbIntact, from
+//     ./dbCountSnapshot, re-exported below); throws only on a real shrink
+//     or a broken integrity_check. Counts are expected to GROW -- she can
+//     play on the main worktree while this runs -- a hash would false-fail
+//     on that same growth, and also on a WAL checkpoint that touches no
+//     data at all.
 //   - Never deletes/checkpoints the real db, starts no server, spawns no
 //     engine process, makes no LLM call and no Stockfish evaluator-queue
 //     call anywhere in this file's paths.
@@ -47,7 +52,6 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Chess } from "chess.js";
-import Database from "better-sqlite3";
 import {
   openDb,
   getGameMoves,
@@ -65,7 +69,6 @@ import { validateChat, type ChatFactList } from "../server/coach/chat";
 import { checkDebriefOutput, type DebriefFacts, type DebriefOutput } from "../src/review/debriefInvariants";
 import { debriefBullets } from "../src/review/debriefBullets";
 import { buildTurningPointNote } from "../src/review/turningPointNote";
-import { nearlyBarePlies } from "../src/review/phase";
 import type { TurningLine, SummaryMove } from "../src/game/api";
 import { resolveRealDbPath, copyScratchDb, reconstructPvLine } from "./truth-check";
 
@@ -295,22 +298,6 @@ export function regenLegOk(
     : { ok: false, rate, reason: `rate ${(rate * 100).toFixed(1)}% exceeds REGEN_RATE_MAX ${(REGEN_RATE_MAX * 100).toFixed(0)}%` };
 }
 
-interface RawTurningPointRow {
-  rank: 1 | 2 | 3 | 4;
-  ply: number;
-  san: string;
-  label: string;
-  punish_san: string | null;
-  delta_p: number;
-  low_confidence: number | null;
-  kind: string;
-  ply_end: number | null;
-  missed_punish: number | null;
-  crossed_advantage: number | null;
-  mate_in: number | null;
-  missed_count: number | null;
-}
-
 // Same TurningLine assembly as truth-check.ts's main loop (which mirrors
 // manager.ts's getTurningLines) -- pure data plumbing (a chess.js replay of
 // already-persisted best_move/pv columns), not any part of the invariant
@@ -364,40 +351,16 @@ function buildTurningLines(
 // never a hash. Counts only ever go UP while she plays -- a real isolation
 // violation (this script writing to, or corrupting, her live db) is a
 // DECREASE or a broken integrity_check, never a same-or-higher count.
-export interface DbCountSnapshot {
-  games: number;
-  moves: number;
-  integrity: string;
-}
-
-export function countDbSnapshot(p: string): DbCountSnapshot {
-  const db = new Database(p, { readonly: true });
-  try {
-    const integrity = (db.pragma("integrity_check") as { integrity_check: string }[])[0]
-      .integrity_check;
-    const games = (db.prepare("SELECT COUNT(*) c FROM games").get() as { c: number }).c;
-    const moves = (db.prepare("SELECT COUNT(*) c FROM moves").get() as { c: number }).c;
-    return { games, moves, integrity };
-  } finally {
-    db.close();
-  }
-}
-
-// Pure, exported for tools/replay-check.test.ts. Returns a reason string
-// (not a throw) so the test can assert on the message without wrapping
-// every case in try/catch.
-export function checkDbIntact(before: DbCountSnapshot, after: DbCountSnapshot): string | undefined {
-  if (after.integrity !== "ok") {
-    return `data/girlchess.db integrity_check returned "${after.integrity}" after this run -- investigate immediately`;
-  }
-  if (after.games < before.games || after.moves < before.moves) {
-    return (
-      `data/girlchess.db lost rows during this run (games ${before.games} -> ${after.games}, ` +
-      `moves ${before.moves} -> ${after.moves}) -- isolation was violated. Investigate immediately; do not trust this run's results.`
-    );
-  }
-  return undefined;
-}
+//
+// The check itself now lives in ./dbCountSnapshot (union finding 2,
+// 2026-07-29): tools/truth-check.ts needs this exact same check and
+// already imports resolveRealDbPath/copyScratchDb/reconstructPvLine FROM
+// this file, so importing it back the other way would create a cycle.
+// Re-exported here so every existing importer of countDbSnapshot/
+// checkDbIntact from "./replay-check" (this file's own main() below,
+// tools/replay-check.test.ts) keeps working unchanged.
+export { countDbSnapshot, checkDbIntact, type DbCountSnapshot } from "./dbCountSnapshot";
+import { countDbSnapshot, checkDbIntact } from "./dbCountSnapshot";
 
 async function main() {
   console.log(`[replay-check] db source: ${REAL_DB_PATH} (${dbResolution.source})`);
@@ -497,7 +460,6 @@ async function main() {
     // src/review/debriefInvariants.ts module the runtime wiring will.
     const turningLines = buildTurningLines(gameId, tps, gameSans);
     const totalPlies = moves.length;
-    const endgamePlies = nearlyBarePlies(gameSans);
 
     const bullets = debriefBullets({
       turningPoints: tps,
@@ -519,7 +481,6 @@ async function main() {
       gameSans,
       turningLines,
       totalPlies,
-      endgamePlies,
     };
     const violations = checkDebriefOutput({ bullets, notes }, facts);
     if (violations.length > 0) {

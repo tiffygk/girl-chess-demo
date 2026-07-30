@@ -29,7 +29,9 @@ import { followedBest } from "./followedBest";
 // pre-existing call site) falls back to the raw SAN string unchanged.
 import { fenAtPly } from "./Rewind";
 import { describeSanMove, stripRedundantCheckSuffix } from "../game/describeSanMove";
-import { nearlyBarePlies } from "./phase";
+import { phasesForGame, type PhaseTimeline } from "./gamePhases";
+import type { GamePhase } from "./gamePhases";
+export type { GamePhase };
 
 export type BulletSection = "done well" | "could be better" | "watch next time";
 export type ChessCategory =
@@ -41,12 +43,17 @@ export type ChessCategory =
   | "conversion"
   | "opening play"
   | "endgame technique";
-export type GamePhase = "opening" | "middlegame" | "endgame";
 
 export interface DebriefBullet {
   section: BulletSection;
   text: string; // lowercase, one sentence (occasionally two short clauses for a pinned template), no numbers/percentages beyond move numbers/counts
-  phase: GamePhase;
+  // Important 5 / union F1 (2026-07-30 fix wave): null when there is no
+  // board to derive a phase from (gameSans absent/empty/unreplayable to
+  // this ply) -- phasesForGame's phaseAt is honest about "I don't know" now,
+  // and this field carries that through rather than defaulting to
+  // "opening". Every render site (the card tag, the two prose clauses) must
+  // treat null as "omit the claim", never as a value to print.
+  phase: GamePhase | null;
   category: ChessCategory;
   ply?: number; // rewind anchor when the bullet points at a moment
 }
@@ -114,63 +121,13 @@ const NUDGES: Record<string, string> = {
 const CROSSED_LEAD_NUDGE = "that handed your lead back. not fatal, but you were better and now it's even.";
 const CROSSING_GRADED_LABELS = new Set(["mistake", "inaccuracy"]);
 
-// Phase derivation, recalibrated in the 2026-07-19 review round. The prior
-// literal-per-brief formula ("ply <= 20 is always opening") mislabeled the
-// owner's real game-127 fixture (24 plies): its ply-15 missed-punish and
-// ply-18+ king-pressure episode both read as "opening" when they're
-// plainly the game's middle/late story on a game this short. Phases now
-// scale with game length instead of a flat ply cutoff:
-//   - opening:    ply <= min(OPENING_PLY_CAP, floor(totalPlies / OPENING_FRACTION))
-//   - endgame:    only once totalPlies >= ENDGAME_MIN_TOTAL_PLIES, AND
-//                 (totalPlies - ply) <= max(ENDGAME_TAIL_FLOOR, floor(totalPlies / ENDGAME_TAIL_FRACTION))
-//   - middlegame: everything else — including the entire tail of any game
-//     shorter than ENDGAME_MIN_TOTAL_PLIES. A short game never carries
-//     enough material/king-activity signal in ply-only data to honestly
-//     call a moment "endgame", so short games simply never claim one.
-const OPENING_PLY_CAP = 16;
-const OPENING_FRACTION = 3;
-const ENDGAME_MIN_TOTAL_PLIES = 40;
-const ENDGAME_TAIL_FLOOR = 8;
-const ENDGAME_TAIL_FRACTION = 4;
-
-// Exported (truth round, Task 0): src/review/debriefInvariants.ts imports
-// this exact function so its own phase-mismatch check can never drift from
-// the builder's real phase math -- see that file's header.
-export function phaseForPly(ply: number, totalPlies: number, endgamePlies?: Set<number>): GamePhase {
-  // Missed-win round (2026-07-28): a literal board fact beats the ply
-  // arithmetic below — see src/review/phase.ts. Checked first: a position
-  // with a nearly-bare side is an endgame whatever ply it happens on.
-  if (endgamePlies?.has(ply)) return "endgame";
-  const openingBound = Math.min(OPENING_PLY_CAP, Math.floor(totalPlies / OPENING_FRACTION));
-  if (ply <= openingBound) return "opening";
-  if (totalPlies >= ENDGAME_MIN_TOTAL_PLIES) {
-    const endgameTail = Math.max(ENDGAME_TAIL_FLOOR, Math.floor(totalPlies / ENDGAME_TAIL_FRACTION));
-    if (totalPlies - ply <= endgameTail) return "endgame";
-  }
-  return "middlegame";
-}
-
-// Game-151 round (2026-07-29), the phase gate: feedback-unconverted-copy.md
-// requires a phase claim ONLY when the phase is established by MATERIAL,
-// never the ply-fraction fallback above. scout-unconverted-data.md (c)
-// proved the fallback wrong on real game 151: both sides still hold queen +
-// rook(s) + a minor piece at the unconverted moment (min non-pawn count 3,
-// nowhere near ENDGAME_BARE_PIECE_MAX), yet the ply-fraction rule tags it
-// "endgame" purely because it lands in the tail of a 50-ply game. This is
-// deliberately NOT a rewrite of phaseForPly (that would silently re-tag
-// every phase label across her 152-game history, her call, not tonight's)
-// -- it is a gate on what a bullet's TEXT is allowed to assert, layered on
-// top of the unchanged phase computation. Every phase this module derives
-// outside the literal board-fact override (endgamePlies, src/review/
-// phase.ts) is pure ply arithmetic, not a material fact -- "opening" and
-// "middlegame" are exactly as guessed as the ply-fraction "endgame" rule
-// scout-unconverted-data.md (c) caught being wrong. Precision over recall:
-// the only phase this function will ever assert into copy is the one
-// phaseForPly itself already treats as a literal board fact, checked first
-// and unconditionally.
-export function trustedPhaseForClause(ply: number, endgamePlies?: Set<number>): GamePhase | undefined {
-  return endgamePlies?.has(ply) ? "endgame" : undefined;
-}
+// Phase comes from ./gamePhases (lichess divider, latching timeline) --
+// the old ply-arithmetic phase guesser and the endgame-only phase gate it
+// fed both died with the 2026-07-30-phase round (their names are gone
+// on purpose, grep-gated at commit time so they never quietly return).
+// Every label is a board-derived fact now, so every phase may be claimed
+// in copy, and the same-phase suppression below is the only remaining
+// gate.
 
 // Spelled distances for the mate copy (owner previews use words: "mate in
 // twelve", "mate in one"); counts stay digits ("this happened 5 times").
@@ -250,7 +207,7 @@ interface CategorizeFact {
 // HER_NEG_LABELS facts — punish credit is handled directly in
 // buildDoneWell, not through this function) but is kept for spec fidelity
 // and any future caller that widens the input set.
-function categorize(fact: CategorizeFact, phase: GamePhase, episode: { ply: number; plyEnd?: number } | null): ChessCategory {
+function categorize(fact: CategorizeFact, phase: GamePhase | null, episode: { ply: number; plyEnd?: number } | null): ChessCategory {
   if (fact.kind === "episode") return "king safety";
   if (fact.missedPunish) return "missed tactic";
   if (episode != null && HER_NEG_LABELS.has(fact.label)) {
@@ -265,6 +222,24 @@ function categorize(fact: CategorizeFact, phase: GamePhase, episode: { ply: numb
   if (phase === "opening" && HER_NEG_LABELS.has(fact.label)) return "opening play";
   if (phase === "endgame") return "endgame technique";
   return "development";
+}
+
+// I1 fix (2026-07-30 integration review, mandatory union review): the
+// missed-win and unconverted bullets below used to hardcode category
+// "endgame technique" regardless of the real phase timeline.
+// phasesForGame never latches an endgame on 16 of her 29 finished games
+// (majorsAndMinors never reaches 6), so on those games the card chip read
+// e.g. "middlegame · endgame technique" -- a bullet labelling itself as
+// belonging to a phase its own category says it does not. Same
+// self-contradiction she reported by name on 2026-07-27. Fixed by deriving
+// the category from the SAME ply's phase already used for the bullet's own
+// `phase` field, so the two can never disagree: real endgame -> "endgame
+// technique" (the existing category, unchanged meaning), anything else ->
+// "conversion" (already an existing ChessCategory -- capitalizing on an
+// advantage that later slipped is exactly what "conversion" already means
+// everywhere else in this file, e.g. buildDoneWell's punish-points branch).
+function endgameOrConversion(phase: GamePhase | null): ChessCategory {
+  return phase === "endgame" ? "endgame technique" : "conversion";
 }
 
 function missedPunishText(missPoint: TurningPoint, turningPoints: TurningPoint[]): string {
@@ -345,8 +320,8 @@ function buildDoneWell(
   episode: TurningPoint | null,
   result: string | null,
   totalPlies: number,
-  gameSans?: SummaryMove[],
-  endgamePlies?: Set<number>,
+  gameSans: SummaryMove[] | undefined,
+  phases: PhaseTimeline,
   // Fix wave 2 (2026-07-29, review-3-pass2.md MEDIUM finding 2): the phase
   // watchNextTime's own unconverted-branch clause would claim, computed
   // once in debriefBullets() (mirroring buildWatchNextTime's own
@@ -355,7 +330,7 @@ function buildDoneWell(
   // word about a different moment in the same debrief. See the comment at
   // this function's unconverted branch below for why "different ply" does
   // NOT already guarantee "different phase."
-  watchNextPhaseClaim?: GamePhase
+  watchNextPhaseClaim?: GamePhase | null
 ): DebriefBullet {
   const punishPoints = turningPoints.filter((t) => t.label.startsWith("opponent") && !!t.punishSan);
   if (punishPoints.length > 0) {
@@ -364,7 +339,7 @@ function buildDoneWell(
     return {
       section: "done well",
       text: `you took the free ${pieceNameFromSan(best.san)} on move ${n} when she dropped it.`,
-      phase: phaseForPly(best.ply, totalPlies, endgamePlies),
+      phase: phases.phaseAt(best.ply),
       category: "conversion",
       ply: best.ply,
     };
@@ -377,7 +352,7 @@ function buildDoneWell(
     return {
       section: "done well",
       text: `move ${n}: ${describedOrRaw(best.san, best.ply, gameSans)} was the right idea and it paid off.`,
-      phase: phaseForPly(best.ply, totalPlies, endgamePlies),
+      phase: phases.phaseAt(best.ply),
       category: "tactics",
       ply: best.ply,
     };
@@ -411,26 +386,24 @@ function buildDoneWell(
   // number there would be fabrication (review-3.md: "you were winning this
   // one from move 6 to move 18" when she was winning through move 25) --
   // this degrades to "onward" instead, true on both paths. A phase clause
-  // is prepended only when trustedPhaseForClause allows it, checked at the
-  // START of the stretch rather than watchNextTime's slip ply below.
+  // is prepended at the START of the stretch rather than watchNextTime's
+  // slip ply below.
   //
-  // Fix wave 2 (2026-07-29, review-3-pass2.md MEDIUM finding 2): checking a
-  // DIFFERENT ply than watchNextTime does NOT already guarantee a different
-  // PHASE -- the prior comment here claimed it "eliminates" finding 3's
-  // contradiction; that was false. trustedPhaseForClause's entire codomain
-  // is `{"endgame", undefined}` (it can only ever positively prove
-  // "endgame" -- see that function's header), so two distinct plies that
-  // are both inside the same bare-material stretch (`endgamePlies`) can
-  // trivially both resolve to "endgame." That is exactly the reproduction:
-  // a preceding opponent point sitting inside the same bare-piece endgame
-  // as the unconverted anchor renders "your endgame is working: ..." right
-  // above watchNextTime's "the endgame is where this one slipped" -- the
-  // same phase asserted as both strength and weakness about one game.
-  // What actually prevents the contradiction is the copy-layer suppression
-  // below: watchNextTime's claim (computed once in debriefBullets() and
-  // passed in as watchNextPhaseClaim) wins when both would fire, and this
-  // clause drops rather than repeating it. A silent bullet beats a
-  // self-contradicting pair.
+  // Phase round (2026-07-30): phases now comes from ./gamePhases, a real
+  // board-fact timeline (lichess divider + nearly-bare override), so EVERY
+  // phase it returns -- opening, middlegame, endgame -- is provable, not
+  // just "endgame." That is what makes "your middlegame is working" next to
+  // "the endgame is where this one slipped" reachable at all. It does NOT
+  // remove the collision risk the prior wave found: two distinct plies can
+  // still land in the SAME phase (a preceding opponent point and the
+  // unconverted anchor both inside one long middlegame, say), which would
+  // render "your middlegame is working: ..." right above watchNextTime's
+  // "the middlegame is where this one slipped" -- the same phase asserted
+  // as both strength and weakness about one game. What prevents that is the
+  // copy-layer suppression below: watchNextTime's claim (computed once in
+  // debriefBullets() and passed in as watchNextPhaseClaim) wins when both
+  // would match, and this clause drops rather than repeating it. A silent
+  // bullet beats a self-contradicting pair.
   const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
   if (result === "1/2-1/2" && unconvertedTp) {
     const startPoint = findPrecedingOpponentPoint(unconvertedTp.ply, turningPoints);
@@ -456,14 +429,49 @@ function buildDoneWell(
         ? `you were winning this one from move ${moveNumberForPly(startPoint.ply)} onward.`
         : "you had a winning position here.";
     }
-    const trustedPhase = startPoint ? trustedPhaseForClause(startPoint.ply, endgamePlies) : undefined;
+    // Critical 2 fix (2026-07-30 fix wave): findPrecedingOpponentPoint
+    // returns an OPPONENT turning point by construction (it filters on
+    // label.startsWith("opponent")) -- so startPoint.ply is always even,
+    // always mallow's move (this project's ply-parity constraint: odd is
+    // hers, even is mallow's). Deriving this PRAISE clause's phase from
+    // startPoint.ply credited HER with a window that opened because MALLOW
+    // blundered -- reproduced on her real game 151, where this used to
+    // render "your opening is working" sourced from ply 12, mallow's Ba5
+    // (stored label "opponent mistake"). The window text above (the "from
+    // move N to move N" numbers) is correct and unchanged -- that stretch
+    // genuinely starts at the opponent's mistake. Only the PHASE
+    // ATTRIBUTION was wrong: it must come from HER side of the board, not
+    // the ply that opened the window. herRunStartPly is the winning run's
+    // first ply that is actually hers -- one past the opponent's point,
+    // which the parity constraint guarantees is odd -- a board-position
+    // fact about which ply starts her side of the run, not a re-derivation
+    // of anything phaseAt already computed. When there is no startPoint at
+    // all there is no run to attribute a side to, and the clause is
+    // omitted rather than guessed (same discipline as the no-startPoint
+    // branch already used for the window text above).
+    const herRunStartPly = startPoint ? startPoint.ply + 1 : undefined;
+    const trustedPhase = herRunStartPly ? phases.phaseAt(herRunStartPly) : undefined;
     // Suppress rather than repeat watchNextTime's claim (see the comment
     // above this branch).
     const phaseClaim = trustedPhase && trustedPhase !== watchNextPhaseClaim ? trustedPhase : undefined;
     return {
       section: "done well",
       text: phaseClaim ? `your ${phaseClaim} is working: ${base}` : base,
-      phase: phaseForPly(unconvertedTp.ply, totalPlies, endgamePlies),
+      // V1 fix (2026-07-30 integration review, visual gate finding): this
+      // field used to be phases.phaseAt(unconvertedTp.ply) -- the SLIP ply
+      // -- while the prose above is anchored to herRunStartPly (trustedPhase),
+      // HER own ply inside the winning run being praised (see the Critical 2
+      // comment above). That let the chip name a different phase than the
+      // bullet's own text: on her real game 151 it rendered the chip
+      // "middlegame · conversion" directly above "your opening is working:
+      // ...". The chip must always agree with whatever phase (if any) this
+      // bullet's own prose asserts, so it tracks trustedPhase even when
+      // phaseClaim itself is suppressed by the same-phase guard above (the
+      // suppression only silences the PROSE repeating watchNextTime's word;
+      // the underlying phase this bullet is about doesn't change). Falls
+      // back to the slip ply's phase only when there is no herRunStartPly at
+      // all (no startPoint -- not reachable on her real corpus today).
+      phase: trustedPhase ?? phases.phaseAt(unconvertedTp.ply),
       category: "conversion",
       ply: unconvertedTp.ply,
     };
@@ -473,7 +481,7 @@ function buildDoneWell(
     return {
       section: "done well",
       text: "you held a worse position under real pressure and got through it.",
-      phase: phaseForPly(episode.ply, totalPlies, endgamePlies),
+      phase: phases.phaseAt(episode.ply),
       category: "defense",
       ply: episode.ply,
     };
@@ -483,7 +491,7 @@ function buildDoneWell(
     return {
       section: "done well",
       text: "you kept playing through a hard game. next one starts even.",
-      phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
+      phase: phases.phaseAt(totalPlies),
       category: "development",
     };
   }
@@ -495,7 +503,7 @@ function buildDoneWell(
     return {
       section: "done well",
       text: "you kept the game level the whole way. build from here.",
-      phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
+      phase: phases.phaseAt(totalPlies),
       category: "development",
     };
   }
@@ -503,7 +511,7 @@ function buildDoneWell(
   return {
     section: "done well",
     text: "you brought the game home without a disaster. build from here.",
-    phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
+    phase: phases.phaseAt(totalPlies),
     category: "development",
   };
 }
@@ -551,9 +559,9 @@ function buildCouldBeBetter(
   classifications: MoveClassification[],
   episode: TurningPoint | null,
   totalPlies: number,
-  gameSans?: SummaryMove[],
-  turningLines?: TurningLine[],
-  endgamePlies?: Set<number>
+  gameSans: SummaryMove[] | undefined,
+  turningLines: TurningLine[] | undefined,
+  phases: PhaseTimeline
 ): DebriefBullet[] {
   const used = new Set<number>();
   const out: DebriefBullet[] = [];
@@ -568,11 +576,12 @@ function buildCouldBeBetter(
   const missedWin = turningPoints.find((t) => t.kind === "missed-win");
   if (missedWin) {
     used.add(missedWin.ply);
+    const missedWinPhase = phases.phaseAt(missedWin.ply);
     out.push({
       section: "could be better",
       text: missedWinText(missedWin, totalPlies, gameSans, turningLines),
-      phase: phaseForPly(missedWin.ply, totalPlies, endgamePlies),
-      category: "endgame technique",
+      phase: missedWinPhase,
+      category: endgameOrConversion(missedWinPhase),
       ply: missedWin.ply,
     });
   }
@@ -583,11 +592,12 @@ function buildCouldBeBetter(
   const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
   if (unconvertedTp && !used.has(unconvertedTp.ply)) {
     used.add(unconvertedTp.ply);
+    const unconvertedPhase = phases.phaseAt(unconvertedTp.ply);
     out.push({
       section: "could be better",
       text: unconvertedCouldBeBetterText(unconvertedTp),
-      phase: phaseForPly(unconvertedTp.ply, totalPlies, endgamePlies),
-      category: "endgame technique",
+      phase: unconvertedPhase,
+      category: endgameOrConversion(unconvertedPhase),
       ply: unconvertedTp.ply,
     });
   }
@@ -610,14 +620,14 @@ function buildCouldBeBetter(
       out.push({
         section: "could be better",
         text: missedPunishText(c, turningPoints),
-        phase: phaseForPly(c.ply, totalPlies, endgamePlies),
+        phase: phases.phaseAt(c.ply),
         category: "missed tactic",
         ply: c.ply,
       });
       continue;
     }
     const episodeCtx = episode ? { ply: episode.ply, plyEnd: episode.plyEnd } : null;
-    const category = categorize(c, phaseForPly(c.ply, totalPlies, endgamePlies), episodeCtx);
+    const category = categorize(c, phases.phaseAt(c.ply), episodeCtx);
     // Coach truth-speed round: a candidate that followedBest confirms she
     // actually played gets re-sectioned to "done well" instead of nudged.
     const fb = followedBest(lineForPly(c.ply), gameSans);
@@ -625,7 +635,7 @@ function buildCouldBeBetter(
       out.push({
         section: "done well",
         text: followedGoodText(c.ply, c.san, gameSans),
-        phase: phaseForPly(c.ply, totalPlies, endgamePlies),
+        phase: phases.phaseAt(c.ply),
         category,
         ply: c.ply,
       });
@@ -634,7 +644,7 @@ function buildCouldBeBetter(
     out.push({
       section: "could be better",
       text: couldBeBetterText(c.ply, c.label, c.san, c.crossedAdvantage, gameSans),
-      phase: phaseForPly(c.ply, totalPlies, endgamePlies),
+      phase: phases.phaseAt(c.ply),
       category,
       ply: c.ply,
     });
@@ -647,13 +657,13 @@ function buildCouldBeBetter(
     if (out.length >= 2) break;
     used.add(c.ply);
     const episodeCtx = episode ? { ply: episode.ply, plyEnd: episode.plyEnd } : null;
-    const category = categorize({ ply: c.ply, label: c.classification }, phaseForPly(c.ply, totalPlies, endgamePlies), episodeCtx);
+    const category = categorize({ ply: c.ply, label: c.classification }, phases.phaseAt(c.ply), episodeCtx);
     const fb = followedBest(lineForPly(c.ply), gameSans);
     if (fb?.followed) {
       out.push({
         section: "done well",
         text: followedGoodText(c.ply, undefined, gameSans),
-        phase: phaseForPly(c.ply, totalPlies, endgamePlies),
+        phase: phases.phaseAt(c.ply),
         category,
         ply: c.ply,
       });
@@ -662,7 +672,7 @@ function buildCouldBeBetter(
     out.push({
       section: "could be better",
       text: couldBeBetterText(c.ply, c.classification, undefined, undefined, gameSans),
-      phase: phaseForPly(c.ply, totalPlies, endgamePlies),
+      phase: phases.phaseAt(c.ply),
       category,
       ply: c.ply,
     });
@@ -672,7 +682,7 @@ function buildCouldBeBetter(
     out.push({
       section: "could be better",
       text: "no clear mistakes to flag here. keep playing this clean.",
-      phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
+      phase: phases.phaseAt(totalPlies),
       category: "development",
     });
   }
@@ -685,7 +695,7 @@ function buildWatchNextTime(
   classifications: MoveClassification[],
   episode: TurningPoint | null,
   totalPlies: number,
-  endgamePlies?: Set<number>
+  phases: PhaseTimeline
 ): DebriefBullet[] {
   const bullets: DebriefBullet[] = [];
 
@@ -701,11 +711,12 @@ function buildWatchNextTime(
       count > 1
         ? `you had checkmate on the board ${count} times and played past it.`
         : `you had checkmate on the board and played past it.`;
+    const missedWinPhase = phases.phaseAt(missedWin.ply);
     bullets.push({
       section: "watch next time",
       text: `${opener} when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move.`,
-      phase: phaseForPly(missedWin.ply, totalPlies, endgamePlies),
-      category: "endgame technique",
+      phase: missedWinPhase,
+      category: endgameOrConversion(missedWinPhase),
       ply: missedWin.ply,
     });
   }
@@ -715,21 +726,41 @@ function buildWatchNextTime(
   // alternatives, not a proverb. A non-repetition ending falls back to the
   // plainer "attacking to finishing" wording (unchanged from the prior
   // wave; her feedback was specifically about the repetition case in game
-  // 151). A phase clause is prepended only when trustedPhaseForClause
-  // allows it -- see that function's header for why the ply-fraction
-  // fallback is never trusted here.
+  // 151). Phase round (2026-07-30): the phase clause used to be omitted
+  // unless the old endgame-only gate could prove "endgame" from the
+  // nearly-bare override alone; every phase phases.phaseAt returns is now a
+  // board fact (lichess divider + nearly-bare override).
+  //
+  // Critical 1 fix (2026-07-30 fix wave, restores the rule commit 365f503
+  // established): unconvertedTp.ply is provably the SLIP location -- a real
+  // turning moment -- ONLY when anchorKind is "repetition-entry"
+  // (findRepetitionAnchor actually proved a stored, non-repeating
+  // alternative existed there). On every other unconverted ending
+  // (anchorKind "run-start") it is only the held-run's FIRST ply, never a
+  // claim about when the win slipped -- buildDoneWell's own `proven` branch
+  // above already respects this distinction; this clause did not. The old
+  // trustedPhaseForClause gate (deleted this round) could only ever prove
+  // "endgame" from the nearly-bare override, so a run-start anchor almost
+  // never passed it -- this clause was near-unreachable by accident.
+  // phaseAt is total now, so that accidental protection is gone and must be
+  // restored explicitly: the phase-and-slip claim is gated on the SAME
+  // condition buildDoneWell already uses, and omitted (not weakened) when
+  // it is not proven -- a silent bullet beats one that contradicts our own
+  // data.
   const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
   if (unconvertedTp && !missedWin) {
     const base =
       unconvertedTp.endKind === "repetition"
         ? "when you are winning and the position starts to look familiar, that is the moment to change something: a pawn push, a check from a new square, a rook to an open file. repeating is not a safe move, it is the move that gives the win back."
         : "when you are winning big, the job changes from attacking to finishing. slow down and look for the line that actually ends it.";
-    const trustedPhase = trustedPhaseForClause(unconvertedTp.ply, endgamePlies);
+    const proven = unconvertedTp.anchorKind === "repetition-entry";
+    const trustedPhase = proven ? phases.phaseAt(unconvertedTp.ply) : null;
+    const unconvertedPhase = phases.phaseAt(unconvertedTp.ply);
     bullets.push({
       section: "watch next time",
       text: trustedPhase ? `the ${trustedPhase} is where this one slipped. ${base}` : base,
-      phase: phaseForPly(unconvertedTp.ply, totalPlies, endgamePlies),
-      category: "endgame technique",
+      phase: unconvertedPhase,
+      category: endgameOrConversion(unconvertedPhase),
       ply: unconvertedTp.ply,
     });
   }
@@ -740,7 +771,7 @@ function buildWatchNextTime(
     bullets.push({
       section: "watch next time",
       text: `moves ${n1}-${n2}: she kept pieces camped on your king. keep the pawn shelter intact when you recapture.`,
-      phase: phaseForPly(episode.ply, totalPlies, endgamePlies),
+      phase: phases.phaseAt(episode.ply),
       category: "king safety",
       ply: episode.ply,
     });
@@ -753,12 +784,12 @@ function buildWatchNextTime(
   const byPly = new Map<number, ChessCategory>();
   for (const t of turningPoints) {
     if (!HER_NEG_LABELS.has(t.label)) continue;
-    byPly.set(t.ply, categorize(t, phaseForPly(t.ply, totalPlies, endgamePlies), null));
+    byPly.set(t.ply, categorize(t, phases.phaseAt(t.ply), null));
   }
   for (const c of classifications) {
     if (SEVERITY[c.classification] == null) continue;
     if (byPly.has(c.ply)) continue;
-    byPly.set(c.ply, categorize({ ply: c.ply, label: c.classification }, phaseForPly(c.ply, totalPlies, endgamePlies), null));
+    byPly.set(c.ply, categorize({ ply: c.ply, label: c.classification }, phases.phaseAt(c.ply), null));
   }
 
   if (byPly.size === 0) {
@@ -767,7 +798,7 @@ function buildWatchNextTime(
       {
         section: "watch next time",
         text: "no repeat pattern showed up this game. stay sharp on the next one.",
-        phase: phaseForPly(totalPlies, totalPlies, endgamePlies),
+        phase: phases.phaseAt(totalPlies),
         category: "development",
       },
     ];
@@ -804,7 +835,7 @@ function buildWatchNextTime(
         topCount > 1
           ? `${topCount} slips came back to ${topCategory}. scan for that pattern before you commit to a move.`
           : `a slip came from ${topCategory}. scan for that before you commit to a move.`,
-      phase: phaseForPly(repPly, totalPlies, endgamePlies),
+      phase: phases.phaseAt(repPly),
       category: topCategory,
       ply: repPly,
     },
@@ -814,24 +845,27 @@ function buildWatchNextTime(
 export function debriefBullets(input: DebriefBulletsInput): DebriefBullet[] {
   const { turningPoints, classifications, result, totalPlies, gameSans, turningLines } = input;
   const episode = turningPoints.find((t) => t.kind === "episode") ?? null;
-  // Missed-win round (2026-07-28): computed once, threaded into every
-  // phaseForPly call below — see phase.ts's header for why a nearly-bare
-  // side beats the ply-arithmetic phase rule.
-  const endgamePlies = nearlyBarePlies(gameSans);
+  // Phase round (2026-07-30): computed once, threaded into every phase
+  // lookup below -- the one game-phase source of truth (lichess divider,
+  // latching timeline, nearly-bare override), see ./gamePhases's header.
+  const phases = phasesForGame(gameSans);
 
   // Fix wave 2 (2026-07-29, review-3-pass2.md MEDIUM finding 2): the phase
   // watchNextTime's own unconverted-branch clause would claim, computed
   // ahead of buildDoneWell so it can suppress a colliding claim of its own
   // (see that function's unconverted branch). Mirrors buildWatchNextTime's
   // own guard exactly (an unconverted point only gets a watch-next-time
-  // phase clause when there is no missed-win point crowding it out) --
-  // keep the two in sync if either guard changes.
+  // phase clause when there is no missed-win point crowding it out, AND
+  // (Critical 1 fix, 2026-07-30) only when anchorKind proves the slip
+  // location) -- keep the two in sync if either guard changes.
   const unconvertedTp = turningPoints.find((t) => t.kind === "unconverted");
   const missedWinTp = turningPoints.find((t) => t.kind === "missed-win");
   const watchNextPhaseClaim =
-    unconvertedTp && !missedWinTp ? trustedPhaseForClause(unconvertedTp.ply, endgamePlies) : undefined;
+    unconvertedTp && !missedWinTp && unconvertedTp.anchorKind === "repetition-entry"
+      ? phases.phaseAt(unconvertedTp.ply)
+      : undefined;
 
-  const doneWell = buildDoneWell(turningPoints, episode, result, totalPlies, gameSans, endgamePlies, watchNextPhaseClaim);
+  const doneWell = buildDoneWell(turningPoints, episode, result, totalPlies, gameSans, phases, watchNextPhaseClaim);
   const couldBeBetter = buildCouldBeBetter(
     turningPoints,
     classifications,
@@ -839,9 +873,9 @@ export function debriefBullets(input: DebriefBulletsInput): DebriefBullet[] {
     totalPlies,
     gameSans,
     turningLines,
-    endgamePlies
+    phases
   ).slice(0, 2);
-  const watchNext = buildWatchNextTime(turningPoints, classifications, episode, totalPlies, endgamePlies).slice(0, 2);
+  const watchNext = buildWatchNextTime(turningPoints, classifications, episode, totalPlies, phases).slice(0, 2);
 
   return [doneWell, ...couldBeBetter, ...watchNext].slice(0, 5);
 }
