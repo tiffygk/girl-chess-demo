@@ -143,6 +143,35 @@ function parseMateClaimNumbers(text: string): number[] {
   return out;
 }
 
+// Residual hole found by the reviewer's own falsification pass (2026-07-31,
+// third instance of "the check is narrower than the thing it claims to
+// cover"): "was mate on the spot" / "ends it on the spot" assert mate-in-1
+// SEMANTICALLY, with no digit or number word anywhere in the sentence, so
+// parseMateClaimNumbers cannot see them at all. Proven concretely: replacing
+// turningPointNote.ts's `mateIn === 1 ? ... ends it on the spot ... :
+// starts a forced mate in N` ternary with an unconditional "ends it on the
+// spot" made `replay-check` exit 0 with zero violations on real games where
+// mateIn was 2-5 -- the exact silent-pass shape C1 shipped through twice.
+//
+// Enumerated, not pattern-matched, on purpose -- same "precision over
+// recall" discipline server/coach/defenseClaims.ts's checkDefenseClaims
+// already uses for this codebase's other verify-before-send checks. This
+// list is EVERY number-free phrase actually in production that implies
+// mate-in-1 (grepped across src/review/*.ts and server/annotator/*.ts,
+// 2026-07-31: exactly these two, both containing "on the spot", nothing
+// else). It does NOT catch a paraphrase that isn't on this list ("delivers
+// the mate right there", "wins on the spot", "mates immediately", etc.) --
+// if a producer ever adds a new number-free immediate-mate phrase, it must
+// be added here too, in this one place, or this rule goes blind to it the
+// same way it went blind to these two. Understating this check's reach is
+// deliberate: a comment that overstates what it catches is how this class
+// of bug survived twice already.
+export const IMPLICIT_MATE_ONE_PHRASES = ["mate on the spot", "ends it on the spot"];
+
+function hasImplicitMateOneClaim(text: string): boolean {
+  return IMPLICIT_MATE_ONE_PHRASES.some((p) => text.includes(p));
+}
+
 // Integration review fix (2026-07-30, I1 + V1 -- mandatory union review):
 // two invariants closing one underlying problem -- a single bullet can name
 // one phase in its prose, a different phase in its metadata, and a third in
@@ -470,9 +499,26 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
   // (mateIn is already the field all three use). Tolerant of games with no
   // conversion turning points at all -- only text that actually names a
   // mate distance is checked.
+  //
+  // Third tightening (reviewer's own falsification pass, 2026-07-31): a
+  // NUMBER-FREE mate-in-1 claim ("was mate on the spot" / "ends it on the
+  // spot") asserts the distance semantically, with no digit or number word
+  // for parseMateClaimNumbers to find -- proven by mutation: an
+  // unconditional "ends it on the spot" in turningPointNote.ts made
+  // replay-check exit 0 with zero violations on real games where mateIn was
+  // 2-5. IMPLICIT_MATE_ONE_PHRASES (above) is the enumerated, precision-
+  // over-recall fix -- exactly the two phrases actually in production, not
+  // a paraphrase matcher. HONEST LIMIT, stated plainly rather than
+  // overstated: this catches a WRONG NUMBER and this SPECIFIC enumerated
+  // phrase set. It does NOT catch an arbitrary future paraphrase ("wins on
+  // the spot", "mates immediately", etc.) -- a new number-free immediate-
+  // mate phrase must be added to IMPLICIT_MATE_ONE_PHRASES by hand, in that
+  // one place, or this rule goes blind to it exactly the way it went blind
+  // to these two.
   outputTextUnits(output).forEach(({ text, where }) => {
     const claims = parseMateClaimNumbers(text);
-    if (claims.length === 0) return;
+    const impliesMateOne = hasImplicitMateOneClaim(text);
+    if (claims.length === 0 && !impliesMateOne) return;
     const ply = plyForWhere(where, bullets);
     const tp = ply != null ? facts.turningPoints.find((t) => t.ply === ply && t.mateIn != null) : undefined;
     if (!tp) {
@@ -493,6 +539,14 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
           message: `text asserts mate in ${n} but the same-ply turning point's mateIn is ${tp.mateIn}`,
         });
       }
+    }
+    if (impliesMateOne && tp.mateIn !== 1) {
+      violations.push({
+        kind: "contradiction",
+        rule: "conversion-claim",
+        where,
+        message: `text asserts an immediate mate ("${text}") but the same-ply turning point's mateIn is ${tp.mateIn}`,
+      });
     }
   });
 
