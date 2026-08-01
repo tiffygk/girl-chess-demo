@@ -79,6 +79,9 @@ export type ThreatMotif =
   | "fork"
   | "mate-threat"
   | "check-threat"
+  // Wave 1 (item 3 -- tier-1 motif fields): a quiet promoting refutation --
+  // mirrors server/annotator/motifs.ts's ThreatMotif.
+  | "promotion-threat"
   | "positional";
 
 export interface ThreatFacts {
@@ -115,6 +118,10 @@ export type RecommendationAccomplishment =
   | "gives-mate"
   | "forks"
   | "attacks"
+  // Wave 1 (item 3 -- tier-1 motif fields): mirrors
+  // server/annotator/motifs.ts's RecommendationAccomplishment.
+  | "promotes"
+  | "castles"
   | "develops";
 
 export interface RecommendationFacts {

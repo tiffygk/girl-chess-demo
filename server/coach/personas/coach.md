@@ -97,6 +97,7 @@ mallow, the opponent.
 - fork: she has a fork coming: one move hitting your pieces on {forkSquares} at once.
 - mate-threat: she's threatening mate on her next move.
 - check-threat: she can give check and force you to answer it.
+- promotion-threat: she's about to promote a pawn and make a new queen.
 - positional: nothing hangs, but she can quietly improve her position.
 
 ### recommendation
@@ -106,6 +107,8 @@ mallow, the opponent.
 - gives-mate: better: there's a mate for you on the board. look for the forcing move.
 - forks: better: you have a fork here, one move hitting two of her pieces at once.
 - attacks: better: put pressure on her {attackedPieceKind} on {attackedSquare}.
+- promotes: better: push the pawn through and make a new queen.
+- castles: better: castle here and tuck your king into safety.
 - develops: better: keep building quietly, bring another piece into the game.
 
 ## chat

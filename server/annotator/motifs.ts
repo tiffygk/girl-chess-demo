@@ -14,7 +14,19 @@ import type { Evaluation } from "../engines/types";
 // below. Optional fields stay undefined outside the motif branch that
 // derived them — a template reading a field outside its motif would be
 // fabricating, not reporting.
-export type ThreatMotif = "capture-moved" | "capture-other" | "fork" | "mate-threat" | "check-threat" | "positional";
+export type ThreatMotif =
+  | "capture-moved"
+  | "capture-other"
+  | "fork"
+  | "mate-threat"
+  | "check-threat"
+  // Wave 1 (item 3 -- tier-1 motif fields): a QUIET promoting refutation
+  // (promotion, no capture, no check/mate/fork) -- the opponent is about to
+  // make a new queen. A capturing promotion stays a capture motif and a
+  // mating promotion stays mate-threat; only the otherwise-quiet promotion
+  // lands here (see deriveThreatFacts's ordering).
+  | "promotion-threat"
+  | "positional";
 
 export interface ThreatFacts {
   motif: ThreatMotif;
@@ -149,6 +161,15 @@ export function deriveThreatFacts(
       motif = "mate-threat";
     } else if (probe.inCheck()) {
       motif = "check-threat";
+    } else if (mv.promotion) {
+      // Wave 1 (item 3): a QUIET promoting refutation -- placed after the
+      // mate/check checks (a mating promotion stayed mate-threat, a checking
+      // one check-threat) and before positional. A capturing promotion never
+      // reaches here (the isCapture branches above already claimed it). No new
+      // per-motif fields: refutationPieceKind ("p") + refutationToSquare
+      // already carry the whole story (the promoted-to piece is derivable
+      // later if ever needed -- YAGNI now).
+      motif = "promotion-threat";
     } else {
       motif = "positional";
     }
@@ -195,6 +216,12 @@ export type RecommendationAccomplishment =
   | "gives-mate"
   | "forks"
   | "attacks"
+  // Wave 1 (item 3 -- tier-1 motif fields): two quiet accomplishments that
+  // otherwise fall into develops. "promotes" = a quiet promotion (a
+  // capture-promotion stays "captures" -- the material story is the honest
+  // one); "castles" = a castling move.
+  | "promotes"
+  | "castles"
   | "develops";
 
 export interface RecommendationFacts {
@@ -251,6 +278,17 @@ export function deriveRecommendationFacts(beforeFen: string, bestUci: string): R
       facts.accomplishment = "gives-mate";
     } else if (probe.inCheck()) {
       facts.accomplishment = "gives-check";
+    } else if (mv.flags.includes("k") || mv.flags.includes("q")) {
+      // Wave 1 (item 3): castling ("k"/"q" chess.js flags). Quiet by nature,
+      // so it currently lands in develops -- checked before the
+      // fork/attack/develops chain. A castling move that also gave check
+      // stayed gives-check above (the check is the more salient story).
+      facts.accomplishment = "castles";
+    } else if (mv.promotion) {
+      // Wave 1 (item 3): a quiet promotion. A capture-promotion never reaches
+      // here (the isCapture branch above claimed it as "captures"); a
+      // promotion that checked/mated stayed gives-check/gives-mate above.
+      facts.accomplishment = "promotes";
     } else {
       // Colors inverted from deriveThreatFacts's detectFork call above: there
       // herColor (the target color) was the human player's own color, since
