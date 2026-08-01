@@ -127,12 +127,13 @@ interface BoardProps {
    */
   hintReveal?: { from: string; to: string } | null;
   /**
-   * Increment 2.7 (why-hints): level-3 threat highlight — the opponent's
+   * Increment 2.7 (why-hints): the threat highlight — the opponent's
    * refutation attacker and the square it lands on/captures on, derived
    * from verdict.threat (GamePage's threatReveal, distinct from the deep
-   * hint search's hintReveal above). Shown only while hintLevel === 3, with
-   * its own alarm-language classes (`.threat-attacker`/`.threat-victim`) so
-   * it never reads as "move here" the way hintReveal's mint ring does.
+   * hint search's hintReveal above). Wave 2: shown only at the right
+   * branch's press 2 (the "what the opponent is doing" rung), with its own
+   * alarm-language classes (`.threat-attacker`/`.threat-victim`) so it never
+   * reads as "move here" the way hintReveal's mint ring does.
    */
   threatReveal?: { attacker: string; victim: string } | null;
   /**

@@ -259,7 +259,12 @@ function buildContext(
     return {
       mode: "live",
       hintFocus: {
-        level: NARR_HINT_LEVEL,
+        // Wave 2 (item 6): identity is {branch, press} now. The coach-eval
+        // harness only exercises text/bestSan/pvSans (the server never reads
+        // the identity), so a full-reveal rung on the right branch stands in
+        // for the old numeric level here.
+        branch: "right",
+        press: NARR_HINT_LEVEL,
         text: NARR_HINT_TEXT,
         bestSan: engineBest?.bestSan,
         pvSans: engineBest?.pvSans,
