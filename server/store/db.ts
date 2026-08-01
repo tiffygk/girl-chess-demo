@@ -369,6 +369,28 @@ export const getAdviceTraces = (gameId: number) =>
 // scan just to look up the one row its own chat() call produced.
 export const getAdviceTraceById = (id: number) =>
   db.prepare("SELECT * FROM advice_traces WHERE id = ?").get(id) as any;
+// Wave 3, item 3 (F5 family, game-164): the most recent REJECTED chat draft
+// for this game that the player never saw a valid reply for -- so a follow-up
+// like "that made no sense" has a referent. "Newer than the last persisted
+// coach message" is what makes it self-limiting: a chat_messages coach row is
+// only ever written for a VALIDATED model reply (manager.ts's source==="model"
+// gate), and it carries the trace_id of that validated advice_trace. So a
+// rejected trace (validated=0) counts only when its id is greater than the
+// last such trace_id -- once a valid reply lands, every rejected draft before
+// it drops out. COALESCE(...,0) handles the first-turn case (no coach message
+// yet). Read-only, no schema change; the caller re-validates the row's own
+// stored output to decide whether it is a genuine draft (vs a backend-error or
+// off-topic-redirect template, which validate clean) and to recover the
+// violation kinds.
+export const getLatestRejectedChatTrace = (gameId: number) =>
+  db.prepare(
+    `SELECT * FROM advice_traces
+       WHERE game_id = ? AND kind = 'chat' AND validated = 0
+         AND id > COALESCE(
+           (SELECT MAX(trace_id) FROM chat_messages
+              WHERE game_id = ? AND role = 'coach' AND trace_id IS NOT NULL), 0)
+       ORDER BY id DESC LIMIT 1`
+  ).get(gameId, gameId) as any;
 // Increment 3.9 Task 4 (F19): thumbs up/down with optional feedback on a
 // traced coach output. "Re-rating overwrites, latest wins" (the route
 // contract) means the WHOLE row reflects only the most recent call -- both
