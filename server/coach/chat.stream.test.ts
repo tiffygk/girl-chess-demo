@@ -157,6 +157,71 @@ describe("chat() streaming wiring (B-stream)", () => {
     expect(redraftCalls.length).toBe(0);
   });
 
+  // Wave 3, item 2 (F5 family, game-164): she watched the wrong-topic draft
+  // stream live before validation zapped it. chat() now buffers each attempt's
+  // deltas internally and flushes them through opts.onDelta ONLY after that
+  // attempt passes validation -- a rejected draft's tokens never reach the
+  // client at all.
+  it("emits NO deltas from a validation-failing attempt, only the passing regen's, and still fires onRedraft once", async () => {
+    const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+    let call = 0;
+    const backend = fakeStreamingBackend(async (_prompt, _timeoutMs, onDelta) => {
+      call += 1;
+      if (call === 1) {
+        // Attempt 0: streams an off-game claim (Qh5xf7 is not legal here) ->
+        // validateChat rejects it -> forces a regen. These deltas must never
+        // be forwarded.
+        onDelta("she plays ");
+        onDelta("Qh5xf7 next.");
+        return "she plays Qh5xf7 next.";
+      }
+      // Attempt 1: a clean, in-facts reply.
+      onDelta("e4 ");
+      onDelta("is a fine start for you.");
+      return "e4 is a fine start for you.";
+    });
+    const seen: string[] = [];
+    const redraftCalls: number[] = [];
+
+    const result = await chat(
+      "what's happening?",
+      [],
+      facts,
+      backend,
+      { gameId, ply: 1, kind: "chat" },
+      { onDelta: (text) => seen.push(text), onRedraft: () => redraftCalls.push(1) }
+    );
+
+    // nothing from the failing attempt; exactly the passing attempt's tokens
+    expect(seen).toEqual(["e4 ", "is a fine start for you."]);
+    expect(seen.join("")).not.toContain("Qh5xf7");
+    expect(redraftCalls.length).toBe(1);
+    expect(result.text).toBe("e4 is a fine start for you.");
+    expect(result.source).toBe("model");
+  });
+
+  it("emits NO deltas at all when both attempts fail validation (rejected draft never reaches the client)", async () => {
+    const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+    const backend = fakeStreamingBackend(async (_prompt, _timeoutMs, onDelta) => {
+      onDelta("she plays ");
+      onDelta("Qh5xf7 next.");
+      return "she plays Qh5xf7 next.";
+    });
+    const seen: string[] = [];
+
+    const result = await chat(
+      "what's happening?",
+      [],
+      facts,
+      backend,
+      { gameId, ply: 1, kind: "chat" },
+      { onDelta: (text) => seen.push(text) }
+    );
+
+    expect(seen).toEqual([]);
+    expect(result.source).toBe("template");
+  });
+
   it("never fires onRedraft when the regen is skipped because remaining budget is under MIN_ATTEMPT_MS", async () => {
     const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
     let now = 1_000_000;

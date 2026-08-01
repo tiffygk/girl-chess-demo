@@ -1329,6 +1329,15 @@ export async function chat(
       opts?.onRedraft?.();
     }
     const timeoutMs = Math.max(0, deadline - Date.now());
+    // Wave 3, item 2 (F5 family, game-164): this attempt's deltas are buffered
+    // here, NOT forwarded live. She watched a wrong-topic draft stream in real
+    // time before validation zapped it -- so opts.onDelta is never handed
+    // straight to the backend anymore. The buffer flushes through opts.onDelta
+    // only after this attempt PASSES validation (see the result.ok branch
+    // below); a rejected attempt's tokens are simply dropped. Accepted
+    // trade-off (owner-approved): no live typing during generation, the
+    // visible stream starts only after validation.
+    const attemptDeltas: string[] = [];
     try {
       // B-stream: one ternary, no duplicated attempt loop. Streaming is used
       // only when the backend actually implements it AND the caller asked
@@ -1337,7 +1346,7 @@ export async function chat(
       // path.
       attemptOutput =
         backend.generateStream && opts?.onDelta
-          ? await backend.generateStream(attemptPrompt, timeoutMs, opts.onDelta)
+          ? await backend.generateStream(attemptPrompt, timeoutMs, (t) => attemptDeltas.push(t))
           : await backend.generate(attemptPrompt, timeoutMs);
     } catch (err) {
       // Backend error/timeout at any attempt short-circuits straight to the
@@ -1361,6 +1370,12 @@ export async function chat(
         : ({ ok: false, violations: [] } as const);
     if (result.ok) {
       modelText = trimmed;
+      // Wave 3, item 2: only now that the attempt validated do its buffered
+      // deltas reach the client -- replayed in the same chunks the backend
+      // produced (the client renders either a single flush or a chunked
+      // replay). A rejected attempt never reaches this branch, so its buffer
+      // is discarded unread.
+      if (opts?.onDelta) for (const d of attemptDeltas) opts.onDelta(d);
       break;
     }
     sawValidationFailure = true;
