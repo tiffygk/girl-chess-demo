@@ -1069,10 +1069,40 @@ function generalFactsForModel(facts: ChatFactList) {
   };
 }
 
-function formatHistory(history: { role: "user" | "coach"; text: string }[]): string {
+// Wave 3, item 1 (F5 family, game-164 incident): when a focus is present the
+// history is background, not the topic -- the header says so. `background`
+// defaults false, so a no-focus prompt renders the exact "conversation so
+// far:" header it always has (the byte-identity pin in chat.focusPrompt.test.ts
+// depends on this default path staying untouched).
+function formatHistory(history: { role: "user" | "coach"; text: string }[], background = false): string {
   if (history.length === 0) return "";
   const lines = history.map((h) => `${h.role === "user" ? "player" : "coach"}: ${h.text}`);
-  return ["", "conversation so far:", ...lines].join("\n");
+  const header = background
+    ? "conversation so far (background only -- the focused moment below is what she's asking about):"
+    : "conversation so far:";
+  return ["", header, ...lines].join("\n");
+}
+
+// Wave 3, item 1 (F5 family): the dedicated focus section. Emitted only when a
+// turning-point moment is in focus (facts.focusPosition, the same field
+// focusForModel serializes) -- it names the focused move + its move number and
+// quotes the moment's own fen, then states outright that this moment overrides
+// the conversation so far. game-164: the player asked about move 5 with a
+// correctly-attached focus and the coach twice answered from the 8-message-old
+// topic; the fact list carried the focus (buried in 23KB of JSON) but nothing
+// told the model to prefer it over the running conversation. Returns a block
+// with a leading blank line so it joins as its own paragraph after history and
+// before the player line; undefined (no change) when nothing is focused.
+function focusedMomentSection(facts: ChatFactList): string | undefined {
+  const focus = facts.focusPosition;
+  const tp = facts.context?.turningPointFocus;
+  if (!focus || !tp) return undefined;
+  const moveNumber = Math.ceil(focus.ply / 2);
+  return (
+    `\nfocused moment: the player is asking about ${tp.san} at move ${moveNumber} (${focus.fen}). ` +
+    `this focused moment overrides whatever the conversation so far was about -- answer about THIS moment. ` +
+    `the conversation history above is background only.`
+  );
 }
 
 // Task 2 (Wave D): intent picks BOTH halves of the prompt -- which system
@@ -1096,6 +1126,12 @@ function buildChatPrompt(
       ? [persona.chatSystemPrompt, persona.chatGeneralPrompt].filter(Boolean).join("\n\n")
       : persona.chatSystemPrompt;
   const factsPayload = intent === "general" ? generalFactsForModel(facts) : factsForModel(facts, mentioned);
+  // Wave 3, item 1: the focus section rides only on the board route (the one
+  // that carries focusPosition facts -- classifyIntent forces "board" whenever
+  // a focus is present, so this never fires on "general", keeping general
+  // prompts byte-identical). When it fires, the history block above it is
+  // marked as background.
+  const focusSection = intent === "general" ? undefined : focusedMomentSection(facts);
   return [
     systemPrompt,
     "",
@@ -1106,7 +1142,8 @@ function buildChatPrompt(
     // fighting. No indentation/newlines to strip means no information loss,
     // just no pretty-printing a model doesn't need.
     JSON.stringify(factsPayload),
-    formatHistory(history),
+    formatHistory(history, focusSection !== undefined),
+    ...(focusSection ? [focusSection] : []),
     "",
     `player: ${userMessage}`,
   ].join("\n");
