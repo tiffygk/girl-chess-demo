@@ -23,7 +23,7 @@ import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims } from "./placementClaims";
 import { checkMateClaims } from "./mateClaims";
-import { insertAdviceTrace } from "../store/db";
+import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
 import { isOffTopic, mentionedPlies, type ChatIntent } from "./intent";
 
 // F16 (this-game grounding chat): a second, independent narration surface
@@ -1105,6 +1105,46 @@ function focusedMomentSection(facts: ChatFactList): string | undefined {
   );
 }
 
+// Wave 3, item 3 (F5 family, game-164): the labeled context for a rejected
+// prior draft. `text` is the rejected draft's raw output, `kinds` a
+// comma-joined list of the validation kinds it failed. Assembled by chat()
+// from getLatestRejectedChatTrace + a re-validation of the stored output (see
+// there); undefined when there is no unseen rejected draft.
+interface RejectedDraftContext {
+  text: string;
+  kinds: string;
+}
+
+// Wave 3, item 3: the block placed AFTER history and BEFORE the focus section.
+// game-164: because rejected replies are never persisted to chat_messages
+// (the source==="model" doom-loop gate in manager.ts, which must stay), her
+// follow-up "this answer made no sense" had no referent -- the model had no
+// idea a previous attempt had even happened. This gives it one, clearly
+// labeled as a REJECTED draft the player never saw, with the checks it failed,
+// so the model neither repeats the bad claims nor treats it as a real turn.
+// First ~400 chars only -- enough to identify the draft without re-bloating the
+// prompt. Leading blank line so it joins as its own paragraph.
+const REJECTED_DRAFT_SNIPPET_LEN = 400;
+function rejectedDraftBlock(rejected: RejectedDraftContext): string {
+  const snippet = rejected.text.trim().slice(0, REJECTED_DRAFT_SNIPPET_LEN);
+  return (
+    `\nnote: your previous attempt to answer was rejected by validation and the player never saw a valid reply. ` +
+    `rejected draft (do not repeat its claims; they failed checks: ${rejected.kinds}): "${snippet}"`
+  );
+}
+
+// Wave 3, item 3: the validation-kind labels for the rejected-draft note --
+// the KIND prefix each checker pushes (see validateChat's checkers), with a
+// bare-SAN token (no ":" -- chess notation never contains one) labeled
+// "off-game move", the same split correctiveSuffix uses.
+function describeViolationKinds(violations: readonly string[]): string {
+  const kinds = new Set<string>();
+  for (const v of violations) {
+    kinds.add(v.includes(":") ? v.split(":")[0] : "off-game move");
+  }
+  return [...kinds].join(", ");
+}
+
 // Task 2 (Wave D): intent picks BOTH halves of the prompt -- which system
 // prompt fragment and which fact projection -- so "board route: change
 // nothing" holds exactly: an undefined/"board" intent takes the identical
@@ -1119,7 +1159,8 @@ function buildChatPrompt(
   userMessage: string,
   persona: ReturnType<typeof getPersona>,
   intent: ChatIntent,
-  mentioned: number[] = []
+  mentioned: number[] = [],
+  rejected?: RejectedDraftContext
 ): string {
   const systemPrompt =
     intent === "general"
@@ -1143,6 +1184,10 @@ function buildChatPrompt(
     // just no pretty-printing a model doesn't need.
     JSON.stringify(factsPayload),
     formatHistory(history, focusSection !== undefined),
+    // Wave 3, item 3: after history, before the focus section -- so the model
+    // reads the rejected-draft warning as recent context, then the moment it
+    // must actually answer about.
+    ...(rejected ? [rejectedDraftBlock(rejected)] : []),
     ...(focusSection ? [focusSection] : []),
     "",
     `player: ${userMessage}`,
@@ -1302,7 +1347,30 @@ export async function chat(
   }
 
   const mentioned = mentionedPlies(userMessage, facts.gameSans.length);
-  const basePrompt = buildChatPrompt(facts, history, userMessage, persona, intent, mentioned);
+  // Wave 3, item 3 (F5 family, game-164): look up the most recent rejected
+  // chat draft for this game that no valid reply has superseded (see
+  // getLatestRejectedChatTrace). This call's OWN trace is written only at the
+  // end of chat(), so it can never surface here. Re-validate the stored draft
+  // against its own stored facts: only a draft that STILL fails validation is
+  // a genuine rejected draft worth showing -- a backend-error string or the
+  // off-topic redirect copy (both validated=0 templates too) validate clean,
+  // so they yield no kinds and are skipped. The re-validation also recovers
+  // the violation kinds the note quotes, with no schema change.
+  let rejectedContext: RejectedDraftContext | undefined;
+  const rejectedRow = getLatestRejectedChatTrace(trace.gameId);
+  if (rejectedRow && typeof rejectedRow.output === "string" && rejectedRow.output.trim().length > 0) {
+    try {
+      const rejectedFacts = JSON.parse(rejectedRow.facts_json) as ChatFactList;
+      const check = validateChat(rejectedRow.output, rejectedFacts);
+      if (!check.ok) {
+        rejectedContext = { text: rejectedRow.output, kinds: describeViolationKinds(check.violations) };
+      }
+    } catch {
+      // Unparseable stored facts -- skip rather than guess; the note is
+      // best-effort context, never load-bearing.
+    }
+  }
+  const basePrompt = buildChatPrompt(facts, history, userMessage, persona, intent, mentioned, rejectedContext);
 
   let attemptPrompt = basePrompt;
   let attemptOutput = "";
