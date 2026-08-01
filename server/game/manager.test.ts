@@ -158,6 +158,54 @@ describe("GameManager", () => {
     expect(mv.ok).toBe(true);
   }, 20000);
 
+  // Wave 3.5, item 2 (owner ask, 2026-08-01): deleteGame's live-game guard.
+  // A game still in `this.games` with finished===false must be refused
+  // outright -- the owner's whole ask is "I need to double click it so that
+  // I don't accidentally delete it", and an unfinished game she's mid-move
+  // on must never be able to vanish out from under her regardless of what
+  // the drawer even shows (the drawer only ever lists finished games, but
+  // deleteGame itself must not trust that as its only guard).
+  it("deleteGame refuses a live (unfinished) game, and leaves it untouched", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const r = gm.deleteGame(g.gameId);
+    expect(r).toEqual({ ok: false, reason: "live" });
+    expect(getGame(g.gameId)).toBeTruthy();
+    expect((gm as any).games.has(g.gameId)).toBe(true);
+  }, 20000);
+
+  // Finished -> gone from BOTH the db-backed listGames() and the in-memory
+  // `this.games` map. Evicting the map entry matters on its own: a stale
+  // LiveGame handle for a row that no longer exists in the db must never be
+  // able to act on it again (same "in-memory state can't outlive the db
+  // row" discipline the B6 fix already established for playerMove's own
+  // finished guard, just the deletion-shaped version of it).
+  it("deleteGame removes a finished game from listGames() and evicts it from the live map", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    await gm.resign(g.gameId);
+    expect((gm as any).games.get(g.gameId)?.finished).toBe(true);
+
+    const r = gm.deleteGame(g.gameId);
+    expect(r).toEqual({ ok: true });
+    expect((gm as any).games.has(g.gameId)).toBe(false);
+    expect(gm.listGames().games.some((row: any) => row.id === g.gameId)).toBe(false);
+    expect(getGame(g.gameId)).toBeUndefined();
+  }, 20000);
+
+  // A finished game with NO `this.games` entry at all (e.g. the process
+  // restarted between the game finishing and this delete call) must still
+  // be deletable -- the guard has to check the db row's own result, not
+  // just the in-memory map's presence/absence.
+  it("deleteGame removes a finished game that has no in-memory LiveGame entry", async () => {
+    const s2 = createSession();
+    const dbGameId = createGame(s2, "maia-1100");
+    finishGame(dbGameId, "1-0");
+    expect((gm as any).games.has(dbGameId)).toBe(false);
+
+    const r = gm.deleteGame(dbGameId);
+    expect(r).toEqual({ ok: true });
+    expect(getGame(dbGameId)).toBeUndefined();
+  });
+
   it("judgeMove returns ok + a real verdict without advancing the game", async () => {
     const g = await gm.newGame(sessionId, 1100);
     const before = (gm as any).games.get(g.gameId).chess.fen();

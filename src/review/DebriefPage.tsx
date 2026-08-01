@@ -18,7 +18,15 @@
 // deltaP is deliberately never rendered anywhere in this file — "the story
 // is words, not numbers" (brief).
 
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { GameListEntry, MoveClassification, TurningPoint, TurningLine, SummaryMove } from "../game/api";
+// Wave 3.5, item 2 (owner ask, 2026-08-01): the past-games delete X's
+// two-step "you sure?" arm/disarm state -- pure, unit-tested on its own
+// (deleteArm.test.ts) since PastGamesDrawer itself has no interactive
+// component test harness (see this file's DebriefPage.test.tsx sibling,
+// which only ever renders via renderToStaticMarkup -- no onClick fires
+// there).
+import { clickDelete, disarmArmed, type ArmState } from "./deleteArm";
 import { moveNumberForPly } from "./debriefLesson";
 import { debriefBullets, affordancesForBullet, type DebriefBullet } from "./debriefBullets";
 // Increment 3.91 (Task 4): the four-part note, rendered under a turning-
@@ -599,17 +607,87 @@ export function PastGamesButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+// Wave 3.5, item 2 (owner ask, 2026-08-01): how long the pointer has to stay
+// off an armed row before it disarms on its own -- "I need to double click
+// it so that I don't accidentally delete it" (owner) covers the deliberate
+// two-click case; this covers the "armed it, walked away" case.
+const DELETE_DISARM_MS = 3000;
+
 export interface PastGamesDrawerProps {
   open: boolean;
   games: GameListEntry[] | null;
   onSelect: (game: GameListEntry) => void;
   onClose: () => void;
+  // Wave 3.5, item 2: called only on the CONFIRMING second click (see
+  // deleteArm.ts's clickDelete) -- GamePage.tsx owns the actual deleteGame()
+  // api call, the optimistic row removal, and closing REVIEW MODE if the
+  // deleted game is the one currently open there. This component only ever
+  // decides WHEN that click counts as confirmed.
+  onDelete: (gameId: number) => void;
+  // Wave 3.5, item 2: set by GamePage after a failed delete (the row was
+  // already restored by then) -- rendered inline, same past-games-empty
+  // style the loading/empty states already use (no toast machinery exists
+  // in this app).
+  deleteError?: string | null;
 }
 
-export function PastGamesDrawer({ open, games, onSelect, onClose }: PastGamesDrawerProps) {
+export function PastGamesDrawer({ open, games, onSelect, onClose, onDelete, deleteError }: PastGamesDrawerProps) {
+  const [armed, setArmed] = useState<ArmState>(null);
+  const disarmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearDisarmTimer = useCallback(() => {
+    if (disarmTimer.current != null) {
+      clearTimeout(disarmTimer.current);
+      disarmTimer.current = null;
+    }
+  }, []);
+
+  // Disarm on: the drawer closing (below) and on unmount (cleanup) -- an
+  // armed X must never survive being reopened later, possibly against a
+  // completely different row set.
+  useEffect(() => {
+    if (!open) {
+      setArmed(disarmArmed());
+      clearDisarmTimer();
+    }
+  }, [open, clearDisarmTimer]);
+  useEffect(() => clearDisarmTimer, [clearDisarmTimer]);
+
   if (!open) return null;
+
+  // Disarm on: clicking anywhere else in the drawer. Attached to the
+  // drawer's own root so a click on a DIFFERENT row's select button, the
+  // close button, or the backdrop all bubble here -- the armed delete
+  // button's own onClick below calls stopPropagation so its confirming
+  // click never also triggers this (which would immediately undo the state
+  // that same click just set).
+  const disarmOnElsewhereClick = () => {
+    clearDisarmTimer();
+    setArmed(disarmArmed());
+  };
+
+  const handleDeleteClick = (e: ReactMouseEvent, gameId: number) => {
+    e.stopPropagation();
+    const result = clickDelete(armed, gameId);
+    clearDisarmTimer();
+    setArmed(result.next);
+    if (result.fire) onDelete(gameId);
+  };
+
+  // Disarm on: pointer leaving the armed row for >3s. Only starts/matters
+  // while THIS row is the armed one; re-entering before the timer fires
+  // cancels it (armed survives a quick pass-over).
+  const handleRowMouseLeave = (gameId: number) => {
+    if (armed !== gameId) return;
+    clearDisarmTimer();
+    disarmTimer.current = setTimeout(() => setArmed(disarmArmed()), DELETE_DISARM_MS);
+  };
+  const handleRowMouseEnter = (gameId: number) => {
+    if (armed === gameId) clearDisarmTimer();
+  };
+
   return (
-    <div className="past-games-overlay" role="dialog" aria-label="past games">
+    <div className="past-games-overlay" role="dialog" aria-label="past games" onClick={disarmOnElsewhereClick}>
       <div className="past-games-drawer pop-in">
         <div className="past-games-drawer-head">
           <span className="past-games-title">past games</span>
@@ -617,17 +695,32 @@ export function PastGamesDrawer({ open, games, onSelect, onClose }: PastGamesDra
             close
           </button>
         </div>
+        {deleteError && <p className="past-games-empty past-games-error">{deleteError}</p>}
         {games === null && <p className="past-games-empty">loading...</p>}
         {games !== null && games.length === 0 && <p className="past-games-empty">no finished games yet.</p>}
         {games !== null && games.length > 0 && (
           <div className="past-games-list">
             {games.map((g) => (
-              <button key={g.id} className="past-games-row" onClick={() => onSelect(g)}>
-                <span className="past-games-date">{g.startedAt.slice(0, 10)}</span>
-                <span className="past-games-opponent">mallow {eloFromOpponent(g.opponent)}</span>
-                <span className="past-games-result">{resultWord(g.result)}</span>
-                <span className="past-games-lesson">{g.lesson ?? "no clear lesson yet"}</span>
-              </button>
+              <div
+                key={g.id}
+                className="past-games-row"
+                onMouseLeave={() => handleRowMouseLeave(g.id)}
+                onMouseEnter={() => handleRowMouseEnter(g.id)}
+              >
+                <button className="past-games-select" onClick={() => onSelect(g)}>
+                  <span className="past-games-date">{g.startedAt.slice(0, 10)}</span>
+                  <span className="past-games-opponent">mallow {eloFromOpponent(g.opponent)}</span>
+                  <span className="past-games-result">{resultWord(g.result)}</span>
+                  <span className="past-games-lesson">{g.lesson ?? "no clear lesson yet"}</span>
+                </button>
+                <button
+                  className={"past-games-delete" + (armed === g.id ? " armed" : "")}
+                  aria-label={armed === g.id ? "confirm delete" : "delete game"}
+                  onClick={(e) => handleDeleteClick(e, g.id)}
+                >
+                  {armed === g.id ? "sure?" : "×"}
+                </button>
+              </div>
             ))}
           </div>
         )}

@@ -13,6 +13,7 @@ import {
   narrate,
   fetchSummary,
   fetchGames,
+  deleteGame,
   getTurningLines,
   exploreReply,
   highlightMove,
@@ -353,6 +354,11 @@ export function GamePage() {
   const [rewindPly, setRewindPly] = useState<number | null>(null);
   const [pastGamesOpen, setPastGamesOpen] = useState(false);
   const [pastGames, setPastGames] = useState<GameListEntry[] | null>(null);
+  // Wave 3.5, item 2 (owner ask, 2026-08-01): the drawer's own inline error
+  // affordance for a failed delete -- there's no toast machinery in this
+  // app, so this renders past-games-empty-styled text in the drawer instead.
+  // Cleared on every new delete attempt and on a fresh drawer open.
+  const [pastGamesDeleteError, setPastGamesDeleteError] = useState<string | null>(null);
   // Increment 3.91 (Task 4): the current debrief's persisted turning-point
   // PV/best-move lines, fetched once per debrief (see the effect below) and
   // looked up by ply in handleRewind. reviewArrows/reviewHighlights are the
@@ -1826,6 +1832,9 @@ export function GamePage() {
   const openPastGames = useCallback(() => {
     setPastGamesOpen(true);
     setPastGames(null);
+    // Wave 3.5, item 2: a stale error from a PREVIOUS drawer session must
+    // never survive into this one.
+    setPastGamesDeleteError(null);
     fetchGames()
       .then((r) => setPastGames(r.games))
       .catch(() => setPastGames([]));
@@ -1884,6 +1893,39 @@ export function GamePage() {
     setExplore(null);
     setExploreSourcePly(null);
   }, []);
+
+  // Wave 3.5, item 2 (owner ask, 2026-08-01): real per-game deletion, fired
+  // only on the drawer's own confirmed (second-click) delete. Optimistic --
+  // the row disappears immediately, restored on failure since there's no
+  // toast machinery to report a delayed error against. If the deleted game
+  // is the one currently open in REVIEW MODE, that view closes back to
+  // (what's now, since the drawer stays open throughout) the drawer/list
+  // state, the same way backToPlay already closes review mode on its own
+  // explicit button -- deleting the game you're looking at is just another
+  // way of leaving it. The just-finished LIVE debrief (gameOver) is a
+  // separate surface this doesn't touch: deleting that exact game from the
+  // drawer while its own live debrief is still showing is an edge case the
+  // brief doesn't call for closing, and gameOver has no "back to X" state to
+  // close it to the way REVIEW MODE does.
+  const deletePastGame = useCallback(
+    async (gameId: number) => {
+      setPastGamesDeleteError(null);
+      const previous = pastGames;
+      setPastGames((cur) => (cur ? cur.filter((g) => g.id !== gameId) : cur));
+      if (reviewGame && reviewGame.id === gameId) backToPlay();
+      try {
+        const res = await deleteGame(gameId);
+        if (!res.ok) {
+          setPastGames(previous);
+          setPastGamesDeleteError("could not delete that game. try again.");
+        }
+      } catch {
+        setPastGames(previous);
+        setPastGamesDeleteError("could not delete that game. try again.");
+      }
+    },
+    [pastGames, reviewGame, backToPlay]
+  );
 
   // Owner feedback 2026-07-17: the pregame elo picker was only reappearing
   // on a hard refresh, not after finishing a game. Reversing the 2.5
@@ -2519,7 +2561,14 @@ export function GamePage() {
           onAskAboutPly={handleAskAboutPly}
         />
       )}
-      <PastGamesDrawer open={pastGamesOpen} games={pastGames} onSelect={selectPastGame} onClose={closePastGames} />
+      <PastGamesDrawer
+        open={pastGamesOpen}
+        games={pastGames}
+        onSelect={selectPastGame}
+        onClose={closePastGames}
+        onDelete={deletePastGame}
+        deleteError={pastGamesDeleteError}
+      />
     </div>
   );
 }

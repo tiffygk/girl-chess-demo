@@ -448,6 +448,34 @@ describe("api", () => {
     expect(list.body.games[0].id).toBe(g1.body.gameId);
   }, 30000);
 
+  // Wave 3.5, item 2 (owner ask, 2026-08-01): DELETE /api/game/:id -- real
+  // per-game deletion for the past-games drawer's delete X. A live
+  // (unfinished) game refuses with 409; a finished game is actually removed,
+  // and GET /api/games (the drawer's own data source) no longer lists it.
+  // The still-live game from the refused attempt stays fully playable
+  // afterward, proving the refusal touched nothing.
+  it("DELETE /api/game/:id refuses a live game with 409, and deletes a finished game so GET /api/games stops listing it", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+
+    const live = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const refused = await request(app).delete(`/api/game/${live.body.gameId}`).expect(409);
+    expect(refused.body.ok).toBe(false);
+
+    const finished = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(app).post(`/api/game/${finished.body.gameId}/resign`).send({}).expect(200);
+
+    const del = await request(app).delete(`/api/game/${finished.body.gameId}`).expect(200);
+    expect(del.body.ok).toBe(true);
+
+    const list = await request(app).get("/api/games").expect(200);
+    expect(list.body.games.map((g: any) => g.id)).not.toContain(finished.body.gameId);
+
+    // The refused delete left the still-live game fully untouched.
+    const stillLive = await request(app).post(`/api/game/${live.body.gameId}/move`).send({ from: "e2", to: "e4" }).expect(200);
+    expect(stillLive.body.ok).toBe(true);
+  }, 30000);
+
   // Increment 3.9, F16: this-game grounding chat. gm.setCoachBackendForTesting
   // is called before every request below (the same seam manager.test.ts and
   // coach/chat.test.ts already rely on) so the route never invokes the real

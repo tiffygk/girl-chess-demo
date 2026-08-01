@@ -17,6 +17,13 @@ import {
   getAdviceTraces,
   rateAdviceTrace,
   setMoveHighlighted,
+  getGame,
+  finishGame,
+  insertTurningPoints,
+  getTurningPointsAllVersions,
+  insertChatMessage,
+  getAllChatMessages,
+  deleteGameRows,
 } from "./db";
 
 describe("store", () => {
@@ -278,5 +285,105 @@ describe("rateAdviceTrace", () => {
     const rows = getAdviceTraces(g);
     expect(rows[0].rating).toBe(1);
     expect(rows[0].feedback_text).toBeNull();
+  });
+});
+
+// Wave 3.5, item 2 (owner ask, 2026-08-01): real per-game deletion for the
+// past-games drawer's delete X. EXPECTED_COLUMNS at the top of db.ts is the
+// authority for which tables carry a game_id column -- grepped against that
+// map (not re-derived here) to get the full sweep: moves, game_events,
+// verdicts, advice_traces, turning_points, chat_messages, then `games`
+// itself (keyed by `id`, not `game_id`, and deleted last since every other
+// table's FK points at it). `sessions` and `mode_timers` are the only two
+// EXPECTED_COLUMNS tables with NO game_id column (mode_timers is keyed by
+// session_id) -- correctly untouched by a per-game delete.
+describe("deleteGameRows (Wave 3.5 item 2 -- real per-game deletion)", () => {
+  // One row in every game_id-keyed table, for a given game -- the fixture
+  // both games below share, so a table this function forgot to sweep would
+  // show up as a nonzero leftover count rather than a false-positive empty
+  // table that was never populated in the first place.
+  function seedGameWithRowsEverywhere(opponent: string): number {
+    const s = createSession();
+    const g = createGame(s, opponent);
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 1000 });
+    logGameEvent(g, "resign");
+    insertVerdict({
+      gameId: g,
+      ply: 1,
+      fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      move: "e4",
+      tier: "silent",
+      deltaCp: 10,
+      mateAgainst: false,
+      latencyMs: 5,
+      adviceLevel: "standard",
+    });
+    insertAdviceTrace({
+      gameId: g,
+      ply: 1,
+      kind: "narrate",
+      factsJson: "{}",
+      prompt: "p",
+      output: "o",
+      source: "model",
+      backend: "claude-cli",
+      validated: true,
+      regenCount: 0,
+      latencyMs: 10,
+    });
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 1, san: "e4", label: "blunder", deltaP: -0.2, lowConfidence: false, kind: "swing" }],
+      1
+    );
+    insertChatMessage({ gameId: g, role: "player", text: "hi" });
+    finishGame(g, "0-1");
+    return g;
+  }
+
+  function countsFor(gameId: number) {
+    return {
+      moves: getGameMoves(gameId).length,
+      game_events: getGameEvents(gameId).length,
+      verdicts: getVerdicts(gameId).length,
+      advice_traces: getAdviceTraces(gameId).length,
+      turning_points: getTurningPointsAllVersions(gameId).length,
+      chat_messages: getAllChatMessages(gameId).length,
+    };
+  }
+
+  it("removes every game-1 row from every game_id-keyed table, in one call, touching zero game-2 rows", () => {
+    openDb(":memory:");
+    const g1 = seedGameWithRowsEverywhere("maia-1100");
+    const g2 = seedGameWithRowsEverywhere("maia-1200");
+
+    // Sanity: the fixture actually populated every table for both games --
+    // a table that seeded zero rows would make its own post-delete
+    // assertion vacuous.
+    const before1 = countsFor(g1);
+    const before2 = countsFor(g2);
+    for (const table of Object.keys(before1) as (keyof typeof before1)[]) {
+      expect(before1[table]).toBeGreaterThan(0);
+      expect(before2[table]).toBeGreaterThan(0);
+    }
+    expect(getGame(g1)).toBeTruthy();
+    expect(getGame(g2)).toBeTruthy();
+
+    deleteGameRows(g1);
+
+    const after1 = countsFor(g1);
+    expect(after1).toEqual({
+      moves: 0,
+      game_events: 0,
+      verdicts: 0,
+      advice_traces: 0,
+      turning_points: 0,
+      chat_messages: 0,
+    });
+    expect(getGame(g1)).toBeUndefined();
+
+    // Game 2's rows, in every one of the same tables, are untouched.
+    expect(countsFor(g2)).toEqual(before2);
+    expect(getGame(g2)).toBeTruthy();
   });
 });

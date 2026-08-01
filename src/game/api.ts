@@ -188,6 +188,16 @@ async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+// Wave 3.5, item 2 (owner ask, 2026-08-01): every other write helper in this
+// file is a POST (postJson above); DELETE /api/game/:id is this file's first
+// non-POST write, so it gets its own small helper following postJson's exact
+// shape/error contract (no body, same bare-json-envelope response) rather
+// than bending postJson to also carry a method override.
+async function del<T>(path: string): Promise<T> {
+  const res = await fetch(`/api${path}`, { method: "DELETE" });
+  return (await res.json()) as T;
+}
+
 export function newSession(): Promise<NewSessionResponse> {
   return postJson("/session", {});
 }
@@ -640,6 +650,20 @@ export interface GamesListResponse {
 
 export function fetchGames(): Promise<GamesListResponse> {
   return getJson("/games");
+}
+
+// Wave 3.5, item 2 (owner ask, 2026-08-01): the past-games drawer's delete X
+// (two-step confirm, no undo -- see PastGamesDrawer). Mirrors server/index.ts's
+// DELETE /api/game/:id: `ok:false` covers both "the game is still live" (the
+// server answers 409 for that) and any other rejection -- the caller doesn't
+// need to distinguish them, it just restores the optimistically-removed row.
+export interface DeleteGameResponse {
+  ok: boolean;
+  reason?: string;
+}
+
+export function deleteGame(gameId: number): Promise<DeleteGameResponse> {
+  return del(`/game/${gameId}`);
 }
 
 /**

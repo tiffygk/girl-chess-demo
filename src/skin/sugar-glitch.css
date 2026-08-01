@@ -1688,18 +1688,24 @@
   color: #9C8FC7; text-align: center; padding: 12px 0;
 }
 .gc-app .past-games-list { display: flex; flex-direction: column; gap: 8px; }
-.gc-app button.past-games-row {
+/* Wave 3.5, item 2 (owner ask, 2026-08-01): the row used to BE the button
+   (button.past-games-row); it's now a plain positioned div wrapping two
+   siblings -- the select button below (carries the old row's content/
+   styling verbatim) and the delete X, absolutely positioned against this
+   div. Nested buttons are invalid HTML, which is what forced the split. */
+.gc-app .past-games-row { position: relative; }
+.gc-app button.past-games-select {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   width: 100%; text-align: left;
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
   color: #4A3B7E; background: #F4F0FF;
   border: 1.5px solid #E3D9F5; border-radius: 14px;
-  padding: 10px 14px;
+  padding: 10px 34px 10px 14px; /* right padding clears the delete X */
   box-shadow: none;
   transform: none;
 }
-.gc-app button.past-games-row:hover { box-shadow: none; transform: none; background: #EDE6FF; }
-.gc-app button.past-games-row:active { box-shadow: none; transform: none; }
+.gc-app button.past-games-select:hover { box-shadow: none; transform: none; background: #EDE6FF; }
+.gc-app button.past-games-select:active { box-shadow: none; transform: none; }
 .gc-app .past-games-date {
   font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
   letter-spacing: .08em; color: #9C8FC7;
@@ -1711,6 +1717,47 @@
   font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 11.5px;
   color: #7A6BB5;
 }
+
+/* Wave 3.5, item 2 (owner ask, 2026-08-01): "delete X" on each past-game
+   row, top-right, two-step confirm -- owner: "stylized from the palette",
+   "I need to double click it so that I don't accidentally delete it." Idle
+   state is a quiet lavender-outline circle (never reads as armed/dangerous
+   by itself). The armed ("sure?") state reuses the EXACT magenta/
+   magenta-dark pair (#FF3DA6 / #C22B7E) the house "you sure?" morph already
+   uses for endgame-controls' button.small.confirming (sugar-glitch.css:192)
+   -- same destructive accent everywhere in this palette (also
+   .debrief-card-negative's pink alarm tint), never a new color invented for
+   this one button. */
+.gc-app button.past-games-delete {
+  position: absolute; top: 6px; right: 6px;
+  width: 22px; height: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: 13px; line-height: 1;
+  color: #9C8FC7; background: #fff;
+  border: 1.5px solid #E3D9F5; border-radius: 999px;
+  box-shadow: none; transform: none;
+  transition: background .12s ease, color .12s ease;
+}
+.gc-app button.past-games-delete:hover { background: #F4F0FF; color: #7A6BB5; }
+.gc-app button.past-games-delete:active { box-shadow: none; transform: none; }
+/* Armed ("sure?") -- the button itself morphs, no modal, same construction
+   as .confirming: text swaps to a compact "sure?" and the whole button
+   flips to the magenta/magenta-dark destructive pair. */
+.gc-app button.past-games-delete.armed {
+  width: auto; height: auto; padding: 4px 10px;
+  font-size: 10.5px; letter-spacing: .02em;
+  color: #fff; background: #FF3DA6;
+  border-color: #C22B7E;
+  box-shadow: 0 2px 0 #C22B7E, 0 4px 8px rgba(255,61,166,.3);
+}
+.gc-app button.past-games-delete.armed:hover {
+  background: #FF3DA6;
+  box-shadow: 0 3px 0 #C22B7E, 0 6px 10px rgba(255,61,166,.35);
+}
+/* Inline error affordance for a failed delete -- same past-games-empty
+   base (no toast machinery in this app), tinted with the same destructive
+   ink debrief-card-negative's prose already uses. */
+.gc-app .past-games-error { color: #C22B7E; }
 
 /* draw acknowledgment — a soft glow pulse on the board frame, quieter than
    a win or loss celebration since a draw is neither. */
