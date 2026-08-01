@@ -20,7 +20,7 @@ import {
   assertNotInAgentWorktree,
   resolveMainWorktreeBackupsDir,
 } from "./db-backup";
-import { countDbSnapshot } from "./dbCountSnapshot";
+import { countDbSnapshot, resolveRealDbPath } from "./dbCountSnapshot";
 
 const tmpDirs: string[] = [];
 afterEach(() => {
@@ -56,6 +56,22 @@ function makeMainWorktree(games: number, moves: number): { root: string; dbPath:
 
 describe("(a) backupLiveDb: produces the .db+-wal+-shm triple under the MAIN worktree's data/backups/, readonly source, counts equal live", () => {
   it("writes all three files, and countDbSnapshot(copy) equals countDbSnapshot(live)", async () => {
+    // Wave 0, item 4: main.dbPath's own game/move counts (161, 1721 below)
+    // were NEVER what got backed up -- this call doesn't override
+    // opts.sourceDb, so backupLiveDb's source defaults to
+    // resolveRealDbPath's real live db (this test's designed behavior, see
+    // this file's header comment). main.dbPath only anchors WHERE the
+    // backup gets WRITTEN (an injected mainWorktreeDb, so the write lands
+    // under a throwaway tmp dir shaped like the main worktree, never the
+    // real one). "live" for the equality check below is therefore that
+    // same real db, counted fresh in this same test run -- never a
+    // hardcoded snapshot from whenever this test was authored, which is
+    // exactly what silently went stale here before: the two hardcoded
+    // literals below asserted her games/moves count from authoring time
+    // (161/1721) and broke on every clean checkout since, because her real
+    // count keeps growing. The equality against a live count taken in the
+    // same run already proves the WAL-inclusion contract; the literals
+    // were never load-bearing.
     const main = makeMainWorktree(161, 1721);
     const result = await backupLiveDb("/unused-repo-root", { mainWorktreeDb: main.dbPath });
 
@@ -65,10 +81,8 @@ describe("(a) backupLiveDb: produces the .db+-wal+-shm triple under the MAIN wor
     expect(path.dirname(result.dbPath)).toBe(path.join(main.root, "data", "backups"));
 
     const copySnapshot = countDbSnapshot(result.dbPath);
-    const liveSnapshot = countDbSnapshot(main.dbPath);
+    const liveSnapshot = countDbSnapshot(resolveRealDbPath("/unused-repo-root").path);
     expect(copySnapshot).toEqual(liveSnapshot);
-    expect(copySnapshot.games).toBe(161);
-    expect(copySnapshot.moves).toBe(1721);
   });
 
   it("never opens the source db read-write -- static check on the actual instrument, same discipline as dbCountSnapshot.test.ts", () => {
