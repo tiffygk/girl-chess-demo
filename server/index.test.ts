@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import { Chess } from "chess.js";
 import { app, ready, gm } from "./index";
-import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages, getAdviceTraces, insertAdviceTrace, getAllTableCounts } from "./store/db";
+import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages, getAdviceTraces, insertAdviceTrace, getAllTableCounts, createSession as dbCreateSession, createGame as dbCreateGame } from "./store/db";
 import { CHAT_MAX_LEN } from "./coach/chat";
 
 describe("api", () => {
@@ -484,6 +484,48 @@ describe("api", () => {
     await ready;
     const del = await request(app).delete("/api/game/999999999").expect(404);
     expect(del.body).toEqual({ ok: false, reason: "not-found" });
+  });
+
+  // Wave 4, item 2 (2026-08-01): GET /api/traces/rated?rating=1 -- the
+  // first-ever READ path for ratings the owner leaves via the thumbs UI.
+  // Seeds two traces on a private gameId, rates one +1 and one -1 through the
+  // existing rate route, and confirms the reader returns only the +1 row in
+  // the {id, gameId, kind, rating, feedbackText, output, createdAt} shape,
+  // filtered by the optional game param.
+  it("GET /api/traces/rated returns only rows at the requested rating, in the reader shape", async () => {
+    await ready;
+    // A real game row (advice_traces.game_id has an enforced FK), isolated
+    // from any other test's rows so the game filter proves out cleanly.
+    const G = dbCreateGame(dbCreateSession(), "maia-1100");
+    const up = insertAdviceTrace({
+      gameId: G, ply: 1, kind: "chat", factsJson: "{}", prompt: "p",
+      output: "the answer she praised", source: "model", backend: "claude-cli",
+      validated: true, regenCount: 0, latencyMs: 5,
+    });
+    const down = insertAdviceTrace({
+      gameId: G, ply: 2, kind: "chat", factsJson: "{}", prompt: "p",
+      output: "the answer she panned", source: "model", backend: "claude-cli",
+      validated: true, regenCount: 0, latencyMs: 5,
+    });
+    await request(app).post(`/api/trace/${up}/rate`).send({ rating: 1, feedback: "loved it" }).expect(200);
+    await request(app).post(`/api/trace/${down}/rate`).send({ rating: -1 }).expect(200);
+
+    const res = await request(app).get(`/api/traces/rated?rating=1&game=${G}`).expect(200);
+    expect(res.body.ok).toBe(true);
+    const ids = res.body.traces.map((t: any) => t.id);
+    expect(ids).toContain(up);
+    expect(ids).not.toContain(down);
+    const row = res.body.traces.find((t: any) => t.id === up);
+    expect(row).toMatchObject({
+      id: up, gameId: G, kind: "chat", rating: 1,
+      feedbackText: "loved it", output: "the answer she praised",
+    });
+  });
+
+  it("GET /api/traces/rated rejects a rating that isn't 1 or -1", async () => {
+    await ready;
+    const res = await request(app).get("/api/traces/rated?rating=2").expect(400);
+    expect(res.body.ok).toBe(false);
   });
 
   // Increment 3.9, F16: this-game grounding chat. gm.setCoachBackendForTesting

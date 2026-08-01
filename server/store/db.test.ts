@@ -24,6 +24,7 @@ import {
   insertChatMessage,
   getAllChatMessages,
   deleteGameRows,
+  getRatedTraces,
 } from "./db";
 
 describe("store", () => {
@@ -285,6 +286,101 @@ describe("rateAdviceTrace", () => {
     const rows = getAdviceTraces(g);
     expect(rows[0].rating).toBe(1);
     expect(rows[0].feedback_text).toBeNull();
+  });
+});
+
+// Wave 4, item 2 (2026-08-01): the first-ever READ path for ratings.
+// advice_traces.rating/feedback_text have been write-only since 3.9 -- so
+// cookie's game-164 promise to "remember what you rated" was structurally
+// false: nothing could read it back. getRatedTraces is that read: rated rows
+// (filtered to a specific rating value), newest first, with an optional game
+// filter, returning the fields the owner/curation step actually needs (id,
+// gameId, kind, rating, feedbackText, the coach's own output text, createdAt).
+// Explicitly NOT an injection into any prompt -- see the route/manager.ts
+// doom-loop note; this is a viewer, nothing more.
+describe("getRatedTraces (Wave 4 item 2 -- first read path for ratings)", () => {
+  function seedTrace(gameId: number, ply: number, output: string) {
+    return insertAdviceTrace({
+      gameId,
+      ply,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output,
+      source: "model",
+      backend: "claude-cli",
+      validated: true,
+      regenCount: 0,
+      latencyMs: 10,
+    });
+  }
+
+  it("returns only rated rows for the given rating, newest first, across all games when gameId is null", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const gA = createGame(s, "maia-1100");
+    const gB = createGame(s, "maia-1200");
+
+    const up1 = seedTrace(gA, 1, "up in game A");
+    const down1 = seedTrace(gA, 2, "down in game A");
+    const unrated = seedTrace(gA, 3, "never rated");
+    const up2 = seedTrace(gB, 1, "up in game B");
+
+    rateAdviceTrace(up1, 1, "loved this shape");
+    rateAdviceTrace(down1, -1, "too vague");
+    rateAdviceTrace(up2, 1);
+    // `unrated` is left untouched -- rating stays NULL.
+
+    const rows = getRatedTraces(null, 1);
+    // only the two rating=1 rows, newest (highest id) first
+    expect(rows.map((r) => r.id)).toEqual([up2, up1]);
+    expect(rows.every((r) => r.rating === 1)).toBe(true);
+    // the never-rated and the thumbs-down row are both absent
+    expect(rows.map((r) => r.id)).not.toContain(unrated);
+    expect(rows.map((r) => r.id)).not.toContain(down1);
+  });
+
+  it("filters to one game when gameId is passed", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const gA = createGame(s, "maia-1100");
+    const gB = createGame(s, "maia-1200");
+    const up1 = seedTrace(gA, 1, "up in game A");
+    const up2 = seedTrace(gB, 1, "up in game B");
+    rateAdviceTrace(up1, 1);
+    rateAdviceTrace(up2, 1);
+
+    const rows = getRatedTraces(gA, 1);
+    expect(rows.map((r) => r.id)).toEqual([up1]);
+    expect(rows[0].gameId).toBe(gA);
+  });
+
+  it("returns thumbs-down rows when asked for rating -1, carrying feedbackText and output", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    const down = seedTrace(g, 1, "the coach's actual reply text");
+    rateAdviceTrace(down, -1, "didn't answer my question");
+
+    const rows = getRatedTraces(null, -1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: down,
+      gameId: g,
+      kind: "chat",
+      rating: -1,
+      feedbackText: "didn't answer my question",
+      output: "the coach's actual reply text",
+    });
+    expect(typeof rows[0].createdAt).toBe("string");
+  });
+
+  it("returns an empty array when nothing is rated at the requested value", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    seedTrace(g, 1, "unrated");
+    expect(getRatedTraces(null, 1)).toEqual([]);
   });
 });
 
