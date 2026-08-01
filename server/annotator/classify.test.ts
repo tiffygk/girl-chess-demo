@@ -289,29 +289,79 @@ class ScriptedEvaluator implements Evaluator {
 }
 
 describe("classifyMove — decided-position conversion (Task K2)", () => {
-  // Discriminating fixture (a): a decided-won position (beforeEval.cp=500,
-  // no mate) where her quiet (non-capturing) knight move hangs the knight
-  // to the black rook, undefended. The deltaCp math alone is DELIBERATELY
-  // tuned to stay below nudgeCp (500 - 450 = 50 < 60) -- this is the exact
-  // saturated-eval shape the round exists to fix: raw cp delta stays small
-  // once a position is already decided, even though a whole piece just
-  // went for nothing. A wrong implementation that never adds the
-  // free-material check answers "silent" here (the CLAUDE.md-recorded bug);
-  // a correct one answers "nudge" with "for nothing" in the copy -- the two
-  // answers are visibly different, not a coincidental match.
-  it("decided-won position, quiet move hangs a knight for nothing -> nudge, copy says 'for nothing'", async () => {
+  // Wave 1 (verdict truth layer, free-material engine-corroboration guard):
+  // this fixture used to assert a NUDGE here -- a decided-won position
+  // (beforeEval.cp=500) where her quiet knight move hangs the knight to an
+  // undefended rook, with the deltaCp math DELIBERATELY tuned below nudgeCp
+  // (500 - 450 = 50 < 60). Under the game-164 guard that is now WRONG: the
+  // one-ply free-material scan may never out-vote the engine's own delta. If
+  // the engine says the move loses less than a nudge's worth (deltaCp 50 <
+  // nudgeCp 60), the "giveaway" is compensated somewhere in the line the
+  // scan can't see (game 164's Nf6+ gxf6 Bxa8 is the live incident this
+  // exists to fix -- see the regression test below), so the "for nothing"
+  // copy would be false and the branch must stay SILENT. The free-material
+  // nudge only fires WITH engine corroboration (deltaCp >= nudgeCp) -- see
+  // the sibling test immediately below, which keeps that honest case alive.
+  it("decided-won position, quiet move hangs a knight but engine delta is below nudgeCp -> SILENT (engine out-votes the one-ply scan)", async () => {
     const chess = new Chess("3rk3/8/8/8/8/2N5/8/4K3 w - - 0 1");
     const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet, not a capture
     const evaluator = new ScriptedEvaluator(
       { cp: 500, mate: null, bestMove: "e1e2", pv: [] }, // beforeEval: decided-won, |cp| >= 300
-      { cp: -450, mate: null, bestMove: "d8d5", pv: [] } // afterEval: Rxd5 undefended, still ~decided
+      { cp: -450, mate: null, bestMove: "d8d5", pv: [] } // afterEval: Rxd5 undefended, deltaCp 50 < nudgeCp
     );
     const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.deltaCp).toBe(50); // below nudgeCp(60): the engine says this is compensated
+    expect(verdict.tier).toBe("silent");
+    expect(verdict.conversionCopy).toBeUndefined();
+  });
+
+  // Wave 1 sibling: the SAME free-material shape (decided position, quiet
+  // knight move, undefended rook recapture), but now the engine's own delta
+  // corroborates the loss (deltaCp 70 >= nudgeCp 60). The guard must not kill
+  // the honest case -- with engine corroboration the free-material nudge
+  // still fires, still carrying the "for nothing" copy.
+  it("decided-won position, quiet move hangs a knight AND engine delta >= nudgeCp -> nudge, copy says 'for nothing'", async () => {
+    const chess = new Chess("3rk3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet, not a capture
+    const evaluator = new ScriptedEvaluator(
+      { cp: 500, mate: null, bestMove: "e1e2", pv: [] }, // beforeEval: decided-won
+      { cp: -430, mate: null, bestMove: "d8d5", pv: [] } // afterEval: Rxd5 undefended, deltaCp 70 >= nudgeCp
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.deltaCp).toBe(70); // at/above nudgeCp(60): engine corroborates the giveaway
     expect(verdict.tier).toBe("nudge");
-    expect(verdict.deltaCp).toBe(50); // confirms this is NOT reachable via the existing nudgeCp(60) path
     expect(verdict.conversionCopy).toBeDefined();
     expect(verdict.conversionCopy).toContain("for nothing");
     expect(verdict.conversionCopy).toContain("knight");
+  });
+
+  // Wave 1 regression, the live incident this whole guard exists for (game
+  // 164): the player previewed Nf6+ -- the engine's OWN best move, a sound
+  // exchange-winning sacrifice (Nf6+ gxf6 Bxa8, deltaCp ~= 0) -- and got a
+  // "you sure?" nudge claiming she "gives back your knight for nothing." The
+  // one-ply free-material scan sees the knight recaptured on f6 with no
+  // recapture available and cries giveaway; it never consults the engine's
+  // own delta, which says the position is unchanged (the rook comes off next
+  // move). Scripted here from the incident: beforeEval +490 (bestMove Nf6+),
+  // afterEval -490 opponent-perspective (bestMove gxf6, the recapture) --
+  // decided=true, deltaCp ~= 0, threat capture-moved on her just-moved
+  // knight with capturedSquareDefended=false. The engine out-votes the scan:
+  // deltaCp 0 < nudgeCp 60 => SILENT, never the false "for nothing" nudge.
+  it("game 164 regression: Nf6+ (the engine's own best move, a sound exchange sac, deltaCp ~0) -> silent, never 'for nothing'", async () => {
+    const chess = new Chess("r1b2rk1/2p2pp1/1p5p/p3n3/2P1N3/1N1P1B1P/P4PP1/1R3RK1 w - - 2 21");
+    const move = chess.move({ from: "e4", to: "f6" }); // Nf6+, the engine's own best move
+    const evaluator = new ScriptedEvaluator(
+      { cp: 490, mate: null, bestMove: "e4f6", pv: [] }, // beforeEval: +490, Nf6+ is best
+      { cp: -490, mate: null, bestMove: "g7f6", pv: [] } // afterEval (opp perspective): -490, gxf6 recapture
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    // Sanity: this really is the free-material SHAPE the guard must override.
+    expect(verdict.threat?.motif).toBe("capture-moved");
+    expect(verdict.threat?.capturesHerJustMovedPiece).toBe(true);
+    expect(verdict.threat?.capturedSquareDefended).toBe(false);
+    expect(verdict.deltaCp).toBe(0); // engine: the sac is fully compensated in the line
+    expect(verdict.tier).toBe("silent");
+    expect(verdict.conversionCopy).toBeUndefined();
   });
 
   // Discriminating fixture (b): she holds mate-in-2 before her move; her
