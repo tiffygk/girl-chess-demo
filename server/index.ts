@@ -136,13 +136,19 @@ app.post("/api/game/:id/hint-facts", async (req, res) => {
 // Wave C, task C-B: fire-and-forget observability for the Lab's
 // hint-escalation metric — one game_events row per hint reveal.
 app.post("/api/game/:id/hint", (req, res) => {
-  const { level, tier, deltaCp, bestUci, fen } = req.body;
+  // Wave 0, item 1 (F0): the client now names the move field it means --
+  // `bestUci` for the coach's own best move, `refutationUci` for the
+  // opponent's threat move a levels-1-3 hint reveals. Pass through
+  // whichever the body actually carries rather than forcing everything
+  // through the `bestUci` key regardless of what it names.
+  const { level, tier, deltaCp, bestUci, refutationUci, fen } = req.body;
   try {
     const result = gm.logHint(Number(req.params.id), {
       level: Number(level),
       tier: String(tier),
       deltaCp: deltaCp ?? null,
-      bestUci: String(bestUci),
+      ...(bestUci !== undefined ? { bestUci: String(bestUci) } : {}),
+      ...(refutationUci !== undefined ? { refutationUci: String(refutationUci) } : {}),
       fen: String(fen),
     });
     res.json(result);

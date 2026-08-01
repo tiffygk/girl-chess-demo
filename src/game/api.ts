@@ -492,15 +492,26 @@ export function rateTrace(traceId: number, rating: 1 | -1, feedback?: string): P
 // Wave C, task C-B: fire-and-forget hint-escalation observability. Never
 // awaited by its caller for anything but a `.catch` — a failed log write
 // must never block confirm/retract or the hint reveal itself.
+//
+// Wave 0, item 1 (F0): `move` used to be a single positional `bestUci`
+// string, and every level — including levels 1-3, whose hint IS the
+// opponent's threat refutation, not the coach's best move — posted its
+// value under the `bestUci` key. Any log analysis trusting the field name
+// concluded the coach recommended illegal moves. The caller now names the
+// key it means: `{ bestUci }` for the coach's actual best move (levels
+// 4-5, and the invalid-hint log, whose value is still a would-be bestUci
+// that failed the live legality check), `{ refutationUci }` for the
+// opponent's threat move (levels 1-3). The wire body carries whichever key
+// the caller passed — never both, never the wrong one.
 export function logHint(
   gameId: number,
   level: number,
   tier: string,
   deltaCp: number | null,
-  bestUci: string,
+  move: { bestUci: string } | { refutationUci: string },
   fen: string
 ): Promise<{ ok: boolean }> {
-  return postJson(`/game/${gameId}/hint`, { level, tier, deltaCp, bestUci, fen });
+  return postJson(`/game/${gameId}/hint`, { level, tier, deltaCp, ...move, fen });
 }
 
 // Increment 3c: mirrors server/annotator/turningPoints.ts's TurningPoint

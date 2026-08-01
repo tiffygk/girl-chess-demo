@@ -1057,7 +1057,7 @@ export function GamePage() {
         next,
         verdict.tier,
         verdict.deltaCp,
-        verdict.threat.refutationUci,
+        { refutationUci: verdict.threat.refutationUci },
         mirrorRef.current.fen()
       ).catch(() => undefined);
       return;
@@ -1066,9 +1066,14 @@ export function GamePage() {
     if (hintFacts) {
       const next = nextHintLevel(hintLevel);
       setHintLevel(next);
-      logHint(gameId, next, verdict.tier, verdict.deltaCp, hintFacts.bestUci, mirrorRef.current.fen()).catch(
-        () => undefined
-      );
+      logHint(
+        gameId,
+        next,
+        verdict.tier,
+        verdict.deltaCp,
+        { bestUci: hintFacts.bestUci },
+        mirrorRef.current.fen()
+      ).catch(() => undefined);
       return;
     }
     if (hintFetching) return;
@@ -1086,16 +1091,26 @@ export function GamePage() {
         if (!res.ok || !res.facts || !hintIsLegal(mirrorRef.current.fen(), res.facts.bestUci)) {
           // Never render a hint that fails the live legality check — log it
           // for the Lab instead (this is the "impossible square" playtest bug).
-          logHint(gameId, 0, "invalid", null, res.facts?.bestUci ?? "none", mirrorRef.current.fen()).catch(
-            () => undefined
-          );
+          logHint(
+            gameId,
+            0,
+            "invalid",
+            null,
+            { bestUci: res.facts?.bestUci ?? "none" },
+            mirrorRef.current.fen()
+          ).catch(() => undefined);
           return;
         }
         setHintFacts(res.facts);
         setHintLevel(4);
-        logHint(gameId, 4, verdict.tier, verdict.deltaCp, res.facts.bestUci, mirrorRef.current.fen()).catch(
-          () => undefined
-        );
+        logHint(
+          gameId,
+          4,
+          verdict.tier,
+          verdict.deltaCp,
+          { bestUci: res.facts.bestUci },
+          mirrorRef.current.fen()
+        ).catch(() => undefined);
       } finally {
         if (pendingTokenRef.current === token) setHintFetching(false);
       }
