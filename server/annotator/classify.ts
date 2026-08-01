@@ -304,7 +304,11 @@ export async function classifyMove(
     if (mateConversion) {
       tier = "nudge";
       conversionCopy = conversionCopyFor(mateConversion);
-    } else if (freeMaterialPieceKind) {
+    } else if (freeMaterialPieceKind && deltaCp >= nudgeCp) {
+      // Wave 1 (verdict truth layer): the free-material nudge fires only with
+      // engine corroboration -- deltaCp >= nudgeCp -- even inside a still-live
+      // mate run. See the game-164 WHY comment on the non-mate branch below:
+      // the one-ply scan may never out-vote the engine's own delta.
       tier = "nudge";
       conversionCopy = freeMaterialCopyFor(freeMaterialPieceKind);
     } else {
@@ -328,13 +332,22 @@ export async function classifyMove(
     if (mateConversion) conversionCopy = conversionCopyFor(mateConversion);
   } else if (deltaCp >= nudgeCp) {
     tier = "nudge";
-  } else if (decided && freeMaterialPieceKind) {
-    // The non-mate decided case: a big cp lead, no mate on the board, and
-    // the raw deltaCp math stayed under nudgeCp anyway (the saturated-eval
-    // shape this whole task exists to fix) — the free-material check below
-    // deltaCp's own threshold is what catches it.
-    tier = "nudge";
-    conversionCopy = freeMaterialCopyFor(freeMaterialPieceKind);
+    // Wave 1 (verdict truth layer, game-164 Nf6+ incident): the free-material
+    // heuristic may NEVER out-vote the engine. The one-ply scan below
+    // (freeMaterialPieceKind) sees only "her piece is recaptured next move
+    // with no legal recapture" and cries giveaway -- it cannot see the rest
+    // of the line. In game 164 she previewed Nf6+, the engine's OWN best
+    // move: Nf6+ gxf6 Bxa8 wins the exchange (deltaCp ~= 0), yet the scan
+    // flagged it "gives back your knight for nothing." INVARIANT: a deltaCp
+    // below the nudge floor means the engine says the material comes back in
+    // the line, so the "for nothing" copy would be false -- the free-material
+    // heuristic stays silent, and the engine out-votes the one-ply scan,
+    // always. Attaching the copy on THIS branch (deltaCp >= nudgeCp) is the
+    // corroboration gate: the copy only ever fires when the engine agrees the
+    // move loses at least a nudge's worth. (Previously a separate
+    // below-nudgeCp `else if (decided && freeMaterialPieceKind)` branch fired
+    // it with no such gate -- that was the false-positive path.)
+    if (freeMaterialPieceKind) conversionCopy = freeMaterialCopyFor(freeMaterialPieceKind);
   } else {
     tier = "silent";
   }
