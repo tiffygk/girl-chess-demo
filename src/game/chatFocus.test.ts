@@ -281,7 +281,7 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
   // calls this fresh on every send, dropping a focus that no longer matches
   // what's actually on screen rather than trusting a remembered state.
   describe("reconcileChatFocus (stale-focus guard)", () => {
-    const hintFocus = { branch: "right", press: 3, text: "her knight to f6 opens the door.", ply: 11 };
+    const hintFocus = { branch: "right" as const, press: 3, text: "her knight to f6 opens the door.", ply: 11 };
 
     it("keeps a hintFocus whose level, text, AND ply match the currently-rendered hint", () => {
       const result = reconcileChatFocus(
@@ -337,7 +337,7 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
     // press AND text to what's rendering now, differing only in which
     // position it was actually about. The ply check is what catches it.
     it("drops a hintFocus when branch, press AND fixed opener text ALL coincidentally match but it's a different pending move (ply differs)", () => {
-      const staleTemplateFocus = { branch: "right", press: 1, text: "hold on. look at your knight.", ply: 7 };
+      const staleTemplateFocus = { branch: "right" as const, press: 1, text: "hold on. look at your knight.", ply: 7 };
       const result = reconcileChatFocus(
         { hintFocus: staleTemplateFocus },
         {

@@ -50,12 +50,13 @@ import { DebriefPage, PastGamesButton, PastGamesDrawer } from "../review/Debrief
 import { fenAtPly } from "../review/Rewind";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
 import {
-  nextHintLevel,
-  hintCopy,
+  decideBranch,
+  maxPress,
+  rungCopy,
   hintRevealSquares,
   threatRevealSquares,
   hintIsLegal,
-  type HintLevel,
+  type HintBranch,
   type HintCopyCtx,
 } from "./hintFlow";
 import { PlayerBar } from "./PlayerBar";
@@ -249,12 +250,14 @@ export function GamePage() {
   // C1's "judged ✓" slot. null while judging, and for tier "silent" (no
   // badge, just the plain "judged ✓" C1 already had).
   const [verdict, setVerdict] = useState<Verdict | null>(null);
-  // Wave C, task C-B: deterministic hint escalation ladder for the CURRENT
-  // pending move's judged verdict. 0 = nothing revealed (only the "help?"
-  // affordance shows for nudge/warning). Resets to 0 on retarget/cancel/
-  // confirm/new pending — see handlePendingStart/handleConfirmPending/
-  // handleRetractPending below.
-  const [hintLevel, setHintLevel] = useState<HintLevel>(0);
+  // Wave 2 (the hint decision tree): the CURRENT pending move's press ladder.
+  // hintPress is 0 (nothing revealed, only "help?") .. maxPress(branch); the
+  // help click IS press 1. hintBranch is decided once, at the 0->1 step, from
+  // the deep facts (decideBranch(pending.from, bestFacts.bestFromSquare)) and
+  // is null until then. Both reset on retarget/cancel/confirm/new pending --
+  // see handlePendingStart/handleConfirmPending/handleRetractPending below.
+  const [hintPress, setHintPress] = useState(0);
+  const [hintBranch, setHintBranch] = useState<HintBranch | null>(null);
   // Increment 3.95, Task 7 ("ask about this"): the focus half of a chat
   // message's context — at most one of hintFocus/turningPointFocus is set
   // at a time (whichever entry point the player last clicked), merged into
@@ -414,6 +417,12 @@ export function GamePage() {
   // pending move — holds the pendingTokenRef value narrate has already
   // fired (or is in flight) for, so re-renders while L3+ holds don't refire.
   const narratedTokenRef = useRef<number | null>(null);
+  // Wave 2 (item 1): mirrors narratedTokenRef -- holds the pendingTokenRef
+  // value the verdict-time deep-facts PREFETCH has already fired for, so it
+  // runs exactly once per pending move (a re-render while the verdict holds
+  // never refires it). Cleared alongside narratedTokenRef at the four reset
+  // sites below.
+  const prefetchedTokenRef = useRef<number | null>(null);
   // Wave C, task C-A: the "end the game?" arm-then-confirm revert timer,
   // and a re-entrancy guard for the preview call itself (distinct from
   // busyRef, which gates the main move flow — arming end-game shouldn't be
@@ -479,13 +488,15 @@ export function GamePage() {
     setPending(null);
     setJudgePhase(null);
     setVerdict(null);
-    setHintLevel(0);
+    setHintPress(0);
+    setHintBranch(null);
     setHintFacts(null);
     setHintFetching(false);
     setCoachText(null);
     setCoachTraceId(null);
     setCoachLoading(false);
     narratedTokenRef.current = null;
+    prefetchedTokenRef.current = null;
     postVerdictTokenRef.current += 1;
     setPostVerdict(null);
     setLastMove(null);
@@ -902,13 +913,15 @@ export function GamePage() {
       // re-enters here via handleRetargetPending) starts the hint ladder
       // fresh — a stale hint from the last destination would point at the
       // wrong "instead" square.
-      setHintLevel(0);
+      setHintPress(0);
+      setHintBranch(null);
       setHintFacts(null);
       setHintFetching(false);
       setCoachText(null);
       setCoachTraceId(null);
       setCoachLoading(false);
       narratedTokenRef.current = null;
+      prefetchedTokenRef.current = null;
       // Reviewer fix (Task 7 follow-up, tidiness): a fresh pending move is a
       // fresh moment — buildChatContext's reconcileChatFocus guard is what
       // actually prevents a stale hintFocus from leaking into a message, but
@@ -942,6 +955,44 @@ export function GamePage() {
         if (pendingTokenRef.current !== token) return; // superseded — stale, ignore
         setVerdict(result);
         setJudgePhase("judged");
+
+        // Wave 2 (item 1): prefetch the DEEP hint facts the instant a
+        // nudge/warning-with-threat lands, so the branch decision (which
+        // needs bestFacts.bestFromSquare) is ready before she clicks "help?".
+        // Reuses the SAME `token` this judge callback already holds -- never
+        // re-reads pendingTokenRef.current after an await except to compare
+        // against that captured token (the staleness guard). Fires at most
+        // once per pending move via prefetchedTokenRef. Best-effort: if it
+        // fails or the player outruns it, handleHintClick has its own
+        // fallback fetch and the button shows "thinking..." until facts land.
+        if (result && result.threat && (result.tier === "nudge" || result.tier === "warning")) {
+          if (prefetchedTokenRef.current !== token) {
+            prefetchedTokenRef.current = token;
+            (async () => {
+              try {
+                const res = await fetchHintFacts(gameId);
+                if (pendingTokenRef.current !== token) return; // superseded
+                if (!res.ok || !res.facts || !hintIsLegal(mirrorRef.current.fen(), res.facts.bestUci)) {
+                  // Never let an illegal/stale hint reach the branch decision --
+                  // log it for the Lab (the "impossible square" playtest bug),
+                  // exactly as the old 3->4 fetch did.
+                  logHint(
+                    gameId,
+                    0,
+                    "invalid",
+                    null,
+                    { bestUci: res.facts?.bestUci ?? "none" },
+                    mirrorRef.current.fen()
+                  ).catch(() => undefined);
+                  return;
+                }
+                setHintFacts(res.facts);
+              } catch {
+                // best-effort; the help click's own fetch covers a miss.
+              }
+            })();
+          }
+        }
       })();
     },
     [gameId, gameOver, judgeStrictness]
@@ -965,13 +1016,15 @@ export function GamePage() {
     setPending(null);
     setJudgePhase(null);
     setVerdict(null);
-    setHintLevel(0); // Wave C, task C-B: level resets on confirm
+    setHintPress(0); // Wave 2: press ladder resets on confirm
+    setHintBranch(null);
     setHintFacts(null);
     setHintFetching(false);
     setCoachText(null);
     setCoachTraceId(null);
     setCoachLoading(false);
     narratedTokenRef.current = null;
+    prefetchedTokenRef.current = null;
     // Reviewer fix (Task 7 follow-up, tidiness): see handlePendingStart's
     // comment above — a confirmed move ends this moment.
     setChatFocus({});
@@ -986,13 +1039,15 @@ export function GamePage() {
     setPending(null);
     setJudgePhase(null);
     setVerdict(null);
-    setHintLevel(0); // Wave C, task C-B: level resets on cancel
+    setHintPress(0); // Wave 2: press ladder resets on cancel
+    setHintBranch(null);
     setHintFacts(null);
     setHintFetching(false);
     setCoachText(null);
     setCoachTraceId(null);
     setCoachLoading(false);
     narratedTokenRef.current = null;
+    prefetchedTokenRef.current = null;
     // Reviewer fix (Task 7 follow-up, tidiness): see handlePendingStart's
     // comment above — a retracted move ends this moment too.
     setChatFocus({});
@@ -1040,57 +1095,59 @@ export function GamePage() {
     [pending, coachOn, confirmOn, handlePendingStart]
   );
 
-  // Increment 2.7 (why-hints): levels 1-3 climb instantly — verdict.threat
-  // arrived for free with the judge response, no network round-trip needed.
-  // Only the 3->4 click fires the deep verified search (unchanged from 2.6:
-  // token guard, hintIsLegal check, "thinking..." disabled state); 4->5
-  // climbs instantly again once bestFacts is in hand. The fen logged is the
-  // position BEFORE the pending move (mirrorRef is untouched while a move
-  // is pending) — "what was best instead" is meaningless without it.
-  const handleHintClick = useCallback(() => {
+  // Wave 2 (the hint decision tree): every press is a pure increment now --
+  // the branch decision + all copy come from the DEEP facts, prefetched at
+  // verdict time (see the judge callback above). The only network fetch left
+  // here is the FALLBACK for when the player outruns that prefetch. The fen
+  // logged is the position BEFORE the pending move (mirrorRef is untouched
+  // while a move is pending) -- "what was best instead" needs it.
+  //
+  // Telemetry (Wave 0's honest keys): a press whose copy is threat-based /
+  // vague logs the opponent's threat move under refutationUci; a press whose
+  // copy is about the recommended move (the full reveal, and the wrong
+  // branch's "your {piece}" / "what it does" rungs) logs bestUci.
+  const logHintPress = (branch: HintBranch, press: number, facts: NonNullable<HintFactsResponse["facts"]>) => {
     if (!gameId || !verdict?.threat) return;
-    if (hintLevel < 3) {
-      const next = nextHintLevel(hintLevel);
-      setHintLevel(next);
-      logHint(
-        gameId,
-        next,
-        verdict.tier,
-        verdict.deltaCp,
-        { refutationUci: verdict.threat.refutationUci },
-        mirrorRef.current.fen()
-      ).catch(() => undefined);
-      return;
-    }
-    // 4 -> 5: bestFacts already fetched at the 3->4 transition — just climb.
+    const isReveal = press === maxPress(branch);
+    const aboutBestMove = isReveal || (branch === "wrong" && press >= 2);
+    logHint(
+      gameId,
+      press,
+      verdict.tier,
+      verdict.deltaCp,
+      aboutBestMove ? { bestUci: facts.bestUci } : { refutationUci: verdict.threat.refutationUci },
+      mirrorRef.current.fen()
+    ).catch(() => undefined);
+  };
+
+  const handleHintClick = useCallback(() => {
+    if (!gameId || !verdict?.threat || !pending) return;
+
+    // Facts already in hand (prefetched, or a prior fallback fetch): a pure
+    // press increment. The branch is decided once, at the 0->1 step.
     if (hintFacts) {
-      const next = nextHintLevel(hintLevel);
-      setHintLevel(next);
-      logHint(
-        gameId,
-        next,
-        verdict.tier,
-        verdict.deltaCp,
-        { bestUci: hintFacts.bestUci },
-        mirrorRef.current.fen()
-      ).catch(() => undefined);
+      const branch = hintBranch ?? decideBranch(pending.from, hintFacts.bestFromSquare);
+      const next = Math.min(hintPress + 1, maxPress(branch));
+      if (next === hintPress) return; // capped -- "more?" is a no-op at the top
+      if (hintBranch == null) setHintBranch(branch);
+      setHintPress(next);
+      logHintPress(branch, next, hintFacts);
       return;
     }
+
+    // She outran the prefetch: press 1 needs the branch decision, which needs
+    // the facts. Fetch them (token-guarded like the judge call), then land on
+    // press 1 with the branch decided. Until this resolves the button shows
+    // the "thinking..." disabled state -- there is no facts-free rung.
     if (hintFetching) return;
-    // The 3->4 click: fetch the deep verified hint. Pending never mutates
-    // the mirror, so mirrorRef's fen is exactly the before-position the
-    // server computes against. Token-guarded like the judge call: a
-    // retarget/cancel/confirm while the search runs makes the result stale
-    // and it is dropped.
     const token = pendingTokenRef.current;
+    const fromSquare = pending.from;
     setHintFetching(true);
     (async () => {
       try {
         const res = await fetchHintFacts(gameId);
-        if (pendingTokenRef.current !== token) return;
+        if (pendingTokenRef.current !== token) return; // superseded
         if (!res.ok || !res.facts || !hintIsLegal(mirrorRef.current.fen(), res.facts.bestUci)) {
-          // Never render a hint that fails the live legality check — log it
-          // for the Lab instead (this is the "impossible square" playtest bug).
           logHint(
             gameId,
             0,
@@ -1101,31 +1158,29 @@ export function GamePage() {
           ).catch(() => undefined);
           return;
         }
+        const branch = decideBranch(fromSquare, res.facts.bestFromSquare);
         setHintFacts(res.facts);
-        setHintLevel(4);
-        logHint(
-          gameId,
-          4,
-          verdict.tier,
-          verdict.deltaCp,
-          { bestUci: res.facts.bestUci },
-          mirrorRef.current.fen()
-        ).catch(() => undefined);
+        setHintBranch(branch);
+        setHintPress(1);
+        logHintPress(branch, 1, res.facts);
       } finally {
         if (pendingTokenRef.current === token) setHintFetching(false);
       }
     })();
-  }, [gameId, verdict, hintLevel, hintFacts, hintFetching]);
+  }, [gameId, verdict, pending, hintFacts, hintBranch, hintPress, hintFetching]);
 
   // Increment 3a Wave 3: coach's corner narration. Fires once per pending
-  // move, the instant the ladder reaches level 3 (the WHY threat is on
-  // screen) for a nudge/warning verdict AND the deep hint-facts fetch has
-  // landed (best/recommendation facts exist to narrate). Reuses
-  // pendingTokenRef — the same guard the judge call and hint fetch use — so
-  // a response for a since-superseded pending move is dropped rather than
-  // rendered. Never gates anything: no spinner on the ladder itself, no
-  // disabled states, confirm/retract work mid-flight (the token guard drops
-  // the stale text when it lands).
+  // move, once the player has engaged the ladder (press >= 2 -- right-P2 is
+  // the "what the opponent is doing" WHY moment) for a nudge/warning verdict.
+  // Reuses pendingTokenRef -- the same guard the judge call and hint fetch
+  // use -- so a response for a since-superseded pending move is dropped.
+  // Never gates anything on the ladder itself.
+  //
+  // Wave 2 (item 5): this MUST gate on press >= 2 explicitly, not on
+  // hintFacts presence. With the verdict-time prefetch, hintFacts now lands
+  // the instant the move is judged -- so the old "hintFacts && level >= 3"
+  // shape would narrate (and burn a real backend call + advice_traces write)
+  // before she has clicked anything at all.
   useEffect(() => {
     // Review fast-follow (F3, increment 3a): this effect used to fire at L3+
     // regardless of the coachHints toggle, while the corner's own render
@@ -1143,7 +1198,7 @@ export function GamePage() {
     }
     if (!pending || !gameId || !verdict || !hintFacts) return;
     if (verdict.tier !== "nudge" && verdict.tier !== "warning") return;
-    if (hintLevel < 3) return;
+    if (hintPress < 2) return;
     const token = pendingTokenRef.current;
     if (narratedTokenRef.current === token) return;
     narratedTokenRef.current = token;
@@ -1183,7 +1238,7 @@ export function GamePage() {
         if (pendingTokenRef.current !== token) return;
         setCoachLoading(false);
       });
-  }, [gameId, pending, verdict, hintLevel, hintFacts, coachHints, coachBackend]);
+  }, [gameId, pending, verdict, hintPress, hintFacts, coachHints, coachBackend]);
 
   // A5: surfaces a short "you tried something, here's why it didn't work"
   // message in the status line for a few seconds (currently only "can't
@@ -1454,6 +1509,13 @@ export function GamePage() {
   // span uses) and runs reconcileChatFocus every send — a focus survives
   // only if it still matches what's actually on screen right now.
   const buildChatContext = useCallback((): ChatContext => {
+    // Phase 3 review fix (F1): the pending move's own ply -- mirrorRef is
+    // untouched while a move is pending, so history().length + 1 is exactly
+    // the position the hint ladder (and any hintFocus set from it) is scoped
+    // to right now. Passed alongside the branch/press/text check so a stale
+    // focus from a DIFFERENT pending move at the same rung with a fixed opener
+    // line (see reconcileChatFocus's header) is correctly dropped.
+    const pendingPly = pending ? mirrorRef.current.history().length + 1 : null;
     const liveHintCtx: HintCopyCtx | null = pending
       ? {
           herPieceKind: mirrorRef.current.get(pending.from as Square)?.type ?? "piece",
@@ -1461,18 +1523,19 @@ export function GamePage() {
           threat: verdict?.threat,
           bestFacts: hintFacts ?? undefined,
           fen,
+          gameId: gameId ?? 0,
+          pendingPly: pendingPly ?? 0,
+          conversionCopy: verdict?.conversionCopy,
+          mateAfter: verdict?.mateAfter,
         }
       : null;
-    const currentHintText = hintLevel > 0 && liveHintCtx ? hintCopy(hintLevel, liveHintCtx) : null;
-    // Phase 3 review fix (F1): the pending move's own ply -- mirrorRef is
-    // untouched while a move is pending, so history().length + 1 is exactly
-    // the position the hint ladder (and any hintFocus set from it) is
-    // scoped to right now. Passed alongside the text/level check so a stale
-    // focus from a DIFFERENT pending move at the same level/fixed-template
-    // text (see reconcileChatFocus's header) is correctly dropped.
-    const pendingPly = pending ? mirrorRef.current.history().length + 1 : null;
+    // Wave 2: recompute the current rung's copy the same way the visible
+    // hint-copy span does, so reconcile drops a focus whose text has moved on.
+    const currentHintText =
+      hintPress > 0 && hintBranch && liveHintCtx ? rungCopy(hintBranch, hintPress, liveHintCtx) : null;
     const focus = reconcileChatFocus(chatFocus, {
-      hintLevel,
+      hintBranch,
+      hintPress,
       renderedHintText: currentHintText,
       pendingPly,
       rewindPly,
@@ -1507,7 +1570,7 @@ export function GamePage() {
       };
     }
     return { mode: "live", ...extra };
-  }, [reviewGame, pending, verdict, hintFacts, chatFocus, hintLevel, fen, rewindPly]);
+  }, [reviewGame, pending, verdict, hintFacts, chatFocus, hintBranch, hintPress, gameId, fen, rewindPly]);
 
   // Increment 3.95, Task 7: a debrief turning-point card's own "ask about
   // this" — looks up the matching TurningLine itself (turningLines is
@@ -1944,23 +2007,34 @@ export function GamePage() {
           ? "call it: mallow has this. resign?"
           : "end the game?";
 
-  // Increment 2.7 (why-hints): level-5 board highlight for the deep verified
-  // hint's best move, derived from the fetched hintFacts. Gate moved from
-  // >=3 to >=5 — the ladder grew three levels (2->4) that reveal the WHY
-  // without ever pointing at a square to play.
+  // Wave 2: the full-reveal board highlight (right-P3 / wrong-P4) -- shown
+  // only at the last press of the decided branch, derived from the fetched
+  // hintFacts. The earlier presses reveal the WHY without pointing at a
+  // square to play.
   const hintReveal =
-    hintLevel >= 5 && hintFacts ? hintRevealSquares(hintFacts.bestUci) : null;
+    hintBranch != null && hintPress >= maxPress(hintBranch) && hintFacts
+      ? hintRevealSquares(hintFacts.bestUci)
+      : null;
 
-  // Level-3 threat highlight: only while sitting exactly at level 3, and
-  // only when there's a real threat + a pending move to anchor herToSquare.
+  // Wave 2: the threat highlight remaps to right-P2 (the "what the opponent
+  // is doing" rung) -- only while sitting exactly there, with a real threat
+  // and a pending move to anchor herToSquare. The wrong branch never paints
+  // the opponent's threat (its rungs are about HER best piece).
   const threatReveal =
-    hintLevel === 3 && verdict?.threat && pending ? threatRevealSquares(verdict.threat, pending.to) : null;
+    hintBranch === "right" && hintPress === 2 && verdict?.threat && pending
+      ? threatRevealSquares(verdict.threat, pending.to)
+      : null;
 
-  // Everything hintCopy needs for the current pending move. herPieceKind
-  // comes off the live mirror (free, no network) — the piece she just
-  // moved is always mirrorRef's occupant at pending.from since pending
-  // never touches the mirror. Falls back to "piece" if the lookup somehow
-  // misses (defensive only; pending.from is always occupied in practice).
+  // The pending move's own ply -- mirrorRef is untouched while pending, so
+  // history().length + 1 is the position the ladder is scoped to. Feeds both
+  // the pool-rotation seed and the hintFocus position identity.
+  const hintPendingPly = pending ? mirrorRef.current.history().length + 1 : 0;
+
+  // Everything rungCopy needs for the current pending move. herPieceKind
+  // comes off the live mirror (free, no network) -- the piece she just moved
+  // is always mirrorRef's occupant at pending.from since pending never
+  // touches the mirror. gameId/pendingPly seed the pool rotation;
+  // conversionCopy/mateAfter feed the right-P2 override + ladder rung 1.
   const hintCtx: HintCopyCtx | null = pending
     ? {
         herPieceKind: mirrorRef.current.get(pending.from as Square)?.type ?? "piece",
@@ -1968,34 +2042,30 @@ export function GamePage() {
         threat: verdict?.threat,
         bestFacts: hintFacts ?? undefined,
         fen,
+        gameId: gameId ?? 0,
+        pendingPly: hintPendingPly,
+        conversionCopy: verdict?.conversionCopy,
+        mateAfter: verdict?.mateAfter,
       }
     : null;
 
-  // Increment 3.95, Task 7: the exact rendered hint text at the current
-  // level — computed once here so both the visible <span> below and the
-  // "ask about this" click use the identical string (never a separate
-  // re-derivation that could drift from what's on screen).
-  const renderedHintCopy = hintLevel > 0 && hintCtx ? hintCopy(hintLevel, hintCtx) : null;
+  // Increment 3.95, Task 7: the exact rendered hint text at the current rung
+  // -- computed once here so both the visible <span> below and the "ask about
+  // this" click use the identical string (never a separate re-derivation).
+  const renderedHintCopy =
+    hintPress > 0 && hintBranch && hintCtx ? rungCopy(hintBranch, hintPress, hintCtx) : null;
 
-  // Increment 3.95, Task 7: the hint ladder's own "ask about this" — opens
+  // Increment 3.95, Task 7: the hint ladder's own "ask about this" -- opens
   // the always-mounted CoachChat scoped to the hint text the player is
-  // actually looking at. A no-op before any hint level has rendered
-  // anything (hintFocusContext returns undefined at level 0, or when
-  // hintCopy itself has nothing to say yet at levels 4-5 mid-fetch).
+  // actually looking at. A no-op before any rung has rendered anything
+  // (branch undecided at press 0, or rungCopy still null mid-fetch).
   const handleAskAboutHint = () => {
-    // Phase 3 review fix (F1): thread the pending move's own ply through as
-    // the focus's position identity -- same derivation buildChatContext
-    // uses (mirrorRef is untouched while pending is set).
-    const pendingPly = pending ? mirrorRef.current.history().length + 1 : 0;
+    if (!hintBranch || !renderedHintCopy) return;
     // Task 4 (R1b, fact-gap round): the on-screen HintFacts, when the deep
-    // fetch has already landed (hintFacts is null at levels 1-2, before it
-    // has). `fen` here is the same before-position hintCtx already uses for
-    // hintCopy (the mirror's fen while pending is set, matching what
-    // computeHint evaluated server-side) -- pv is UCI on the wire
-    // (server/annotator/hint.ts's HintFacts.pv), converted to SAN here via
-    // the same replay discipline manager.ts's pvLine uses, never trusted as
-    // SAN directly. threat is the level-3 highlight's own ThreatFacts
-    // (verdict.threat, not a HintFacts field -- see threatReveal above).
+    // fetch has landed. `fen` here is the same before-position hintCtx uses
+    // (matching what computeHint evaluated server-side) -- pv is UCI on the
+    // wire, converted to SAN here via the same replay discipline manager.ts's
+    // pvLine uses. threat is the right-P2 highlight's own ThreatFacts.
     const extra = hintFacts
       ? {
           bestSan: hintFacts.bestSan,
@@ -2005,7 +2075,7 @@ export function GamePage() {
           threat: verdict?.threat,
         }
       : undefined;
-    const focus = hintFocusContext(hintLevel, renderedHintCopy, pendingPly, extra);
+    const focus = hintFocusContext(hintBranch, hintPress, renderedHintCopy, hintPendingPly, extra);
     if (!focus) return;
     setChatFocus({ hintFocus: focus });
     requestChatOpen();
@@ -2256,14 +2326,14 @@ export function GamePage() {
                           ask about this
                         </button>
                       )}
-                      {hintLevel < 5 && (
+                      {!(hintBranch != null && hintPress >= maxPress(hintBranch)) && (
                         <button
                           type="button"
                           className="hint-affordance"
                           onClick={handleHintClick}
                           disabled={hintFetching}
                         >
-                          {hintFetching ? "thinking..." : hintLevel === 0 ? "help?" : "more?"}
+                          {hintFetching ? "thinking..." : hintPress === 0 ? "help?" : "more?"}
                         </button>
                       )}
                     </span>

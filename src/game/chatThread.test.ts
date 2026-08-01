@@ -20,7 +20,7 @@ describe("moveNumberForPly", () => {
 
 describe("focusKey", () => {
   it("builds a stable key for a hint focus", () => {
-    expect(focusKey({ branch: "right", press: 3, text: "watch the fork", ply: 7 }, undefined)).toBe("hint:7:right:3:watch the fork");
+    expect(focusKey({ branch: "right" as const, press: 3, text: "watch the fork", ply: 7 }, undefined)).toBe("hint:7:right:3:watch the fork");
   });
 
   it("builds a stable key for a turning-point focus", () => {
@@ -40,16 +40,16 @@ describe("focusKey", () => {
   // at the same level, differing only by ply, to prove the fix actually
   // folds a position identity in rather than relying on text/level alone.
   it("gives two different moments at the same level with IDENTICAL template text DIFFERENT keys (the F1 collision)", () => {
-    const knightHintAtPly7 = { branch: "right", press: 1, text: "hold on. look at your knight.", ply: 7 };
-    const knightHintAtPly19 = { branch: "right", press: 1, text: "hold on. look at your knight.", ply: 19 };
+    const knightHintAtPly7 = { branch: "right" as const, press: 1, text: "hold on. look at your knight.", ply: 7 };
+    const knightHintAtPly19 = { branch: "right" as const, press: 1, text: "hold on. look at your knight.", ply: 19 };
     const key7 = focusKey(knightHintAtPly7, undefined);
     const key19 = focusKey(knightHintAtPly19, undefined);
     expect(key7).not.toBe(key19);
   });
 
   it("the same collision at level 2 also resolves via ply", () => {
-    const a = focusKey({ branch: "right", press: 2, text: "same fixed template", ply: 3 }, undefined);
-    const b = focusKey({ branch: "right", press: 2, text: "same fixed template", ply: 5 }, undefined);
+    const a = focusKey({ branch: "right" as const, press: 2, text: "same fixed template", ply: 3 }, undefined);
+    const b = focusKey({ branch: "right" as const, press: 2, text: "same fixed template", ply: 5 }, undefined);
     expect(a).not.toBe(b);
   });
 });
@@ -69,8 +69,8 @@ describe("shouldInjectAnchor", () => {
   // failure mode (the second ask landed under a stale anchor because the
   // old text-only key never changed).
   it("treats two colliding-text hint focuses at different plies as a real transition", () => {
-    const keyAt7 = focusKey({ branch: "right", press: 1, text: "hold on. look at your knight.", ply: 7 }, undefined);
-    const keyAt19 = focusKey({ branch: "right", press: 1, text: "hold on. look at your knight.", ply: 19 }, undefined);
+    const keyAt7 = focusKey({ branch: "right" as const, press: 1, text: "hold on. look at your knight.", ply: 7 }, undefined);
+    const keyAt19 = focusKey({ branch: "right" as const, press: 1, text: "hold on. look at your knight.", ply: 19 }, undefined);
     expect(shouldInjectAnchor(keyAt7, keyAt19)).toBe(true);
   });
 });
@@ -92,7 +92,7 @@ describe("historyForBackend", () => {
 
 describe("anchorForFocus", () => {
   it("builds a hint anchor with the move number from the pending move's ply", () => {
-    expect(anchorForFocus({ branch: "right", press: 3, text: "watch the fork", ply: 7 }, undefined)).toEqual({
+    expect(anchorForFocus({ branch: "right" as const, press: 3, text: "watch the fork", ply: 7 }, undefined)).toEqual({
       kind: "context-anchor",
       source: "hint",
       moveNumber: 4,
@@ -107,8 +107,8 @@ describe("anchorForFocus", () => {
   // ceil(ply/2) rule already gives both plies moveNumber 1, so a hint
   // focused on either half of move 1 must read "move 1", not drift to 2.
   it("gives white's move 1 and black's reply to it the same move number", () => {
-    const white = anchorForFocus({ branch: "right", press: 1, text: "look here", ply: 1 }, undefined);
-    const black = anchorForFocus({ branch: "right", press: 1, text: "look here", ply: 2 }, undefined);
+    const white = anchorForFocus({ branch: "right" as const, press: 1, text: "look here", ply: 1 }, undefined);
+    const black = anchorForFocus({ branch: "right" as const, press: 1, text: "look here", ply: 2 }, undefined);
     expect(white?.kind === "context-anchor" ? white.moveNumber : undefined).toBe(1);
     expect(black?.kind === "context-anchor" ? black.moveNumber : undefined).toBe(1);
   });
@@ -154,7 +154,7 @@ describe("outbound payload shape (F3): chatWithCoach never sends thread entries"
 
     const context: ChatContext = {
       mode: "live",
-      hintFocus: { branch: "right", press: 3, text: "watch the fork", ply: 7 },
+      hintFocus: { branch: "right" as const, press: 3, text: "watch the fork", ply: 7 },
     };
     await chatWithCoach(1, { message: "why is that bad?", context, backendPref: "claude" });
 

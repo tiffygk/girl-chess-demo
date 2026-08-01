@@ -39,7 +39,7 @@ import { deriveOpportunity } from "../review/opportunity";
 // Debrief Plain-English Notation round: pieceName and the SAN-based renderer
 // both live in describeSanMove.ts. Re-exporting pieceName here keeps every
 // existing import of it from hintFlow.ts working unchanged.
-import { pieceName, describeSanMove, describeMoveName } from "./describeSanMove";
+import { pieceName, describeSanMove } from "./describeSanMove";
 
 export { pieceName };
 
