@@ -139,6 +139,10 @@ export function deriveOpportunity(fenSeed: string, pvSans: string[]): string | u
   let blackGain = 0;
   let biggestWhiteCapture: string | undefined;
   let biggestWhiteValue = 0;
+  // Wave 2, item 4 (F6): the 0-based played index at which the decisive
+  // (largest) white capture first materializes -- used only to decide
+  // whether the "wins the {piece}" claim needs the "eventually" qualifier.
+  let biggestWhiteCaptureIndex = -1;
   played.forEach((mv, i) => {
     if (!mv.captured) return;
     const value = PIECE_VALUES[mv.captured] ?? 0;
@@ -147,6 +151,7 @@ export function deriveOpportunity(fenSeed: string, pvSans: string[]): string | u
       if (value > biggestWhiteValue) {
         biggestWhiteValue = value;
         biggestWhiteCapture = mv.captured;
+        biggestWhiteCaptureIndex = i;
       }
     } else {
       blackGain += value;
@@ -156,7 +161,14 @@ export function deriveOpportunity(fenSeed: string, pvSans: string[]): string | u
 
   if (netForWhite >= MATERIAL_WIN_FLOOR && biggestWhiteCapture) {
     const pieceName = PIECE_NAMES[biggestWhiteCapture];
-    if (pieceName) return `wins the ${pieceName}`;
+    // Wave 2, item 4 (F6): a capture the player only reaches deep in the line
+    // (0-based index >= 4, i.e. white's 3rd move or later -- "deeper than 4
+    // plies in") is honest to name but shouldn't read as an immediate win.
+    // Mate claims already carry their own N above, so they're untouched.
+    if (pieceName) {
+      const deep = biggestWhiteCaptureIndex >= 4;
+      return `${deep ? "eventually " : ""}wins the ${pieceName}`;
+    }
   }
 
   // Below the minor-piece floor, a genuine net pawn gain is still an honest,

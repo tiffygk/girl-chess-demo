@@ -112,6 +112,33 @@ describe("deriveOpportunity", () => {
   });
 });
 
+// Wave 2, item 4 (F6): depth qualifier on the material-win claim. When the
+// decisive capture (the piece the claim names) first materializes deeper
+// than 4 plies into the pv, the claim becomes "eventually wins the {piece}"
+// -- a shallow capture stays unqualified. Both fixtures are real,
+// independently-checkable lines (verified against chess.js: the deep one's
+// rook capture is at 0-based played index 4, the 5th ply).
+describe("deriveOpportunity depth qualifier (Wave 2, item 4)", () => {
+  it("a shallow decisive capture (<= 4 plies) is unqualified: 'wins the {piece}'", () => {
+    // White rook d2 wins the black queen on d4 outright on the FIRST ply.
+    const fen = "4k3/8/8/8/3q4/8/3R4/4K3 w - - 0 1";
+    expect(deriveOpportunity(fen, ["Rxd4"])).toBe("wins the queen");
+  });
+
+  it("a deep decisive capture (> 4 plies in) is qualified: 'eventually wins the {piece}'", () => {
+    // White knight b1 fishes the loose black rook on f6 over three knight
+    // moves (Nc3, Ne4, Nxf6+) while black shuffles its a-pawn -- the rook
+    // capture lands on the 5th ply (0-based index 4), deeper than 4 plies,
+    // so the claim is qualified. Net material for white is +5 (a rook, no
+    // recapture) and the line is not mate, so it's still a material-win
+    // claim, just an eventual one.
+    const fen = "4k3/p7/5r2/8/8/8/8/1N2K3 w - - 0 1";
+    expect(deriveOpportunity(fen, ["Nc3", "a6", "Ne4", "a5", "Nxf6+"])).toBe(
+      "eventually wins the rook"
+    );
+  });
+});
+
 // The adversarial repro lines from the 2026-07-21 review: the original
 // implementation checked only "did a mate/capture happen anywhere in this
 // pv", never WHICH SIDE it favored. Since the player is always white (every
