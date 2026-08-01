@@ -162,7 +162,7 @@ app.post("/api/game/:id/hint", (req, res) => {
 // throws either — worst case is a template-sourced string), so the 500
 // branch here is purely defensive.
 app.post("/api/game/:id/narrate", async (req, res) => {
-  const { herPiece, from, to, tier, deltaCp, threat, best, recommendation, backendPref } = req.body;
+  const { herPiece, from, to, tier, deltaCp, mateBefore, mateAfter, threat, best, recommendation, backendPref } = req.body;
   try {
     const result = await gm.narrate(Number(req.params.id), {
       herPiece,
@@ -170,6 +170,11 @@ app.post("/api/game/:id/narrate", async (req, res) => {
       to,
       tier,
       deltaCp: deltaCp ?? null,
+      // Wave 1 (item 2 -- typed mate): thread the typed mate distance through
+      // to assembleFactList so the coach prompt prefers it over the folded
+      // deltaCp. Coerce undefined -> null so absence is explicit on the wire.
+      mateBefore: mateBefore ?? null,
+      mateAfter: mateAfter ?? null,
       threat,
       best,
       recommendation,

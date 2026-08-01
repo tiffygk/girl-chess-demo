@@ -883,6 +883,11 @@ export class GameManager {
       to: string;
       tier: "nudge" | "warning";
       deltaCp: number | null;
+      // Wave 1 (item 2 -- typed mate): the typed mate distance (mover
+      // perspective), threaded onto the fact list so buildPrompt ships it
+      // instead of the folded deltaCp. Optional -- a non-mate verdict omits.
+      mateBefore?: number | null;
+      mateAfter?: number | null;
       threat?: ThreatFacts;
       best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
       recommendation?: RecommendationFacts;
@@ -903,6 +908,10 @@ export class GameManager {
       herMove: { pieceKind: body.herPiece, from: body.from, to: body.to },
       tier: body.tier,
       deltaCp: body.deltaCp,
+      // Wave 1 (item 2 -- typed mate): pass the typed mate distance through so
+      // buildPrompt prefers it over the folded deltaCp (99098 for a lost mate).
+      mateBefore: body.mateBefore,
+      mateAfter: body.mateAfter,
       // Task 3 (2026-07-22, truthfulness leaks): DERIVED from the live game
       // state already in hand here (same source computeHint/exploreReply
       // use), never recomputed or hand-invented -- lets validateNarration

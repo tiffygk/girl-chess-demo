@@ -136,6 +136,14 @@ export interface Verdict {
   tier: "silent" | "nudge" | "warning";
   deltaCp: number | null;
   mateAgainst: boolean;
+  // Wave 1 (verdict truth layer, item 2 -- typed mate): mirrors classify.ts's
+  // Verdict. Forced-mate distance on each side, mover perspective (positive =
+  // a mate for the player, negative = against her, null = no forced mate that
+  // side) -- typed rather than folded into deltaCp (toMoverCp collapses a lost
+  // mate-in-16 into deltaCp 99098). Threaded into the narrate() body below so
+  // the coach prompt ships the typed distance instead of that folded number.
+  mateBefore: number | null;
+  mateAfter: number | null;
   latencyMs: number;
   facts?: MoveFacts;
   threat?: ThreatFacts;
@@ -303,6 +311,11 @@ export function narrate(
     to: string;
     tier: string;
     deltaCp: number | null;
+    // Wave 1 (item 2 -- typed mate): the typed mate distance (mover
+    // perspective), threaded so the server coach prompt ships it instead of
+    // the folded deltaCp. Optional -- an ordinary non-mate verdict omits them.
+    mateBefore?: number | null;
+    mateAfter?: number | null;
     threat?: ThreatFacts;
     best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
     recommendation?: RecommendationFacts;

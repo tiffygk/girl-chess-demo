@@ -198,6 +198,35 @@ describe("buildPrompt", () => {
     expect(prompt).toContain('"yourMove"');
     expect(prompt).not.toContain('"herMove"');
   });
+
+  // Wave 1 (verdict truth layer, item 2 -- typed mate): with no mate on the
+  // board the prompt is unchanged -- the folded deltaCp still ships.
+  it("without mate fields, still ships deltaCp (unchanged)", () => {
+    const prompt = buildPrompt(mkFacts(), getPersona());
+    expect(prompt).toContain('"deltaCp"');
+    expect(prompt).toContain("300");
+  });
+
+  // Wave 1 (item 2): when a mate field is set, deltaCp is the MATE_SCORE_CP
+  // fold (a lost mate-in-16 folds to 99098) -- a garbage number to hand a
+  // narration model. The prompt must send the typed mate distance and OMIT
+  // the folded deltaCp entirely.
+  it("with a mate field set, sends the typed mate distance and omits the folded deltaCp", () => {
+    const facts = assembleFactList({
+      herMove: { pieceKind: "q", from: "d1", to: "d8" },
+      tier: "warning",
+      deltaCp: 99098, // the MATE_SCORE_CP fold for a lost mate-in-16 -- must NOT reach the model
+      currentFen: PLACEHOLDER_FEN,
+      mateBefore: 16,
+      mateAfter: null,
+    });
+    const prompt = buildPrompt(facts, getPersona());
+    expect(prompt).toContain('"mateBefore"');
+    expect(prompt).toContain("16");
+    expect(prompt).toContain('"mateAfter"');
+    expect(prompt).not.toMatch(/\d{5}/); // no 5-digit folded deltaCp (99098) anywhere
+    expect(prompt).not.toContain('"deltaCp"');
+  });
 });
 
 describe("buildTemplateNarration", () => {
