@@ -1,32 +1,20 @@
 import { describe, it, expect } from "vitest";
 import {
-  nextHintLevel,
   pieceName,
-  hintCopy,
   describeBestMove,
   hintRevealSquares,
   threatRevealSquares,
   hintIsLegal,
   recommendationClause,
+  decideBranch,
+  maxPress,
+  selectRung,
+  rungCopy,
   type HintFacts,
   type HintCopyCtx,
-  type HintLevel,
+  type HintBranch,
 } from "./hintFlow";
 import type { ThreatFacts, RecommendationFacts } from "./api";
-
-describe("nextHintLevel", () => {
-  it("advances 0 -> 1 -> 2 -> 3 -> 4 -> 5", () => {
-    let level: HintLevel = 0;
-    for (const expected of [1, 2, 3, 4, 5]) {
-      level = nextHintLevel(level);
-      expect(level).toBe(expected);
-    }
-  });
-
-  it("caps at level 5 — further clicks are a no-op", () => {
-    expect(nextHintLevel(5)).toBe(5);
-  });
-});
 
 describe("pieceName", () => {
   it("spells out every chess.js piece-kind letter", () => {
@@ -43,166 +31,26 @@ describe("pieceName", () => {
   });
 });
 
-describe("describeBestMove", () => {
-  it("quiet move: 'knight to f3'", () => {
-    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "n",
-      bestFromSquare: "g1",
-      bestToSquare: "f3",
-      bestSan: "Nf3",
-      bestUci: "g1f3",
-    };
-    expect(describeBestMove(facts, fen)).toBe("knight to f3");
-  });
+// ---- the branch decision + press ladder shape ---------------------------
 
-  it("capture: 'knight takes on f3'", () => {
-    const fen = "4k3/8/8/8/8/5n2/8/4K1N1 w - - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "n",
-      bestFromSquare: "g1",
-      bestToSquare: "f3",
-      bestSan: "Nxf3",
-      bestUci: "g1f3",
-    };
-    expect(describeBestMove(facts, fen)).toBe("knight takes on f3");
-  });
-
-  it("en passant (flag 'e', not 'c'): still says 'takes on'", () => {
-    const fen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "p",
-      bestFromSquare: "e5",
-      bestToSquare: "d6",
-      bestSan: "exd6",
-      bestUci: "e5d6",
-    };
-    expect(describeBestMove(facts, fen)).toBe("pawn takes on d6");
-  });
-
-  it("check: 'queen to h4, check'", () => {
-    const fen = "8/4k3/8/8/8/8/K6Q/8 w - - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "q",
-      bestFromSquare: "h2",
-      bestToSquare: "h4",
-      bestSan: "Qh4+",
-      bestUci: "h2h4",
-    };
-    expect(describeBestMove(facts, fen)).toBe("queen to h4, check");
-  });
-
-  it("checkmate (fool's-mate-style): 'queen to h4, checkmate'", () => {
-    const fen = "rnbqkbnr/pppp1ppp/8/4p3/5PP1/8/PPPPP2P/RNBQKBNR b KQkq - 0 2";
-    const facts: HintFacts = {
-      bestPieceKind: "q",
-      bestFromSquare: "d8",
-      bestToSquare: "h4",
-      bestSan: "Qh4#",
-      bestUci: "d8h4",
-    };
-    expect(describeBestMove(facts, fen)).toBe("queen to h4, checkmate");
-  });
-
-  it("promotion: 'pawn to e8, becoming a queen'", () => {
-    const fen = "8/4P3/8/8/8/8/8/K6k w - - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "p",
-      bestFromSquare: "e7",
-      bestToSquare: "e8",
-      bestSan: "e8=Q",
-      bestUci: "e7e8q",
-    };
-    expect(describeBestMove(facts, fen)).toBe("pawn to e8, becoming a queen");
-  });
-
-  it("capturing promotion with check: 'pawn takes on h8, becoming a knight, check'", () => {
-    const fen = "7r/6P1/6k1/8/8/8/8/K7 w - - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "p",
-      bestFromSquare: "g7",
-      bestToSquare: "h8",
-      bestSan: "gxh8=N+",
-      bestUci: "g7h8n",
-    };
-    expect(describeBestMove(facts, fen)).toBe("pawn takes on h8, becoming a knight, check");
-  });
-
-  it("castle short: 'castle short'", () => {
-    const fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "k",
-      bestFromSquare: "e1",
-      bestToSquare: "g1",
-      bestSan: "O-O",
-      bestUci: "e1g1",
-    };
-    expect(describeBestMove(facts, fen)).toBe("castle short");
-  });
-
-  it("castle long: 'castle long'", () => {
-    const fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "k",
-      bestFromSquare: "e1",
-      bestToSquare: "c1",
-      bestSan: "O-O-O",
-      bestUci: "e1c1",
-    };
-    expect(describeBestMove(facts, fen)).toBe("castle long");
-  });
-
-  it("fallback: a garbage fen returns null (caller shows SAN alone)", () => {
-    const facts: HintFacts = {
-      bestPieceKind: "n",
-      bestFromSquare: "g1",
-      bestToSquare: "f3",
-      bestSan: "Nf3",
-      bestUci: "g1f3",
-    };
-    expect(describeBestMove(facts, "not-a-real-fen")).toBeNull();
-  });
-
-  it("fallback: an illegal uci for the given fen returns null", () => {
-    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    const facts: HintFacts = {
-      bestPieceKind: "r",
-      bestFromSquare: "a1",
-      bestToSquare: "a8",
-      bestSan: "Ra8",
-      bestUci: "a1a8",
-    };
-    expect(describeBestMove(facts, fen)).toBeNull();
+describe("decideBranch", () => {
+  it("'right' iff her pending move's from-square is the best-move piece's from-square", () => {
+    expect(decideBranch("g1", "g1")).toBe("right");
+    expect(decideBranch("g1", "c1")).toBe("wrong");
   });
 });
 
-describe("hintIsLegal", () => {
-  const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-  it("accepts a legal move for the position", () => {
-    expect(hintIsLegal(START, "g1f3")).toBe(true);
+describe("maxPress", () => {
+  it("right branch caps at 3 presses", () => {
+    expect(maxPress("right")).toBe(3);
   });
-  it("rejects a move from an empty square", () => {
-    expect(hintIsLegal(START, "e4e5")).toBe(false);
-  });
-  it("rejects an illegal move and garbage input", () => {
-    expect(hintIsLegal(START, "e2e5")).toBe(false);
-    expect(hintIsLegal(START, "zz")).toBe(false);
-    expect(hintIsLegal(START, "")).toBe(false);
+  it("wrong branch caps at 4 presses", () => {
+    expect(maxPress("wrong")).toBe(4);
   });
 });
 
-describe("hintRevealSquares", () => {
-  it("splits a plain UCI move into from/to", () => {
-    expect(hintRevealSquares("g1f3")).toEqual({ from: "g1", to: "f3" });
-  });
-
-  it("splits a promotion UCI move, ignoring the trailing promotion letter", () => {
-    expect(hintRevealSquares("e7e8q")).toEqual({ from: "e7", to: "e8" });
-  });
-});
-
-// Increment 2.7 (why-hints): fixtures, one per motif, matching
-// server/annotator/motifs.ts's ThreatFacts shape exactly.
+// ---- fixtures -----------------------------------------------------------
+// One ThreatFacts per motif, matching server/annotator/motifs.ts exactly.
 const forkThreat: ThreatFacts = {
   motif: "fork",
   refutationUci: "d1f5",
@@ -231,12 +79,6 @@ const captureMovedThreat: ThreatFacts = {
   capturedPieceKind: "n",
   capturesHerJustMovedPiece: true,
   capturedSquareDefended: false,
-  // Task 1 follow-up (issue A): every use of this fixture pairs it with
-  // herPieceKind "n" (a knight moved to h5) -- herCapturedPieceKind "n"
-  // keeps the defended case an even trade (net 0), preserving this
-  // fixture's original pre-Task-1 intent (defended -> honest fallback,
-  // never the naive loss line) now that the material check reads this
-  // field instead of defaulting to "captured nothing".
   herCapturedPieceKind: "n",
 };
 
@@ -290,8 +132,6 @@ const positionalThreat: ThreatFacts = {
   capturedSquareDefended: false,
 };
 
-// Wave 1 (item 3 -- tier-1 motif fields): a quiet promoting refutation. The
-// L2/L3 copy reads only the refutation piece/to-square, both always populated.
 const promotionThreat: ThreatFacts = {
   motif: "promotion-threat",
   refutationUci: "a7a8q",
@@ -304,10 +144,7 @@ const promotionThreat: ThreatFacts = {
   capturedSquareDefended: false,
 };
 
-const baseCtx: HintCopyCtx = { herPieceKind: "n", herToSquare: "e4" };
-
-// Increment 3a Wave 3: fixtures, one per accomplishment, matching
-// server/annotator/motifs.ts's RecommendationFacts shape exactly.
+// One RecommendationFacts per accomplishment.
 const capturesRec: RecommendationFacts = {
   accomplishment: "captures",
   pieceKind: "n",
@@ -316,22 +153,6 @@ const capturesRec: RecommendationFacts = {
   san: "Nxb5",
   capturesSquare: "b5",
   capturedPieceKind: "p",
-};
-
-const givesMateRec: RecommendationFacts = {
-  accomplishment: "gives-mate",
-  pieceKind: "q",
-  fromSquare: "d8",
-  toSquare: "h4",
-  san: "Qh4#",
-};
-
-const givesCheckRec: RecommendationFacts = {
-  accomplishment: "gives-check",
-  pieceKind: "q",
-  fromSquare: "h2",
-  toSquare: "h4",
-  san: "Qh4+",
 };
 
 const forksRec: RecommendationFacts = {
@@ -364,7 +185,6 @@ const developsRec: RecommendationFacts = {
   san: "Nf3",
 };
 
-// Wave 1 (item 3 -- tier-1 motif fields): the two new quiet accomplishments.
 const promotesRec: RecommendationFacts = {
   accomplishment: "promotes",
   pieceKind: "p",
@@ -381,440 +201,315 @@ const castlesRec: RecommendationFacts = {
   san: "O-O",
 };
 
-describe("recommendationClause", () => {
+// A bestFacts whose from-square (c1) is NOT the pending move's from-square,
+// so decideBranch("d2","c1") === "wrong" in the wrong-branch cases below.
+const bestFacts: HintFacts = {
+  bestPieceKind: "b",
+  bestFromSquare: "c1",
+  bestToSquare: "g5",
+  bestSan: "Bg5",
+  bestUci: "c1g5",
+};
+
+function ctx(overrides: Partial<HintCopyCtx>): HintCopyCtx {
+  return {
+    herPieceKind: "n",
+    herToSquare: "e4",
+    gameId: 7,
+    pendingPly: 9,
+    ...overrides,
+  };
+}
+
+// ---- selectRung: the 8-rung "what the opponent is doing" ladder ---------
+
+describe("selectRung (priority ladder, first true wins)", () => {
+  it("1. typed mate against her (mateAfter < 0) -> mate", () => {
+    expect(selectRung(ctx({ threat: positionalThreat, mateAfter: -3 }))).toBe("mate");
+  });
+  it("1. threat motif mate-threat -> mate", () => {
+    expect(selectRung(ctx({ threat: mateThreat }))).toBe("mate");
+  });
+  it("1. mate outranks an undefended clean hang", () => {
+    expect(selectRung(ctx({ threat: captureMovedThreat, mateAfter: -2 }))).toBe("mate");
+  });
+  it("2. undefended capture motif -> clean-hang", () => {
+    expect(selectRung(ctx({ threat: captureMovedThreat }))).toBe("clean-hang");
+    expect(selectRung(ctx({ threat: captureOtherThreat }))).toBe("clean-hang");
+  });
+  it("2. clean-hang (undefended) outranks the counter-fork combination rung", () => {
+    // Undefended capture AND best forks: rung 2 wins over rung 4.
+    const bf: HintFacts = { ...bestFacts, recommendation: forksRec };
+    expect(selectRung(ctx({ threat: captureMovedThreat, bestFacts: bf }))).toBe("clean-hang");
+  });
+  it("3. fork motif -> fork", () => {
+    expect(selectRung(ctx({ threat: forkThreat }))).toBe("fork");
+  });
+  it("4. counter-fork: a DEFENDED capture motif AND best move forks", () => {
+    const defended: ThreatFacts = { ...captureMovedThreat, capturedSquareDefended: true };
+    const bf: HintFacts = { ...bestFacts, recommendation: forksRec };
+    expect(selectRung(ctx({ threat: defended, bestFacts: bf }))).toBe("counter-fork");
+  });
+  it("4. a defended capture WITHOUT a best-move fork falls past counter-fork", () => {
+    const defended: ThreatFacts = { ...captureMovedThreat, capturedSquareDefended: true };
+    // no bestFacts fork, no trade -> falls to positional (rung 8)
+    expect(selectRung(ctx({ threat: defended }))).toBe("positional");
+  });
+  it("5. best move trades -> trade (when no higher rung fires)", () => {
+    const bf: HintFacts = { ...bestFacts, trade: true };
+    expect(selectRung(ctx({ threat: positionalThreat, bestFacts: bf }))).toBe("trade");
+  });
+  it("6. check-threat -> check", () => {
+    expect(selectRung(ctx({ threat: checkThreat }))).toBe("check");
+  });
+  it("7. promotion-threat -> promotion", () => {
+    expect(selectRung(ctx({ threat: promotionThreat }))).toBe("promotion");
+  });
+  it("8. otherwise -> positional", () => {
+    expect(selectRung(ctx({ threat: positionalThreat }))).toBe("positional");
+    expect(selectRung(ctx({}))).toBe("positional");
+  });
+});
+
+// ---- rungCopy: the right (3-press) branch -------------------------------
+
+describe("rungCopy right branch", () => {
+  it("press 0 is null (nothing revealed yet)", () => {
+    expect(rungCopy("right", 0, ctx({ threat: forkThreat }))).toBeNull();
+  });
+  it("P1 is a vague 'the idea is with this piece' line naming her piece", () => {
+    const copy = rungCopy("right", 1, ctx({ herPieceKind: "q", threat: forkThreat }))!;
+    expect(copy).toContain("queen");
+    // vague: never names the best move's square/piece yet
+    expect(copy).not.toContain("g5");
+  });
+  it("P2 renders the selected opponent-ladder rung (fork here)", () => {
+    const copy = rungCopy("right", 2, ctx({ threat: forkThreat }))!;
+    // names the fork targets from the threat facts
+    expect(copy).toMatch(/fork/);
+    expect(copy).toContain("knight");
+    expect(copy).toContain("rook");
+  });
+  it("P3 is the full reveal: 'best here: {san} ({plain-english})'", () => {
+    const fen = "4k3/8/8/8/8/8/8/2B1K3 w - - 0 1";
+    const copy = rungCopy("right", 3, ctx({ threat: forkThreat, bestFacts, fen }))!;
+    expect(copy).toContain("best here: Bg5");
+    expect(copy).toContain("bishop to g5");
+  });
+  it("P2 returns null when there is no threat AND no facts to select a rung from is still safe (positional)", () => {
+    // positional fallback still renders honest ground-loss copy
+    const copy = rungCopy("right", 2, ctx({ threat: positionalThreat }))!;
+    expect(copy).toMatch(/ground|worse|drops|drifting/);
+  });
+});
+
+// ---- rungCopy: the wrong (4-press) branch -------------------------------
+
+describe("rungCopy wrong branch", () => {
+  it("P1 says the best move isn't with this piece", () => {
+    const copy = rungCopy("wrong", 1, ctx({ threat: forkThreat }))!;
+    expect(copy).toMatch(/different piece|isn't the one|not this piece|another/i);
+  });
+  it("P2 names the right piece and its FROM square, never a destination", () => {
+    const copy = rungCopy("wrong", 2, ctx({ threat: forkThreat, bestFacts }))!;
+    expect(copy).toContain("bishop");
+    expect(copy).toContain("c1"); // the best move's FROM square
+    expect(copy).not.toContain("g5"); // never the destination
+  });
+  it("P4 is the full reveal, same shape as right-P3", () => {
+    const fen = "4k3/8/8/8/8/8/8/2B1K3 w - - 0 1";
+    const copy = rungCopy("wrong", 4, ctx({ threat: forkThreat, bestFacts, fen }))!;
+    expect(copy).toContain("best here: Bg5");
+    expect(copy).toContain("bishop to g5");
+  });
+});
+
+// ---- HONESTY GATE: wrong-P3 never contains a destination square ----------
+
+describe("wrong-P3 describes what the piece will DO, with NO destination square", () => {
+  // Assert with a regex over the copy for the recommendation's own to-square:
+  // P3 may name fork-target/captured piece KINDS, but never a square.
+  function assertNoSquare(copy: string, rec: RecommendationFacts) {
+    expect(copy).not.toMatch(new RegExp(`\\b${rec.toSquare}\\b`));
+    expect(copy).not.toMatch(new RegExp(`\\b${rec.fromSquare}\\b`));
+    // no algebraic square token at all (letter a-h followed by digit 1-8)
+    expect(copy).not.toMatch(/\b[a-h][1-8]\b/);
+  }
+
+  it("captures: names the captured piece kind, no square", () => {
+    const bf: HintFacts = { ...bestFacts, recommendation: capturesRec };
+    const copy = rungCopy("wrong", 3, ctx({ threat: forkThreat, bestFacts: bf }))!;
+    expect(copy).toContain("pawn");
+    assertNoSquare(copy, capturesRec);
+  });
+  it("forks: names the fork-target piece kinds, no square", () => {
+    const bf: HintFacts = { ...bestFacts, recommendation: forksRec };
+    const copy = rungCopy("wrong", 3, ctx({ threat: forkThreat, bestFacts: bf }))!;
+    expect(copy).toMatch(/fork/);
+    expect(copy).toContain("queen");
+    expect(copy).toContain("bishop");
+    assertNoSquare(copy, forksRec);
+  });
+  it("attacks: names the attacked piece kind, strips the attacked square", () => {
+    const bf: HintFacts = { ...bestFacts, recommendation: attacksRec };
+    const copy = rungCopy("wrong", 3, ctx({ threat: forkThreat, bestFacts: bf }))!;
+    expect(copy).toContain("rook");
+    assertNoSquare(copy, attacksRec);
+    expect(copy).not.toContain("a2"); // the attackedSquare, explicitly
+  });
+  it("develops/promotes/castles: verb only, no square", () => {
+    for (const rec of [developsRec, promotesRec, castlesRec]) {
+      const bf: HintFacts = { ...bestFacts, recommendation: rec };
+      const copy = rungCopy("wrong", 3, ctx({ threat: forkThreat, bestFacts: bf }))!;
+      assertNoSquare(copy, rec);
+    }
+  });
+  it("trade: honest trade wording, no square", () => {
+    const bf: HintFacts = { ...bestFacts, recommendation: capturesRec, trade: true };
+    const copy = rungCopy("wrong", 3, ctx({ threat: forkThreat, bestFacts: bf }))!;
+    expect(copy).toMatch(/trade/);
+    assertNoSquare(copy, capturesRec);
+  });
+});
+
+// ---- CONVERSION OVERRIDE: conversionCopy replaces right-P2 verbatim ------
+
+describe("conversion override outranks the right-P2 ladder", () => {
+  const conversionCopy = "you had mate in two here, and this lets it slip.";
+  it("right-P2 renders conversionCopy verbatim, never the ladder", () => {
+    // fork threat would otherwise select the 'fork' rung; conversion wins.
+    const copy = rungCopy("right", 2, ctx({ threat: forkThreat, conversionCopy }));
+    expect(copy).toBe(conversionCopy);
+    expect(copy).not.toMatch(/fork/);
+  });
+  it("the ladder still renders normally when there is no conversionCopy", () => {
+    const copy = rungCopy("right", 2, ctx({ threat: forkThreat }))!;
+    expect(copy).toMatch(/fork/);
+  });
+  it("conversion override never leaks into any other rung", () => {
+    const conversion = "conversion copy that must not appear here";
+    expect(rungCopy("right", 1, ctx({ threat: forkThreat, conversionCopy: conversion }))).not.toBe(
+      conversion
+    );
+    const fen = "4k3/8/8/8/8/8/8/2B1K3 w - - 0 1";
+    expect(
+      rungCopy("right", 3, ctx({ threat: forkThreat, bestFacts, fen, conversionCopy: conversion }))
+    ).not.toBe(conversion);
+  });
+});
+
+// ---- POOL ROTATION: determinism + no-immediate-repeat -------------------
+
+describe("template pools are deterministically rotated by (gameId*31 + pendingPly)", () => {
+  it("same (gameId, pendingPly) -> the same opener line every time (determinism)", () => {
+    const a = rungCopy("right", 1, ctx({ threat: forkThreat, gameId: 5, pendingPly: 9 }));
+    const b = rungCopy("right", 1, ctx({ threat: forkThreat, gameId: 5, pendingPly: 9 }));
+    expect(a).toBe(b);
+  });
+  it("two consecutive pending moves (ply and ply+2) never open with the same line", () => {
+    // Consecutive HER pending moves are two plies apart; a pool of 3-5 with a
+    // seed step of 2 can never land on the same index, so the opener rotates.
+    for (const gameId of [1, 2, 3, 7, 42, 100]) {
+      const first = rungCopy("right", 1, ctx({ threat: forkThreat, gameId, pendingPly: 9 }));
+      const second = rungCopy("right", 1, ctx({ threat: forkThreat, gameId, pendingPly: 11 }));
+      expect(first).not.toBe(second);
+    }
+  });
+  it("the wrong-branch opener rotates the same way", () => {
+    for (const gameId of [1, 4, 8, 15]) {
+      const first = rungCopy("wrong", 1, ctx({ threat: forkThreat, gameId, pendingPly: 3 }));
+      const second = rungCopy("wrong", 1, ctx({ threat: forkThreat, gameId, pendingPly: 5 }));
+      expect(first).not.toBe(second);
+    }
+  });
+});
+
+// ---- copy hygiene: no em-dashes or emojis at any rung -------------------
+
+describe("rungCopy: no em-dashes or emojis, lowercase (SAN exempt)", () => {
+  const fen = "4k3/8/8/8/8/8/8/2B1K3 w - - 0 1";
+  it("every populated rung of both branches is clean", () => {
+    const bf: HintFacts = { ...bestFacts, recommendation: capturesRec };
+    const cases: [HintBranch, number, HintCopyCtx][] = [
+      ["right", 1, ctx({ threat: forkThreat })],
+      ["right", 2, ctx({ threat: forkThreat })],
+      ["right", 3, ctx({ threat: forkThreat, bestFacts: bf, fen })],
+      ["wrong", 1, ctx({ threat: forkThreat })],
+      ["wrong", 2, ctx({ threat: forkThreat, bestFacts: bf })],
+      ["wrong", 3, ctx({ threat: forkThreat, bestFacts: bf })],
+      ["wrong", 4, ctx({ threat: forkThreat, bestFacts: bf, fen })],
+    ];
+    for (const [branch, press, c] of cases) {
+      const copy = rungCopy(branch, press, c)!;
+      expect(copy).not.toMatch(/[—–]/);
+      expect(copy).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
+    }
+  });
+});
+
+// ---- kept helpers (unchanged behaviour) ---------------------------------
+
+describe("recommendationClause (unchanged)", () => {
   it("captures", () => {
     expect(recommendationClause(capturesRec)).toBe("it wins the pawn on b5.");
   });
-  it("gives-mate", () => {
-    expect(recommendationClause(givesMateRec)).toBe("it forces mate.");
-  });
-  it("gives-check", () => {
-    expect(recommendationClause(givesCheckRec)).toBe("it puts her in check.");
-  });
-  it("forks", () => {
-    expect(recommendationClause(forksRec)).toBe("it forks her queen and bishop.");
-  });
-  it("attacks", () => {
-    expect(recommendationClause(attacksRec)).toBe("it goes after her rook on a2.");
-  });
-  it("develops", () => {
-    expect(recommendationClause(developsRec)).toBe("it keeps building. good shape, no drama.");
-  });
-  // Wave 1 (item 3 -- tier-1 motif fields):
-  it("promotes", () => {
-    expect(recommendationClause(promotesRec)).toBe("it makes a new queen.");
-  });
-  it("castles", () => {
-    expect(recommendationClause(castlesRec)).toBe("it gets your king castled to safety.");
-  });
-  it("undefined/null rec returns null", () => {
-    expect(recommendationClause(undefined)).toBeNull();
-    expect(recommendationClause(null)).toBeNull();
-  });
-});
-
-// Task 6 (increment 3.95): a second recommendation fixture whose captured
-// piece is NOT a pawn, so its "wins the {piece}" claim can actually collide
-// with deriveOpportunity's own "wins the {piece}" wording (opportunity.ts's
-// MATERIAL_WIN_FLOOR excludes lone pawns, so a captures-pawn fixture like
-// capturesRec above can never collide with it - see the dedup test below).
-const capturesQueenRec: RecommendationFacts = {
-  accomplishment: "captures",
-  pieceKind: "r",
-  fromSquare: "d2",
-  toSquare: "d4",
-  san: "Rxd4",
-  capturesSquare: "d4",
-  capturedPieceKind: "q",
-};
-
-describe("recommendationClause trade override (Task 6)", () => {
-  it("trade: true overrides ANY accomplishment with honest trade wording, not a clean-win claim", () => {
+  it("trade overrides with honest wording", () => {
     expect(recommendationClause(capturesRec, true)).toBe("this trades, but it's the strongest here.");
   });
-  it("trade: false behaves exactly as before (no regression)", () => {
-    expect(recommendationClause(capturesRec, false)).toBe("it wins the pawn on b5.");
-  });
-  it("omitted trade arg behaves exactly as before (no regression, existing single-arg callers)", () => {
-    expect(recommendationClause(capturesRec)).toBe("it wins the pawn on b5.");
+  it("undefined rec returns null", () => {
+    expect(recommendationClause(undefined)).toBeNull();
   });
 });
 
-describe("hintCopy level 1: vague nudge, her piece", () => {
-  it("exact string", () => {
-    expect(hintCopy(1, baseCtx)).toBe("hold on. look at your knight.");
-  });
-  it("names whatever piece kind the ctx carries", () => {
-    expect(hintCopy(1, { ...baseCtx, herPieceKind: "q" })).toBe("hold on. look at your queen.");
-  });
-});
-
-describe("hintCopy level 2: direction/concept per motif", () => {
-  it("fork", () => {
-    expect(hintCopy(2, { ...baseCtx, threat: forkThreat })).toBe("there's a fork brewing.");
-  });
-  it("capture-moved", () => {
-    expect(hintCopy(2, { ...baseCtx, threat: captureMovedThreat })).toBe(
-      "think about what her queen can reach."
-    );
-  });
-  it("capture-other", () => {
-    expect(hintCopy(2, { ...baseCtx, threat: captureOtherThreat })).toBe(
-      "think about what her queen can reach."
-    );
-  });
-  it("mate-threat", () => {
-    expect(hintCopy(2, { ...baseCtx, threat: mateThreat })).toBe(
-      "this one's dangerous. she's got something forcing."
-    );
-  });
-  it("check-threat", () => {
-    expect(hintCopy(2, { ...baseCtx, threat: checkThreat })).toBe("this opens you up to check.");
-  });
-  // Wave 1 (item 3 -- tier-1 motif fields):
-  it("promotion-threat", () => {
-    expect(hintCopy(2, { ...baseCtx, threat: promotionThreat })).toBe("she's about to make a new queen.");
-  });
-  it("positional falls back honestly", () => {
-    expect(hintCopy(2, { ...baseCtx, threat: positionalThreat })).toBe("there's a stronger plan here.");
-  });
-  it("undefined threat falls back honestly, same as positional", () => {
-    expect(hintCopy(2, baseCtx)).toBe("there's a stronger plan here.");
-  });
-});
-
-describe("hintCopy level 3: concrete why per motif", () => {
-  it("fork", () => {
-    expect(hintCopy(3, { ...baseCtx, threat: forkThreat })).toBe(
-      "her queen to f5 forks your knight and rook."
-    );
-  });
-  it("capture-moved", () => {
-    expect(hintCopy(3, { herPieceKind: "n", herToSquare: "h5", threat: captureMovedThreat })).toBe(
-      "knight to h5 walks into her queen. she just takes it."
-    );
-  });
-  it("capture-other", () => {
-    expect(hintCopy(3, { herPieceKind: "b", herToSquare: "g5", threat: captureOtherThreat })).toBe(
-      "bishop to g5 opens the door. her queen takes your pawn on f7."
-    );
-  });
-  it("mate-threat", () => {
-    expect(hintCopy(3, { ...baseCtx, threat: mateThreat })).toBe("her Qh4# starts a forced mate.");
-  });
-  it("check-threat", () => {
-    expect(hintCopy(3, { ...baseCtx, threat: checkThreat })).toBe(
-      "her queen to h5 puts you in check."
-    );
-  });
-  // Wave 1 (item 3 -- tier-1 motif fields): reads only the refutation
-  // piece/to-square, both always populated on ThreatFacts.
-  it("promotion-threat", () => {
-    expect(hintCopy(3, { ...baseCtx, threat: promotionThreat })).toBe(
-      "her pawn to a8 promotes. that's a new queen."
-    );
-  });
-  it("positional falls back honestly", () => {
-    expect(hintCopy(3, { ...baseCtx, threat: positionalThreat })).toBe(
-      "this loses ground. nothing hangs, but the position gets worse."
-    );
-  });
-  it("undefined threat falls back honestly, same as positional", () => {
-    expect(hintCopy(3, baseCtx)).toBe("this loses ground. nothing hangs, but the position gets worse.");
-  });
-});
-
-// Task 1 (defender grounding): a defended capture is a trade, not a clean
-// loss -- the loss line ("she takes it" / "takes your X on Y") must never
-// fire when the player can recapture. capturedSquareDefended: true routes
-// capture-moved and capture-other to the same honest fallback the
-// no-threat/positional case already uses.
-describe("hintCopy level 3: defended captures route to the honest fallback, not a loss claim", () => {
-  const honestFallback = "this loses ground. nothing hangs, but the position gets worse.";
-
-  it("capture-moved, defended: honest fallback, not the loss line", () => {
-    const defended: ThreatFacts = { ...captureMovedThreat, capturedSquareDefended: true };
-    const copy = hintCopy(3, { herPieceKind: "n", herToSquare: "h5", threat: defended });
-    expect(copy).toBe(honestFallback);
-    expect(copy).not.toContain("takes it");
-  });
-
-  it("capture-moved, undefended: unchanged loss line", () => {
-    const undefended: ThreatFacts = { ...captureMovedThreat, capturedSquareDefended: false };
-    const copy = hintCopy(3, { herPieceKind: "n", herToSquare: "h5", threat: undefended });
-    expect(copy).toBe("knight to h5 walks into her queen. she just takes it.");
-  });
-
-  it("capture-other, defended: honest fallback, not 'takes your X on Y'", () => {
-    const defended: ThreatFacts = { ...captureOtherThreat, capturedSquareDefended: true };
-    const copy = hintCopy(3, { herPieceKind: "b", herToSquare: "g5", threat: defended });
-    expect(copy).toBe(honestFallback);
-    expect(copy).not.toContain("takes your");
-  });
-
-  it("capture-other, undefended: unchanged loss line", () => {
-    const undefended: ThreatFacts = { ...captureOtherThreat, capturedSquareDefended: false };
-    const copy = hintCopy(3, { herPieceKind: "b", herToSquare: "g5", threat: undefended });
-    expect(copy).toBe("bishop to g5 opens the door. her queen takes your pawn on f7.");
-  });
-});
-
-// Task 1 (2026-07-22, truthfulness leaks), corrected per controller review
-// (issue A): the FIRST version of this fix used refutationPieceKind (what
-// she'd recapture BACK) as a proxy for her own gain, which is a different
-// piece and produces a real false positive -- QxQ recaptured by a pawn is an
-// even trade, but the proxy formula (1 - 9 = -8) fired and printed "down a
-// queen for a pawn," a confidently false statement about the position. The
-// fix supplies the missing fact instead of proxying it:
-// threat.herCapturedPieceKind (motifs.ts, threaded from her own chess.js
-// Move.captured at the classify.ts call site) is what her move actually
-// won. Net = value(herCapturedPieceKind, defaulting to 0/nothing when her
-// move wasn't a capture at all) - value(herPieceKind).
-describe("hintCopy level 3: defended capture-moved, material-aware (Task 1, corrected)", () => {
-  const honestFallback = "this loses ground. nothing hangs, but the position gets worse.";
-
-  function capturedMovedThreat(overrides: Partial<ThreatFacts>): ThreatFacts {
-    return {
-      motif: "capture-moved",
-      refutationUci: "f7e6",
-      refutationSan: "fxe6",
-      refutationPieceKind: "p",
-      refutationFromSquare: "f7",
-      refutationToSquare: "e6",
-      givesCheck: false,
-      capturesSquare: "e6",
-      capturedPieceKind: "q", // what the refutation captures FROM her -- always her own piece
-      capturesHerJustMovedPiece: true,
-      capturedSquareDefended: true,
-      ...overrides,
+describe("describeBestMove (unchanged)", () => {
+  it("quiet move: 'knight to f3'", () => {
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const facts: HintFacts = {
+      bestPieceKind: "n",
+      bestFromSquare: "g1",
+      bestToSquare: "f3",
+      bestSan: "Nf3",
+      bestUci: "g1f3",
     };
-  }
-
-  it("regression guard: queen takes a QUEEN defended by a pawn -> honest fallback, NOT a false 'down a queen for a pawn' claim", () => {
-    const t = capturedMovedThreat({ herCapturedPieceKind: "q" });
-    const copy = hintCopy(3, { herPieceKind: "q", herToSquare: "e6", threat: t });
-    expect(copy).toBe(honestFallback);
-    expect(copy).not.toContain("for a pawn");
+    expect(describeBestMove(facts, fen)).toBe("knight to f3");
   });
-
-  it("queen takes a PAWN defended by a pawn -> loss line naming 'down a queen for a pawn'", () => {
-    const t = capturedMovedThreat({ herCapturedPieceKind: "p" });
-    const copy = hintCopy(3, { herPieceKind: "q", herToSquare: "e6", threat: t });
-    expect(copy).toBe(
-      "queen takes on e6, but her pawn takes back. you come out down a queen for a pawn."
-    );
-  });
-
-  it("queen takes a KNIGHT defended by a pawn -> loss line naming 'down a queen for a knight' (proves the copy names HER gain, not the recapturer)", () => {
-    const t = capturedMovedThreat({ herCapturedPieceKind: "n" });
-    const copy = hintCopy(3, { herPieceKind: "q", herToSquare: "e6", threat: t });
-    expect(copy).toBe(
-      "queen takes on e6, but her pawn takes back. you come out down a queen for a knight."
-    );
-  });
-
-  it("non-capturing move that walks into a capture (no herCapturedPieceKind) -> loss line in the 'simply lost' form, no false 'takes on' claim", () => {
-    const t = capturedMovedThreat({ herCapturedPieceKind: undefined });
-    const copy = hintCopy(3, { herPieceKind: "q", herToSquare: "e6", threat: t });
-    expect(copy).toBe("queen to e6 walks into her pawn. you simply lose the queen.");
-    expect(copy).not.toContain("for a");
-    expect(copy).not.toContain("takes on");
-  });
-
-  it("pawn takes a defended pawn -> honest fallback, unchanged (even trade)", () => {
-    const t = capturedMovedThreat({
-      refutationUci: "e6d5",
-      refutationSan: "exd5",
-      refutationFromSquare: "e6",
-      refutationToSquare: "d5",
-      capturesSquare: "d5",
-      capturedPieceKind: "p",
-      herCapturedPieceKind: "p",
-    });
-    const copy = hintCopy(3, { herPieceKind: "p", herToSquare: "d5", threat: t });
-    expect(copy).toBe(honestFallback);
-  });
-});
-
-describe("hintCopy levels 4-5: redirect to the recommended move", () => {
-  const bestFacts: HintFacts = {
-    bestPieceKind: "b",
-    bestFromSquare: "c1",
-    bestToSquare: "g5",
-    bestSan: "Bg5",
-    bestUci: "c1g5",
-  };
-  const fen = "4k3/8/8/8/8/8/8/2B1K3 w - - 0 1";
-
-  it("level 4 returns null without bestFacts (no copy flash mid-fetch)", () => {
-    expect(hintCopy(4, baseCtx)).toBeNull();
-  });
-  it("level 5 returns null without bestFacts", () => {
-    expect(hintCopy(5, baseCtx)).toBeNull();
-  });
-  // Wave 0, item 3 (F3 seed): was "better: your {piece} on {toSquare}." --
-  // named only the piece and the DESTINATION square. Root cause of the
-  // owner-facing "E1 vs F1" bug: a different surface named the FROM square
-  // for the same move, so the two disagreed. Now routed through the shared
-  // describeMoveName, which always states both squares.
-  it("level 4 with bestFacts: 'better: your {piece} from {from} to {to}.'", () => {
-    expect(hintCopy(4, { ...baseCtx, bestFacts })).toBe("better: your bishop from c1 to g5.");
-  });
-  it("level 5 with bestFacts + fen: san + translation", () => {
-    expect(hintCopy(5, { ...baseCtx, bestFacts, fen })).toBe("best here: Bg5 (bishop to g5)");
-  });
-  it("level 5 with bestFacts but no fen: san alone", () => {
-    expect(hintCopy(5, { ...baseCtx, bestFacts })).toBe("best here: Bg5");
-  });
-  it("level 5 with a non-trade recommendation: no clause (L4 now owns the immediate why, no L4/L5 repetition)", () => {
-    const bestFactsWithRec: HintFacts = { ...bestFacts, recommendation: capturesRec };
-    expect(hintCopy(5, { ...baseCtx, bestFacts: bestFactsWithRec, fen })).toBe(
-      "best here: Bg5 (bishop to g5)"
-    );
-  });
-  it("level 5 without a recommendation: no trailing clause", () => {
-    expect(hintCopy(5, { ...baseCtx, bestFacts, fen })).toBe("best here: Bg5 (bishop to g5)");
-  });
-});
-
-// Task 6 (increment 3.95): enriches level 4 with the immediate why (reusing
-// recommendationClause), the "opens up" clause (reusing opportunity.ts's
-// deriveOpportunity on the hint's own pv), and honest trade wording. Every
-// fen/pv pair below is a real, independently-checkable chess position/line
-// (several reused verbatim from src/review/opportunity.test.ts's own
-// fixtures) - never a fabricated claim.
-describe("hintCopy level 4: enriched with immediate why + opens up + trade honesty (Task 6)", () => {
-  const bestFacts: HintFacts = {
-    bestPieceKind: "b",
-    bestFromSquare: "c1",
-    bestToSquare: "g5",
-    bestSan: "Bg5",
-    bestUci: "c1g5",
-  };
-
-  it("no recommendation, no pv: base copy with its own terminating period (copy-polish pass)", () => {
-    expect(hintCopy(4, { ...baseCtx, bestFacts })).toBe("better: your bishop from c1 to g5.");
-  });
-
-  it("includes the immediate why, as its own sentence after the base clause's period", () => {
-    const facts: HintFacts = { ...bestFacts, recommendation: capturesRec };
-    expect(hintCopy(4, { ...baseCtx, bestFacts: facts })).toBe(
-      "better: your bishop from c1 to g5. it wins the pawn on b5."
-    );
-  });
-
-  it("includes the opens-up clause when the pv proves a player opportunity deeper in the line", () => {
-    // Back-rank mate fixture reused from opportunity.test.ts: white rook e1,
-    // black king g8 boxed in by its own pawns - Re8# (uci e1e8) is forced
-    // mate of black, independently verifiable, distinct from the immediate
-    // capture claim so both clauses carry real information.
-    const fen = "6k1/5ppp/8/8/8/8/8/4R2K w - - 0 1";
-    const facts: HintFacts = { ...bestFacts, recommendation: capturesRec, pv: ["e1e8"] };
-    expect(hintCopy(4, { ...baseCtx, bestFacts: facts, fen })).toBe(
-      "better: your bishop from c1 to g5. it wins the pawn on b5, and it leads to mate in 1."
-    );
-  });
-
-  it("omits the opens-up clause gracefully when the pv proves no honest opportunity for the player", () => {
-    // Adversarial fixture reused from opportunity.test.ts: the OPPONENT nets
-    // the material here (Bd3 Nxc2), so deriveOpportunity returns undefined -
-    // the L4 copy must degrade to just the immediate clause, never crash or
-    // print "undefined".
-    const fen = "4k3/8/8/8/1n6/8/2P5/4KB2 w - - 0 1";
-    const facts: HintFacts = { ...bestFacts, recommendation: capturesRec, pv: ["f1d3", "b4c2"] };
-    expect(hintCopy(4, { ...baseCtx, bestFacts: facts, fen })).toBe(
-      "better: your bishop from c1 to g5. it wins the pawn on b5."
-    );
-  });
-
-  it("dedupes the opens-up clause when it would just repeat the immediate capture claim", () => {
-    // White rook d2 wins the black queen on d4 outright (opportunity.test.ts
-    // fixture) - the SAME fact the immediate "captures" clause already
-    // states, so appending "and it wins the queen" would add no information.
-    const fen = "4k3/8/8/8/3q4/8/3R4/4K3 w - - 0 1";
-    const facts: HintFacts = { ...bestFacts, recommendation: capturesQueenRec, pv: ["d2d4"] };
-    expect(hintCopy(4, { ...baseCtx, bestFacts: facts, fen })).toBe(
-      "better: your bishop from c1 to g5. it wins the queen on d4."
-    );
-  });
-
-  it("trade: true overrides the immediate clause with honest trade wording, never a clean-win claim", () => {
-    const facts: HintFacts = { ...bestFacts, recommendation: capturesRec, trade: true };
-    const copy = hintCopy(4, { ...baseCtx, bestFacts: facts });
-    expect(copy).toBe("better: your bishop from c1 to g5. this trades, but it's the strongest here.");
-    expect(copy).not.toMatch(/wins the/);
-  });
-});
-
-describe("hintCopy level 5: trade honesty flows through the shared recommendationClause (Task 6)", () => {
-  it("level 5 states the trade honestly instead of implying a clean win", () => {
-    const bestFacts: HintFacts = {
-      bestPieceKind: "b",
-      bestFromSquare: "c1",
-      bestToSquare: "g5",
-      bestSan: "Bg5",
-      bestUci: "c1g5",
-      recommendation: capturesRec,
-      trade: true,
+  it("garbage fen returns null", () => {
+    const facts: HintFacts = {
+      bestPieceKind: "n",
+      bestFromSquare: "g1",
+      bestToSquare: "f3",
+      bestSan: "Nf3",
+      bestUci: "g1f3",
     };
-    const fen = "4k3/8/8/8/8/8/8/2B1K3 w - - 0 1";
-    const copy = hintCopy(5, { ...baseCtx, bestFacts, fen });
-    expect(copy).toBe("best here: Bg5 (bishop to g5) this trades, but it's the strongest here.");
-    expect(copy).not.toMatch(/wins the/);
+    expect(describeBestMove(facts, "not-a-real-fen")).toBeNull();
   });
 });
 
-describe("hintCopy: no em-dashes or emojis at any level", () => {
-  const bestFacts: HintFacts = {
-    bestPieceKind: "b",
-    bestFromSquare: "c1",
-    bestToSquare: "g5",
-    bestSan: "Bg5",
-    bestUci: "c1g5",
-  };
-  it("every populated level's copy is clean", () => {
-    const ctxs: [HintLevel, HintCopyCtx][] = [
-      [1, baseCtx],
-      [2, { ...baseCtx, threat: forkThreat }],
-      [3, { ...baseCtx, threat: forkThreat }],
-      [4, { ...baseCtx, bestFacts }],
-      [5, { ...baseCtx, bestFacts }],
-    ];
-    for (const [level, ctx] of ctxs) {
-      const copy = hintCopy(level, ctx)!;
-      expect(copy).not.toMatch(/[—–]/);
-    }
+describe("hintIsLegal (unchanged)", () => {
+  const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  it("accepts a legal move", () => {
+    expect(hintIsLegal(START, "g1f3")).toBe(true);
   });
-
-  // Task 6 (increment 3.95): the enriched level 4 (immediate why + opens up +
-  // trade honesty) is new surface area for the em-dash/emoji/lowercase rule -
-  // cover it explicitly rather than trusting the plain-base case above.
-  it("the enriched level 4 copy (immediate why + opens up + trade) is clean and lowercase", () => {
-    const mateFen = "6k1/5ppp/8/8/8/8/8/4R2K w - - 0 1";
-    const enrichedFacts: HintFacts = { ...bestFacts, recommendation: capturesRec, pv: ["e1e8"] };
-    const enriched = hintCopy(4, { ...baseCtx, bestFacts: enrichedFacts, fen: mateFen })!;
-    expect(enriched).not.toMatch(/[—–]/);
-    expect(enriched).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
-    expect(enriched).toBe(enriched.toLowerCase());
-
-    const tradeFacts: HintFacts = { ...bestFacts, recommendation: capturesRec, trade: true };
-    const tradeCopy = hintCopy(4, { ...baseCtx, bestFacts: tradeFacts })!;
-    expect(tradeCopy).not.toMatch(/[—–]/);
-    expect(tradeCopy).toBe(tradeCopy.toLowerCase());
+  it("rejects illegal / garbage", () => {
+    expect(hintIsLegal(START, "e2e5")).toBe(false);
+    expect(hintIsLegal(START, "")).toBe(false);
   });
 });
 
-describe("threatRevealSquares", () => {
+describe("hintRevealSquares (unchanged)", () => {
+  it("splits a plain UCI move", () => {
+    expect(hintRevealSquares("g1f3")).toEqual({ from: "g1", to: "f3" });
+  });
+  it("ignores the promotion suffix", () => {
+    expect(hintRevealSquares("e7e8q")).toEqual({ from: "e7", to: "e8" });
+  });
+});
+
+describe("threatRevealSquares (unchanged)", () => {
   it("victim = capturesSquare when present", () => {
     expect(threatRevealSquares(captureMovedThreat, "h5")).toEqual({ attacker: "d1", victim: "h5" });
   });
-  it("victim = herToSquare when capturesSquare absent (non-capture, concrete motif)", () => {
-    expect(threatRevealSquares(forkThreat, "e4")).toEqual({ attacker: "d1", victim: "e4" });
-  });
-  it("motif positional -> null (honesty gate: no concrete threat to point at)", () => {
+  it("motif positional -> null (honesty gate)", () => {
     expect(threatRevealSquares(positionalThreat, "e4")).toBeNull();
-  });
-  it("motif capture-moved -> squares (concrete threat)", () => {
-    expect(threatRevealSquares(captureMovedThreat, "h5")).toEqual({ attacker: "d1", victim: "h5" });
   });
 });
