@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logHint } from "./api";
+import { logHint, deleteGame } from "./api";
 
 // Wave 0, item 1 (F0): hint telemetry was logging the OPPONENT's refutation
 // move under the field named `bestUci` for levels 1-3 -- any log analysis
@@ -97,5 +97,35 @@ describe("logHint (Wave 2): the press's branch travels on the wire", () => {
     const { body } = stubFetch();
     await logHint(1, 0, "invalid", null, { bestUci: "none" }, "startfen");
     expect(Object.keys(body() as object)).not.toContain("branch");
+  });
+});
+
+// Wave 3.5, item 2 (owner ask, 2026-08-01): deleteGame is the first non-POST
+// write helper in this file -- pins that it actually issues a DELETE (not a
+// GET/POST) against the right URL, with no body, and passes the server's
+// envelope straight through.
+describe("deleteGame (Wave 3.5, item 2): issues a real DELETE, no body", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("DELETEs /api/game/:id and returns the server's envelope untouched", async () => {
+    let seenUrl: string | undefined;
+    let seenInit: RequestInit | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        seenUrl = url;
+        seenInit = init;
+        return { json: async () => ({ ok: false, reason: "live" }) } as Response;
+      })
+    );
+
+    const res = await deleteGame(42);
+
+    expect(seenUrl).toBe("/api/game/42");
+    expect(seenInit?.method).toBe("DELETE");
+    expect(seenInit?.body).toBeUndefined();
+    expect(res).toEqual({ ok: false, reason: "live" });
   });
 });

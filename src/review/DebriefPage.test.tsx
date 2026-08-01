@@ -16,8 +16,8 @@
 // unit test would not.
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DebriefPage, type DebriefPageProps } from "./DebriefPage";
-import type { TurningPoint, TurningLine, SummaryMove } from "../game/api";
+import { DebriefPage, PastGamesDrawer, type DebriefPageProps } from "./DebriefPage";
+import type { TurningPoint, TurningLine, SummaryMove, GameListEntry } from "../game/api";
 
 // Scholar's Mate up to black's losing 6th ply -- the same real,
 // independently-checkable fixture followedBest.test.ts/chatFocus.test.ts/
@@ -215,5 +215,70 @@ describe("DebriefPage: the conversion card gets the negative tint (union review 
       <DebriefPage {...baseProps({ turningPoints: [opponentPoint] })} />
     );
     expect(negativeClassOnCardContaining(html, "· opponent mistake<")).toBe(false);
+  });
+});
+
+// Wave 3.5, item 2 (owner ask, 2026-08-01): PastGamesDrawer's row
+// restructure -- nested buttons are invalid HTML, so a row is now a plain
+// div wrapping two SIBLING buttons (the select button carrying the old
+// row's content, and the delete X). This is a static markup smoke test for
+// that shape; the actual two-step arm/disarm CLICK behavior is unit-tested
+// against the pure helper directly (deleteArm.test.ts) since
+// renderToStaticMarkup never fires an onClick.
+describe("PastGamesDrawer (Wave 3.5, item 2): row restructure for the delete X", () => {
+  const GAME: GameListEntry = {
+    id: 42,
+    startedAt: "2026-08-01T12:00:00Z",
+    opponent: "maia-1400",
+    result: "1-0",
+    endReason: null,
+    lesson: "blunder",
+  };
+
+  function noop() {
+    /* no-op -- this render never fires an event */
+  }
+
+  it("renders the row as a div (not a button) with two sibling buttons, never a button nested inside a button", () => {
+    const html = renderToStaticMarkup(
+      <PastGamesDrawer open games={[GAME]} onSelect={noop} onClose={noop} onDelete={noop} />
+    );
+    const rowIdx = html.indexOf('class="past-games-row"');
+    expect(rowIdx).toBeGreaterThan(-1);
+    // The row's own opening tag is a div, not a button.
+    const rowTagStart = html.lastIndexOf("<", rowIdx);
+    expect(html.slice(rowTagStart, rowTagStart + 4)).toBe("<div");
+
+    // Both the select button and the delete button exist, as SIBLINGS --
+    // scan forward from the row for the select button's own close tag
+    // before the delete button opens (proves they're not nested).
+    const selectOpen = html.indexOf('class="past-games-select"', rowIdx);
+    const selectClose = html.indexOf("</button>", selectOpen);
+    const deleteOpen = html.indexOf("past-games-delete", rowIdx);
+    expect(selectOpen).toBeGreaterThan(-1);
+    expect(deleteOpen).toBeGreaterThan(selectClose); // delete button starts AFTER select's own closing tag
+  });
+
+  it("the idle delete X carries aria-label 'delete game' and the × glyph, not the armed 'sure?' state", () => {
+    const html = renderToStaticMarkup(
+      <PastGamesDrawer open games={[GAME]} onSelect={noop} onClose={noop} onDelete={noop} />
+    );
+    expect(html).toContain('aria-label="delete game"');
+    expect(html).not.toContain('aria-label="confirm delete"');
+    expect(html).not.toContain(" armed");
+  });
+
+  it("renders the inline delete error text (past-games-empty styled) when GamePage passes one", () => {
+    const html = renderToStaticMarkup(
+      <PastGamesDrawer
+        open
+        games={[GAME]}
+        onSelect={noop}
+        onClose={noop}
+        onDelete={noop}
+        deleteError="could not delete that game. try again."
+      />
+    );
+    expect(html).toContain("could not delete that game. try again.");
   });
 });

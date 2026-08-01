@@ -5,7 +5,7 @@ import {
   createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict, getVerdicts,
   getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
   listFinishedGames, insertChatMessage, getChatMessages, getMoveEvalsByPlies,
-  setMoveHighlighted,
+  setMoveHighlighted, deleteGameRows,
 } from "../store/db";
 import { classifyMove, isAdviceLevel, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
@@ -614,6 +614,31 @@ export class GameManager {
     games: { id: number; startedAt: string; opponent: string; result: string; endReason: string | null; lesson: string | null }[];
   } {
     return { ok: true, games: listFinishedGames() as any };
+  }
+
+  // Wave 3.5, item 2 (owner ask, 2026-08-01): real per-game deletion for the
+  // past-games drawer's delete X. Guard checks BOTH sources of "is this
+  // actually over" -- `this.games`' own finished flag when a LiveGame entry
+  // exists (the ordinary case), and the db row's own `result` column
+  // otherwise (a finished game can have no `this.games` entry at all, e.g.
+  // after a process restart) -- because trusting only one would let either
+  // a stale absent-from-map live game, or an unfinished db row with no
+  // memory entry, slip past. Both refusal branches return the same
+  // { ok:false, reason:"live" } shape the route maps to 409.
+  //
+  // On success, ALSO evicts any (already-finished) `this.games` entry for
+  // this id -- the same "in-memory state can't outlive the db row"
+  // discipline the B6 fix already established for playerMove's finished
+  // guard: a stale handle for a row that no longer exists must never be
+  // able to act on it again.
+  deleteGame(gameId: number): { ok: boolean; reason?: string } {
+    const live = this.games.get(gameId);
+    if (live && !live.finished) return { ok: false, reason: "live" };
+    const game = getGame(gameId);
+    if (!game || game.result == null) return { ok: false, reason: "live" };
+    deleteGameRows(gameId);
+    this.games.delete(gameId);
+    return { ok: true };
   }
 
   private gameOver(chess: Chess): { result: string } | undefined {

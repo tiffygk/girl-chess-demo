@@ -328,6 +328,25 @@ app.get("/api/games", (_req, res) => {
   }
 });
 
+// Wave 3.5, item 2 (owner ask, 2026-08-01): DELETE /api/game/:id -- real
+// per-game deletion for the past-games drawer's delete X. gm.deleteGame does
+// the actual guard/sweep; the route's own job is only mapping its ok:false
+// (a live/unfinished game, or an unknown id) to 409, same "server re-derives
+// the real outcome, client's own view is never trusted" discipline as
+// /adjudicate above.
+app.delete("/api/game/:id", (req, res) => {
+  try {
+    const result = gm.deleteGame(Number(req.params.id));
+    if (!result.ok) {
+      res.status(409).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 // Increment 3.91 (Task 5): stateless explore-reply — the "try the line"
 // sandbox's engine move. No gameId, no persisted game: gm.exploreReply
 // (server/game/manager.ts) calls maia.pickMove at the snapped elo and

@@ -539,6 +539,42 @@ export const getChatMessages = (gameId: number, limit: number) =>
 export const getAllChatMessages = (gameId: number) =>
   db.prepare("SELECT * FROM chat_messages WHERE game_id = ? ORDER BY id").all(gameId) as any[];
 
+// Wave 3.5, item 2 (owner ask, 2026-08-01): real per-game deletion for the
+// past-games drawer's delete X ("friends play on her account and she
+// playtests badly; those games clog the history" -- her words). No
+// tombstone/soft-delete: a deleted game is fully gone, explicitly out of
+// scope per the brief.
+//
+// EXPECTED_COLUMNS above is the authority for which tables carry a game_id
+// column -- swept straight off that map, not re-derived here: moves,
+// game_events, verdicts, advice_traces, turning_points, chat_messages.
+// `sessions` and `mode_timers` are the only two EXPECTED_COLUMNS tables with
+// no game_id column at all (mode_timers is keyed by session_id) and are
+// correctly untouched. `games` itself is deleted LAST, by `id` rather than
+// `game_id` (it's the row every other table's FK points at, not itself
+// FK'd), inside the same transaction as everything else.
+//
+// One db.transaction so a mid-sweep failure (e.g. a locked db) can never
+// leave a game half-deleted -- better-sqlite3 rolls the whole thing back on
+// a thrown error. Built lazily (inside the exported function, not at module
+// load) because `db` itself isn't assigned until openDb() runs -- every
+// other accessor in this file gets away with a bare arrow function because
+// db.prepare() is only ever CALLED inside the function body, but
+// db.transaction(fn) needs a live `db` at the point it's constructed, not
+// just at call time.
+export const deleteGameRows = (gameId: number): void => {
+  const txn = db.transaction((id: number) => {
+    db.prepare("DELETE FROM moves WHERE game_id = ?").run(id);
+    db.prepare("DELETE FROM game_events WHERE game_id = ?").run(id);
+    db.prepare("DELETE FROM verdicts WHERE game_id = ?").run(id);
+    db.prepare("DELETE FROM advice_traces WHERE game_id = ?").run(id);
+    db.prepare("DELETE FROM turning_points WHERE game_id = ?").run(id);
+    db.prepare("DELETE FROM chat_messages WHERE game_id = ?").run(id);
+    db.prepare("DELETE FROM games WHERE id = ?").run(id);
+  });
+  txn(gameId);
+};
+
 // Increment 3.91 (Task 5): read-only helper for the explore-reply endpoint's
 // zero-persistence proof — counts every row, in every user table, keyed by
 // name straight off sqlite_master rather than a hardcoded list, so a future
