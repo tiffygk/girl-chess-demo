@@ -527,6 +527,53 @@ export function GamePage() {
     setStatus("");
   }, [resetGameState]);
 
+  // Recovery path (2026-07-29, owner incident): an in-progress game was
+  // UNREACHABLE once anything interrupted the tab. startGame is the only way
+  // into a game and it always POSTs a brand NEW one, and there is no
+  // GET /api/game/:id, so a reload could only ever abandon a live game --
+  // that is where the 0-and-1-move stubs in her history come from. The server
+  // still holds the position in GameManager's own map (playerMove reads
+  // `this.games.get(gameId)`), so the only missing piece was the client
+  // knowing which id to attach to. `?game=<id>` supplies it, and because the
+  // param stays in the URL a reload now RESUMES instead of orphaning.
+  //
+  // Nothing here is guessed. The fen comes from a chess.js replay of the
+  // already-stored SANs (the same replay-from-scratch pattern Rewind.tsx
+  // uses) and the capture trays from capturesAtPly, which is authoritative
+  // because it reads each Move object's own `captured` field. Server-side
+  // this is read-only: fetchSummary on an UNFINISHED game cannot write,
+  // because getSummary's on-read backfill is gated on `game?.result` being
+  // set, and an unfinished game has none.
+  const resumeGame = useCallback(
+    async (id: number) => {
+      resetGameState();
+      const s = await fetchSummary(id);
+      const mirror = new Chess();
+      for (const m of s.moves) mirror.move(m.san);
+      mirrorRef.current = mirror;
+      setFen(mirror.fen());
+      setGameId(id);
+      setLiveMoves(s.moves.map((m) => ({ ply: m.ply, san: m.san, highlighted: !!m.highlighted })));
+      setCaptured(capturesAtPly(s.moves, s.moves.length));
+      lastReplyAtRef.current = Date.now();
+      setStatus("");
+    },
+    [resetGameState]
+  );
+
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("game");
+    const id = Number(raw);
+    if (!raw || !Number.isInteger(id) || id <= 0) return;
+    let cancelled = false;
+    resumeGame(id).catch(() => {
+      if (!cancelled) setStatus("could not resume that game");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [resumeGame]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
