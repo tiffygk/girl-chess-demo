@@ -38,3 +38,21 @@ export function clickDelete(current: ArmState, gameId: number): ArmClickResult {
 export function disarmArmed(): ArmState {
   return null;
 }
+
+// Wave 3.5 fix (Important, review 2026-08-01): whether deleting `deletedId`
+// should ALSO clear the LIVE just-finished debrief back to the pregame/menu
+// state -- true only when a live debrief is actually on screen (gameOver)
+// AND it's showing exactly this game. PastGamesButton renders on that debrief
+// too (not just REVIEW MODE's separate reviewGame), so she can finish a
+// game, open past games from that game's OWN live debrief, and delete it --
+// without this, the debrief keeps showing turning-point cards and dead
+// buttons for a row that's gone. GamePage.tsx calls handleNewGame() (the
+// SAME reset path the "new game" button already uses) when this returns
+// true, rather than hand-rolling a partial reset.
+export function shouldClearLiveDebrief(
+  gameOver: boolean,
+  liveGameId: number | null,
+  deletedId: number
+): boolean {
+  return gameOver && liveGameId === deletedId;
+}

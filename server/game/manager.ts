@@ -623,8 +623,13 @@ export class GameManager {
   // otherwise (a finished game can have no `this.games` entry at all, e.g.
   // after a process restart) -- because trusting only one would let either
   // a stale absent-from-map live game, or an unfinished db row with no
-  // memory entry, slip past. Both refusal branches return the same
-  // { ok:false, reason:"live" } shape the route maps to 409.
+  // memory entry, slip past.
+  //
+  // Wave 3.5 fix (Minor, review 2026-08-01): an id that was NEVER a game at
+  // all is a distinct fact from "this game exists but isn't over yet" --
+  // both used to collapse into the same reason:"live" (409), which is a
+  // misleading answer for an id nothing was ever created under. Reported as
+  // reason:"not-found" so the route can answer 404 instead.
   //
   // On success, ALSO evicts any (already-finished) `this.games` entry for
   // this id -- the same "in-memory state can't outlive the db row"
@@ -635,7 +640,8 @@ export class GameManager {
     const live = this.games.get(gameId);
     if (live && !live.finished) return { ok: false, reason: "live" };
     const game = getGame(gameId);
-    if (!game || game.result == null) return { ok: false, reason: "live" };
+    if (!game) return { ok: false, reason: "not-found" };
+    if (game.result == null) return { ok: false, reason: "live" };
     deleteGameRows(gameId);
     this.games.delete(gameId);
     return { ok: true };

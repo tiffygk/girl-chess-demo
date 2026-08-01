@@ -206,6 +206,16 @@ describe("GameManager", () => {
     expect(getGame(dbGameId)).toBeUndefined();
   });
 
+  // Wave 3.5 fix (Minor, review 2026-08-01): an id that never existed at
+  // all is a DIFFERENT fact from "this game exists but isn't over yet" --
+  // both used to collapse into the same reason:"live" (409), which is
+  // misleading for an id that was never a game in the first place. Gets its
+  // own distinct reason so the route can answer 404 instead.
+  it("deleteGame reports reason:'not-found' (not 'live') for an id that was never a game", () => {
+    const r = gm.deleteGame(999999999);
+    expect(r).toEqual({ ok: false, reason: "not-found" });
+  });
+
   it("judgeMove returns ok + a real verdict without advancing the game", async () => {
     const g = await gm.newGame(sessionId, 1100);
     const before = (gm as any).games.get(g.gameId).chess.fen();

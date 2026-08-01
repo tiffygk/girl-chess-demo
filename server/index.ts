@@ -331,14 +331,17 @@ app.get("/api/games", (_req, res) => {
 // Wave 3.5, item 2 (owner ask, 2026-08-01): DELETE /api/game/:id -- real
 // per-game deletion for the past-games drawer's delete X. gm.deleteGame does
 // the actual guard/sweep; the route's own job is only mapping its ok:false
-// (a live/unfinished game, or an unknown id) to 409, same "server re-derives
-// the real outcome, client's own view is never trusted" discipline as
-// /adjudicate above.
+// to a status code, same "server re-derives the real outcome, client's own
+// view is never trusted" discipline as /adjudicate above.
+// Wave 3.5 fix (Minor, review 2026-08-01): reason:"not-found" (an id that
+// was never a game) answers 404; reason:"live" (exists but isn't over yet)
+// keeps the original 409 -- these are different facts and shouldn't share a
+// status code.
 app.delete("/api/game/:id", (req, res) => {
   try {
     const result = gm.deleteGame(Number(req.params.id));
     if (!result.ok) {
-      res.status(409).json(result);
+      res.status(result.reason === "not-found" ? 404 : 409).json(result);
       return;
     }
     res.json(result);
