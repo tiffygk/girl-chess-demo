@@ -207,6 +207,38 @@ describe("deriveThreatFacts", () => {
     expect(facts).toBeTruthy();
     expect(facts!.herCapturedPieceKind).toBeUndefined();
   });
+
+  // Wave 1 (verdict truth layer, item 3 -- tier-1 motif fields): a QUIET
+  // promoting refutation (promotion, no capture, no check/mate/fork) is a
+  // promotion-threat -- placed after the mate/check checks, before positional.
+  it("promotion-threat: quiet promoting refutation (no capture, no check) classifies as promotion-threat", () => {
+    // Opponent (white) to move promotes a7-a8=Q: no capture, and the new
+    // queen does not check the black king on e5 (not on the a-file, 8th rank,
+    // or a8-h1 diagonal) nor fork any black minor.
+    const afterFen = "8/P7/8/4k3/8/8/8/4K3 w - - 0 1";
+    const facts = deriveThreatFacts(afterFen, "e5", "b", mkEval("a7a8q"));
+    expect(facts).toBeTruthy();
+    expect(facts!.motif).toBe("promotion-threat");
+    expect(facts!.refutationPieceKind).toBe("p"); // the pawn that promoted
+    expect(facts!.refutationToSquare).toBe("a8");
+    expect(facts!.givesCheck).toBe(false);
+    // No new per-motif fields (YAGNI): the capture-only fields stay undefined.
+    expect(facts!.capturesSquare).toBeUndefined();
+    expect(facts!.capturedPieceKind).toBeUndefined();
+  });
+
+  // Precedence guard: a CAPTURING promotion stays a capture motif -- the
+  // material story is the honest one, promotion-threat must not steal it.
+  it("promotion precedence: a capturing promotion stays a capture motif, not promotion-threat", () => {
+    // Opponent (white) to move plays bxa8=Q, capturing the black rook on a8.
+    const afterFen = "r7/1P6/8/4k3/8/8/8/4K3 w - - 0 1";
+    const facts = deriveThreatFacts(afterFen, "e5", "b", mkEval("b7a8q"));
+    expect(facts).toBeTruthy();
+    expect(facts!.motif).toBe("capture-other");
+    expect(facts!.motif).not.toBe("promotion-threat");
+    expect(facts!.capturedPieceKind).toBe("r");
+    expect(facts!.capturesSquare).toBe("a8");
+  });
 });
 
 describe("deriveRecommendationFacts", () => {
@@ -294,6 +326,40 @@ describe("deriveRecommendationFacts", () => {
     expect(facts!.forkTargets).toBeUndefined();
     expect(facts!.attackedSquare).toBeUndefined();
     expect(facts!.attackedPieceKind).toBeUndefined();
+  });
+
+  // Wave 1 (item 3 -- tier-1 motif fields): a quiet promotion (promotion, no
+  // capture, no check/mate/fork) is "promotes" -- it currently lands in
+  // develops.
+  it("promotes: quiet promotion classifies as promotes, not develops", () => {
+    const beforeFen = "8/P7/8/4k3/8/8/8/4K3 w - - 0 1";
+    const facts = deriveRecommendationFacts(beforeFen, "a7a8q");
+    expect(facts).toBeTruthy();
+    expect(facts!.accomplishment).toBe("promotes");
+    expect(facts!.pieceKind).toBe("p");
+    expect(facts!.toSquare).toBe("a8");
+  });
+
+  // Precedence guard: a capture-promotion stays "captures" -- the material
+  // story is the honest one.
+  it("promotion precedence: a capture-promotion stays captures, not promotes", () => {
+    const beforeFen = "r7/1P6/8/4k3/8/8/8/4K3 w - - 0 1";
+    const facts = deriveRecommendationFacts(beforeFen, "b7a8q");
+    expect(facts).toBeTruthy();
+    expect(facts!.accomplishment).toBe("captures");
+    expect(facts!.capturedPieceKind).toBe("r");
+    expect(facts!.capturesSquare).toBe("a8");
+  });
+
+  // Wave 1 (item 3): castling is "castles" -- it's quiet, so it currently
+  // lands in develops. Checked before the fork/attack/develops chain.
+  it("castles: kingside castling classifies as castles, not develops", () => {
+    const beforeFen = "4k3/8/8/8/8/8/8/4K2R w K - 0 1";
+    const facts = deriveRecommendationFacts(beforeFen, "e1g1");
+    expect(facts).toBeTruthy();
+    expect(facts!.accomplishment).toBe("castles");
+    expect(facts!.pieceKind).toBe("k");
+    expect(facts!.toSquare).toBe("g1");
   });
 
   it("returns undefined for a malformed uci", () => {

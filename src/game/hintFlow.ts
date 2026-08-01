@@ -98,6 +98,11 @@ export function recommendationClause(
       return `it goes after her ${pieceName(rec.attackedPieceKind ?? "")} on ${rec.attackedSquare}.`;
     case "develops":
       return "it keeps building. good shape, no drama.";
+    // Wave 1 (item 3 -- tier-1 motif fields):
+    case "promotes":
+      return "it makes a new queen.";
+    case "castles":
+      return "it gets your king castled to safety.";
     default:
       return null;
   }
@@ -251,6 +256,9 @@ function motifL2(ctx: HintCopyCtx): string {
       return "this one's dangerous. she's got something forcing.";
     case "check-threat":
       return "this opens you up to check.";
+    // Wave 1 (item 3 -- tier-1 motif fields):
+    case "promotion-threat":
+      return "she's about to make a new queen.";
     default:
       return "there's a stronger plan here.";
   }
@@ -340,6 +348,10 @@ function motifL3(ctx: HintCopyCtx): string {
       return `her ${threat.refutationSan} starts a forced mate.`;
     case "check-threat":
       return `her ${pieceName(threat.refutationPieceKind)} to ${threat.refutationToSquare} puts you in check.`;
+    // Wave 1 (item 3 -- tier-1 motif fields): reuses only refutation
+    // piece/to-square, both always populated on ThreatFacts.
+    case "promotion-threat":
+      return `her ${pieceName(threat.refutationPieceKind)} to ${threat.refutationToSquare} promotes. that's a new queen.`;
     default:
       return honestFallback;
   }

@@ -290,6 +290,20 @@ const positionalThreat: ThreatFacts = {
   capturedSquareDefended: false,
 };
 
+// Wave 1 (item 3 -- tier-1 motif fields): a quiet promoting refutation. The
+// L2/L3 copy reads only the refutation piece/to-square, both always populated.
+const promotionThreat: ThreatFacts = {
+  motif: "promotion-threat",
+  refutationUci: "a7a8q",
+  refutationSan: "a8=Q",
+  refutationPieceKind: "p",
+  refutationFromSquare: "a7",
+  refutationToSquare: "a8",
+  givesCheck: false,
+  capturesHerJustMovedPiece: false,
+  capturedSquareDefended: false,
+};
+
 const baseCtx: HintCopyCtx = { herPieceKind: "n", herToSquare: "e4" };
 
 // Increment 3a Wave 3: fixtures, one per accomplishment, matching
@@ -350,6 +364,23 @@ const developsRec: RecommendationFacts = {
   san: "Nf3",
 };
 
+// Wave 1 (item 3 -- tier-1 motif fields): the two new quiet accomplishments.
+const promotesRec: RecommendationFacts = {
+  accomplishment: "promotes",
+  pieceKind: "p",
+  fromSquare: "a7",
+  toSquare: "a8",
+  san: "a8=Q",
+};
+
+const castlesRec: RecommendationFacts = {
+  accomplishment: "castles",
+  pieceKind: "k",
+  fromSquare: "e1",
+  toSquare: "g1",
+  san: "O-O",
+};
+
 describe("recommendationClause", () => {
   it("captures", () => {
     expect(recommendationClause(capturesRec)).toBe("it wins the pawn on b5.");
@@ -368,6 +399,13 @@ describe("recommendationClause", () => {
   });
   it("develops", () => {
     expect(recommendationClause(developsRec)).toBe("it keeps building. good shape, no drama.");
+  });
+  // Wave 1 (item 3 -- tier-1 motif fields):
+  it("promotes", () => {
+    expect(recommendationClause(promotesRec)).toBe("it makes a new queen.");
+  });
+  it("castles", () => {
+    expect(recommendationClause(castlesRec)).toBe("it gets your king castled to safety.");
   });
   it("undefined/null rec returns null", () => {
     expect(recommendationClause(undefined)).toBeNull();
@@ -433,6 +471,10 @@ describe("hintCopy level 2: direction/concept per motif", () => {
   it("check-threat", () => {
     expect(hintCopy(2, { ...baseCtx, threat: checkThreat })).toBe("this opens you up to check.");
   });
+  // Wave 1 (item 3 -- tier-1 motif fields):
+  it("promotion-threat", () => {
+    expect(hintCopy(2, { ...baseCtx, threat: promotionThreat })).toBe("she's about to make a new queen.");
+  });
   it("positional falls back honestly", () => {
     expect(hintCopy(2, { ...baseCtx, threat: positionalThreat })).toBe("there's a stronger plan here.");
   });
@@ -463,6 +505,13 @@ describe("hintCopy level 3: concrete why per motif", () => {
   it("check-threat", () => {
     expect(hintCopy(3, { ...baseCtx, threat: checkThreat })).toBe(
       "her queen to h5 puts you in check."
+    );
+  });
+  // Wave 1 (item 3 -- tier-1 motif fields): reads only the refutation
+  // piece/to-square, both always populated on ThreatFacts.
+  it("promotion-threat", () => {
+    expect(hintCopy(3, { ...baseCtx, threat: promotionThreat })).toBe(
+      "her pawn to a8 promotes. that's a new queen."
     );
   });
   it("positional falls back honestly", () => {
