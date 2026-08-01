@@ -65,6 +65,15 @@ export const CHAT_TIMEOUT_MS = 45000;
 // exactly budgetMs, never budgetMs + a second full timeout.
 export const CHAT_REVIEW_BUDGET_MS = 90000;
 export const MIN_ATTEMPT_MS = 8000;
+// Wave 3, item 4 (F5 family, game-164): attempt 0's OWN generate timeout is
+// capped at 1/this of the total budget, so a slow-but-eventually-returning
+// attempt 0 can never starve the one regen. Trace 161: attempt 0 ran 35.6s of
+// a 90s budget and the regen then timed out at 54.4s -- with the cap the regen
+// is guaranteed at least half the budget. Only attempt 0's per-call timeout is
+// clamped; the shared `deadline` (start + budget) is untouched, so the worst
+// case is still exactly budgetMs, and the regen keeps the full remainder and
+// the MIN_ATTEMPT_MS floor.
+export const ATTEMPT0_BUDGET_DIVISOR = 2;
 export const CHAT_MAX_LEN = 500;
 // Task 2 (Wave D, coach-truth-speed round): the persona's "one to three
 // short sentences" rule is a LIVE-NUDGE budget -- it must not gag a real
@@ -1396,7 +1405,13 @@ export async function chat(
       if (remaining < MIN_ATTEMPT_MS) break;
       opts?.onRedraft?.();
     }
-    const timeoutMs = Math.max(0, deadline - Date.now());
+    // Wave 3, item 4 (F5 family, game-164): attempt 0's timeout is clamped to
+    // half the total budget so it cannot starve the regen (trace 161); the
+    // regen (attempt 1) keeps the full remaining budget. The shared `deadline`
+    // is unchanged either way, so the worst case stays exactly budgetMs.
+    const remainingMs = Math.max(0, deadline - Date.now());
+    const timeoutMs =
+      attempt === 0 ? Math.min(remainingMs, Math.floor(budgetMs / ATTEMPT0_BUDGET_DIVISOR)) : remainingMs;
     // Wave 3, item 2 (F5 family, game-164): this attempt's deltas are buffered
     // here, NOT forwarded live. She watched a wrong-topic draft stream in real
     // time before validation zapped it -- so opts.onDelta is never handed

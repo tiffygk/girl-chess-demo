@@ -43,7 +43,10 @@ describe("chat() — tiered budget as a TOTAL, not per-attempt (B1)", () => {
     vi.restoreAllMocks();
   });
 
-  it("a live game passes CHAT_TIMEOUT_MS (45000) to the first attempt when no budget override is given", async () => {
+  // Wave 3, item 4: attempt 0's own timeout is now capped at half the budget
+  // (a live game's default budget is CHAT_TIMEOUT_MS), so a lone first attempt
+  // sees floor(CHAT_TIMEOUT_MS/2), not the whole budget.
+  it("a live game caps attempt 0 at half CHAT_TIMEOUT_MS when no budget override is given", async () => {
     const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
     const calls: number[] = [];
     const backend = fakeBackend(async (_prompt, timeoutMs) => {
@@ -53,10 +56,10 @@ describe("chat() — tiered budget as a TOTAL, not per-attempt (B1)", () => {
 
     await chat("what's happening in this game?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
 
-    expect(calls).toEqual([CHAT_TIMEOUT_MS]);
+    expect(calls).toEqual([Math.floor(CHAT_TIMEOUT_MS / 2)]);
   });
 
-  it("a finished game passes CHAT_REVIEW_BUDGET_MS (90000) when the caller threads opts.budgetMs", async () => {
+  it("a finished game caps attempt 0 at half CHAT_REVIEW_BUDGET_MS when the caller threads opts.budgetMs", async () => {
     const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "review" });
     const calls: number[] = [];
     const backend = fakeBackend(async (_prompt, timeoutMs) => {
@@ -73,7 +76,7 @@ describe("chat() — tiered budget as a TOTAL, not per-attempt (B1)", () => {
       { budgetMs: CHAT_REVIEW_BUDGET_MS }
     );
 
-    expect(calls).toEqual([CHAT_REVIEW_BUDGET_MS]);
+    expect(calls).toEqual([Math.floor(CHAT_REVIEW_BUDGET_MS / 2)]);
   });
 
   it("the regen attempt receives the REMAINING budget, not a fresh full budget", async () => {
@@ -91,7 +94,38 @@ describe("chat() — tiered budget as a TOTAL, not per-attempt (B1)", () => {
 
     await chat("what should I do next?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
 
-    expect(calls).toEqual([CHAT_TIMEOUT_MS, CHAT_TIMEOUT_MS - 5000]);
+    // Wave 3, item 4: attempt 0 is capped at half the budget; the regen then
+    // gets the full remainder (deadline - now = CHAT_TIMEOUT_MS - 5000).
+    expect(calls).toEqual([Math.floor(CHAT_TIMEOUT_MS / 2), CHAT_TIMEOUT_MS - 5000]);
+  });
+
+  // Wave 3, item 4 (F5 family, game-164): trace 161 spent 35.6s on attempt 0
+  // of a 90s budget and the regen then timed out at 54.4s. Attempt 0's OWN
+  // generate timeout is now capped at half the total budget, guaranteeing the
+  // regen at least half; the overall deadline is unchanged.
+  it("caps attempt 0's own timeout at half the total budget, leaving the regen the full remainder (trace 161)", async () => {
+    const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "review" });
+    const calls: number[] = [];
+    // Both attempts return an illegal SAN so a regen is forced and the second
+    // call's timeout is observable.
+    const backend = fakeBackend(async (_prompt, timeoutMs) => {
+      calls.push(timeoutMs);
+      now += 10000; // 10s of real generation elapses each attempt
+      return "Qxh7 wins the game right now.";
+    });
+
+    await chat(
+      "was my opening okay?",
+      [],
+      facts,
+      backend,
+      { gameId, ply: 1, kind: "chat" },
+      { budgetMs: 90000 }
+    );
+
+    // attempt 0 capped at floor(90000/2)=45000; regen gets the remainder
+    // (deadline - now = 90000 - 10000 = 80000), NOT another capped slice.
+    expect(calls).toEqual([45000, 80000]);
   });
 
   it("the regen is skipped once fewer than MIN_ATTEMPT_MS remain, and the reply falls back to a template", async () => {
