@@ -15,7 +15,7 @@
 // own file instead — same directory, distinct name.
 
 import { describe, it, expect } from "vitest";
-import { describeSanMove, stripRedundantCheckSuffix } from "./describeSanMove";
+import { describeSanMove, stripRedundantCheckSuffix, describeMoveName } from "./describeSanMove";
 
 describe("describeSanMove", () => {
   it("quiet move: 'knight to d5'", () => {
@@ -101,5 +101,33 @@ describe("stripRedundantCheckSuffix", () => {
 
   it("is a no-op when the phrase has no trailing suffix to strip", () => {
     expect(stripRedundantCheckSuffix("queen to h4", "checkmate")).toBe("queen to h4");
+  });
+});
+
+// Wave 0, item 3 (F3 seed): the owner-facing "E1 vs F1" bug had one surface
+// naming a move by its FROM square, another by its TO square, for the SAME
+// move -- because there was no single shared "name a move by its squares"
+// renderer, each surface improvised its own phrasing. describeMoveName is
+// now the ONE way any surface does this: always both squares, always in
+// "from ... to ..." order, so the two surfaces can never disagree again.
+describe("describeMoveName (Wave 0, item 3 / F3 seed)", () => {
+  it("renders 'your rook from f1 to e1' for a rook", () => {
+    expect(describeMoveName("r", "f1", "e1")).toBe("your rook from f1 to e1");
+  });
+
+  it("renders every piece kind's name, lowercase, in the same shape", () => {
+    expect(describeMoveName("p", "e2", "e4")).toBe("your pawn from e2 to e4");
+    expect(describeMoveName("n", "g1", "f3")).toBe("your knight from g1 to f3");
+    expect(describeMoveName("b", "c1", "g5")).toBe("your bishop from c1 to g5");
+    expect(describeMoveName("q", "d1", "h5")).toBe("your queen from d1 to h5");
+    expect(describeMoveName("k", "e1", "g1")).toBe("your king from e1 to g1");
+  });
+
+  it("is lowercase even when squares are passed uppercase", () => {
+    expect(describeMoveName("r", "F1", "E1")).toBe("your rook from f1 to e1");
+  });
+
+  it("falls back to 'piece' for an unrecognized piece-kind letter, same as pieceName", () => {
+    expect(describeMoveName("x", "a1", "a2")).toBe("your piece from a1 to a2");
   });
 });

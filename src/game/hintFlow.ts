@@ -28,7 +28,7 @@ import { deriveOpportunity } from "../review/opportunity";
 // dependency on this file, so this file can safely depend on it) —
 // re-exporting pieceName here keeps every existing import of it from
 // hintFlow.ts working unchanged.
-import { pieceName, describeSanMove } from "./describeSanMove";
+import { pieceName, describeSanMove, describeMoveName } from "./describeSanMove";
 
 export { pieceName };
 
@@ -361,7 +361,15 @@ export function hintCopy(level: HintLevel, ctx: HintCopyCtx): string | null {
     // Copy-polish pass: base clause ends in its own period (mirrors this
     // file's L1 style, "hold on. look at your knight.") so level4Why's
     // addendum never runs on into it.
-    const base = `better: your ${pieceName(ctx.bestFacts.bestPieceKind)} on ${ctx.bestFacts.bestFromSquare}.`;
+    //
+    // Wave 0, item 3 (F3 seed): was "your {piece} on {bestFromSquare}." --
+    // naming only the piece and the FROM square, phrased with "on" as if it
+    // were the destination. Root cause of the owner-facing "E1 vs F1" bug:
+    // a different surface named the TO square for this same move, so the
+    // two disagreed about which square the hint meant. describeMoveName is
+    // now the one shared renderer for "name a move by its squares" -- it
+    // always states both.
+    const base = `better: ${describeMoveName(ctx.bestFacts.bestPieceKind, ctx.bestFacts.bestFromSquare, ctx.bestFacts.bestToSquare)}.`;
     return `${base}${level4Why(ctx.bestFacts, ctx.fen)}`;
   }
   const translation = ctx.fen ? describeBestMove(ctx.bestFacts, ctx.fen) : null;
