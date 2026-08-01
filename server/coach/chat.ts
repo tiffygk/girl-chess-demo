@@ -96,8 +96,14 @@ export interface ChatContext {
   // judge's verdict, not a HintFacts field); recommendation/trade are
   // HintFacts' own fields verbatim. All optional -- a hint at level 1-2
   // renders before any of this is computed.
+  // Wave 2 (item 6): the client's focus identity switched from a numeric
+  // `level` to the two-branch press ladder's {branch, press}. The server has
+  // never read this identity (only text/bestSan/pvSans/threat/recommendation/
+  // trade below are used), so it is a passthrough rename; hintFocusForModel
+  // strips only `threat` and lets the rest ride into the prompt harmlessly.
   hintFocus?: {
-    level: number;
+    branch: "right" | "wrong";
+    press: number;
     text: string;
     bestSan?: string;
     pvSans?: string[];
