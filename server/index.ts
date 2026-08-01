@@ -1,5 +1,5 @@
 import express from "express";
-import { openDb, createSession, addModeMinutes, rateAdviceTrace } from "./store/db";
+import { openDb, createSession, addModeMinutes, rateAdviceTrace, getRatedTraces } from "./store/db";
 import { GameManager } from "./game/manager";
 
 export const app = express();
@@ -288,6 +288,27 @@ app.post("/api/trace/:id/rate", (req, res) => {
     res.json({ ok });
   } catch (error) {
     res.status(500).json({ ok: false });
+  }
+});
+
+// Wave 4, item 2 (2026-08-01): GET /api/traces/rated?rating=1 -- the Lab-side
+// read path for ratings, sibling of the /api/trace/:id/rate write route above.
+// Same 1|-1 validation the rate route enforces (a missing/garbage value gets
+// no query, a 400). Optional ?game=<id> narrows to one game; omitted, it reads
+// every game. Read-only, sync, same try/catch envelope as every other route.
+// Deliberately a VIEWER only -- it never feeds a rated answer back into a
+// prompt (see getRatedTraces' comment / the manager.ts doom-loop note).
+app.get("/api/traces/rated", (req, res) => {
+  const rating = Number(req.query.rating);
+  if (rating !== 1 && rating !== -1) {
+    res.status(400).json({ ok: false });
+    return;
+  }
+  const gameId = req.query.game !== undefined ? Number(req.query.game) : null;
+  try {
+    res.json({ ok: true, traces: getRatedTraces(gameId, rating) });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
   }
 });
 

@@ -403,6 +403,43 @@ export const rateAdviceTrace = (id: number, rating: 1 | -1, feedback?: string): 
   db.prepare("UPDATE advice_traces SET rating = ?, feedback_text = ? WHERE id = ?")
     .run(rating, feedback ?? null, id).changes > 0;
 
+// Wave 4, item 2 (2026-08-01): the first-ever READ path for ratings.
+// advice_traces.rating/feedback_text have been write-only since 3.9 (only
+// rateAdviceTrace above ever touched them) -- so the coach's game-164 promise
+// to "remember what you rated" was structurally false: nothing in the codebase
+// could read a rating back. This narrow prepared-statement query is that read:
+// rows at a specific rating value (rating IS NOT NULL is implied -- 1 and -1
+// are the only values rateAdviceTrace ever writes), newest first, with an
+// optional game filter (null = every game). It returns only the fields a
+// human curator (or the next round's curation step) needs to SEE what she
+// praised/panned -- the coach's own output text, its kind/game/feedback -- not
+// the full prompt/facts_json blob. Explicitly a VIEWER: nothing here injects a
+// rated answer back into any prompt (that is a future round's curation step,
+// with the doom-loop risk documented at manager.ts:1078-1088).
+export const getRatedTraces = (
+  gameId: number | null,
+  rating: number
+): { id: number; gameId: number; kind: string; rating: number; feedbackText: string | null; output: string; source: string; createdAt: string }[] =>
+  (
+    db
+      .prepare(
+        `SELECT id, game_id, kind, rating, feedback_text, output, source, created_at
+           FROM advice_traces
+          WHERE rating = ? AND (? IS NULL OR game_id = ?)
+          ORDER BY id DESC`
+      )
+      .all(rating, gameId, gameId) as any[]
+  ).map((r) => ({
+    id: r.id,
+    gameId: r.game_id,
+    kind: r.kind,
+    rating: r.rating,
+    feedbackText: r.feedback_text ?? null,
+    output: r.output,
+    source: r.source,
+    createdAt: r.created_at,
+  }));
+
 // Increment 3b: written once by manager.ts's persistGameSummary at game
 // end. Idempotency choice (per the brief: delete-then-insert is NOT this
 // file's convention) — skip entirely if this game_id already has rows FOR
