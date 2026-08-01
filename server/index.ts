@@ -1,5 +1,5 @@
 import express from "express";
-import { openDb, createSession, addModeMinutes, rateAdviceTrace, getRatedTraces } from "./store/db";
+import { openDb, createSession, addModeMinutes, rateAdviceTrace, getRatedTraces, listCoachNotes, deleteCoachNote } from "./store/db";
 import { GameManager } from "./game/manager";
 
 export const app = express();
@@ -307,6 +307,26 @@ app.get("/api/traces/rated", (req, res) => {
   const gameId = req.query.game !== undefined ? Number(req.query.game) : null;
   try {
     res.json({ ok: true, traces: getRatedTraces(gameId, rating) });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
+// Wave 4, item 3 (2026-08-01): cross-game memory management for the owner.
+// GET lists the newest notes (the same list the coach's prompt reads); DELETE
+// removes one by id. Minimal, Lab-style, read/write only -- the WRITE side
+// (recording a note from a "please record this" message) lives in the chat
+// flow (manager.ts), not here.
+app.get("/api/coach-notes", (_req, res) => {
+  try {
+    res.json({ ok: true, notes: listCoachNotes() });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+app.delete("/api/coach-notes/:id", (req, res) => {
+  try {
+    res.json({ ok: deleteCoachNote(Number(req.params.id)) });
   } catch (error) {
     res.status(500).json({ ok: false, error: "internal" });
   }

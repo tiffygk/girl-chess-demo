@@ -185,6 +185,23 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     { name: "trace_id", addSql: "trace_id INTEGER" },
     { name: "created_at", addSql: "created_at TEXT DEFAULT (datetime('now'))" },
   ],
+  // Wave 4, item 3 (2026-08-01, game-164): coach_notes -- cross-game memory.
+  // Everything else coach-facing is game_id-keyed; "please record this" needs
+  // somewhere to live ACROSS games. source_game_id is a plain provenance tag
+  // (INTEGER, deliberately NO `REFERENCES games(id)` FK) so a note outlives the
+  // game it came from -- a note is memory, not game-scoped data, and must
+  // survive that game's deletion via the past-games drawer. Brand-new table
+  // (CREATE TABLE IF NOT EXISTS below creates it whole on any db, old or new),
+  // listed here per the established EXPECTED_COLUMNS convention (see
+  // advice_traces' comment above) so a future additive column migrates the same
+  // way. Correctly NOT swept by deleteGameRows: it carries no game_id column
+  // (source_game_id is not one), so the "tables with a game_id column" logic
+  // that guides that sweep excludes it by construction.
+  coach_notes: [
+    { name: "source_game_id", addSql: "source_game_id INTEGER" },
+    { name: "note", addSql: "note TEXT NOT NULL" },
+    { name: "created_at", addSql: "created_at TEXT DEFAULT (datetime('now'))" },
+  ],
 };
 
 function migrateSchema(target: Database.Database) {
@@ -243,6 +260,9 @@ export function openDb(path = "data/girlchess.db") {
     CREATE TABLE IF NOT EXISTS chat_messages(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id),
       role TEXT, text TEXT, trace_id INTEGER,
+      created_at TEXT DEFAULT (datetime('now')));
+    CREATE TABLE IF NOT EXISTS coach_notes(
+      id INTEGER PRIMARY KEY, source_game_id INTEGER, note TEXT NOT NULL,
       created_at TEXT DEFAULT (datetime('now')));
   `);
   migrateSchema(db);
@@ -611,6 +631,27 @@ export const deleteGameRows = (gameId: number): void => {
   });
   txn(gameId);
 };
+
+// Wave 4, item 3 (2026-08-01, game-164): cross-game memory accessors.
+// insertCoachNote stores the player's own message text (verbatim, built by the
+// caller -- never model output) with the game it came from as a provenance
+// tag. listCoachNotes returns the newest `limit` notes (default 10) for the
+// read-path prompt block and the owner's management route; deleteCoachNote is
+// the owner's remove-by-id, reporting whether a row actually went (false for an
+// unknown id, no throw), the same shape rateAdviceTrace uses.
+export const insertCoachNote = (note: string, sourceGameId?: number | null): number =>
+  Number(
+    db.prepare("INSERT INTO coach_notes(source_game_id, note) VALUES(?, ?)")
+      .run(sourceGameId ?? null, note).lastInsertRowid
+  );
+export const listCoachNotes = (limit = 10): { id: number; sourceGameId: number | null; note: string; createdAt: string }[] =>
+  (
+    db.prepare(
+      "SELECT id, source_game_id, note, created_at FROM coach_notes ORDER BY id DESC LIMIT ?"
+    ).all(limit) as any[]
+  ).map((r) => ({ id: r.id, sourceGameId: r.source_game_id ?? null, note: r.note, createdAt: r.created_at }));
+export const deleteCoachNote = (id: number): boolean =>
+  db.prepare("DELETE FROM coach_notes WHERE id = ?").run(id).changes > 0;
 
 // Increment 3.91 (Task 5): read-only helper for the explore-reply endpoint's
 // zero-persistence proof — counts every row, in every user table, keyed by

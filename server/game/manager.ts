@@ -5,7 +5,7 @@ import {
   createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict, getVerdicts,
   getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
   listFinishedGames, insertChatMessage, getChatMessages, getMoveEvalsByPlies,
-  setMoveHighlighted, deleteGameRows,
+  setMoveHighlighted, deleteGameRows, insertCoachNote, listCoachNotes,
 } from "../store/db";
 import { classifyMove, isAdviceLevel, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
@@ -35,13 +35,20 @@ import {
 // she opened chat from a specific on-screen moment (hasFocus below), never
 // left to the model to decide (the owner's explicit choice; see intent.ts's
 // header for why).
-import { classifyIntent } from "../coach/intent";
+import { classifyIntent, isRecordRequest } from "../coach/intent";
 import { claudeCliBackend } from "../coach/backends/claude-cli";
 import { ollamaBackend } from "../coach/backends/ollama";
 import { agentSdkBackend } from "../coach/backends/agent-sdk";
 import { noBackend, type CoachBackend } from "../coach/backends/types";
 
 interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number; finished: boolean }
+
+// Wave 4, item 3 (2026-08-01, game-164): the coach's acknowledgment for a
+// recorded note. A CODE constant, deterministically appended by chat() ONLY
+// after a coach_notes insert actually succeeded -- never produced by the model.
+// game-164's whole failure was the model PROMISING to remember when nothing
+// persisted; this line is the coach claiming memory only when it truly has it.
+const COACH_NOTE_ACK = "noted for real this time. it'll be in my head next game.";
 
 // Increment 3.91 (Task 2): the turning-lines endpoint's per-point shape —
 // mirrored (hand-mirroring, same convention as TurningPoint's own
@@ -1122,12 +1129,37 @@ export class GameManager {
     const hasFocus = !!(body.context.hintFocus || body.context.turningPointFocus);
     const hasPendingMove = !!body.context.pendingMove;
     const intent = classifyIntent(message, { hasFocus, hasPendingMove, status: finished ? "finished" : "in-progress" });
+    // Wave 4, item 3 (2026-08-01, game-164): the READ half of cross-game
+    // memory -- the player's newest standing notes ride into the prompt as
+    // their own block (see chat.ts's standingNotesBlock). Cross-game by design,
+    // so this is NOT scoped to gameId -- a note recorded in an earlier game is
+    // exactly what "remember this for next game" was asking for.
+    const standingNotes = listCoachNotes(10).map((n) => n.note);
     const result = await chatWithCoach(message, history, facts, backend, { gameId, ply, kind: "chat" }, {
       budgetMs,
       intent,
       onDelta: streamOpts?.onDelta,
       onRedraft: streamOpts?.onRedraft,
+      standingNotes,
     });
+
+    // Wave 4, item 3: the WRITE half. An explicit record request persists a
+    // note built from HER OWN message text (verbatim, prefixed with the game it
+    // came from) -- never from result.text, so the model can never launder its
+    // own words into her memory. The acknowledgment is appended ONLY when the
+    // insert actually succeeded, so the coach never claims a memory it doesn't
+    // have (game-164's exact failure). A failed insert falls through silently to
+    // the model's own answer, with no false promise.
+    let replyText = result.text;
+    if (isRecordRequest(message)) {
+      let recorded = false;
+      try {
+        recorded = insertCoachNote(`from game ${gameId}: ${message}`, gameId) > 0;
+      } catch {
+        recorded = false;
+      }
+      if (recorded) replyText = `${result.text}\n\n${COACH_NOTE_ACK}`;
+    }
 
     // B3b (2026-07-27, coach-truth-speed round): a failed (template) reply
     // is no longer persisted into chat_messages -- only a genuine model
@@ -1141,7 +1173,11 @@ export class GameManager {
     // the coach's own apology was persisted as a real coach turn -- this is
     // the fix for that doom loop, not just tidiness.
     if (result.source === "model") {
-      insertChatMessage({ gameId, role: "coach", text: result.text, traceId: result.traceId });
+      // Wave 4, item 3: persist the acknowledged text (replyText), so a
+      // remembered "noted..." reply reads back the same next turn as the client
+      // saw it. The note itself is already in coach_notes regardless of this
+      // source gate.
+      insertChatMessage({ gameId, role: "coach", text: replyText, traceId: result.traceId });
     }
 
     // Task 8 (inc 3.95, Fix 1), owner-ruled: chat.ts's own cause is always
@@ -1165,8 +1201,8 @@ export class GameManager {
       result.cause === "backend-down" && body.backendPref === "template" ? "templates-only" : result.cause;
 
     return cause
-      ? { ok: true, text: result.text, source: result.source, cause, traceId: result.traceId }
-      : { ok: true, text: result.text, source: result.source, traceId: result.traceId };
+      ? { ok: true, text: replyText, source: result.source, cause, traceId: result.traceId }
+      : { ok: true, text: replyText, source: result.source, traceId: result.traceId };
   }
 
   // Wave C, task C-B: observability for the Lab's hint-escalation metric.

@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import { Chess } from "chess.js";
 import { app, ready, gm } from "./index";
-import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages, getAdviceTraces, insertAdviceTrace, getAllTableCounts, createSession as dbCreateSession, createGame as dbCreateGame } from "./store/db";
+import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages, getAdviceTraces, insertAdviceTrace, getAllTableCounts, createSession as dbCreateSession, createGame as dbCreateGame, insertCoachNote } from "./store/db";
 import { CHAT_MAX_LEN } from "./coach/chat";
 
 describe("api", () => {
@@ -526,6 +526,25 @@ describe("api", () => {
     await ready;
     const res = await request(app).get("/api/traces/rated?rating=2").expect(400);
     expect(res.body.ok).toBe(false);
+  });
+
+  // Wave 4, item 3 (2026-08-01): the owner-facing management route for
+  // cross-game memory -- GET lists the notes, DELETE removes one by id.
+  it("GET /api/coach-notes lists notes and DELETE /api/coach-notes/:id removes one", async () => {
+    await ready;
+    const id = insertCoachNote("from game 7: castle before move 10", 7);
+
+    const list = await request(app).get("/api/coach-notes").expect(200);
+    expect(list.body.ok).toBe(true);
+    expect(list.body.notes.map((n: any) => n.id)).toContain(id);
+    const row = list.body.notes.find((n: any) => n.id === id);
+    expect(row).toMatchObject({ id, sourceGameId: 7, note: "from game 7: castle before move 10" });
+
+    const del = await request(app).delete(`/api/coach-notes/${id}`).expect(200);
+    expect(del.body.ok).toBe(true);
+
+    const after = await request(app).get("/api/coach-notes").expect(200);
+    expect(after.body.notes.map((n: any) => n.id)).not.toContain(id);
   });
 
   // Increment 3.9, F16: this-game grounding chat. gm.setCoachBackendForTesting

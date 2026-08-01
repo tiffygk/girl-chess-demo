@@ -25,6 +25,9 @@ import {
   getAllChatMessages,
   deleteGameRows,
   getRatedTraces,
+  insertCoachNote,
+  listCoachNotes,
+  deleteCoachNote,
 } from "./db";
 
 describe("store", () => {
@@ -381,6 +384,61 @@ describe("getRatedTraces (Wave 4 item 2 -- first read path for ratings)", () => 
     const g = createGame(s, "maia-1100");
     seedTrace(g, 1, "unrated");
     expect(getRatedTraces(null, 1)).toEqual([]);
+  });
+});
+
+// Wave 4, item 3 (2026-08-01): coach_notes -- cross-game memory. Everything
+// else coach-facing is game_id-keyed; "please record this" needs a place to
+// live ACROSS games. Brand-new table, so no migration ALTER is exercised, but
+// it is registered in both the CREATE block and EXPECTED_COLUMNS per the file's
+// discipline. Notes are deliberately NOT tied to a game's lifecycle:
+// source_game_id is a plain provenance tag (no FK), so a note outlives the
+// game it came from even if that game is later deleted.
+describe("coach_notes (Wave 4 item 3 -- cross-game memory)", () => {
+  it("inserts a note and lists it back, newest first, with its fields", () => {
+    openDb(":memory:");
+    const first = insertCoachNote("from game 12: remember to castle earlier", 12);
+    const second = insertCoachNote("from game 13: watch the back rank", 13);
+    expect(first).toBeGreaterThan(0);
+    expect(second).toBeGreaterThan(first);
+
+    const notes = listCoachNotes();
+    expect(notes.map((n) => n.id)).toEqual([second, first]); // newest first
+    expect(notes[0]).toMatchObject({
+      id: second,
+      sourceGameId: 13,
+      note: "from game 13: watch the back rank",
+    });
+    expect(typeof notes[0].createdAt).toBe("string");
+  });
+
+  it("allows a null source game (cross-game note with no single origin)", () => {
+    openDb(":memory:");
+    const id = insertCoachNote("staggered pawns are stronger", null);
+    const notes = listCoachNotes();
+    expect(notes).toHaveLength(1);
+    expect(notes[0].id).toBe(id);
+    expect(notes[0].sourceGameId).toBeNull();
+  });
+
+  it("caps the list at the newest N (default 10)", () => {
+    openDb(":memory:");
+    for (let i = 0; i < 13; i++) insertCoachNote(`note ${i}`, null);
+    const notes = listCoachNotes();
+    expect(notes).toHaveLength(10);
+    // newest first: the last inserted (note 12) is at the head
+    expect(notes[0].note).toBe("note 12");
+    // and the honored limit override
+    expect(listCoachNotes(3)).toHaveLength(3);
+  });
+
+  it("deletes a note by id and reports whether a row was removed", () => {
+    openDb(":memory:");
+    const id = insertCoachNote("delete me", null);
+    expect(deleteCoachNote(id)).toBe(true);
+    expect(listCoachNotes()).toHaveLength(0);
+    // deleting a nonexistent id is a clean no-op, not a throw
+    expect(deleteCoachNote(999999)).toBe(false);
   });
 });
 

@@ -4,7 +4,7 @@ import { Chess } from "chess.js";
 import {
   openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces,
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
-  insertVerdict, getAllChatMessages,
+  insertVerdict, getAllChatMessages, listCoachNotes,
 } from "../store/db";
 import { GameManager, BACKEND_CACHE_TTL_MS, buildVerdictFactsJson } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
@@ -666,6 +666,61 @@ describe("GameManager", () => {
       const chatTrace = traces.find((t: any) => t.kind === "chat");
       expect(narrateTrace?.backend).toBe("claude-fake");
       expect(chatTrace?.backend).toBe("none");
+    }, 20000);
+  });
+
+  // Wave 4, item 3 (2026-08-01, game-164): the WRITE half of cross-game
+  // memory. When the player's message is an explicit record request, the chat
+  // flow inserts a coach_note built from HER OWN message text (never model
+  // output) after the reply settles, and appends a deterministic
+  // acknowledgment -- but ONLY when the insert actually happened, so the coach
+  // never claims a memory it doesn't have.
+  describe("coach_notes write path (Wave 4 item 3)", () => {
+    const ACK = "noted for real this time. it'll be in my head next game.";
+    function fakeAnswer(text: string) {
+      gm.setCoachBackendForTesting({
+        name: "fake",
+        async available() {
+          return true;
+        },
+        async generate() {
+          return text;
+        },
+      });
+    }
+
+    it("inserts a note from her own words and appends the ack, on a record request", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      await gm.playerMove(g.gameId, "e2", "e4", undefined, 500);
+      fakeAnswer("that's fine. keep developing.");
+
+      const before = listCoachNotes().length;
+      const msg = "please record this because I keep hanging my queen";
+      const res = await gm.chat(g.gameId, { message: msg, context: { mode: "live" } });
+      expect(res.ok).toBe(true);
+
+      const notes = listCoachNotes();
+      expect(notes.length).toBe(before + 1);
+      // the note carries HER message verbatim, prefixed with its game id
+      expect(notes[0].note).toContain(msg);
+      expect(notes[0].note).toContain(String(g.gameId));
+      expect(notes[0].sourceGameId).toBe(g.gameId);
+      // the note is never the model's output
+      expect(notes[0].note).not.toContain("keep developing");
+      // and the reply acknowledges the save
+      if (res.ok) expect(res.text.endsWith(ACK)).toBe(true);
+    }, 20000);
+
+    it("writes no note and appends no ack on an ordinary question", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      await gm.playerMove(g.gameId, "e2", "e4", undefined, 500);
+      fakeAnswer("that's fine. keep developing.");
+
+      const before = listCoachNotes().length;
+      const res = await gm.chat(g.gameId, { message: "was my knight move okay?", context: { mode: "live" } });
+      expect(res.ok).toBe(true);
+      expect(listCoachNotes().length).toBe(before);
+      if (res.ok) expect(res.text.includes(ACK)).toBe(false);
     }, 20000);
   });
 
