@@ -150,6 +150,14 @@ interface Persona {
   // board route's own prompt (chatSystemPrompt alone) is provably
   // unaffected by this section's existence.
   chatGeneralPrompt: string;
+  // Wave 4 (2026-08-01, item 1): the two owner-praised answer shapes, parsed
+  // from "## chat" > "### answer shapes". Kept as its own field -- exactly like
+  // chatGeneralPrompt above -- rather than folded into chatSystemPrompt, so the
+  // built prompt can append it AFTER the (possibly general-augmented) system
+  // prompt for BOTH intents (see buildChatPrompt in chat.ts) without the voice
+  // block being re-prepended. Empty string when the file has no such section,
+  // so a persona without it behaves exactly as before.
+  chatAnswerShapes: string;
 }
 
 // No yaml dep: `## heading` splits the file into top-level sections,
@@ -211,6 +219,9 @@ export function parsePersona(md: string): Persona {
     // buildChatPrompt joins the two for the general route; prepending it a
     // second time here would duplicate it in that route's prompt only.
     chatGeneralPrompt: (chatSub["general questions"] ?? "").trim(),
+    // Wave 4 (item 1): same "parsed here, appended at build time, never run
+    // through withVoice" discipline as chatGeneralPrompt above.
+    chatAnswerShapes: (chatSub["answer shapes"] ?? "").trim(),
   };
 }
 

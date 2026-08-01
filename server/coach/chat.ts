@@ -1171,10 +1171,17 @@ function buildChatPrompt(
   mentioned: number[] = [],
   rejected?: RejectedDraftContext
 ): string {
-  const systemPrompt =
+  // Wave 4, item 1 (2026-08-01, game-164 follow-up): the general fragment is
+  // appended only on the general route (byte-identical board prompt preserved);
+  // the answer shapes are appended UNCONDITIONALLY after that, because the two
+  // owner-praised shapes apply to a threat-question (board) and a strategy
+  // question (general) alike. filter(Boolean) keeps a persona with no shapes
+  // section byte-identical to today's prompt on both routes.
+  const baseSystemPrompt =
     intent === "general"
       ? [persona.chatSystemPrompt, persona.chatGeneralPrompt].filter(Boolean).join("\n\n")
       : persona.chatSystemPrompt;
+  const systemPrompt = [baseSystemPrompt, persona.chatAnswerShapes].filter(Boolean).join("\n\n");
   const factsPayload = intent === "general" ? generalFactsForModel(facts) : factsForModel(facts, mentioned);
   // Wave 3, item 1: the focus section rides only on the board route (the one
   // that carries focusPosition facts -- classifyIntent forces "board" whenever

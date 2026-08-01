@@ -79,6 +79,59 @@ CHAT_BODY
   });
 });
 
+// Wave 4, item 1 (2026-08-01, game-164 follow-up): the two answer shapes the
+// owner rated +1 land as a parsed "### answer shapes" subsection of "## chat",
+// a sibling of "### system prompt"/"### templates"/"### general questions".
+// parsePersona exposes it as its own trimmed field (chatAnswerShapes), kept
+// separate from chatSystemPrompt the same way chatGeneralPrompt is, so it can
+// be appended to the built prompt for BOTH intents without duplicating the
+// voice block or polluting the system-prompt field.
+describe("parsePersona answer shapes (Wave 4 item 1)", () => {
+  const md = `## voice
+
+VOICE_MARKER
+
+## chat
+
+### system prompt
+
+CHAT_BODY
+
+### answer shapes
+
+SHAPE_MARKER
+
+### general questions
+
+GENERAL_BODY
+`;
+
+  it("extracts the answer-shapes section as its own trimmed field", () => {
+    const persona = parsePersona(md);
+    expect(persona.chatAnswerShapes).toBe("SHAPE_MARKER");
+  });
+
+  it("keeps answer shapes OUT of chatSystemPrompt and chatGeneralPrompt (separate fields, like chatGeneralPrompt)", () => {
+    const persona = parsePersona(md);
+    expect(persona.chatSystemPrompt).not.toContain("SHAPE_MARKER");
+    expect(persona.chatGeneralPrompt).not.toContain("SHAPE_MARKER");
+    // and the section is not run through withVoice -- the voice block reaches
+    // the built prompt once, ahead of chatSystemPrompt, never re-prepended here
+    expect(persona.chatAnswerShapes).not.toContain("VOICE_MARKER");
+  });
+
+  it("is an empty string (no stray header) when the section is absent", () => {
+    const noShapesMd = `## chat
+
+### system prompt
+
+CHAT_BODY
+`;
+    const persona = parsePersona(noShapesMd);
+    expect(persona.chatAnswerShapes).toBe("");
+  });
+});
+
 describe("real coach.md (Task 2)", () => {
   // Parsed fresh from disk each time (NOT getPersona's cache) so this test
   // reflects the file's on-disk content, whatever wave last touched it.
@@ -105,6 +158,30 @@ describe("real coach.md (Task 2)", () => {
   it("voice block carries the banned-word list (proven via 'delve')", () => {
     const persona = parseRealCoachMd();
     expect(persona.voice).toContain("delve");
+  });
+
+  // Wave 4, item 1: the two owner-praised shapes are present on the real file's
+  // parsed answer-shapes field. Marker phrases chosen to be load-bearing to
+  // each shape's ORDER rule, so a rewrite that drops the ordering discipline
+  // fails here, not just a reworded copy.
+  it("carries both owner-praised answer shapes on chatAnswerShapes", () => {
+    const persona = parseRealCoachMd();
+    // shape 1: threat -> why it fails -> payoff, fear killed before the fix
+    expect(persona.chatAnswerShapes).toContain("name the exact threat she fears");
+    expect(persona.chatAnswerShapes).toContain(
+      "never argue for your move before you've killed the line she's scared of"
+    );
+    // shape 2: rule in one line, grounded in her own game, one carryable version
+    expect(persona.chatAnswerShapes).toContain("ground it in the one real moment from this game");
+    expect(persona.chatAnswerShapes).toContain("small enough to carry into the next game");
+  });
+
+  it("answer shapes obey the voice block: no notation, no engine word, no signed number", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatAnswerShapes).not.toMatch(/\bengine\b/i);
+    expect(persona.chatAnswerShapes).not.toMatch(/\beval(s|uation)?\b/i);
+    // no em-dashes, no raw SAN-shaped move name spelled out as notation
+    expect(persona.chatAnswerShapes).not.toContain("—");
   });
 });
 
