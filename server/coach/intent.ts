@@ -165,6 +165,28 @@ export function isOffTopic(message: string): boolean {
   return OFF_TOPIC_DOMAIN_RE.test(message) && !hasBoardSignal(message);
 }
 
+// Wave 4, item 3 (2026-08-01, game-164): a conservative detector for an
+// explicit request to remember something across games -- the trigger for the
+// coach_notes write path (see server/game/manager.ts's chat()). Model-free and
+// synchronous, the same discipline classifyIntent/isOffTopic follow.
+//
+// The family is exactly the four the brief names: "record this", "mark this",
+// "please record", and "remember this". The first three are imperative and
+// almost never appear in a non-request sentence. "remember this" is the one
+// that false-fires -- "I don't remember this opening" contains it as a
+// substring -- so that branch alone carries a preceding-negation guard
+// (variable-length lookbehind, supported in Node's V8): it matches "remember
+// this" only when NOT immediately preceded by a negation word + space. Recall
+// over precision would cost a real question a spurious "noted" line and a note
+// the player never asked for, so precision wins here, the same as every other
+// checker in this directory.
+const RECORD_REQUEST_RE =
+  /(?:please\s+record\b|\brecord this\b|\bmark this\b|(?<!\b(?:don't|do not|didn't|cannot|can't|not|never|won't|wouldn't)\s)\bremember this\b)/i;
+
+export function isRecordRequest(message: string): boolean {
+  return RECORD_REQUEST_RE.test(message);
+}
+
 // Forward-prediction round (2026-07-28): when the player names a specific
 // move or ply, that moment gets full per-ply detail (pvSans + then) for
 // this one turn -- deterministic promotion, decided here from the message

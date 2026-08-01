@@ -1154,6 +1154,21 @@ function describeViolationKinds(violations: readonly string[]): string {
   return [...kinds].join(", ");
 }
 
+// Wave 4, item 3 (2026-08-01, game-164): the "player's standing notes:" block
+// -- the READ half of cross-game memory. Placed (see buildChatPrompt) AFTER
+// the fact-list json and BEFORE the history block, on purpose: it keeps Wave
+// 3's carefully-ordered history -> rejected-draft -> focus -> player tail
+// byte-for-byte intact, and presents the notes as persistent background the
+// coach carries into every game about this player -- distinct from this-game
+// facts above it and the running conversation below it. Notes are already
+// plain text (the caller builds them from the player's own words); rendered as
+// a simple dashed list. undefined (no block at all) when there are none, so a
+// player with no standing notes gets today's exact prompt.
+function standingNotesBlock(notes: string[]): string | undefined {
+  if (notes.length === 0) return undefined;
+  return ["", "player's standing notes:", ...notes.map((n) => `- ${n}`)].join("\n");
+}
+
 // Task 2 (Wave D): intent picks BOTH halves of the prompt -- which system
 // prompt fragment and which fact projection -- so "board route: change
 // nothing" holds exactly: an undefined/"board" intent takes the identical
@@ -1169,7 +1184,11 @@ function buildChatPrompt(
   persona: ReturnType<typeof getPersona>,
   intent: ChatIntent,
   mentioned: number[] = [],
-  rejected?: RejectedDraftContext
+  rejected?: RejectedDraftContext,
+  // Wave 4, item 3: the player's newest standing notes (already plain text),
+  // rendered as their own block. Defaults empty, so every existing call site
+  // and the no-notes case render exactly today's prompt.
+  standingNotes: string[] = []
 ): string {
   // Wave 4, item 1 (2026-08-01, game-164 follow-up): the general fragment is
   // appended only on the general route (byte-identical board prompt preserved);
@@ -1189,6 +1208,7 @@ function buildChatPrompt(
   // prompts byte-identical). When it fires, the history block above it is
   // marked as background.
   const focusSection = intent === "general" ? undefined : focusedMomentSection(facts);
+  const notesBlock = standingNotesBlock(standingNotes);
   return [
     systemPrompt,
     "",
@@ -1199,6 +1219,9 @@ function buildChatPrompt(
     // fighting. No indentation/newlines to strip means no information loss,
     // just no pretty-printing a model doesn't need.
     JSON.stringify(factsPayload),
+    // Wave 4, item 3: standing notes ride here -- after the fact list, before
+    // history -- so Wave 3's history/rejected/focus/player ordering is untouched.
+    ...(notesBlock ? [notesBlock] : []),
     formatHistory(history, focusSection !== undefined),
     // Wave 3, item 3: after history, before the focus section -- so the model
     // reads the rejected-draft warning as recent context, then the moment it
@@ -1315,7 +1338,12 @@ export async function chat(
   // for. Additive/optional, defaulting to "board" -- every existing call
   // site (chat.test.ts and its siblings, manager.ts pre-this-wave) omits it
   // and gets exactly today's behavior (full facts, full validateChat).
-  opts?: { budgetMs?: number; intent?: ChatIntent; onDelta?: (text: string) => void; onRedraft?: () => void }
+  // Wave 4, item 3 (2026-08-01): standingNotes is the last field this opts
+  // object carries -- additive/optional, defaulting to none, so every existing
+  // call site (chat.test.ts and its siblings, manager.ts pre-this-wave) omits
+  // it and gets exactly today's behavior. manager.ts reads listCoachNotes and
+  // passes them here; this function only forwards them to buildChatPrompt.
+  opts?: { budgetMs?: number; intent?: ChatIntent; onDelta?: (text: string) => void; onRedraft?: () => void; standingNotes?: string[] }
 ): Promise<{
   text: string;
   source: "model" | "template";
@@ -1386,7 +1414,7 @@ export async function chat(
       // best-effort context, never load-bearing.
     }
   }
-  const basePrompt = buildChatPrompt(facts, history, userMessage, persona, intent, mentioned, rejectedContext);
+  const basePrompt = buildChatPrompt(facts, history, userMessage, persona, intent, mentioned, rejectedContext, opts?.standingNotes ?? []);
 
   let attemptPrompt = basePrompt;
   let attemptOutput = "";

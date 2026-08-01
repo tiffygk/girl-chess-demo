@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyIntent, isOffTopic, mentionedPlies } from "./intent";
+import { classifyIntent, isOffTopic, mentionedPlies, isRecordRequest } from "./intent";
 
 function ctx(overrides: Partial<{ hasFocus: boolean; hasPendingMove: boolean; status: "in-progress" | "finished" }> = {}) {
   return { hasFocus: false, hasPendingMove: false, status: "in-progress" as const, ...overrides };
@@ -147,5 +147,26 @@ describe("mentionedPlies", () => {
   it("is bounded even against a message listing many numbers", () => {
     const msg = "moves 1 2 3 4 5 6 7 8 9 10 11 12".replace(/(\d+)/g, "move $1");
     expect(mentionedPlies(msg, 200).length).toBeLessThanOrEqual(12);
+  });
+});
+
+// Wave 4, item 3 (2026-08-01, game-164): a conservative detector for an
+// explicit request to remember something across games. The real game-164
+// phrasings must fire; a negated recall ("I don't remember this opening")
+// must NOT -- that is the whole reason the "remember this" branch carries a
+// preceding-negation guard rather than a bare substring match.
+describe("isRecordRequest (Wave 4 item 3)", () => {
+  it("fires on the real game-164 phrasings", () => {
+    expect(isRecordRequest("Please record this because I always forget it")).toBe(true);
+    expect(isRecordRequest("Let's mark this for analysis next time")).toBe(true);
+    expect(isRecordRequest("remember this for my next game")).toBe(true);
+    expect(isRecordRequest("please remember this")).toBe(true);
+  });
+
+  it("does NOT fire on a negated recall or an unrelated question", () => {
+    expect(isRecordRequest("I don't remember this opening")).toBe(false);
+    expect(isRecordRequest("I do not remember this line at all")).toBe(false);
+    expect(isRecordRequest("was my knight move okay?")).toBe(false);
+    expect(isRecordRequest("what should i play here?")).toBe(false);
   });
 });
