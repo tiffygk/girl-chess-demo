@@ -1106,27 +1106,47 @@ function buildChatPrompt(
   ].join("\n");
 }
 
-// Task 3a (R2, voice-enforcement round): one corrective line per voice
-// violation KIND actually present, appended after the base "mentioned X, Y"
-// line -- so a regen attempt gets told exactly what to fix, not just that
-// something was wrong. Keyed on the prefix checkVoice pushes onto each of
-// its violation strings (see that function).
-const VOICE_KIND_GUIDANCE: Record<string, string> = {
+// Task 3a (R2, voice-enforcement round): one corrective line per violation
+// KIND actually present, so a regen attempt gets told exactly what to fix.
+// Keyed on the prefix each checker pushes onto its violation strings (see
+// checkDefenseClaims, checkPlacementClaims, checkSideAttributionClaims,
+// checkMateClaims, checkVoice).
+//
+// Wave 0, item 2 (F5.5): this used to be voice-only -- everything else
+// (placement/side/defense/mate violations) fell through to one hardcoded
+// base line written for bad SAN alone ("mentioned X, which isn't a move
+// from this game"). A placement violation like "placement-claim: knight on
+// b3 -- b3 is empty" got glued into that sentence, telling the model a
+// piece-location claim "isn't a move" -- true but meaningless, and not the
+// actual defect. Every kind now gets its own terse instruction here; a bad
+// SAN token carries no prefix at all (chess notation never contains ":"),
+// so it's keyed under "" below and is the only kind that still gets the
+// original "isn't a move from this game" wording.
+const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
+  "": "isn't a move from this game.",
+  "placement-claim": "misstates where a piece is -- restate only what the fact list proves.",
+  "side-claim": "names the wrong side -- that move belongs to the other side.",
+  "defense-claim": "isn't a defense the position supports -- drop the defense claim.",
+  "mate-claim": "doesn't match the analysis -- drop the mate claim.",
   "voice-notation": "say the piece and where it goes in plain words, not notation.",
   "voice-word": "never say engine -- say \"our chess brain\".",
   "voice-number": "never state a number for the position.",
 };
 
-function correctiveSuffix(violations: readonly string[]): string {
-  const lines = [
-    "",
-    "",
-    `your previous answer mentioned ${violations.join(", ")}, which isn't a move from this game.`,
-  ];
+export function correctiveSuffix(violations: readonly string[]): string {
+  const lines = ["", ""];
+  // Bad-SAN violations are raw tokens (no ":" prefix) and keep the original
+  // one-line "mentioned X, Y, ..." sentence, since that wording is specific
+  // to them; every other kind gets its own guidance line below instead.
+  const sanTokens = violations.filter((v) => !v.includes(":"));
+  if (sanTokens.length > 0) {
+    lines.push(`your previous answer mentioned ${sanTokens.join(", ")}, which isn't a move from this game.`);
+  }
   const seenKinds = new Set<string>();
   for (const v of violations) {
+    if (!v.includes(":")) continue; // already covered by the SAN line above
     const kind = v.split(":")[0];
-    const guidance = VOICE_KIND_GUIDANCE[kind];
+    const guidance = VIOLATION_KIND_GUIDANCE[kind];
     if (guidance && !seenKinds.has(kind)) {
       seenKinds.add(kind);
       lines.push(guidance);

@@ -6,6 +6,7 @@ import {
 } from "../store/db";
 import {
   assembleChatFactList, validateChat, chat, CHAT_HISTORY_WINDOW, CHAT_MAX_LEN,
+  correctiveSuffix,
 } from "./chat";
 import type { ChatFactList } from "./chat";
 import { GameManager } from "../game/manager";
@@ -917,6 +918,54 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       const facts = voiceFacts();
       const result = validateChat("move 8 was the moment things turned.", facts);
       expect(result.ok).toBe(true);
+    });
+  });
+
+  // Wave 0, item 2 (F5.5): correctiveSuffix used to glue EVERY violation
+  // into one sentence hardcoded for bad SAN ("mentioned X, which isn't a
+  // move from this game") -- so a placement-claim violation like
+  // "placement-claim: knight on b3 -- b3 is empty" got told it "isn't a
+  // move from this game", which is nonsense: the model never claimed
+  // "placement-claim: ..." was a move at all. Each violation kind now
+  // routes to its own corrective line, the way voice violations already
+  // did via VOICE_KIND_GUIDANCE.
+  describe("correctiveSuffix (Wave 0, item 2 / F5.5): kind-appropriate guidance", () => {
+    it("a bad-SAN violation gets the 'isn't a move from this game' line", () => {
+      const suffix = correctiveSuffix(["Qxh7"]);
+      expect(suffix).toContain("mentioned Qxh7, which isn't a move from this game.");
+    });
+
+    it("a placement violation does NOT get the bad-SAN catch-all, and gets its own guidance instead", () => {
+      const suffix = correctiveSuffix(["placement-claim: your knight on b3 -- b3 is empty"]);
+      expect(suffix).not.toContain("isn't a move from this game");
+      expect(suffix.toLowerCase()).toContain("restate only what the fact list proves");
+    });
+
+    it("a side-claim violation gets its own guidance, not the SAN catch-all", () => {
+      const suffix = correctiveSuffix(["side-claim: Nf3 is mallow's move to play, not you's"]);
+      expect(suffix).not.toContain("isn't a move from this game");
+      expect(suffix.toLowerCase()).toContain("other side");
+    });
+
+    it("a defense-claim violation gets its own guidance, not the SAN catch-all", () => {
+      const suffix = correctiveSuffix(["defense-claim: e4 is defended"]);
+      expect(suffix).not.toContain("isn't a move from this game");
+      expect(suffix.toLowerCase()).toContain("defense claim");
+    });
+
+    it("a mate-claim violation gets its own guidance, not the SAN catch-all", () => {
+      const suffix = correctiveSuffix(["mate-claim: no line in this game's facts mates in 5"]);
+      expect(suffix).not.toContain("isn't a move from this game");
+      expect(suffix.toLowerCase()).toContain("mate claim");
+    });
+
+    it("mixed violations produce both their guidance lines, each once", () => {
+      const suffix = correctiveSuffix([
+        "placement-claim: your knight on b3 -- b3 is empty",
+        "Qxh7",
+      ]);
+      expect(suffix).toContain("mentioned Qxh7, which isn't a move from this game.");
+      expect(suffix.toLowerCase()).toContain("restate only what the fact list proves");
     });
   });
 });
