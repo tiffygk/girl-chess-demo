@@ -49,7 +49,7 @@ export function moveNumberForPly(ply: number): number {
 // change always changes the key regardless of what level/text happen to be.
 export function focusKey(hintFocus: HintFocus, turningPointFocus: TurningPointFocus): string | null {
   if (turningPointFocus) return `tp:${turningPointFocus.ply}`;
-  if (hintFocus) return `hint:${hintFocus.ply}:${hintFocus.level}:${hintFocus.text}`;
+  if (hintFocus) return `hint:${hintFocus.ply}:${hintFocus.branch}:${hintFocus.press}:${hintFocus.text}`;
   return null;
 }
 

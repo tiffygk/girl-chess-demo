@@ -36,21 +36,21 @@ const moves = (sans: string[]) => sans.map((san, i) => ({ ply: i + 1, san }));
 describe("assembleChatFactList: hintFocus carries real HintFacts (Task 4, R1b)", () => {
   it("folds hintFocus.bestSan into allowedSans", () => {
     const facts = assembleChatFactList(moves(GAME), {
-      hintFocus: { level: 3, text: "hold on. look at your knight.", bestSan: "Qh5" },
+      hintFocus: { branch: "right", press: 3, text: "hold on. look at your knight.", bestSan: "Qh5" },
     });
     expect(facts.allowedSans).toContain("Qh5");
   });
 
   it("folds every san in hintFocus.pvSans into allowedSans", () => {
     const facts = assembleChatFactList(moves(GAME), {
-      hintFocus: { level: 3, text: "hold on.", bestSan: "Qh5", pvSans: ["Qh5", "g6", "Qxg6"] },
+      hintFocus: { branch: "right", press: 3, text: "hold on.", bestSan: "Qh5", pvSans: ["Qh5", "g6", "Qxg6"] },
     });
     expect(facts.allowedSans).toEqual(expect.arrayContaining(["Qh5", "g6", "Qxg6"]));
   });
 
   it("does not require pvSans -- bestSan alone still folds", () => {
     const facts = assembleChatFactList(moves(GAME), {
-      hintFocus: { level: 3, text: "hold on.", bestSan: "Qh5" },
+      hintFocus: { branch: "right", press: 3, text: "hold on.", bestSan: "Qh5" },
     });
     expect(facts.allowedSans).toContain("Qh5");
   });
@@ -62,7 +62,7 @@ describe("assembleChatFactList: hintFocus carries real HintFacts (Task 4, R1b)",
 
   it("a hint move validated by the model is accepted once folded (Task 3a's voice guard separately and always bans this fixture's raw notation)", () => {
     const facts = assembleChatFactList(moves(GAME), {
-      hintFocus: { level: 3, text: "hold on.", bestSan: "Qh5", pvSans: ["Qh5", "g6", "Qxg6"] },
+      hintFocus: { branch: "right", press: 3, text: "hold on.", bestSan: "Qh5", pvSans: ["Qh5", "g6", "Qxg6"] },
     });
     const result = validateChat("play Qh5, going straight for the attack.", facts);
     // The fold is proven by the absence of the bare "Qh5" illegal-SAN
@@ -81,7 +81,7 @@ describe("the hint follow-up's engine facts reach the model prompt (Task 4, R1b)
   it("includes hintFocus.threat/recommendation/bestSan/trade in the fact JSON the backend receives", async () => {
     const facts = assembleChatFactList(moves(GAME), {
       hintFocus: {
-        level: 3,
+        branch: "right", press: 3,
         text: "hold on. look at your knight.",
         bestSan: "Bb5",
         pvSans: ["Bb5", "a6", "Ba4"],

@@ -6,6 +6,7 @@
 // modules rather than inlined React state logic.
 import { Chess } from "chess.js";
 import type { ChatContext, SummaryMove, TurningLine, TurningPoint } from "./api";
+import type { HintBranch } from "./hintFlow";
 // Task 3 (Wave D, coach-truth-speed round, deferred from A1): the single
 // source of truth for "did she actually play the recommended move" --
 // already used by reviewArrows.ts/debriefBullets.ts/turningPointNote.ts.
@@ -49,36 +50,37 @@ export function pvUciToSan(fen: string, pv: string[]): string[] {
 // highlight's own ThreatFacts (from the judge's verdict, not a HintFacts
 // field -- see GamePage's threatReveal), recommendation is HintFacts'
 // recommendation verbatim.
-type HintFocusExtra = Omit<NonNullable<ChatContext["hintFocus"]>, "level" | "text" | "ply">;
+type HintFocusExtra = Omit<NonNullable<ChatContext["hintFocus"]>, "branch" | "press" | "text" | "ply">;
 
 /**
- * The open hint ladder's focus: the level the player is looking at plus the
- * exact rendered hint text (hintCopy's own output, not a re-derivation) --
- * so the coach answers against what she's actually seeing on screen, not a
- * regenerated paraphrase of it. Level 0 (nothing revealed yet) or a null/
- * empty text (hintCopy returns null before the deep fetch lands at levels
- * 4-5) has nothing to focus on -- returns undefined so a caller can spread
- * the result into a ChatContext unconditionally.
+ * The open hint ladder's focus. Wave 2 (item 6): identity is now the {branch,
+ * press} the player is looking at (the two-branch press ladder replaced the
+ * 0-5 level escalation) plus the exact rendered hint text (rungCopy's own
+ * output, not a re-derivation) -- so the coach answers against what she's
+ * actually seeing on screen. Press 0 (nothing revealed yet) or a null/empty
+ * text (rungCopy returns null before the deep facts land) has nothing to
+ * focus on -- returns undefined so a caller can spread the result into a
+ * ChatContext unconditionally.
  *
  * Phase 3 review fix (F1): `ply` is the pending move's own ply (the caller's
  * mirrorRef.current.history().length + 1 -- the mirror is untouched while a
- * move is pending, so this is exactly the position the hint ladder is
- * currently climbing). It exists purely so chatThread.ts's focusKey has a
- * position identity to fold in: hintCopy's level-1/2 text is a fixed
- * template, so level+text alone collide across two different moments.
+ * move is pending, so this is exactly the position the ladder is climbing).
+ * It exists so chatThread.ts's focusKey has a position identity to fold in:
+ * an opener's text is a fixed pool line, so branch+press+text alone can
+ * collide across two different moments at the same rung.
  *
  * Task 4 (R1b): `extra` carries the on-screen HintFacts (see HintFocusExtra
- * above) when the caller has them -- optional because levels 1-2 render
- * before the deep fetch lands, so there is nothing to pass yet.
+ * above) when the caller has them.
  */
 export function hintFocusContext(
-  level: number,
+  branch: HintBranch,
+  press: number,
   text: string | null | undefined,
   ply: number,
   extra?: HintFocusExtra
 ): ChatContext["hintFocus"] | undefined {
-  if (level <= 0 || !text) return undefined;
-  return { level, text, ply, ...extra };
+  if (press <= 0 || !text) return undefined;
+  return { branch, press, text, ply, ...extra };
 }
 
 /**
@@ -203,20 +205,19 @@ export function pendingMoveContext(
  * handler remembering to clear it.
  *
  * - hintFocus survives only if a hint is actually showing right now
- *   (current.hintLevel > 0) AND the level, the exact rendered text, AND the
- *   pending move's own ply (current.pendingPly) all still match.
+ *   (current.hintPress > 0) AND the branch, the press, the exact rendered
+ *   text, AND the pending move's own ply (current.pendingPly) all still match.
  *
- *   Phase 3 review fix (F1): this used to compare only level + the live
- *   re-rendered hintCopy text, on the theory that a different pending move
- *   would render different text and so get caught even if its level
- *   happened to match. That is FALSE at levels 1-2: hintCopy's text there is
- *   a fixed template (hintFlow.ts:304, e.g. "hold on. look at your knight.")
- *   that does not vary with position, threat facts, or which piece moved --
- *   so a stale L1/L2 focus from a PREVIOUS pending move would incorrectly
- *   survive into a new one that happened to reach the same level. The ply
- *   check closes that gap: it is the one field in hintFocus that is always
- *   position-derived (see hintFocusContext), so it changes on every new
- *   pending move even when level and text do not.
+ *   Phase 3 review fix (F1), carried into Wave 2's {branch, press} identity:
+ *   this must not compare only branch/press + the live re-rendered text, on
+ *   the theory that a different pending move would render different text. That
+ *   is FALSE at the openers: an opener's text is a fixed pool line that does
+ *   not vary with position or which piece moved -- so a stale opener focus
+ *   from a PREVIOUS pending move would incorrectly survive into a new one that
+ *   happened to reach the same branch/press. The ply check closes that gap:
+ *   it is the one field in hintFocus that is always position-derived (see
+ *   hintFocusContext), so it changes on every new pending move even when
+ *   branch, press, and text do not.
  * - turningPointFocus survives only if its own ply equals the ply currently
  *   being looked at (current.rewindPly) -- rewindPly is null while no
  *   turning point is being replayed, which drops the focus too.
@@ -224,7 +225,8 @@ export function pendingMoveContext(
 export function reconcileChatFocus(
   focus: Pick<ChatContext, "hintFocus" | "turningPointFocus">,
   current: {
-    hintLevel: number;
+    hintBranch: HintBranch | null;
+    hintPress: number;
     renderedHintText: string | null | undefined;
     pendingPly: number | null;
     rewindPly: number | null;
@@ -235,8 +237,9 @@ export function reconcileChatFocus(
   const hf = focus.hintFocus;
   if (
     hf &&
-    current.hintLevel > 0 &&
-    hf.level === current.hintLevel &&
+    current.hintPress > 0 &&
+    hf.branch === current.hintBranch &&
+    hf.press === current.hintPress &&
     hf.text === current.renderedHintText &&
     hf.ply === current.pendingPly
   ) {

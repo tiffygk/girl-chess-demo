@@ -352,18 +352,22 @@ export interface ChatContext {
   // Phase 3 review fix (F1): `ply` is the pending move's own ply (the
   // position it would become once confirmed -- mirrorRef.current.history()
   // .length + 1, since the mirror is untouched while a move is pending).
-  // Without it, two different moments at the same hint level collided --
-  // hintCopy's level-1/2 text is a fixed template (hintFlow.ts:304), so
-  // "hint:${level}:${text}" alone was not a stable per-moment identity. This
-  // field is purely a client-local identity for chatThread.ts's focusKey/
-  // shouldInjectAnchor; the server does not read it.
+  // Without it, two different moments at the same hint rung collided -- an
+  // opener's text is a fixed pool line, so "hint:${branch}:${press}:${text}"
+  // alone was not a stable per-moment identity. This field is purely a
+  // client-local identity for chatThread.ts's focusKey/shouldInjectAnchor;
+  // the server does not read it.
+  // Wave 2 (item 6): identity switched from a numeric `level` to the
+  // two-branch press ladder's {branch, press} -- see chatFocus.ts's
+  // hintFocusContext/reconcileChatFocus. The server (server/coach/chat.ts)
+  // never read `level`, so this is a clean rename on the wire.
   // Task 4 (R1b, fact-gap round): mirrors server/coach/chat.ts's ChatContext.
   // hintFocus extension verbatim -- bestSan/pvSans already SAN (converted
-  // client-side, see GamePage's hint-focus call site), threat is the
-  // level-3 highlight's ThreatFacts, recommendation/trade are HintFacts'
-  // own fields.
+  // client-side, see GamePage's hint-focus call site), threat is the right-P2
+  // highlight's ThreatFacts, recommendation/trade are HintFacts' own fields.
   hintFocus?: {
-    level: number;
+    branch: "right" | "wrong";
+    press: number;
     text: string;
     ply: number;
     bestSan?: string;
