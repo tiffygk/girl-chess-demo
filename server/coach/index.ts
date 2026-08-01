@@ -19,6 +19,14 @@ export interface CoachFactList {
   herMove: { pieceKind: string; from: string; to: string };
   tier: "nudge" | "warning";
   deltaCp: number | null;
+  // Wave 1 (verdict truth layer, item 2 -- typed mate): the forced-mate
+  // distance on each side, mover perspective (positive = a mate for the
+  // player, negative = a mate against her, null = no forced mate that side) --
+  // mirrors classify.ts's Verdict. buildPrompt sends these instead of the
+  // folded deltaCp whenever either is set: toMoverCp collapses a lost
+  // mate-in-16 into deltaCp 99098, a garbage number to hand a narration model.
+  mateBefore?: number | null;
+  mateAfter?: number | null;
   threat?: ThreatFacts;
   best?: { san: string; uci: string; pieceKind: string; from: string; to: string };
   recommendation?: RecommendationFacts;
@@ -57,6 +65,12 @@ export function assembleFactList(input: {
   herMove: { pieceKind: string; from: string; to: string };
   tier: "nudge" | "warning";
   deltaCp: number | null;
+  // Wave 1 (item 2 -- typed mate): optional, mover perspective -- see
+  // CoachFactList.mateBefore/mateAfter above. Flow straight through onto the
+  // returned fact list (the ...input spread below) so buildPrompt can prefer
+  // them over the folded deltaCp.
+  mateBefore?: number | null;
+  mateAfter?: number | null;
   // Task 3 (2026-07-22, truthfulness leaks): required, not optional -- see
   // CoachFactList.currentFen above. Every real caller (manager.ts's
   // narrate()) already has the live position in hand.
@@ -324,10 +338,16 @@ function stripThreatUci(t: ThreatFacts): Omit<ThreatFacts, "refutationUci"> {
 }
 
 export function buildPrompt(facts: CoachFactList, persona: Persona): string {
+  // Wave 1 (item 2 -- typed mate): when a forced mate is on the board the raw
+  // deltaCp is the MATE_SCORE_CP fold (a lost mate-in-16 folds to 99098) -- a
+  // garbage number to hand a narration model. Send the typed mate distance
+  // (mover perspective) and OMIT the folded deltaCp entirely in that case;
+  // with no mate on the board the deltaCp ships exactly as before.
+  const hasMate = facts.mateBefore != null || facts.mateAfter != null;
   const factsForModel = {
     yourMove: facts.herMove,
     tier: facts.tier,
-    deltaCp: facts.deltaCp,
+    ...(hasMate ? { mateBefore: facts.mateBefore, mateAfter: facts.mateAfter } : { deltaCp: facts.deltaCp }),
     threat: facts.threat ? stripThreatUci(facts.threat) : undefined,
     best: facts.best
       ? { san: facts.best.san, pieceKind: facts.best.pieceKind, from: facts.best.from, to: facts.best.to }

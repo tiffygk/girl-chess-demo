@@ -1156,6 +1156,10 @@ export function GamePage() {
       to: pending.to,
       tier: verdict.tier,
       deltaCp: verdict.deltaCp,
+      // Wave 1 (item 2 -- typed mate): thread the typed mate distance through
+      // so the coach prompt ships it instead of the folded deltaCp (99098).
+      mateBefore: verdict.mateBefore,
+      mateAfter: verdict.mateAfter,
       threat: verdict.threat,
       best: {
         san: hintFacts.bestSan,

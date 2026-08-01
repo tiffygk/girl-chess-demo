@@ -19,6 +19,19 @@ export interface Verdict {
   tier: "silent" | "nudge" | "warning";
   deltaCp: number | null;
   mateAgainst: boolean;
+  // Wave 1 (verdict truth layer, item 2 -- typed mate): the forced-mate
+  // distance BOTH from the mover's perspective, typed rather than folded into
+  // deltaCp. toMoverCp collapses a mate into MATE_SCORE_CP - N (a lost
+  // mate-in-16 becomes deltaCp 99098), which two real consumers depend on and
+  // must stop depending on: lost-mate routing to warning (see the tier chain
+  // below) and the coach model prompt (server/coach/index.ts, which shipped
+  // that 99098 verbatim to the model). Positive = a mate FOR the mover,
+  // negative = a mate AGAINST the mover, null = no forced mate on that side.
+  // Agrees with mateAgainst/mateForMover below by construction: mateAgainst
+  // <=> mateAfter < 0, mateForMover <=> mateAfter > 0. deltaCp itself stays
+  // folded (compat) -- only these typed fields are added.
+  mateBefore: number | null;
+  mateAfter: number | null;
   latencyMs: number;
   // Undefined whenever the before-position eval's bestMove can't be turned
   // into a legal move on that position (eval failure, or the checkmate
@@ -203,7 +216,7 @@ export async function classifyMove(
   // left to evaluate (no replies exist), so short-circuit before touching
   // the evaluator.
   if (chess.isCheckmate()) {
-    return { tier: "silent", deltaCp: 0, mateAgainst: false, latencyMs: Date.now() - start };
+    return { tier: "silent", deltaCp: 0, mateAgainst: false, mateBefore: null, mateAfter: null, latencyMs: Date.now() - start };
   }
 
   // Defensive fallback: an unrecognized level (stale/garbled client value,
@@ -223,6 +236,14 @@ export async function classifyMove(
   // get back to the mover's perspective.
   const mateAgainst = afterEval.mate !== null && afterEval.mate > 0;
   const mateForMover = afterEval.mate !== null && afterEval.mate < 0;
+
+  // Wave 1 (item 2 -- typed mate): the mate distance on each side, mover
+  // perspective. beforeEval is already mover-perspective (she was to move in
+  // move.before). afterEval is opponent-perspective (their move now) -- negate
+  // it. By construction these agree with the two booleans above: mateAgainst
+  // <=> mateAfter < 0, mateForMover <=> mateAfter > 0.
+  const mateBefore = beforeEval.mate;
+  const mateAfter = afterEval.mate === null ? null : -afterEval.mate;
 
   const bestEvalCp = toMoverCp(beforeEval);
   const actualEvalCp = -toMoverCp(afterEval);
@@ -292,6 +313,15 @@ export async function classifyMove(
       ? threat.capturedPieceKind
       : undefined;
 
+  // Wave 1 (item 2 -- typed mate): lost-mate routing is now EXPLICIT off the
+  // typed fields rather than an accident of the MATE_SCORE_CP fold. She HELD a
+  // forced mate (mateBefore > 0) and the move no longer keeps one for her (not
+  // mateForMover) -- route to warning independent of the folded deltaCp
+  // magnitude. Today the fold already inflates such a delta past warningCp, so
+  // this term changes no verdict on its own (belt-and-suspenders); it exists
+  // so the routing survives any future change that stops inflating deltaCp.
+  const lostMate = mateBefore !== null && mateBefore > 0 && !(mateAfter !== null && mateAfter > 0);
+
   let tier: Verdict["tier"];
   let conversionCopy: string | undefined;
   if (mateForMover) {
@@ -314,7 +344,7 @@ export async function classifyMove(
     } else {
       tier = "silent";
     }
-  } else if (mateAgainst || deltaCp >= warningCp) {
+  } else if (mateAgainst || deltaCp >= warningCp || lostMate) {
     tier = "warning";
     // M4 fix (union review, 2026-07-31): conversionCopyFor's "lost-mate"
     // branch was unreachable dead code -- its only call site sat inside the
@@ -352,5 +382,5 @@ export async function classifyMove(
     tier = "silent";
   }
 
-  return { tier, deltaCp, mateAgainst, latencyMs: Date.now() - start, facts, threat, conversionCopy };
+  return { tier, deltaCp, mateAgainst, mateBefore, mateAfter, latencyMs: Date.now() - start, facts, threat, conversionCopy };
 }

@@ -444,7 +444,15 @@ describe("classifyMove — decided-position conversion (Task K2)", () => {
   // conversionCopy (the generic "careful, this one hurts" badge and nothing
   // else); the fix must thread the real "the forced mate is gone for now"
   // story into the tier that's actually reachable.
-  it("losing a held mate entirely -> warning tier (not mateForMover) STILL carries the lost-mate copy", async () => {
+  //
+  // Wave 1 (verdict truth layer, item 2 -- typed mate): the routing is now
+  // EXPLICIT rather than an accident of the MATE_SCORE_CP fold. The warning
+  // branch fires on the typed condition `mateBefore > 0 && !mateForMover` --
+  // she HELD a mate and the move lost it -- independent of the folded
+  // deltaCp's magnitude. This test additionally pins the two new typed
+  // fields: mateBefore carries the held mate distance (5, mover perspective),
+  // mateAfter is null (the reading vanished), and the copy still lands.
+  it("losing a held mate entirely -> warning via the typed mateBefore>0 && !mateForMover condition, STILL carries the lost-mate copy", async () => {
     const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
     const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet
     const evaluator = new ScriptedEvaluator(
@@ -452,8 +460,66 @@ describe("classifyMove — decided-position conversion (Task K2)", () => {
       { cp: 500, mate: null, bestMove: "e8d8", pv: [] } // afterEval: the mate reading is GONE
     );
     const verdict = await classifyMove(chess, move, evaluator);
-    expect(verdict.tier).toBe("warning"); // reached via mateAgainst/deltaCp, NOT the mateForMover branch
+    expect(verdict.mateBefore).toBe(5); // she held mate-in-5 (mover perspective)
+    expect(verdict.mateAfter).toBeNull(); // the reading is gone -> typed as null, not folded into a 99098 delta
+    expect(verdict.tier).toBe("warning"); // fires via the typed lost-mate condition
     expect(verdict.conversionCopy).toBe("still winning, but the forced mate is gone for now.");
+  });
+});
+
+// Wave 1 (verdict truth layer, item 2 -- typed mate): the Verdict now carries
+// mateBefore/mateAfter, BOTH from the mover's perspective, so lost-mate
+// routing and the coach prompt stop depending on the MATE_SCORE_CP fold
+// (toMoverCp turns a lost mate-in-16 into deltaCp 99098). These pin the two
+// fields against the existing mateAgainst/mateForMover derivations they must
+// agree with (mateAgainst <=> mateAfter < 0; mateForMover <=> mateAfter > 0).
+describe("classifyMove — typed mate fields (Wave 1, item 2)", () => {
+  it("mateBefore = beforeEval.mate; mateAfter negates the opponent-perspective afterEval.mate (mate held for her)", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet, keeps the mate on schedule
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 2, bestMove: "e1e2", pv: [] }, // beforeEval (mover perspective): mate-in-2
+      { cp: 0, mate: -1, bestMove: "e8d8", pv: [] } // afterEval (opponent perspective): mated-in-1 -> still HER mate
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.mateBefore).toBe(2);
+    expect(verdict.mateAfter).toBe(1); // -(-1): a mate FOR the mover, positive
+    expect(verdict.mateAfter! > 0).toBe(true);
+    expect(verdict.mateAgainst).toBe(false); // mateAfter > 0 <=> mateForMover, not against
+  });
+
+  it("mateAfter is negative when the move hands the opponent a forced mate (agrees with mateAgainst)", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" });
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: null, bestMove: "e1e2", pv: [] }, // beforeEval: no mate before
+      { cp: 0, mate: 3, bestMove: "e8d8", pv: [] } // afterEval (opponent to move): opponent mates in 3 -> against her
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.mateBefore).toBeNull();
+    expect(verdict.mateAfter).toBe(-3); // -(3): a mate AGAINST the mover, negative
+    expect(verdict.mateAgainst).toBe(true); // mateAfter < 0 <=> mateAgainst
+    expect(verdict.tier).toBe("warning");
+  });
+
+  it("both fields are null on an ordinary non-mate position", async () => {
+    const chess = new Chess();
+    const move = chess.move({ from: "g1", to: "f3" });
+    const verdict = await classifyMove(chess, move, new FixedDeltaEvaluator(100));
+    expect(verdict.mateBefore).toBeNull();
+    expect(verdict.mateAfter).toBeNull();
+  });
+
+  it("the checkmate short-circuit also carries the (null) typed mate fields", async () => {
+    const setup = new Chess();
+    setup.move("f3");
+    setup.move("e5");
+    setup.move("g4");
+    const move = setup.move("Qh4"); // Qh4#
+    expect(setup.isCheckmate()).toBe(true);
+    const verdict = await classifyMove(setup, move, new FixedDeltaEvaluator(0));
+    expect(verdict.mateBefore).toBeNull();
+    expect(verdict.mateAfter).toBeNull();
   });
 });
 
