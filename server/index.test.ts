@@ -476,6 +476,16 @@ describe("api", () => {
     expect(stillLive.body.ok).toBe(true);
   }, 30000);
 
+  // Wave 3.5 fix (Minor, review 2026-08-01): an id that was never a game at
+  // all is a distinct fact from "this game exists but isn't over yet" --
+  // answers 404, not the live-game 409, since gm.deleteGame now reports a
+  // distinct reason:"not-found" for it.
+  it("DELETE /api/game/:id answers 404 for an id that was never a game", async () => {
+    await ready;
+    const del = await request(app).delete("/api/game/999999999").expect(404);
+    expect(del.body).toEqual({ ok: false, reason: "not-found" });
+  });
+
   // Increment 3.9, F16: this-game grounding chat. gm.setCoachBackendForTesting
   // is called before every request below (the same seam manager.test.ts and
   // coach/chat.test.ts already rely on) so the route never invokes the real

@@ -48,6 +48,10 @@ import { findTakedownPiece, type Takedown } from "./terminal";
 import { replayPlan } from "./replay";
 import { GameEndPanel } from "./GameEndPanel";
 import { DebriefPage, PastGamesButton, PastGamesDrawer } from "../review/DebriefPage";
+// Wave 3.5 fix (Important, review 2026-08-01): the pure "does deleting this
+// game also mean clearing the live just-finished debrief" predicate -- see
+// deleteArm.ts's own comment.
+import { shouldClearLiveDebrief } from "../review/deleteArm";
 import { fenAtPly } from "../review/Rewind";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
 import {
@@ -1894,39 +1898,6 @@ export function GamePage() {
     setExploreSourcePly(null);
   }, []);
 
-  // Wave 3.5, item 2 (owner ask, 2026-08-01): real per-game deletion, fired
-  // only on the drawer's own confirmed (second-click) delete. Optimistic --
-  // the row disappears immediately, restored on failure since there's no
-  // toast machinery to report a delayed error against. If the deleted game
-  // is the one currently open in REVIEW MODE, that view closes back to
-  // (what's now, since the drawer stays open throughout) the drawer/list
-  // state, the same way backToPlay already closes review mode on its own
-  // explicit button -- deleting the game you're looking at is just another
-  // way of leaving it. The just-finished LIVE debrief (gameOver) is a
-  // separate surface this doesn't touch: deleting that exact game from the
-  // drawer while its own live debrief is still showing is an edge case the
-  // brief doesn't call for closing, and gameOver has no "back to X" state to
-  // close it to the way REVIEW MODE does.
-  const deletePastGame = useCallback(
-    async (gameId: number) => {
-      setPastGamesDeleteError(null);
-      const previous = pastGames;
-      setPastGames((cur) => (cur ? cur.filter((g) => g.id !== gameId) : cur));
-      if (reviewGame && reviewGame.id === gameId) backToPlay();
-      try {
-        const res = await deleteGame(gameId);
-        if (!res.ok) {
-          setPastGames(previous);
-          setPastGamesDeleteError("could not delete that game. try again.");
-        }
-      } catch {
-        setPastGames(previous);
-        setPastGamesDeleteError("could not delete that game. try again.");
-      }
-    },
-    [pastGames, reviewGame, backToPlay]
-  );
-
   // Owner feedback 2026-07-17: the pregame elo picker was only reappearing
   // on a hard refresh, not after finishing a game. Reversing the 2.5
   // decision (rematch reused the last elo silently) — "new game" now drops
@@ -1950,6 +1921,49 @@ export function GamePage() {
     setExplore(null);
     setExploreSourcePly(null);
   }, [resetGameState]);
+
+  // Wave 3.5, item 2 (owner ask, 2026-08-01): real per-game deletion, fired
+  // only on the drawer's own confirmed (second-click) delete. Optimistic --
+  // the row disappears immediately, restored on failure since there's no
+  // toast machinery to report a delayed error against.
+  //
+  // Two "this game is currently on screen" surfaces to close, both checked
+  // against the DELETED id (the parameter is named `deletedId`, not
+  // `gameId`, specifically so it never shadows this component's own `gameId`
+  // state -- that shadowing bug is exactly what the review fix below caught):
+  //   - REVIEW MODE (reviewGame): closes via the existing backToPlay(), same
+  //     as its own explicit button -- deleting the game you're looking at is
+  //     just another way of leaving it.
+  //   - Wave 3.5 fix (Important, review 2026-08-01): the LIVE just-finished
+  //     debrief is ALSO a "review/debrief view" PastGamesButton renders on
+  //     (GameEndPanel's debrief slot, wired below) -- so she can finish a
+  //     game, open past games from THAT game's own debrief, and delete it.
+  //     shouldClearLiveDebrief (deleteArm.ts) is the pure predicate for
+  //     "is this the live debrief's own game"; when true this calls
+  //     handleNewGame() -- the EXACT same reset path the "new game" button
+  //     already uses (resetGameState + dropping gameId to null so the
+  //     pregame elo picker re-shows) -- rather than hand-rolling a partial
+  //     reset here.
+  const deletePastGame = useCallback(
+    async (deletedId: number) => {
+      setPastGamesDeleteError(null);
+      const previous = pastGames;
+      setPastGames((cur) => (cur ? cur.filter((g) => g.id !== deletedId) : cur));
+      if (reviewGame && reviewGame.id === deletedId) backToPlay();
+      if (shouldClearLiveDebrief(!!gameOver, gameId, deletedId)) handleNewGame();
+      try {
+        const res = await deleteGame(deletedId);
+        if (!res.ok) {
+          setPastGames(previous);
+          setPastGamesDeleteError("could not delete that game. try again.");
+        }
+      } catch {
+        setPastGames(previous);
+        setPastGamesDeleteError("could not delete that game. try again.");
+      }
+    },
+    [pastGames, reviewGame, backToPlay, gameOver, gameId, handleNewGame]
+  );
 
   // "replay the takedown" (Wave D) — owner feedback, verbatim: "play the
   // last three moves or four moves without delays in between but not too
