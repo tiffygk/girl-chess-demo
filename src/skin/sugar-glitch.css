@@ -1311,33 +1311,18 @@
 .gc-app .dt-base { position: relative; z-index: 2; color: #9A8BC9; }
 .gc-app .lt-base { position: relative; z-index: 2; color: #1A7A93; }
 
-/* GameEndPanel's labeled stub sections — the seams increments 3/4 extend.
-   Visibly "coming soon": dashed border, muted ink, no shadow (unlike real
-   buttons/cards) so they read as placeholders rather than live content. */
-.gc-app .game-end-stubs {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(88vw, 380px);
-  margin-top: 2px;
-}
-.gc-app .game-end-stub {
-  font-size: 12px; font-weight: 700; color: #9C8FC7;
-  background: rgba(255,255,255,.4);
-  border: 1.5px dashed #C9BFEF;
-  border-radius: 14px;
-  padding: 10px 16px;
-  text-align: center;
-}
-
 /* Increment 3c: the debrief under the game — same visual cluster as the
-   board (GameEndPanel, between "replay the takedown" and the streaks stub;
-   also rendered standalone under REVIEW MODE). Cards are flat-tint
-   statements (no squishy shadow — they're the machine speaking, same
-   anatomy as .game-end-stub/.fallback-banner above); buttons stay candy
-   pills (they're pressables). Lavender family by default; magenta only
-   where a negative label sits; mint never (reserved for the last-move/
-   legal-move/win-button family). All copy lowercase, no em-dashes. */
+   board (GameEndPanel, right after "replay the takedown"; also rendered
+   standalone under REVIEW MODE). Cards are flat-tint statements (no squishy
+   shadow — they're the machine speaking, same anatomy as .fallback-banner
+   above); buttons stay candy pills (they're pressables). Lavender family by
+   default; magenta only where a negative label sits; mint never (reserved
+   for the last-move/legal-move/win-button family). All copy lowercase, no
+   em-dashes.
+   Wave 3.5, item 1 (owner ask, 2026-08-01): this comment used to also
+   describe GameEndPanel's dotted "streaks" stub row (.game-end-stubs/
+   .game-end-stub), removed at the owner's request along with its CSS — see
+   GameEndPanel.tsx's own comment for the re-add seam. */
 .gc-app .debrief {
   width: min(88vw, 380px);
   margin-top: var(--space-2);
