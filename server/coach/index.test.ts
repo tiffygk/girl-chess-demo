@@ -236,6 +236,9 @@ describe("buildTemplateNarration", () => {
     { motif: "fork", extra: { forkTargets: [{ square: "b8", pieceKind: "r" }, { square: "d8", pieceKind: "r" }] } },
     { motif: "mate-threat", extra: {} },
     { motif: "check-threat", extra: {} },
+    // Wave 2, item 7: the Wave-1 tier-1 motif arms must be covered by the
+    // "every threat motif template" claim below, not silently omitted.
+    { motif: "promotion-threat", extra: {} },
     { motif: "positional", extra: {} },
   ];
 
@@ -245,6 +248,9 @@ describe("buildTemplateNarration", () => {
     { accomplishment: "gives-mate", extra: {} },
     { accomplishment: "forks", extra: { forkTargets: [{ square: "e1", pieceKind: "r" }, { square: "c1", pieceKind: "b" }] } },
     { accomplishment: "attacks", extra: { attackedSquare: "b7", attackedPieceKind: "r" } },
+    // Wave 2, item 7: the Wave-1 tier-1 accomplishment arms, same reason.
+    { accomplishment: "promotes", extra: {} },
+    { accomplishment: "castles", extra: {} },
     { accomplishment: "develops", extra: {} },
   ];
 
@@ -273,6 +279,14 @@ describe("buildTemplateNarration", () => {
     };
   }
 
+  // Wave 2, item 7: the generic "nothing extra to flag" line buildTemplateNarration
+  // returns when no template matched -- asserting against it is what makes a
+  // MISSING coach.md arm turn this test red (without it, a threat/recommendation
+  // with no arm silently degrades to this line and the "every" claim passes
+  // over a gap, which is exactly what let promotion-threat/promotes/castles go
+  // uncovered).
+  const GENERIC_FALLBACK = "nothing extra to flag this time, just keep playing your plan.";
+
   it("renders every threat motif template with no unresolved placeholders", () => {
     for (const { motif, extra } of threatMotifs) {
       const facts: CoachFactList = {
@@ -286,6 +300,8 @@ describe("buildTemplateNarration", () => {
       const text = buildTemplateNarration(facts);
       expect(text.length).toBeGreaterThan(0);
       expect(text).not.toMatch(/[{}]/);
+      // The motif's OWN arm rendered, not the no-template fallback.
+      expect(text, `threat motif "${motif}" has no coach.md arm`).not.toBe(GENERIC_FALLBACK);
     }
   });
 
@@ -302,6 +318,8 @@ describe("buildTemplateNarration", () => {
       const text = buildTemplateNarration(facts);
       expect(text.length).toBeGreaterThan(0);
       expect(text).not.toMatch(/[{}]/);
+      // The accomplishment's OWN arm rendered, not the no-template fallback.
+      expect(text, `recommendation "${accomplishment}" has no coach.md arm`).not.toBe(GENERIC_FALLBACK);
     }
   });
 
