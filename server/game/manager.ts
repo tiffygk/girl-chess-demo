@@ -75,6 +75,13 @@ const DRAW_ACCEPT_CP_BAND = 60;
 // exists for in the first place.
 export const BACKEND_CACHE_TTL_MS = 30000;
 
+// Wave 2, item 5: coach's-corner narration budgets. The agent-sdk backend
+// spins up a whole SDK session per call and is materially slower than the
+// claude CLI / ollama, so it gets double the flat budget; every other
+// resolved backend keeps the 15s narrate() has always used (its own default).
+export const NARRATE_DEFAULT_BUDGET_MS = 15000;
+export const NARRATE_AGENT_SDK_BUDGET_MS = 30000;
+
 interface CachedBackend {
   backend: CoachBackend;
   cachedAt: number;
@@ -921,7 +928,14 @@ export class GameManager {
       best: body.best,
       recommendation: body.recommendation,
     });
-    const result = await narrateFacts(facts, backend, { gameId, ply: live.ply, kind: body.tier });
+    // Wave 2, item 5: the agent-sdk backend is materially slower than the
+    // claude CLI / ollama, so it gets a larger narration budget; every other
+    // resolved backend keeps the flat 15s (narrate()'s own default). Picked
+    // from the RESOLVED backend's name, not body.backendPref -- pickCoachBackend
+    // may fall back (agent-sdk -> claude-cli -> ollama), and the budget must
+    // track whatever actually runs.
+    const budgetMs = backend.name === "agent-sdk" ? NARRATE_AGENT_SDK_BUDGET_MS : NARRATE_DEFAULT_BUDGET_MS;
+    const result = await narrateFacts(facts, backend, { gameId, ply: live.ply, kind: body.tier }, { budgetMs });
     return { ok: true, text: result.text, source: result.source, traceId: result.traceId };
   }
 

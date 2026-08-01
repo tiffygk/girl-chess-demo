@@ -141,6 +141,40 @@ describe("narrate", () => {
     expect(result.source).toBe("template");
   });
 
+  // Wave 2, item 5: narrate() takes a per-call time budget (the manager
+  // threads a larger one for the agent-sdk backend, which is slower), passed
+  // straight to backend.generate. Defaults to the flat NARRATE_TIMEOUT_MS
+  // when omitted so every pre-this-wave caller is unchanged.
+  it("threads the passed budgetMs through to backend.generate", async () => {
+    const facts = mkFacts();
+    let seenTimeout = -1;
+    const backend = fakeBackend({
+      async generate(_p, t) {
+        seenTimeout = t;
+        return "your rook hangs on d8, and Rxd8 just takes it.";
+      },
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await narrate(facts, backend, { gameId, ply: 3, kind: "warning" }, { budgetMs: 30000 });
+    expect(seenTimeout).toBe(30000);
+  });
+
+  it("defaults budgetMs to 15000 (NARRATE_TIMEOUT_MS) when no budget is passed", async () => {
+    const facts = mkFacts();
+    let seenTimeout = -1;
+    const backend = fakeBackend({
+      async generate(_p, t) {
+        seenTimeout = t;
+        return "your rook hangs on d8, and Rxd8 just takes it.";
+      },
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await narrate(facts, backend, { gameId, ply: 3, kind: "warning" });
+    expect(seenTimeout).toBe(15000);
+  });
+
   it("result.traceId selects the exact advice_traces row this call wrote", async () => {
     const facts = mkFacts();
     const backend = fakeBackend({
