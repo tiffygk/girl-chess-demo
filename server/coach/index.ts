@@ -404,11 +404,17 @@ export interface NarrateResult {
 export async function narrate(
   facts: CoachFactList,
   backend: CoachBackend,
-  trace: NarrateTraceContext
+  trace: NarrateTraceContext,
+  // Wave 2, item 5: per-call time budget for backend.generate. The manager
+  // threads a larger one for the slower agent-sdk backend (see
+  // manager.ts's narrate); omitted, it falls back to the flat
+  // NARRATE_TIMEOUT_MS so every pre-this-wave caller is unchanged.
+  opts?: { budgetMs?: number }
 ): Promise<NarrateResult> {
   const start = Date.now();
   const persona = getPersona();
   const basePrompt = buildPrompt(facts, persona);
+  const budgetMs = opts?.budgetMs ?? NARRATE_TIMEOUT_MS;
 
   let attemptPrompt = basePrompt;
   let attemptOutput = "";
@@ -417,7 +423,7 @@ export async function narrate(
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      attemptOutput = await backend.generate(attemptPrompt, NARRATE_TIMEOUT_MS);
+      attemptOutput = await backend.generate(attemptPrompt, budgetMs);
     } catch (err) {
       // Backend error/timeout at any attempt short-circuits straight to the
       // template fallback below — never worth a second network/process call.
