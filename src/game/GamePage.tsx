@@ -276,15 +276,15 @@ export function GamePage() {
   // "help?" click for the current pending move — the api response type, not
   // hintFlow's HintFacts: the state must carry bestUci (for reveal squares
   // and logging), which the copy-only client interface deliberately omits.
-  // Structural typing lets this feed hintCopy directly. Reset alongside
-  // hintLevel at every pending-lifecycle boundary (new game, pending start/
-  // retarget, confirm, retract) — a stale fetch from the last destination
-  // would point at the wrong "instead" square.
+  // Structural typing lets this feed rungCopy directly. Reset alongside
+  // hintPress/hintBranch at every pending-lifecycle boundary (new game,
+  // pending start/retarget, confirm, retract) — a stale fetch from the last
+  // destination would point at the wrong "instead" square.
   const [hintFacts, setHintFacts] = useState<NonNullable<HintFactsResponse["facts"]> | null>(null);
   const [hintFetching, setHintFetching] = useState(false);
   // Increment 3a Wave 3: coach's corner narration for the current pending
   // move. null text = nothing to show yet (idle placeholder, or nothing
-  // fired this pending). Reset alongside hintLevel/hintFacts at every
+  // fired this pending). Reset alongside hintPress/hintFacts at every
   // pending-lifecycle boundary (new game, pending start/retarget, confirm,
   // retract) — same four sites, same reason (a stale narration from the
   // last destination would talk about the wrong move).
@@ -1116,7 +1116,8 @@ export function GamePage() {
       verdict.tier,
       verdict.deltaCp,
       aboutBestMove ? { bestUci: facts.bestUci } : { refutationUci: verdict.threat.refutationUci },
-      mirrorRef.current.fen()
+      mirrorRef.current.fen(),
+      branch
     ).catch(() => undefined);
   };
 
@@ -1505,7 +1506,7 @@ export function GamePage() {
   // carry a focus for a moment that's no longer on screen. Rather than
   // relying on every state-transition handler to remember to clear it, this
   // recomputes the CURRENT hint text fresh (exactly the same herPieceKind/
-  // herToSquare/threat/bestFacts/fen -> hintCopy path the visible hint-copy
+  // herToSquare/threat/bestFacts/fen -> rungCopy path the visible hint-copy
   // span uses) and runs reconcileChatFocus every send — a focus survives
   // only if it still matches what's actually on screen right now.
   const buildChatContext = useCallback((): ChatContext => {

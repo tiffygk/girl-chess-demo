@@ -1158,6 +1158,10 @@ export class GameManager {
       deltaCp: number | null;
       bestUci?: string;
       refutationUci?: string;
+      // Wave 2 (item 2): the press's branch ("right"/"wrong"), so the Lab can
+      // separate right-P2 (opponent threat) from wrong-P2 (best piece) --
+      // additive to the opaque detail JSON, same as bestUci/refutationUci.
+      branch?: string;
       fen: string;
     }
   ) {

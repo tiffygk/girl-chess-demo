@@ -51,3 +51,51 @@ describe("logHint (F0): the logged move is keyed honestly", () => {
     expect(Object.keys(body() as object)).not.toContain("refutationUci");
   });
 });
+
+// Wave 2 (item 2, telemetry continuity): the detail JSON gains `branch` so a
+// right-P2 opponent-threat reveal and a wrong-P2 best-piece reveal -- both at
+// press 2, both keyed refutationUci/bestUci -- are distinguishable in the
+// Lab. Sent from every press log; omitted on the branch-less level-0
+// invalid-hint log.
+describe("logHint (Wave 2): the press's branch travels on the wire", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubFetch(): { body: () => unknown } {
+    let sentBody: unknown;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        sentBody = JSON.parse(init!.body as string);
+        return { json: async () => ({ ok: true }) } as Response;
+      })
+    );
+    return { body: () => sentBody };
+  }
+
+  it("a right-branch press carries branch:'right' alongside the honest move key", async () => {
+    const { body } = stubFetch();
+    await logHint(1, 2, "warning", 220, { refutationUci: "e7e5" }, "startfen", "right");
+    expect(body()).toEqual({
+      level: 2,
+      tier: "warning",
+      deltaCp: 220,
+      refutationUci: "e7e5",
+      fen: "startfen",
+      branch: "right",
+    });
+  });
+
+  it("a wrong-branch press carries branch:'wrong' (distinct from the right-branch press at the same press number)", async () => {
+    const { body } = stubFetch();
+    await logHint(1, 2, "warning", 220, { bestUci: "c1g5" }, "startfen", "wrong");
+    expect((body() as { branch?: string }).branch).toBe("wrong");
+  });
+
+  it("omits branch when none is supplied (the branch-less level-0 invalid-hint log)", async () => {
+    const { body } = stubFetch();
+    await logHint(1, 0, "invalid", null, { bestUci: "none" }, "startfen");
+    expect(Object.keys(body() as object)).not.toContain("branch");
+  });
+});
