@@ -55,6 +55,21 @@ export function describeSanMove(san: string, fenBefore: string): string | null {
 }
 
 /**
+ * Wave 0, item 3 (F3 seed): the ONE way any surface names a move by its
+ * squares, from now on. Root cause of the owner-facing "E1 vs F1" bug: one
+ * surface said the from-square, another said the to-square, for the SAME
+ * move -- because there was no shared renderer, each surface improvised its
+ * own phrasing. This always states both squares, in "from ... to ..."
+ * order, lowercase (game-facing copy is lowercase, house rule) -- given a
+ * piece-kind letter and squares, never a SAN/position lookup, so it never
+ * fails and never needs a legality check the way describeSanMove above
+ * does.
+ */
+export function describeMoveName(pieceKind: string, from: string, to: string): string {
+  return `your ${pieceName(pieceKind)} from ${from.toLowerCase()} to ${to.toLowerCase()}`;
+}
+
+/**
  * Visual-gate catch (2026-07-22): when a caller is about to append its own
  * "· {label}" context and that label already conveys check/mate
  * ("checkmate"/"check"), describeSanMove's own trailing suffix on the same

@@ -603,8 +603,13 @@ describe("hintCopy levels 4-5: redirect to the recommended move", () => {
   it("level 5 returns null without bestFacts", () => {
     expect(hintCopy(5, baseCtx)).toBeNull();
   });
-  it("level 4 with bestFacts: 'better: your {piece} on {square}.'", () => {
-    expect(hintCopy(4, { ...baseCtx, bestFacts })).toBe("better: your bishop on c1.");
+  // Wave 0, item 3 (F3 seed): was "better: your {piece} on {toSquare}." --
+  // named only the piece and the DESTINATION square. Root cause of the
+  // owner-facing "E1 vs F1" bug: a different surface named the FROM square
+  // for the same move, so the two disagreed. Now routed through the shared
+  // describeMoveName, which always states both squares.
+  it("level 4 with bestFacts: 'better: your {piece} from {from} to {to}.'", () => {
+    expect(hintCopy(4, { ...baseCtx, bestFacts })).toBe("better: your bishop from c1 to g5.");
   });
   it("level 5 with bestFacts + fen: san + translation", () => {
     expect(hintCopy(5, { ...baseCtx, bestFacts, fen })).toBe("best here: Bg5 (bishop to g5)");
@@ -639,13 +644,13 @@ describe("hintCopy level 4: enriched with immediate why + opens up + trade hones
   };
 
   it("no recommendation, no pv: base copy with its own terminating period (copy-polish pass)", () => {
-    expect(hintCopy(4, { ...baseCtx, bestFacts })).toBe("better: your bishop on c1.");
+    expect(hintCopy(4, { ...baseCtx, bestFacts })).toBe("better: your bishop from c1 to g5.");
   });
 
   it("includes the immediate why, as its own sentence after the base clause's period", () => {
     const facts: HintFacts = { ...bestFacts, recommendation: capturesRec };
     expect(hintCopy(4, { ...baseCtx, bestFacts: facts })).toBe(
-      "better: your bishop on c1. it wins the pawn on b5."
+      "better: your bishop from c1 to g5. it wins the pawn on b5."
     );
   });
 
@@ -657,7 +662,7 @@ describe("hintCopy level 4: enriched with immediate why + opens up + trade hones
     const fen = "6k1/5ppp/8/8/8/8/8/4R2K w - - 0 1";
     const facts: HintFacts = { ...bestFacts, recommendation: capturesRec, pv: ["e1e8"] };
     expect(hintCopy(4, { ...baseCtx, bestFacts: facts, fen })).toBe(
-      "better: your bishop on c1. it wins the pawn on b5, and it leads to mate in 1."
+      "better: your bishop from c1 to g5. it wins the pawn on b5, and it leads to mate in 1."
     );
   });
 
@@ -669,7 +674,7 @@ describe("hintCopy level 4: enriched with immediate why + opens up + trade hones
     const fen = "4k3/8/8/8/1n6/8/2P5/4KB2 w - - 0 1";
     const facts: HintFacts = { ...bestFacts, recommendation: capturesRec, pv: ["f1d3", "b4c2"] };
     expect(hintCopy(4, { ...baseCtx, bestFacts: facts, fen })).toBe(
-      "better: your bishop on c1. it wins the pawn on b5."
+      "better: your bishop from c1 to g5. it wins the pawn on b5."
     );
   });
 
@@ -680,14 +685,14 @@ describe("hintCopy level 4: enriched with immediate why + opens up + trade hones
     const fen = "4k3/8/8/8/3q4/8/3R4/4K3 w - - 0 1";
     const facts: HintFacts = { ...bestFacts, recommendation: capturesQueenRec, pv: ["d2d4"] };
     expect(hintCopy(4, { ...baseCtx, bestFacts: facts, fen })).toBe(
-      "better: your bishop on c1. it wins the queen on d4."
+      "better: your bishop from c1 to g5. it wins the queen on d4."
     );
   });
 
   it("trade: true overrides the immediate clause with honest trade wording, never a clean-win claim", () => {
     const facts: HintFacts = { ...bestFacts, recommendation: capturesRec, trade: true };
     const copy = hintCopy(4, { ...baseCtx, bestFacts: facts });
-    expect(copy).toBe("better: your bishop on c1. this trades, but it's the strongest here.");
+    expect(copy).toBe("better: your bishop from c1 to g5. this trades, but it's the strongest here.");
     expect(copy).not.toMatch(/wins the/);
   });
 });
