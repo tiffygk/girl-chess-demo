@@ -3,19 +3,15 @@ import type { GameOverInfo } from "./api";
 import type { Takedown } from "./terminal";
 import { RESULT_COPY, resultText } from "./endCopy";
 
-interface StubSection {
-  key: string;
-  label: string;
-}
-
-// Labeled seam for increment 4 to extend — kept as an array (not
-// hand-rolled JSX per section) so a future increment adds a row here
-// instead of restructuring this component. The "analysis" stub this used to
-// carry is now the real debrief (increment 3c) — see the `debrief` prop.
-const STUB_SECTIONS: StubSection[] = [
-  { key: "streaks", label: "streaks and rating, coming with the dashboard" },
-];
-
+// Wave 3.5, item 1 (owner ask, 2026-08-01): the dashed "streaks and rating,
+// coming with the dashboard" stub row (and the StubSection/STUB_SECTIONS
+// array + render-loop machinery that only ever rendered that one row) was
+// removed at the owner's request -- "it just doesn't look nice". If a future
+// increment wants a coming-soon placeholder again, re-introduce the array +
+// map here (see this file's git history for the exact shape) rather than
+// hand-rolling a one-off div; the matching .game-end-stubs/.game-end-stub
+// CSS was removed from sugar-glitch.css alongside this.
+//
 // All three endings wear the wordmark's layered glitch construction
 // (owner ruling 2026-07-29) — win keeps its melt shear, draw and loss get
 // flat bases in their own inks. The ghost layers are aria-hidden so a
@@ -91,13 +87,6 @@ export function GameEndPanel({ gameOver, takedownMove, onReplayTakedown, onNewGa
         </button>
       )}
       {debrief}
-      <div className="game-end-stubs">
-        {STUB_SECTIONS.map((section) => (
-          <div key={section.key} className="game-end-stub">
-            {section.label}
-          </div>
-        ))}
-      </div>
       <button className="primary" onClick={onNewGame}>
         new game
       </button>
