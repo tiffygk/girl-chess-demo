@@ -1122,7 +1122,22 @@ export class GameManager {
   // changes, and a hint on a since-finished game is harmless to log, so
   // this deliberately does NOT guard on live.finished the way the
   // game-ending actions above do — only on the game existing at all.
-  logHint(gameId: number, detail: { level: number; tier: string; deltaCp: number | null; bestUci: string; fen: string }) {
+  // Wave 0, item 1 (F0): bestUci/refutationUci are both optional -- the
+  // caller (server/index.ts's route) includes exactly one, matching what
+  // the client actually knows at that hint level. Neither is required by
+  // this type because the detail is stored as opaque JSON with no schema;
+  // extending it here is additive, not a rename of any existing field.
+  logHint(
+    gameId: number,
+    detail: {
+      level: number;
+      tier: string;
+      deltaCp: number | null;
+      bestUci?: string;
+      refutationUci?: string;
+      fen: string;
+    }
+  ) {
     const live = this.games.get(gameId);
     if (!live) return { ok: false };
     logGameEvent(gameId, "hint", JSON.stringify(detail));
