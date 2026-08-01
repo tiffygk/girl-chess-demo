@@ -527,15 +527,30 @@ export function rateTrace(traceId: number, rating: 1 | -1, feedback?: string): P
 // that failed the live legality check), `{ refutationUci }` for the
 // opponent's threat move (levels 1-3). The wire body carries whichever key
 // the caller passed — never both, never the wrong one.
+//
+// Wave 2 (item 2, telemetry continuity): `branch` ("right" | "wrong") rides
+// alongside the move key so the Lab can tell a right-P2 opponent-threat
+// reveal apart from a wrong-P2 best-piece reveal (both land at press 2 and
+// both key refutationUci/bestUci, so the move key alone can't distinguish
+// them). Optional and additive — the branch-less level-0 invalid-hint log
+// omits it, and every earlier caller/field is unchanged.
 export function logHint(
   gameId: number,
   level: number,
   tier: string,
   deltaCp: number | null,
   move: { bestUci: string } | { refutationUci: string },
-  fen: string
+  fen: string,
+  branch?: "right" | "wrong"
 ): Promise<{ ok: boolean }> {
-  return postJson(`/game/${gameId}/hint`, { level, tier, deltaCp, ...move, fen });
+  return postJson(`/game/${gameId}/hint`, {
+    level,
+    tier,
+    deltaCp,
+    ...move,
+    fen,
+    ...(branch ? { branch } : {}),
+  });
 }
 
 // Increment 3c: mirrors server/annotator/turningPoints.ts's TurningPoint

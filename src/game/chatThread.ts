@@ -38,10 +38,10 @@ export function moveNumberForPly(ply: number): number {
 // both were somehow present.
 //
 // Phase 3 review fix (F1): the hint branch used to be
-// `hint:${level}:${text}` with no position component. hintCopy's level-1/2
-// text is a FIXED TEMPLATE (e.g. "hold on. look at your knight.",
-// hintFlow.ts:304) -- it does not vary with the position -- so two genuinely
-// different moments in the same game at the same level produced the exact
+// `hint:${level}:${text}` with no position component. an opener's text
+// (rungCopy) is a FIXED POOL LINE (e.g. "not this piece. something else is
+// the move.") -- it does not vary with the position -- so two genuinely
+// different moments in the same game at the same rung produced the exact
 // same key. shouldInjectAnchor then saw no transition, and the second "ask
 // about this" injected no anchor into the thread at all (acceptance item
 // 1's failure mode). hintFocus.ply (the pending move's own ply -- see

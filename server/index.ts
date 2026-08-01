@@ -141,7 +141,10 @@ app.post("/api/game/:id/hint", (req, res) => {
   // opponent's threat move a levels-1-3 hint reveals. Pass through
   // whichever the body actually carries rather than forcing everything
   // through the `bestUci` key regardless of what it names.
-  const { level, tier, deltaCp, bestUci, refutationUci, fen } = req.body;
+  // Wave 2 (item 2): `branch` ("right"/"wrong") is passed through the same
+  // additive way -- present on every press log, absent on the level-0
+  // invalid-hint log.
+  const { level, tier, deltaCp, bestUci, refutationUci, fen, branch } = req.body;
   try {
     const result = gm.logHint(Number(req.params.id), {
       level: Number(level),
@@ -149,6 +152,7 @@ app.post("/api/game/:id/hint", (req, res) => {
       deltaCp: deltaCp ?? null,
       ...(bestUci !== undefined ? { bestUci: String(bestUci) } : {}),
       ...(refutationUci !== undefined ? { refutationUci: String(refutationUci) } : {}),
+      ...(branch !== undefined ? { branch: String(branch) } : {}),
       fen: String(fen),
     });
     res.json(result);
