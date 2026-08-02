@@ -27,6 +27,9 @@ import type { GameListEntry, MoveClassification, TurningPoint, TurningLine, Summ
 // which only ever renders via renderToStaticMarkup -- no onClick fires
 // there).
 import { clickDelete, disarmArmed, type ArmState } from "./deleteArm";
+// Round 2, item 9 (owner ruling, 2026-08-01 playtest): render startedAt in
+// the viewer's local timezone, not a raw slice of the server's UTC string.
+import { localDateFromStartedAt } from "./localDate";
 import { moveNumberForPly } from "./debriefLesson";
 import { debriefBullets, affordancesForBullet, type DebriefBullet } from "./debriefBullets";
 // Increment 3.91 (Task 4): the four-part note, rendered under a turning-
@@ -729,7 +732,7 @@ export function PastGamesDrawer({ open, games, onSelect, onClose, onDelete, dele
                 onMouseEnter={() => handleRowMouseEnter(g.id)}
               >
                 <button className="past-games-select" onClick={() => onSelect(g)}>
-                  <span className="past-games-date">{g.startedAt.slice(0, 10)}</span>
+                  <span className="past-games-date">{localDateFromStartedAt(g.startedAt)}</span>
                   <span className="past-games-opponent">mallow {eloFromOpponent(g.opponent)}</span>
                   <span className="past-games-result">{resultWord(g.result)}</span>
                   <span className="past-games-lesson">{g.lesson ?? "no clear lesson yet"}</span>
