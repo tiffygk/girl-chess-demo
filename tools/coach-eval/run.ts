@@ -569,13 +569,33 @@ async function main() {
     const budgetMs = finished ? CHAT_REVIEW_BUDGET_MS : CHAT_TIMEOUT_MS;
 
     const start = Date.now();
+    // Task 1e (coach-truth-speed latency round, 2026-08-02): TTFW is the ms
+    // from the chat() call to the FIRST content delta chat() hands back
+    // through opts.onDelta. Timestamped with performance.now() (sub-ms,
+    // monotonic) rather than Date.now() -- the ms-scale wall clock two
+    // instrument calls apart is fine for latencyMs but not precise enough
+    // for "was this the first delta". Only the FIRST call is captured;
+    // chat() may replay several buffered deltas once validation passes (see
+    // chat.ts's attemptDeltas buffer), and only the first one marks when the
+    // client would have started rendering anything.
+    const ttfwStart = performance.now();
+    let ttfwMs: number | null = null;
+    const onDelta = () => {
+      if (ttfwMs === null) ttfwMs = performance.now() - ttfwStart;
+    };
     let outcome: { text: string; source: string; cause?: string; traceId?: number };
     try {
-      outcome = await chat(question.q, [], facts, agentSdkBackend, trace, { budgetMs, intent });
+      outcome = await chat(question.q, [], facts, agentSdkBackend, trace, { budgetMs, intent, onDelta });
     } catch (err) {
       outcome = { text: "", source: "error", cause: err instanceof Error ? err.message : String(err) };
     }
     const measuredLatencyMs = Date.now() - start;
+    // Task 1e: until Task 1c lands its onAttemptStart/onValidateStart status
+    // hooks in chat()'s opts, there is no separate status-frame timestamp to
+    // capture -- ttfpMs mirrors ttfwMs, which is the honest pre-1c baseline
+    // the plan calls for (see the Measurement Foundations section: "Until
+    // 1c ships, ttfpMs equals ttfwMs").
+    const ttfpMs = ttfwMs;
 
     let regenCount = 0;
     let latencyMs = measuredLatencyMs;
@@ -605,6 +625,8 @@ async function main() {
       model,
       wiring,
       measuredLatencyMs,
+      ttfpMs,
+      ttfwMs,
     };
     results.push(row);
     // Write incrementally -- a mid-run crash loses nothing (v1 lost the
@@ -612,7 +634,7 @@ async function main() {
     // after every answer, which at 65 rows is cheap).
     fs.writeFileSync(rawPath, JSON.stringify(results, null, 2));
     console.log(
-      `[coach-eval] [${results.length}/${questions.length}] ${question.id} [${question.arm}/${intent}] (${fixture.id}) -> ${outcome.source} ${latencyMs}ms regen=${regenCount}`
+      `[coach-eval] [${results.length}/${questions.length}] ${question.id} [${question.arm}/${intent}] (${fixture.id}) -> ${outcome.source} ${latencyMs}ms regen=${regenCount} ttfw=${ttfwMs !== null ? Math.round(ttfwMs) + "ms" : "n/a"}`
     );
   }
 
