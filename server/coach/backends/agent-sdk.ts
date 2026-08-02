@@ -147,7 +147,28 @@ function subscriptionOnlyEnv(): Record<string, string | undefined> {
 // generateStream's new 3rd/4th param is optional) -- so buildOptions grows
 // no `systemPrompt` field and every caller that doesn't pass it gets
 // byte-identical options to before.
+// Coach-latency-root round (2026-08-02): GC_COACH_THINKING is an env-gated
+// experiment knob, added only to run the investigation's own gated
+// measurement (report: "6 handoffs/Coach latency root II + hint-facts gap
+// (2026-08-02).md", Q1 -- claude-sonnet-5 runs unbounded ADAPTIVE thinking
+// by default when `thinking` is omitted, and buildOptions omits it; hard
+// chess questions reliably burn 1.5-4.5K invisible thinking tokens (~20-50s
+// pre-first-word), measured 7-9x faster with thinking disabled or effort
+// low on the identical prompt). Unset (the default, and every call site
+// before this round) must produce a BYTE-IDENTICAL options object to
+// before -- no `thinking` key, no `effort` key -- so this stays inert until
+// someone deliberately sets the env var; see
+// agent-sdk.thinking.test.ts's "byte-identical" test for the enforced
+// contract. Read per-call (not hoisted to module load like AGENT_SDK_MODEL)
+// so tests can toggle it within one process. An unrecognized value is
+// treated as unset rather than guessed at.
+function coachThinkingMode(): "disabled" | "low" | undefined {
+  const raw = process.env.GC_COACH_THINKING;
+  return raw === "disabled" || raw === "low" ? raw : undefined;
+}
+
 function buildOptions(abortController: AbortController, stablePrefix?: string) {
+  const thinkingMode = coachThinkingMode();
   return {
     model: AGENT_SDK_MODEL,
     maxTurns: 1,
@@ -158,6 +179,12 @@ function buildOptions(abortController: AbortController, stablePrefix?: string) {
     env: subscriptionOnlyEnv(),
     abortController,
     ...(stablePrefix ? { systemPrompt: [stablePrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY] } : {}),
+    // disabled -> no extended thinking at all; low -> adaptive thinking
+    // stays on but effort-capped (SDK's ThinkingConfig/EffortLevel shapes,
+    // verified against node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts,
+    // not guessed).
+    ...(thinkingMode === "disabled" ? { thinking: { type: "disabled" as const } } : {}),
+    ...(thinkingMode === "low" ? { effort: "low" as const } : {}),
   };
 }
 
