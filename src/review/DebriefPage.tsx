@@ -115,6 +115,27 @@ function eloFromOpponent(opponent: string): string {
   return m ? m[1] : opponent;
 }
 
+// Round 2, item 6 (owner ruling, 2026-08-01 playtest): the idle delete X was
+// "slightly too low (not vertically centered)" -- a bare "×" text glyph's
+// on-screen position rides on the font's own ascent/descent metrics, which
+// is exactly the kind of thing that silently drifts. A geometric SVG glyph
+// (two crossing lines, same construction the settings-gear icon already
+// uses -- GamePage.tsx's gear-svg) makes centering a layout fact instead of
+// a font fact: stroke=currentColor so it inherits .past-games-delete's CSS
+// color/hover rules with no duplicated palette. Idle state only -- the
+// armed "sure?" state stays plain text, untouched (owner: keep its color
+// exactly as is).
+function DeleteXIcon() {
+  return (
+    <svg className="past-games-delete-icon" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+      <g stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+        <line x1="2" y1="2" x2="10" y2="10" />
+        <line x1="10" y1="2" x2="2" y2="10" />
+      </g>
+    </svg>
+  );
+}
+
 interface TurningPointCardProps {
   point: TurningPoint;
   onRewind: (ply: number) => void;
@@ -718,7 +739,7 @@ export function PastGamesDrawer({ open, games, onSelect, onClose, onDelete, dele
                   aria-label={armed === g.id ? "confirm delete" : "delete game"}
                   onClick={(e) => handleDeleteClick(e, g.id)}
                 >
-                  {armed === g.id ? "sure?" : "×"}
+                  {armed === g.id ? "sure?" : <DeleteXIcon />}
                 </button>
               </div>
             ))}
