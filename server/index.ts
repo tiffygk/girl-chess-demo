@@ -222,6 +222,17 @@ app.post("/api/game/:id/chat", async (req, res) => {
 // chat body (message + full ChatContext, sometimes carrying a focused
 // turning-point's whole pv) is too large/shaped for a query string.
 // Frames, one JSON object per SSE `data:` line, `event:` naming the kind:
+//   status  {phase}                         -- Task 1c (2026-08-02): staged
+//           perceived-progress chip, REAL pipeline events only, NEVER
+//           carries prose. phase is "thinking" (an attempt just started --
+//           attempt 0) | "redrafting" (an attempt just started -- attempt
+//           1, alongside the existing `redraft` frame below) | "checking"
+//           (the backend returned, validateChat is about to run) |
+//           "drafting" (the FIRST buffered delta of a validated answer is
+//           about to replay). Owner ruling stands: no unvalidated prose is
+//           ever shown, so "drafting" can only ever fire AFTER "checking"
+//           has already passed for that attempt -- chat.ts's buffered-
+//           flush-after-validation behaviour is unchanged by this frame.
 //   delta   {text}                         -- advisory rendering only
 //   redraft {}                              -- the one-regen attempt is starting
 //   done    the exact gm.chat() return value (same object the JSON route
@@ -245,6 +256,15 @@ app.post("/api/game/:id/chat/stream", async (req, res) => {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
+  // Task 1c: attemptCount distinguishes attempt 0 ("thinking") from a regen
+  // ("redrafting") purely by call order -- chat.ts's onAttemptStart carries
+  // no argument on purpose (see its own comment), the same way onRedraft
+  // already signals "attempt 1 began" without an argument. firstDeltaSeen
+  // gates the one-time "drafting" status frame that precedes the delta
+  // replay -- both are per-request closures, fresh on every call.
+  let attemptCount = 0;
+  let firstDeltaSeen = false;
+
   try {
     const result = await gm.chat(
       Number(req.params.id),
@@ -254,8 +274,19 @@ app.post("/api/game/:id/chat/stream", async (req, res) => {
         backendPref,
       },
       {
-        onDelta: (text) => writeFrame("delta", { text }),
+        onDelta: (text) => {
+          if (!firstDeltaSeen) {
+            firstDeltaSeen = true;
+            writeFrame("status", { phase: "drafting" });
+          }
+          writeFrame("delta", { text });
+        },
         onRedraft: () => writeFrame("redraft", {}),
+        onAttemptStart: () => {
+          attemptCount += 1;
+          writeFrame("status", { phase: attemptCount === 1 ? "thinking" : "redrafting" });
+        },
+        onValidateStart: () => writeFrame("status", { phase: "checking" }),
       }
     );
     writeFrame(result.ok ? "done" : "error", result);

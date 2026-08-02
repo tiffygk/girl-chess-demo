@@ -1,5 +1,5 @@
 // Typed client for the girl-chess API (server/index.ts).
-import { initChatStream, pushChunk } from "./chatStream";
+import { initChatStream, pushChunk, type ChatStatusPhase } from "./chatStream";
 
 export interface NewSessionResponse {
   sessionId: number;
@@ -461,6 +461,9 @@ export function chatWithCoach(
 export interface ChatStreamHandlers {
   onDelta?: (text: string) => void;
   onRedraft?: () => void;
+  // Task 1c (coach-truth-speed latency round, 2026-08-02): the staged
+  // status chip. Fires with ONLY the phase -- never prose.
+  onStatus?: (phase: ChatStatusPhase) => void;
   onDone?: (res: ChatResponse) => void;
   onError?: (res: ChatResponse) => void;
 }
@@ -500,6 +503,7 @@ export async function streamChatWithCoach(
       for (const f of frames) {
         if (f.event === "delta") handlers.onDelta?.(f.data.text);
         else if (f.event === "redraft") handlers.onRedraft?.();
+        else if (f.event === "status") handlers.onStatus?.(f.data.phase);
         else if (f.event === "done") handlers.onDone?.(f.data);
         else if (f.event === "error") handlers.onError?.(f.data);
       }

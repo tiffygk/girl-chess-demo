@@ -65,6 +65,35 @@ describe("pushChunk", () => {
     ]);
   });
 
+  // Task 1c (coach-truth-speed latency round, 2026-08-02): the staged
+  // thinking/drafting/checking/redrafting status chip is a NEW frame kind --
+  // must parse by event name exactly like delta/redraft/done/error, and its
+  // data must carry ONLY {phase}, never prose (this parser doesn't enforce
+  // that itself -- server/index.stream.test.ts does -- but a status frame
+  // still must not be silently dropped as "unrecognized" the way a genuinely
+  // malformed block is).
+  it("parses a status frame by event name, carrying only {phase}", () => {
+    const state = initChatStream();
+    const { frames } = pushChunk(state, frame("status", { phase: "thinking" }));
+    expect(frames).toEqual([{ event: "status", data: { phase: "thinking" } }]);
+  });
+
+  it("parses every known status phase (thinking/drafting/checking/redrafting)", () => {
+    const state = initChatStream();
+    const chunk =
+      frame("status", { phase: "thinking" }) +
+      frame("status", { phase: "drafting" }) +
+      frame("status", { phase: "checking" }) +
+      frame("status", { phase: "redrafting" });
+    const { frames } = pushChunk(state, chunk);
+    expect(frames.map((f) => (f as { event: string; data: { phase: string } }).data.phase)).toEqual([
+      "thinking",
+      "drafting",
+      "checking",
+      "redrafting",
+    ]);
+  });
+
   it("drops a malformed block (unrecognized event name) without throwing", () => {
     const state = initChatStream();
     const chunk = "event: mystery\ndata: {}\n\n" + frame("delta", { text: "still works" });
