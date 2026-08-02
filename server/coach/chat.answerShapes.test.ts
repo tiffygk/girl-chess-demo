@@ -67,4 +67,14 @@ describe("answer shapes reach the built chat prompt (Wave 4 item 1)", () => {
     expect(prompt.indexOf(SHAPE1_MARK)).toBeGreaterThan(-1);
     expect(prompt.indexOf(SHAPE1_MARK)).toBeLessThan(prompt.indexOf("fact list (json):"));
   });
+
+  // Wave 4 review residual (Important): the built chat prompt carries the
+  // persona guard forbidding the model from claiming it will remember/record
+  // something -- so the only "saved" statement the player ever sees is the
+  // deterministic ack appended on a real insert.
+  it("carries the no-self-persistence-claim guard on both intents", async () => {
+    const GUARD = "never claim you'll remember, record, or note something yourself";
+    expect(await capturePrompt("board")).toContain(GUARD);
+    expect(await capturePrompt("general")).toContain(GUARD);
+  });
 });
