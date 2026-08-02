@@ -51,7 +51,14 @@ export const CHAT_HISTORY_WINDOW = 8; // messages (4 exchanges), owner-calibrata
 // case; this budget is a backstop for the tail, not the target latency).
 // narrate()'s own budget is deliberately NOT raised with it: that surface
 // speaks unprompted while she plays, where a late reply is worse than none.
-export const CHAT_TIMEOUT_MS = 45000;
+// OWNER RULING 2026-08-02 (wave-1 playtest, game 167): "maybe we put the
+// time out at something crazy like three minutes" -- many replies were dying
+// at the 45s cap on exactly the questions she most wanted answered (traces
+// 185/186). For now the budget is deliberately oversized so games can be
+// played through and we MEASURE real completion times instead of truncating
+// them; the systematic-debugging round decides what it becomes afterwards.
+// (The 45s era's rationale is preserved in git history at this line.)
+export const CHAT_TIMEOUT_MS = 180000;
 // B1 (2026-07-27, coach-truth-speed round), owner's verbatim ask: "once the
 // game is over, I am no longer waiting on it to make a move... I want it to
 // have a longer timeout so it can answer more in-depth questions." The live
@@ -63,7 +70,9 @@ export const CHAT_TIMEOUT_MS = 45000;
 // regen is skipped entirely rather than started and immediately starved --
 // see chat()'s loop below for the accounting that keeps the worst case
 // exactly budgetMs, never budgetMs + a second full timeout.
-export const CHAT_REVIEW_BUDGET_MS = 90000;
+// OWNER RULING 2026-08-02: review budget raised to the same 3-minute measure-
+// don't-truncate ceiling as live chat (was 90000; see CHAT_TIMEOUT_MS above).
+export const CHAT_REVIEW_BUDGET_MS = 180000;
 export const MIN_ATTEMPT_MS = 8000;
 // Wave 3, item 4 (F5 family, game-164): attempt 0's OWN generate timeout is
 // capped at 1/this of the total budget, so a slow-but-eventually-returning
