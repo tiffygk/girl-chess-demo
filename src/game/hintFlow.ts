@@ -163,14 +163,23 @@ export function selectRung(ctx: HintCopyCtx): OpponentRung {
   if (isCapture && threat!.capturedSquareDefended === false) return "clean-hang";
   // 3. fork brewing against her.
   if (threat?.motif === "fork") return "fork";
-  // 4. counter-fork: she's GENUINELY losing material (a capture motif the
-  //    defended-clean-hang rung didn't claim, whose net for her is a real
-  //    loss -- NOT a defended even trade like QxQ recaptured) BUT her best
-  //    move forks. The net gate restores the discipline the pre-rewrite
+  // 4. counter-fork: she's GENUINELY losing material (a defended capture-moved
+  //    the clean-hang rung didn't claim, whose net for her is a real loss --
+  //    NOT a defended even trade like QxQ recaptured) BUT her best move forks.
+  //    The net gate restores the discipline the pre-rewrite
   //    defendedCaptureMovedLine had: a "losing material" claim on an even
   //    trade is false. When the net can't be judged (king / unmapped kind),
   //    the loss isn't provable, so fall through rather than assert it.
-  if (isCapture && best?.recommendation?.accomplishment === "forks") {
+  //
+  //    Gated to CAPTURE-MOVED only: herNetMaterial measures the at-risk piece
+  //    as the one she MOVED, which is the recaptured piece for capture-moved.
+  //    For capture-other the at-risk piece is a different one
+  //    (threat.capturedPieceKind), so the moved-piece net is a false signal --
+  //    fall through rather than assert a loss we can't cleanly prove.
+  if (
+    threat?.motif === "capture-moved" &&
+    best?.recommendation?.accomplishment === "forks"
+  ) {
     const net = herNetMaterial(ctx);
     if (net !== null && net < -1) return "counter-fork";
   }

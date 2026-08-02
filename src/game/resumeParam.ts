@@ -22,18 +22,21 @@ export function readGameParam(search: string): number | null {
 }
 
 /**
- * The `location.search` string with `?game=<id>` set (id non-null) or removed
- * (id null), every OTHER param preserved untouched. Returns "" (not "?") when
- * no params remain, so history.replaceState leaves a clean bare URL. Pure: it
- * never touches window -- the caller feeds it window.location.search and hands
- * the result to history.replaceState.
+ * A full `path?search` string with `?game=<id>` set (id non-null) or removed
+ * (id null), every OTHER param preserved untouched. Takes `pathname` so the
+ * empty case can NEVER return "" -- an empty string handed to
+ * history.replaceState resolves against the CURRENT document URL and PRESERVES
+ * the existing query (WHATWG URL semantics), which silently defeats the clear.
+ * Returning the pathname (e.g. "/") is a real URL replaceState resolves
+ * correctly. Pure: never touches window -- the caller feeds it
+ * window.location.pathname + .search and hands the result to replaceState.
  */
-export function withGameParam(search: string, id: number | null): string {
+export function withGameParam(pathname: string, search: string, id: number | null): string {
   const params = new URLSearchParams(search);
   if (id == null) params.delete("game");
   else params.set("game", String(id));
   const s = params.toString();
-  return s ? `?${s}` : "";
+  return s ? `${pathname}?${s}` : pathname;
 }
 
 /**

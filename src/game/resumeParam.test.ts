@@ -18,19 +18,23 @@ describe("readGameParam", () => {
   });
 });
 
-describe("withGameParam", () => {
-  it("sets ?game=<id> on an empty search", () => {
-    expect(withGameParam("", 42)).toBe("?game=42");
+describe("withGameParam (returns a full path+search so the empty case is never '')", () => {
+  it("sets ?game=<id> on an empty search, keeping the pathname", () => {
+    expect(withGameParam("/", "", 42)).toBe("/?game=42");
   });
-  it("removes ?game entirely when id is null, returning '' when nothing remains", () => {
-    expect(withGameParam("?game=42", null)).toBe("");
+  // The bug this pins: clearing the only param must NOT return "" -- an empty
+  // string handed to history.replaceState resolves against the CURRENT URL and
+  // preserves the query (WHATWG URL semantics), so the param never clears.
+  it("clearing the only param returns the pathname, never ''", () => {
+    expect(withGameParam("/", "?game=42", null)).toBe("/");
+    expect(withGameParam("/play", "?game=42", null)).toBe("/play");
   });
   it("preserves other params when setting or clearing game", () => {
-    expect(withGameParam("?elo=1400", 7)).toBe("?elo=1400&game=7");
-    expect(withGameParam("?elo=1400&game=7", null)).toBe("?elo=1400");
+    expect(withGameParam("/", "?elo=1400", 7)).toBe("/?elo=1400&game=7");
+    expect(withGameParam("/", "?elo=1400&game=7", null)).toBe("/?elo=1400");
   });
   it("overwrites an existing game id rather than duplicating it", () => {
-    expect(withGameParam("?game=1", 9)).toBe("?game=9");
+    expect(withGameParam("/", "?game=1", 9)).toBe("/?game=9");
   });
 });
 

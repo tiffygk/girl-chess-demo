@@ -272,6 +272,17 @@ describe("selectRung (priority ladder, first true wins)", () => {
     const copy = rungCopy("right", 2, ctx({ herPieceKind: "q", threat: evenTrade, bestFacts: bf }))!;
     expect(copy).not.toMatch(/losing material|winning material|material's slipping/);
   });
+  it("4. counter-fork does NOT fire on a capture-OTHER threat after a quiet move (at-risk piece is not the moved piece)", () => {
+    // A quiet queen move, then a defended capture-OTHER threat on a different
+    // (defended) piece. The moved queen is NOT the at-risk piece, so the
+    // moved-piece net (0 - 9) is a false "losing material" signal -- the net
+    // gate only holds for capture-moved, so this must fall through.
+    const captureOtherDefended: ThreatFacts = { ...captureOtherThreat, capturedSquareDefended: true };
+    const bf: HintFacts = { ...bestFacts, recommendation: forksRec };
+    expect(
+      selectRung(ctx({ herPieceKind: "q", threat: captureOtherDefended, bestFacts: bf }))
+    ).not.toBe("counter-fork");
+  });
   it("4. a defended capture WITHOUT a best-move fork falls past counter-fork", () => {
     const defended: ThreatFacts = { ...captureMovedThreat, capturedSquareDefended: true };
     // no bestFacts fork, no trade -> falls to positional (rung 8)

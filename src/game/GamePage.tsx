@@ -546,7 +546,7 @@ export function GamePage() {
     // Resume self-arm (Wave 3.5): stamp ?game=<id> into the URL so a reload
     // RESUMES this game instead of orphaning it. replaceState (not pushState)
     // -- a live game is one browser entry, not a back-button step.
-    window.history.replaceState(null, "", withGameParam(window.location.search, g.gameId));
+    window.history.replaceState(null, "", withGameParam(window.location.pathname, window.location.search, g.gameId));
     // Turn state now lives in the player bars (see render) — clear the
     // "finding an opponent..." transient now that the game is ready, but
     // don't replace it with "your move" text; status is transient-only.
@@ -590,7 +590,7 @@ export function GamePage() {
       lastReplyAtRef.current = Date.now();
       // Normalize the URL to exactly ?game=<id> on a successful resume (the
       // param is already there, but this keeps every entry point consistent).
-      window.history.replaceState(null, "", withGameParam(window.location.search, id));
+      window.history.replaceState(null, "", withGameParam(window.location.pathname, window.location.search, id));
       setStatus("");
     },
     [resetGameState]
@@ -604,7 +604,7 @@ export function GamePage() {
       if (cancelled) return;
       // Failed/dead resume: drop the param so a further reload doesn't retry
       // a game that can't be resumed, and stay on the start state.
-      window.history.replaceState(null, "", withGameParam(window.location.search, null));
+      window.history.replaceState(null, "", withGameParam(window.location.pathname, window.location.search, null));
       setStatus("could not resume that game");
     });
     return () => {
@@ -659,7 +659,7 @@ export function GamePage() {
   // to resume, so disarm the URL -- a reload on the debrief should land on the
   // start state, not try to re-mount a finished game as if it were live.
   useEffect(() => {
-    if (gameOver) window.history.replaceState(null, "", withGameParam(window.location.search, null));
+    if (gameOver) window.history.replaceState(null, "", withGameParam(window.location.pathname, window.location.search, null));
   }, [gameOver]);
 
   // Game-151 round (visual-rca 1): every ending lands on screen. Win/loss
@@ -1936,7 +1936,7 @@ export function GamePage() {
     setGameId(null);
     // Resume self-arm (Wave 3.5): dropping back to the pregame picker must
     // disarm the URL -- a reload here should NOT resume the game she just left.
-    window.history.replaceState(null, "", withGameParam(window.location.search, null));
+    window.history.replaceState(null, "", withGameParam(window.location.pathname, window.location.search, null));
     mirrorRef.current = new Chess();
     setFen(mirrorRef.current.fen());
     setStatus("");
