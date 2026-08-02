@@ -1,55 +1,42 @@
-## ACTIVE WORK -- start here (updated 2026-07-30, trimmed for length — full history in `docs/changelog.md`)
+## ACTIVE WORK -- start here (updated 2026-08-02, trimmed for length — full history in `docs/changelog.md`)
 
-**GAME 160 RCA, PHASE A IS MERGED TO MAIN at `dc43a52`. `GATE: PASS` on main.** The analysis no
-longer goes quiet once a game is decided (mate-distance slips and free material detected from
-persisted evals, a conversion-aware judge, `TP_ALGO_VERSION` 7 healing her whole corpus on next
-summary read, owner-approved). Detail: `docs/changelog.md` (what shipped), `.superpowers/sdd/rounds/
-2026-07-31-game160-rca/` (`phase-a-results.md`, `fix-phaseA-union.md`, `conclusion.md` — read before
-touching the conversion layer or debrief copy, they record which fix was for what and which review
-caught it), `6 handoffs/OVERNIGHT — 2026-07-30 autonomous run (read this first).md` (the overnight
-decision log).
+**ROUND 3 (fact-shelf coach) IS PLANNED, NOT STARTED.** Read `6 handoffs/HANDOFF — Round 3
+continuation (2026-08-02).md` FIRST — it is written to be acted on directly and carries the full
+current-state detail this section only summarizes: branch/stack state, the owner-decision register,
+what runs first, and which two in-flight items to verify before trusting. Round-3 folds the game-167
+playtest ruling, the coach-latency root-cause investigation (root = unbounded adaptive thinking, not
+network/prompt/infra), the coach-quality brainstorm (chat is bad because it's model-first over facts
+that cover only played moves — the fix is a fact shelf, the same inversion that made the hints good),
+and a three-arm eval into one plan: `.superpowers/sdd/rounds/2026-08-03-round3/plan.md` (repo,
+task-by-task) / vault "2 build/Girl Chess — Round 3 Plan (2026-08-02).md" (owner mirror — verified in
+sync with the repo copy, session-gone task included in both).
 
-**What phase A did NOT do, and what is next.** H3's render half: the judge now produces
-`Verdict.conversionCopy`, mirrored into `src/game/api.ts` and persisted, but NOTHING RENDERS IT — a
-conversion-tripping move currently shows her a bare `hm, you sure?` with no reason attached. That's
-K6 / phase C, needs a Fable visual gate + component-library reflection (a surface she reads). Phase B
-(K3 bounded facts, K4 conversation integrity, K5b server db resolver) waits on the resumable logic.
-M6 (fail-closed on `SQLITE_BUSY`) belongs to K5b, same head as the resolver.
+**Branch `round/2026-08-01-hint-tree` was MERGED to `main` on 2026-08-02 (owner-ruled OD-1 = merge);
+`main` is now at `13a2afc` (clean fast-forward, +47 commits) plus this doc commit.** All 47 commits
+were reviewed and clean; the last two (`abe5e67` 3-minute chat budgets, `13a2afc` the `GC_COACH_THINKING`
+knob) shipped with the merge — the knob is disabled by default and its unset case is test-verified
+byte-identical, so **the merge ships NO thinking-bound decision.** STILL OPEN after the merge: OD-3
+(whether to bound the model's thinking — needs her blinded read of the b180 worksheet, key unopened) and
+Round-3 W1 (the fact shelf / getting Stockfish's full facts to the coach); see the round-3 continuation
+handoff and `.superpowers/sdd/rounds/2026-08-03-round3/plan.md`. Prior
+rounds this section used to track (game-160 RCA phase A, the rca-eval acceptance loop, the 07-29
+resume-games round, gate non-determinism) are all MERGED/CLOSED — see `docs/changelog.md` and
+`6 handoffs/HANDOFF — Gate determinism + backup hygiene (2026-07-30).md` if you need that history; they
+are no longer where you pick up.
 
-**THE EVAL WORKSTREAM (parallel Fable window, owner-directed) IS MERGED; its acceptance loop is the
-standing next step.** Harness: `tools/rca-eval/` + the extended `tools/coach-eval/`; rules in skills
-`.claude/skills/eval-harness/` + coach-eval's conjunction section; loop doc vault `2 build/Girl Chess
-— Eval Process (2026-07-30).md`; phase-A results (CT 7/7 PASS, DB partial, all pre-fix baselines incl.
-the 357-call B11 pipeline run) in vault `2 build/Girl Chess — RCA Acceptance Results (2026-07-30,
-phase A).md` and the round ledger's eval sections. **WHOEVER MERGES PHASE B (K3/K4/K5b) MUST THEN
-RUN, machine quiet, announced in the round ledger:** `npm run rca-eval -- all-deterministic`
-(PC/FM must flip, DB-03/04/05 must flip), the CE acceptance run + FH/NM 3-rep runs per
-`tools/coach-eval/README.md`'s RCA section (compare ONLY against the `2026-07-31-rca-baseline` run,
-one out-dir per arm), then `-- rollup` (still needs its baseline-vs-acceptance phase tag, queued,
-skill rule 7). Owner's two open items: the blinded read at `tools/coach-eval/runs/
-2026-07-31-fh-baseline-rep1b/fh-blinded-worksheet.md` (do not open the key), and plan-v2 §2 rulings
-(chiefly the safe-square inspect feature).
+**If the owner says only "start again" or "continue", this is where you pick up.** Read the round-3
+continuation handoff named above in full before doing anything else — it has the owner-decision
+register (merge ruling OD-1, import-games OD-2, thinking-bound gate OD-3 with the blinded worksheet
+key still unopened, budget retune OD-4) and says explicitly what round-3's Wave 0 needs from her before
+Wave 1 can start.
 
-**Queued, not started:** `npm run gate` is NON-DETERMINISTIC under load (`server/index.stream.test.ts`'s
-done-frame test, intermittent `socket hang up`, spawns Maia/Stockfish) — see `6 handoffs/HANDOFF —
-Gate determinism + backup hygiene (2026-07-30).md` for the paste-ready prompt. The vitest config lives
-in `vite.config.ts` under `test:`, NOT a standalone `vitest.config.*`, and carries the load-bearing
-`**/wt-*/**` exclude — do not disturb it.
-
-**If the owner says only "start again" or "continue", this is where you pick up.** Read
-`.superpowers/sdd/rounds/2026-07-29-resume-games/progress.md` (the active round — resumable games,
-7-day window + resume button + day-grouped history, plan approved, nothing built yet; the landmine in
-`brief-R1.md`: nothing rehydrates a game from the db, so a resume feature passes every test and then
-silently fails after a server restart) and `.superpowers/sdd/rounds/2026-07-29-legend-cardscope/
-progress.md` (the previous round — L1 done, L2 briefed and never dispatched: coach chat names moves
-by ply instead of move number).
-
-**FIRST ACTION either way:** `src/game/GamePage.tsx` still has an **uncommitted** `?game=<id>` resume
-recovery (typechecks clean, owner-confirmed working), preserved on branch
-`wip/2026-07-30-resumable-loose` (`ea411d3`) and as `.superpowers/sdd/rounds/2026-07-30-round4/
-loose-main-resumable.patch`. Gate it and commit it before starting new work — resumable plan v2 found
-the real defect: it only re-attaches to the IN-MEMORY game, so it dies on a server restart, and nothing
-ever writes `?game=` in the first place.
+**FIRST ACTION:** the merge is DONE — `main` == `13a2afc`. Pick up Round-3 at W1 (the fact shelf) per
+`.superpowers/sdd/rounds/2026-08-03-round3/plan.md` and the round-3 continuation handoff, and surface the
+still-open owner decisions: OD-2 (import her playtest games 166/167 — real db untouched either way),
+OD-3(a) (hand her the blinded b180 worksheet, key unopened), OD-4 (chat-budget retune, follows OD-3).
+Post-merge housekeeping: the `wt-hinttree` scratch teardown (`wt-hinttree/data` + `.playtest-scratch`) is
+a deliberate MANUAL follow-up — the Directory rule forbids an agent deleting a directory, and a stale
+vite still listens on `:4173` — so leave it for the owner or a supervised step.
 
 **Hard rules, quick index (full text further down this file):** never run `npm run gate` while she's
 playing (the in-play guard checks this now, but ask/wait anyway); a backup is only a restore point if
@@ -62,7 +49,7 @@ see "Worktree rule" below (caught colliding TWICE in the same session this file 
 
 ## Session start
 
-New session? Read the newest handoff in the Obsidian vault `6 handoffs/` FIRST (older handoffs are under `.superpowers/sdd/HANDOFF-*.md`): it carries the full between-sessions context this file deliberately does not — current state, the owner decisions registry, the open queue, hard rules with their history, and the process runbook. Then read the tail of `.superpowers/sdd/progress.md`. Before any live browser work, check for orphaned dev servers (`lsof -iTCP -sTCP:LISTEN | grep -E "3001|5173"`) and kill leftovers; a zombie vite with a dead API hangs game creation at "finding an opponent..." (2026-07-18). Across a long multi-window run these accumulate: on 2026-07-22 there were FIVE competing `npm run dev` stacks (from the main worktree plus a scratch worktree) fighting over 5173/3001, only one pair owning the ports, the rest zombie watchers. The symptom the owner sees is "can't start a game / the end-game button is grayed" — that is this environment state (a stale browser page holding a dead sessionId against a churned server), NOT a code regression. Diagnose in order before suspecting merged code: `lsof` the two ports, `curl -s -m3 localhost:3001/api/health` (200 = API is actually up), then reload the page. It self-heals on a clean single restart + reload. **NEVER `pkill node`, `pkill vite`, or any pattern kill to clean up servers — kill by the specific PID you started, and say so in every subagent brief that runs the app.** A Phase 4 gate agent's cleanup `pkill` took down the owner's canonical 5173/3001 stack mid-round (2026-07-21) while it may have been demoing live; the brief had said "never touch 5173/3001" and "kill what you start" but never said HOW, and a pattern kill cannot tell two stacks apart. Restarting is `npm run dev` from the main worktree, and any page open from before the outage must be reloaded (stale sessionIds). After any server restart, reload the page before driving it (stale pages hold dead sessionIds).
+New session? Read the newest handoff in the Obsidian vault `6 handoffs/` FIRST (older handoffs are under `.superpowers/sdd/HANDOFF-*.md`): it carries the full between-sessions context this file deliberately does not — current state, the owner decisions registry, the open queue, hard rules with their history, and the process runbook. Then read the tail of `.superpowers/sdd/progress.md`. Before any live browser work, check for orphaned dev servers (`lsof -iTCP -sTCP:LISTEN | grep -E "3001|5173"`) and kill leftovers; a zombie vite with a dead API hangs game creation at "finding an opponent..." (2026-07-18). Across a long multi-window run these accumulate: on 2026-07-22 there were FIVE competing `npm run dev` stacks (from the main worktree plus a scratch worktree) fighting over 5173/3001, only one pair owning the ports, the rest zombie watchers. The symptom the owner sees is "can't start a game / the end-game button is grayed" — that is this environment state (a stale browser page holding a dead sessionId against a churned server), NOT a code regression. Diagnose in order before suspecting merged code: `lsof` the two ports, `curl -s -m3 localhost:3001/api/health` (200 = API is actually up), then reload the page. It self-heals on a clean single restart + reload. **NEVER `pkill node`, `pkill vite`, or any pattern kill to clean up servers — kill by the specific PID you started, and say so in every subagent brief that runs the app.** A Phase 4 gate agent's cleanup `pkill` took down the owner's canonical 5173/3001 stack mid-round (2026-07-21) while it may have been demoing live; the brief had said "never touch 5173/3001" and "kill what you start" but never said HOW, and a pattern kill cannot tell two stacks apart. Sharpened 2026-08-01: "the specific PID you started" means a PID you RECORDED AT SPAWN TIME — identifying "your" process afterwards by reading command lines does not work, because concurrent agents spawn byte-identical commands (a caching spike killed a sibling agent's in-flight `claude-agent-sdk` eval subprocess whose flags exactly matched its own; those flags are the production backend's flags, so every agent's coach calls look alike). If you did not record the PID when you spawned it, you do not kill it — report it to the controller instead. Restarting is `npm run dev` from the main worktree, and any page open from before the outage must be reloaded (stale sessionIds). After any server restart, reload the page before driving it (stale pages hold dead sessionIds).
 
 Trust `git log` for the live tip, never a HEAD pinned anywhere in this file — main advances across parallel windows, sometimes several at once. Older narrative state ("Current state 2026-07-22", the coach-transport decision, per-increment "additive surfaces" changelogs, etc.) moved to `docs/changelog.md` on 2026-07-30 — this file used to carry ~230 lines of it inline and had become a needle-in-a-haystack problem serious enough that two different agents independently rediscovered and wrote up the SAME lesson in the same session, because it was buried in prose no one could grep confidently. Grep `docs/changelog.md` for "when was X added" questions; this file only keeps the map of what exists NOW plus standing rules.
 
@@ -176,3 +163,9 @@ UI design laws (durable distillation of the vault spec front-end-components.md s
 **Protected behaviour, owner-ruled:** the narrow-window fold (at narrow widths the cookie coach panel drops below the board and the end wordmark plus analysis fold up into the freed space). Any wave touching `src/skin/sugar-glitch.css`, `GamePage.tsx`'s `.postgame` wiring, `--board-size`, or `.action-slot` / `.coach-hint-band` / `.status-line` must verify that fold BY EYE at a narrow viewport and say so. Also in project memory as `narrow-window-fold-is-protected.md`.
 
 **STANDING RULE, owner 2026-07-30: anything that SHIPS goes into the front-end component library** (vault `3 visual/component-library.html`). A mockup is a proposal, not a record; where a mockup and the shipped code disagree, the shipped code wins and the library must show what shipped. The library lives OUTSIDE the repo, so it is never part of a branch and never merges — it has to be updated deliberately.
+
+**Playtest freshness rule (2026-08-01): a playtest is evidence only if the served process is verified to be the branch tip immediately before she plays.** The 2026-08-01 hint-tree playtest ran a server booted in a twenty-minute-old file-state window that was missing the round's last three commits (including the timeout-retry fix); every one of her worst chat failures that night was a bug that had already been fixed, the whole round's final fixes went un-play-tested, and the stale process was invisible — the log's single boot banner was the only trace. Reloading the browser page does NOT refresh the server process (vite serves the client live; the API process on its port keeps its boot-time code). Practice: playtests run the BUILT server, never a leftover dev/watch process; before handing her a stack, prove served == tip (once the served-commit banner + `/api/health` commit field from the 2026-08-02 latency plan are merged, check those; until then, verify boot time vs last commit time by hand). Corollary from the same night: an eval harness can keep extending its sample AFTER its report is written — before starting builds or calling a machine quiet, check for still-running eval/agent processes, not just listening ports.
+
+**Total-time-accounting rule (2026-08-02): a latency investigation is done only when every second of one representative slow call is assigned to a named, instrumented stage — the unexplained remainder is the lead, not noise.** Four passes attacked coach latency (07-21 process-boot, 07-27 budget raises, 08-01 prefill-slope + caching, 08-02 adaptive thinking); the first three each found a real-but-partial mechanism, shipped a fix, watched the median improve, and filed the residual under "model variance." The actual dominant term — invisible adaptive thinking tokens, present since the 07-22 `claude-sonnet-5` pin whose omitted-`thinking` default nobody looked up — was findable in every call's usage metadata (billed output tokens >> visible answer length; API TTFT 1.3-3.7s vs 45s wall) from day one. Practice: (1) latency claims ship with a per-stage table for a real slow call, measured (TTFP/TTFW, usage tokens), never wall-time aggregates alone; (2) any model/SDK/backend pin or change requires reading the current model docs for behavior defaults (thinking, tokenizer, effort) and recording the deltas in the ledger at pin time; (3) the eval harness records per-row usage metadata so invisible token spend stays visible. Full retro: vault "2 build/Girl Chess — Coach Latency Retro (2026-08-02).md".
+
+**Durability rule (2026-08-01): conversation state is not real until the bytes are verified on disk.** Two losses in one day. (1) An in-flight background investigation was called "file-durable" because its report WOULD write to the vault; the owner cleared the context on that assurance, the clear killed the agent, nothing had been written, and the whole investigation re-ran from scratch. (2) The owner had previously asked for prompt caching; no durable artifact anywhere records that ask (repo, changelog, decisions registry, handoffs, git history all searched 2026-08-01), so it was silently lost until she re-asked and it had to be rediscovered from zero by a spike. Practice: every owner ask or ruling lands in the ledger or the decisions registry in the same turn it is made; every in-flight background agent gets a ledger entry with a relaunch brief at dispatch time; never tell the owner a clear is safe while anything is in flight — enumerate in-flight work and either verify its artifacts exist on disk or say plainly that clearing kills it. Memory: `in-flight-agents-do-not-survive-clear.md`.
