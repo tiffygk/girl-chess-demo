@@ -48,7 +48,23 @@ interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number; finished
 // after a coach_notes insert actually succeeded -- never produced by the model.
 // game-164's whole failure was the model PROMISING to remember when nothing
 // persisted; this line is the coach claiming memory only when it truly has it.
-const COACH_NOTE_ACK = "noted for real this time. it'll be in my head next game.";
+// The HONESTY guarantee lives in that gate (recorded === true), not in the
+// wording itself -- so the copy is free to just be warm, rather than
+// leaning on a self-referential "for real this time" that was really a
+// meta callback to the game-164 bug, not something cookie would say
+// in-character.
+//
+// Round 2, item 8 (owner ruling, 2026-08-01 playtest): "she asked twice for
+// a note in her playtest and got nothing." isRecordRequest's family widened
+// (intent.ts) to catch phrasings like "let's make a note of this for
+// analysis later" -- some of which read more like "I'm annotating for my
+// dev partner" than "remember this chess idea for my next game". Rather
+// than try to classify which meaning she intended (out of scope, and
+// unnecessary -- the note lands in coach_notes either way), this one ack
+// covers both: warm, specific about what happened (saved), and silent on
+// what the note was FOR. Exported so manager.test.ts asserts against the
+// real constant instead of a hand-copied literal that could drift from it.
+export const COACH_NOTE_ACK = "noted, and it's saved for good. i'll have it next game.";
 
 // Increment 3.91 (Task 2): the turning-lines endpoint's per-point shape —
 // mirrored (hand-mirroring, same convention as TurningPoint's own
