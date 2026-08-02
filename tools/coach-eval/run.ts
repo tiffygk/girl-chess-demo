@@ -96,6 +96,12 @@ import {
 import type { AnswerRow } from "./score";
 import { parseArgs, sha256File, timestamp } from "./util";
 
+// Review fix F1 (Opus review of ab814d4..1c31dab, 2026-08-02): the exact
+// shape of chat()'s exported function, via an `import type` query rather
+// than retyping every param by hand -- so callChatWithTiming below can't
+// silently drift from the real signature the way a hand-copied type could.
+type ChatFn = typeof import("../../server/coach/chat").chat;
+
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, "../..");
 
@@ -351,6 +357,51 @@ function copyScratchDb(sourcePath: string, destPath: string) {
   }
 }
 
+// Review fix F1 (Opus review of ab814d4..1c31dab, 2026-08-02): the Task 1e
+// instrument shipped only wiring onDelta -- ttfpMs was set to `ttfwMs`
+// unconditionally, which was correct BEFORE Task 1c landed onAttemptStart/
+// onValidateStart (65fb9fe predates 151e7fb) but was never updated once
+// those hooks existed, silently leaving TTFP unmeasured through the exact
+// instrument the plan's Measurement Matrix depends on to prove 1c's win
+// ("TTFP p90 < 1s"). Wires onAttemptStart -> ttfpMs (the first status/
+// progress signal, a real pipeline event) alongside the existing onDelta ->
+// ttfwMs (the first validated word) -- both timestamped from the SAME
+// ttfStart, both first-fire-only, exactly mirroring the ttfwMs pattern
+// already proven correct. Extracted into its own function (rather than
+// inlined in main()'s loop, where it lived before) so the timing wiring
+// itself is directly unit-testable against a fake backend, independent of
+// this file's db/fixture plumbing -- see run.test.ts.
+export async function callChatWithTiming(
+  chatFn: ChatFn,
+  question: Parameters<ChatFn>[0],
+  history: Parameters<ChatFn>[1],
+  facts: Parameters<ChatFn>[2],
+  backend: Parameters<ChatFn>[3],
+  trace: Parameters<ChatFn>[4],
+  baseOpts: NonNullable<Parameters<ChatFn>[5]>
+): Promise<{
+  outcome: { text: string; source: string; cause?: string; traceId?: number };
+  ttfpMs: number | null;
+  ttfwMs: number | null;
+}> {
+  const ttfStart = performance.now();
+  let ttfpMs: number | null = null;
+  let ttfwMs: number | null = null;
+  const onAttemptStart = () => {
+    if (ttfpMs === null) ttfpMs = performance.now() - ttfStart;
+  };
+  const onDelta = () => {
+    if (ttfwMs === null) ttfwMs = performance.now() - ttfStart;
+  };
+  let outcome: { text: string; source: string; cause?: string; traceId?: number };
+  try {
+    outcome = await chatFn(question, history, facts, backend, trace, { ...baseOpts, onAttemptStart, onDelta });
+  } catch (err) {
+    outcome = { text: "", source: "error", cause: err instanceof Error ? err.message : String(err) };
+  }
+  return { outcome, ttfpMs, ttfwMs };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const model = args.model as Model;
@@ -569,33 +620,22 @@ async function main() {
     const budgetMs = finished ? CHAT_REVIEW_BUDGET_MS : CHAT_TIMEOUT_MS;
 
     const start = Date.now();
-    // Task 1e (coach-truth-speed latency round, 2026-08-02): TTFW is the ms
-    // from the chat() call to the FIRST content delta chat() hands back
-    // through opts.onDelta. Timestamped with performance.now() (sub-ms,
-    // monotonic) rather than Date.now() -- the ms-scale wall clock two
-    // instrument calls apart is fine for latencyMs but not precise enough
-    // for "was this the first delta". Only the FIRST call is captured;
-    // chat() may replay several buffered deltas once validation passes (see
-    // chat.ts's attemptDeltas buffer), and only the first one marks when the
-    // client would have started rendering anything.
-    const ttfwStart = performance.now();
-    let ttfwMs: number | null = null;
-    const onDelta = () => {
-      if (ttfwMs === null) ttfwMs = performance.now() - ttfwStart;
-    };
-    let outcome: { text: string; source: string; cause?: string; traceId?: number };
-    try {
-      outcome = await chat(question.q, [], facts, agentSdkBackend, trace, { budgetMs, intent, onDelta });
-    } catch (err) {
-      outcome = { text: "", source: "error", cause: err instanceof Error ? err.message : String(err) };
-    }
+    // Task 1e (coach-truth-speed latency round, 2026-08-02) + review fix F1
+    // (2026-08-02): callChatWithTiming wires ttfpMs to the first
+    // onAttemptStart fire (the first real status/progress signal) and
+    // ttfwMs to the first onDelta fire (the first validated word), both
+    // timestamped with performance.now() (sub-ms, monotonic) from the same
+    // start -- see its own doc comment above for the full rationale.
+    const { outcome, ttfpMs, ttfwMs } = await callChatWithTiming(
+      chat,
+      question.q,
+      [],
+      facts,
+      agentSdkBackend,
+      trace,
+      { budgetMs, intent }
+    );
     const measuredLatencyMs = Date.now() - start;
-    // Task 1e: until Task 1c lands its onAttemptStart/onValidateStart status
-    // hooks in chat()'s opts, there is no separate status-frame timestamp to
-    // capture -- ttfpMs mirrors ttfwMs, which is the honest pre-1c baseline
-    // the plan calls for (see the Measurement Foundations section: "Until
-    // 1c ships, ttfpMs equals ttfwMs").
-    const ttfpMs = ttfwMs;
 
     let regenCount = 0;
     let latencyMs = measuredLatencyMs;
@@ -648,7 +688,17 @@ async function main() {
   console.log(`[coach-eval] done: wrote ${results.length} rows to ${rawPath}`);
 }
 
-main().catch((err) => {
-  console.error("[coach-eval] FAILED:", err);
-  process.exitCode = 1;
-});
+// Review fix F1 (Opus review of ab814d4..1c31dab, 2026-08-02): guard main()
+// behind an isMain check -- run.test.ts needs to import callChatWithTiming
+// above without the CLI's own main() (which parses process.argv and copies
+// the real db) executing as a side effect of that import. Same pattern
+// tools/playtest-serve.ts and tools/db-backup.ts already use; `npx tsx
+// tools/coach-eval/run.ts ...` still runs exactly as before (process.argv[1]
+// resolves to this file's own path in that invocation).
+const isMain = process.argv[1] != null && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+if (isMain) {
+  main().catch((err) => {
+    console.error("[coach-eval] FAILED:", err);
+    process.exitCode = 1;
+  });
+}
