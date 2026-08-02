@@ -54,6 +54,7 @@ import { DebriefPage, PastGamesButton, PastGamesDrawer } from "../review/Debrief
 import { shouldClearLiveDebrief } from "../review/deleteArm";
 import { fenAtPly } from "../review/Rewind";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
+import { readGameParam, withGameParam, isResumableSummary } from "./resumeParam";
 import {
   decideBranch,
   maxPress,
@@ -542,6 +543,10 @@ export function GamePage() {
     setGameId(g.gameId);
     setOpponentElo(g.elo ?? elo);
     lastReplyAtRef.current = Date.now();
+    // Resume self-arm (Wave 3.5): stamp ?game=<id> into the URL so a reload
+    // RESUMES this game instead of orphaning it. replaceState (not pushState)
+    // -- a live game is one browser entry, not a back-button step.
+    window.history.replaceState(null, "", withGameParam(window.location.search, g.gameId));
     // Turn state now lives in the player bars (see render) — clear the
     // "finding an opponent..." transient now that the game is ready, but
     // don't replace it with "your move" text; status is transient-only.
@@ -569,6 +574,12 @@ export function GamePage() {
     async (id: number) => {
       resetGameState();
       const s = await fetchSummary(id);
+      // Dead-id guard: a summary with no moves is the orphaned 0-move stub --
+      // resuming it would mount an empty board wired to a gameId the server
+      // no longer holds live. Treat it as a failed resume (throw -> the
+      // effect's catch clears the param and stays on the start state) instead
+      // of silently arming a dead game.
+      if (!isResumableSummary(s)) throw new Error("no resumable game for that id");
       const mirror = new Chess();
       for (const m of s.moves) mirror.move(m.san);
       mirrorRef.current = mirror;
@@ -577,18 +588,24 @@ export function GamePage() {
       setLiveMoves(s.moves.map((m) => ({ ply: m.ply, san: m.san, highlighted: !!m.highlighted })));
       setCaptured(capturesAtPly(s.moves, s.moves.length));
       lastReplyAtRef.current = Date.now();
+      // Normalize the URL to exactly ?game=<id> on a successful resume (the
+      // param is already there, but this keeps every entry point consistent).
+      window.history.replaceState(null, "", withGameParam(window.location.search, id));
       setStatus("");
     },
     [resetGameState]
   );
 
   useEffect(() => {
-    const raw = new URLSearchParams(window.location.search).get("game");
-    const id = Number(raw);
-    if (!raw || !Number.isInteger(id) || id <= 0) return;
+    const id = readGameParam(window.location.search);
+    if (id == null) return;
     let cancelled = false;
     resumeGame(id).catch(() => {
-      if (!cancelled) setStatus("could not resume that game");
+      if (cancelled) return;
+      // Failed/dead resume: drop the param so a further reload doesn't retry
+      // a game that can't be resumed, and stay on the start state.
+      window.history.replaceState(null, "", withGameParam(window.location.search, null));
+      setStatus("could not resume that game");
     });
     return () => {
       cancelled = true;
@@ -637,6 +654,13 @@ export function GamePage() {
       cancelled = true;
     };
   }, [gameOver, gameId]);
+
+  // Resume self-arm (Wave 3.5): once the game is over there is nothing live
+  // to resume, so disarm the URL -- a reload on the debrief should land on the
+  // start state, not try to re-mount a finished game as if it were live.
+  useEffect(() => {
+    if (gameOver) window.history.replaceState(null, "", withGameParam(window.location.search, null));
+  }, [gameOver]);
 
   // Game-151 round (visual-rca 1): every ending lands on screen. Win/loss
   // only survived the fold because confetti/storm are fixed-position
@@ -1910,6 +1934,9 @@ export function GamePage() {
     if (replayingRef.current) return;
     resetGameState();
     setGameId(null);
+    // Resume self-arm (Wave 3.5): dropping back to the pregame picker must
+    // disarm the URL -- a reload here should NOT resume the game she just left.
+    window.history.replaceState(null, "", withGameParam(window.location.search, null));
     mirrorRef.current = new Chess();
     setFen(mirrorRef.current.fen());
     setStatus("");
@@ -1949,14 +1976,19 @@ export function GamePage() {
       setPastGamesDeleteError(null);
       const previous = pastGames;
       setPastGames((cur) => (cur ? cur.filter((g) => g.id !== deletedId) : cur));
-      if (reviewGame && reviewGame.id === deletedId) backToPlay();
-      if (shouldClearLiveDebrief(!!gameOver, gameId, deletedId)) handleNewGame();
       try {
         const res = await deleteGame(deletedId);
         if (!res.ok) {
           setPastGames(previous);
           setPastGamesDeleteError("could not delete that game. try again.");
+          return;
         }
+        // Minor B: only tear down the on-screen view AFTER the delete actually
+        // succeeded -- a failed delete must never yank the screen (the row
+        // restore above is all a failure does). The list update stays
+        // optimistic; the view teardown is not.
+        if (reviewGame && reviewGame.id === deletedId) backToPlay();
+        if (shouldClearLiveDebrief(!!gameOver, gameId, deletedId)) handleNewGame();
       } catch {
         setPastGames(previous);
         setPastGamesDeleteError("could not delete that game. try again.");
@@ -2077,8 +2109,11 @@ export function GamePage() {
   // is doing" rung) -- only while sitting exactly there, with a real threat
   // and a pending move to anchor herToSquare. The wrong branch never paints
   // the opponent's threat (its rungs are about HER best piece).
+  // Minor A: when conversionCopy is present it REPLACES the threat ladder copy
+  // at right-P2, so the threat rings would tell a different story than the
+  // words -- suppress them so board and copy stay in one voice.
   const threatReveal =
-    hintBranch === "right" && hintPress === 2 && verdict?.threat && pending
+    hintBranch === "right" && hintPress === 2 && verdict?.threat && !verdict.conversionCopy && pending
       ? threatRevealSquares(verdict.threat, pending.to)
       : null;
 

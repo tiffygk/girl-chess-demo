@@ -122,6 +122,28 @@ export type OpponentRung =
   | "promotion"
   | "positional";
 
+// Standard piece values for the counter-fork rung's net-material gate. King
+// never counted (it is never the captured/capturing piece in a trade). Same
+// convention the pre-rewrite defendedCaptureMovedLine used.
+const PIECE_VALUES: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+
+/**
+ * Her net material from the just-moved capture exchange: what her own move
+ * captured (threat.herCapturedPieceKind, 0 when her move wasn't a capture)
+ * minus the piece she loses to the refutation (her moved piece). Negative =
+ * she came out behind. Returns null when it can't be judged (her piece is a
+ * king or an unmapped kind) so the caller can decline to assert a loss it
+ * can't prove -- mirrors the old defendedCaptureMovedLine's honest fallback.
+ */
+function herNetMaterial(ctx: HintCopyCtx): number | null {
+  const herValue = PIECE_VALUES[ctx.herPieceKind];
+  if (herValue === undefined) return null;
+  const capturedKind = ctx.threat?.herCapturedPieceKind;
+  const herCapturedValue = capturedKind === undefined ? 0 : PIECE_VALUES[capturedKind];
+  if (herCapturedValue === undefined) return null;
+  return herCapturedValue - herValue;
+}
+
 /**
  * Right-P2's ladder: first true wins, in the owner-confirmed priority order.
  * Rungs 4 (counter-fork) and 5 (trade) read ctx.bestFacts; every other rung
@@ -141,9 +163,17 @@ export function selectRung(ctx: HintCopyCtx): OpponentRung {
   if (isCapture && threat!.capturedSquareDefended === false) return "clean-hang";
   // 3. fork brewing against her.
   if (threat?.motif === "fork") return "fork";
-  // 4. counter-fork: she's losing material (any capture motif, i.e. the
-  //    defended ones rung 2 didn't already claim) BUT her best move forks.
-  if (isCapture && best?.recommendation?.accomplishment === "forks") return "counter-fork";
+  // 4. counter-fork: she's GENUINELY losing material (a capture motif the
+  //    defended-clean-hang rung didn't claim, whose net for her is a real
+  //    loss -- NOT a defended even trade like QxQ recaptured) BUT her best
+  //    move forks. The net gate restores the discipline the pre-rewrite
+  //    defendedCaptureMovedLine had: a "losing material" claim on an even
+  //    trade is false. When the net can't be judged (king / unmapped kind),
+  //    the loss isn't provable, so fall through rather than assert it.
+  if (isCapture && best?.recommendation?.accomplishment === "forks") {
+    const net = herNetMaterial(ctx);
+    if (net !== null && net < -1) return "counter-fork";
+  }
   // 5. the best line here is a trade.
   if (best?.trade === true) return "trade";
   // 6. check threat.
@@ -161,10 +191,13 @@ function opponentRungPool(rung: OpponentRung, ctx: HintCopyCtx): readonly string
   const threat = ctx.threat;
   switch (rung) {
     case "mate":
+      // House voice: "she"/"her" is ALWAYS mallow, so every phrasing here
+      // must read as mallow having a mate against the PLAYER -- never as a
+      // mate for the player's benefit ("coming for her" reads inverted).
       return [
         "she's got a mate threat. this is the dangerous one.",
         "careful. she's threatening mate here.",
-        "there's a forced mate coming for her.",
+        "she's got a forced mate lined up.",
       ];
     case "clean-hang": {
       const p = pieceName(threat?.capturedPieceKind ?? ctx.herPieceKind);
@@ -424,6 +457,16 @@ function fullRevealCopy(ctx: HintCopyCtx): string | null {
   return why ? `${base}. ${why}` : base;
 }
 
+// Joins the decided-position conversion copy (owner voice) ahead of another
+// clause as its own leading sentence: terminates the conversion text with a
+// period if it lacks sentence punctuation, then appends. The conversion text
+// itself is preserved verbatim as the prefix.
+function joinConversion(conversion: string, tail: string): string {
+  const c = conversion.trimEnd();
+  const lead = /[.!?]$/.test(c) ? c : `${c}.`;
+  return `${lead} ${tail}`;
+}
+
 // ---- the state machine's copy function ---------------------------------
 
 /**
@@ -451,7 +494,12 @@ export function rungCopy(branch: HintBranch, press: number, ctx: HintCopyCtx): s
   if (press === 1) return pick(WRONG_P1_POOL, ctx);
   if (press === 2) {
     if (!ctx.bestFacts) return null;
-    return pick(wrongP2Pool(ctx.bestFacts.bestPieceKind, ctx.bestFacts.bestFromSquare), ctx);
+    const naming = pick(wrongP2Pool(ctx.bestFacts.bestPieceKind, ctx.bestFacts.bestFromSquare), ctx);
+    // CONVERSION on the wrong branch: unlike right-P2 (full replace), the
+    // piece-naming job of wrong-P2 must survive -- so the decided-position
+    // copy LEADS and the naming follows it. joinConversion terminates the
+    // lead sentence before appending so the two read as one thought.
+    return ctx.conversionCopy ? joinConversion(ctx.conversionCopy, naming) : naming;
   }
   if (press === 3) {
     if (!ctx.bestFacts) return null;
