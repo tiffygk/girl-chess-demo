@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -15,6 +16,13 @@ import { resolveClickMove, isCastleAttempt } from "../game/resolveClick";
 import { resolvePendingClick } from "../game/resolvePendingClick";
 import type { Takedown } from "../game/terminal";
 import { squareToIdx, idxToSquare, squareCenter } from "./squareMapping";
+// Round 2, item 6 (owner ruling, 2026-08-01 playtest): pure arm/clear
+// decision for the transient coord-glitch burst -- see that module's
+// header for the full mechanism.
+import { shouldBurst, shouldClearBurst } from "./coordGlitchBurst";
+// Deliberately kept OUT of src/skin/sugar-glitch.css (the owner's
+// narrow-window-fold-protected file) -- see coordGlitch.css's own header.
+import "./coordGlitch.css";
 
 interface PieceEntry {
   id: string;
@@ -126,6 +134,17 @@ interface BoardProps {
    * be showing on the same square at the same time.
    */
   hintReveal?: { from: string; to: string } | null;
+  /**
+   * Round 2, item 6 (owner ruling, 2026-08-01 playtest): a monotonic
+   * counter GamePage bumps on EVERY hint-ladder press (handleHintClick),
+   * not just the reveal rung. Board turns each change into a brief,
+   * NON-directional glitch burst on every coordinate span (all 16, files +
+   * ranks) — visual energy on every press, restoring the old feel, without
+   * pointing at a square the way `hintReveal` above does. 0 means "no press
+   * yet this game" and never bursts. See coordGlitchBurst.ts for the pure
+   * arm/clear decision this wires up to a real timer.
+   */
+  hintGlitchTick?: number;
   /**
    * Increment 2.7 (why-hints): the threat highlight — the opponent's
    * refutation attacker and the square it lands on/captures on, derived
@@ -278,6 +297,11 @@ const STORM_MS = 2000;
 const STORM_BIG_MS = 3200;
 const SHIMMER_MS = 1800;
 const SHIMMER_BIG_MS = 2800;
+// Round 2, item 6: how long the transient coord-glitch burst class stays
+// on. coordGlitch.css's preGlitch run is .22s x 2 iterations (.44s); this
+// leaves a small buffer so the class outlives the animation itself rather
+// than clearing mid-flicker.
+const COORD_GLITCH_BURST_MS = 480;
 
 export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
   {
@@ -293,6 +317,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
     onInputHint,
     lastMove,
     hintReveal,
+    hintGlitchTick,
     threatReveal,
     arrows,
     highlightSquares,
@@ -312,6 +337,35 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
   // "locked mate ring" on a king that hasn't been mated yet in the frame
   // currently on screen). This flag suppresses them for the duration.
   const [cinematicActive, setCinematicActive] = useState(false);
+  // Round 2, item 6: the transient coord-glitch burst -- see
+  // coordGlitchBurst.ts for the pure arm/clear decision. lastGlitchTick
+  // tracks the last `hintGlitchTick` value seen so a re-render with no new
+  // press (tick unchanged) never re-arms it.
+  const [coordGlitchBurst, setCoordGlitchBurst] = useState(false);
+  const lastGlitchTickRef = useRef(0);
+  const glitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Round 2, item 6: every hint-ladder press bumps `hintGlitchTick`
+  // (GamePage.tsx); shouldBurst decides whether THIS change is a real new
+  // press (vs. a re-render with the same tick, or the initial 0 on mount).
+  // A previous timer is always cancelled before a new one is set, so at
+  // most one is ever pending -- shouldClearBurst is the extra guard in case
+  // that timer already fired its callback microtask before cancellation
+  // could land (belt and suspenders, see coordGlitchBurst.ts).
+  useEffect(() => {
+    const tick = hintGlitchTick ?? 0;
+    const armed = shouldBurst(lastGlitchTickRef.current, tick);
+    lastGlitchTickRef.current = tick;
+    if (!armed) return;
+    setCoordGlitchBurst(true);
+    if (glitchTimerRef.current) clearTimeout(glitchTimerRef.current);
+    glitchTimerRef.current = setTimeout(() => {
+      if (shouldClearBurst(tick, lastGlitchTickRef.current)) setCoordGlitchBurst(false);
+    }, COORD_GLITCH_BURST_MS);
+    return () => {
+      if (glitchTimerRef.current) clearTimeout(glitchTimerRef.current);
+    };
+  }, [hintGlitchTick]);
 
   const entriesRef = useRef(entries);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -1013,11 +1067,11 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               <span
                 key={f}
                 className={
-                  hintReveal?.to[0] === f
+                  (hintReveal?.to[0] === f
                     ? "coord-lit"
                     : hintReveal?.from[0] === f
                       ? "coord-lit-origin"
-                      : ""
+                      : "") + (coordGlitchBurst ? " coord-glitch-burst" : "")
                 }
                 style={{ "--ci": i } as CSSProperties}
               >
@@ -1030,11 +1084,11 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               <span
                 key={r}
                 className={
-                  hintReveal?.to[1] === r
+                  (hintReveal?.to[1] === r
                     ? "coord-lit"
                     : hintReveal?.from[1] === r
                       ? "coord-lit-origin"
-                      : ""
+                      : "") + (coordGlitchBurst ? " coord-glitch-burst" : "")
                 }
                 style={{ "--ci": i } as CSSProperties}
               >

@@ -19,6 +19,13 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { localDateFromStartedAt } from "./localDate";
 
+// src/'s own tsconfig (tsconfig.app.json) deliberately doesn't pull in
+// Node's ambient types (browser code has no business seeing them) -- this
+// test file runs under vitest's real Node process, though, so it's safe to
+// declare just the one shape it actually touches rather than widening the
+// whole app's type surface.
+declare const process: { env: Record<string, string | undefined> };
+
 const ORIGINAL_TZ = process.env.TZ;
 
 function withTz<T>(tz: string, fn: () => T): T {

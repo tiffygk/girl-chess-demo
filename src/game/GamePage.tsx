@@ -264,6 +264,16 @@ export function GamePage() {
   // see handlePendingStart/handleConfirmPending/handleRetractPending below.
   const [hintPress, setHintPress] = useState(0);
   const [hintBranch, setHintBranch] = useState<HintBranch | null>(null);
+  // Round 2, item 6 (owner ruling, 2026-08-01 playtest): "the board-
+  // coordinate glitch effect ... want the old feel back." Bumped on EVERY
+  // hint-ladder press (handleHintClick), not just the reveal rung -- Board
+  // turns each change into a brief non-directional glitch burst on the
+  // coordinate spans (coordGlitchBurst.ts). Deliberately never reset
+  // alongside hintPress/hintBranch: a fresh pending move's first press
+  // must still count as a change from whatever tick the last pending move
+  // left behind, which a plain increment already guarantees without needing
+  // its own reset wiring.
+  const [hintGlitchTick, setHintGlitchTick] = useState(0);
   // Increment 3.95, Task 7 ("ask about this"): the focus half of a chat
   // message's context — at most one of hintFocus/turningPointFocus is set
   // at a time (whichever entry point the player last clicked), merged into
@@ -1166,6 +1176,9 @@ export function GamePage() {
       if (next === hintPress) return; // capped -- "more?" is a no-op at the top
       if (hintBranch == null) setHintBranch(branch);
       setHintPress(next);
+      // Round 2, item 6: every real press bumps the burst tick, capped press
+      // above already returned early so this never fires for a no-op click.
+      setHintGlitchTick((t) => t + 1);
       logHintPress(branch, next, hintFacts);
       return;
     }
@@ -1197,6 +1210,10 @@ export function GamePage() {
         setHintFacts(res.facts);
         setHintBranch(branch);
         setHintPress(1);
+        // Round 2, item 6: the outran-the-prefetch path also lands on a real
+        // press (press 1) once the facts resolve -- same burst as the fast
+        // path above.
+        setHintGlitchTick((t) => t + 1);
         logHintPress(branch, 1, res.facts);
       } finally {
         if (pendingTokenRef.current === token) setHintFetching(false);
@@ -2350,6 +2367,7 @@ export function GamePage() {
           onInputHint={handleInputHint}
           lastMove={lastMove}
           hintReveal={hintReveal}
+          hintGlitchTick={hintGlitchTick}
           threatReveal={threatReveal}
           arrows={explore ? (exploreArrow ? [exploreArrow] : []) : reviewArrows}
           highlightSquares={explore ? [] : reviewHighlights}
