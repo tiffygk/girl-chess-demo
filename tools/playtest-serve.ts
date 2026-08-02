@@ -48,6 +48,29 @@ const HER_LIVE_WEB_PORT = 5173;
 const API_PORT = Number(process.env.PLAYTEST_API_PORT) || 4001;
 const WEB_PORT = Number(process.env.PLAYTEST_WEB_PORT) || 4173;
 
+// Review fix F4 (Opus review of ab814d4..1c31dab, 2026-08-02): the original
+// inline guard only refused SAME-ROLE collisions (apiPort===3001,
+// webPort===5173) -- a CROSS collision (apiPort===5173, or webPort===3001)
+// fell through unguarded. In practice a cross collision self-aborts
+// downstream anyway (EADDRINUSE on the API port, vite preview's
+// --strictPort on the web port) when her stack is actually up, but this
+// launcher must never depend on a downstream side effect as its ONLY
+// protection against touching her live ports -- refuse every one of the
+// four (configured port, her live port) pairs up front, before anything
+// spawns. Extracted + exported as its own pure function (mirrors
+// assertServedIsHead just above) so it is directly unit-testable.
+export function assertNoLivePortCollision(apiPort: number, webPort: number): void {
+  const herLivePorts = [HER_LIVE_API_PORT, HER_LIVE_WEB_PORT];
+  for (const p of herLivePorts) {
+    if (apiPort === p) {
+      throw new Error(`refusing to start: the playtest API port ${apiPort} collides with her live stack's port ${p}`);
+    }
+    if (webPort === p) {
+      throw new Error(`refusing to start: the playtest WEB port ${webPort} collides with her live stack's port ${p}`);
+    }
+  }
+}
+
 // Interfaces: the pure assertion the plan names explicitly. Throws (never
 // returns false) so a caller can't accidentally ignore a mismatch the way
 // a boolean return invites -- there is no legitimate reason to continue
@@ -124,12 +147,7 @@ process.on("SIGTERM", () => {
 });
 
 async function main() {
-  if (API_PORT === HER_LIVE_API_PORT) {
-    throw new Error(`refusing to start: PLAYTEST_API_PORT ${API_PORT} is her live server's port (${HER_LIVE_API_PORT})`);
-  }
-  if (WEB_PORT === HER_LIVE_WEB_PORT) {
-    throw new Error(`refusing to start: PLAYTEST_WEB_PORT ${WEB_PORT} is her live web port (${HER_LIVE_WEB_PORT})`);
-  }
+  assertNoLivePortCollision(API_PORT, WEB_PORT);
 
   console.log("[playtest-serve] type-checking (tsc -b)...");
   execSync("npx tsc -b", { cwd: REPO_ROOT, stdio: "inherit" });
