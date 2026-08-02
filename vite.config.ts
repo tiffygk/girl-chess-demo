@@ -9,6 +9,16 @@ export default defineConfig({
     port: Number(process.env.VITE_PORT) || 5173,
     proxy: { "/api": process.env.VITE_API_TARGET || "http://localhost:3001" },
   },
+  // Task 1f (coach-truth-speed latency round, 2026-08-02): `vite preview`
+  // serves the BUILT static dist/ (no watcher, no HMR -- the whole point of
+  // the built-server playtest launcher) but does NOT fall back to the
+  // `server` block's own proxy -- it reads its own `preview` key. Same env
+  // var, same default-to-her-live-port fallback, so this is additive and
+  // changes nothing about `npm run dev`'s existing `vite` (server-key) path.
+  preview: {
+    port: Number(process.env.VITE_PREVIEW_PORT) || 4173,
+    proxy: { "/api": process.env.VITE_API_TARGET || "http://localhost:3001" },
+  },
   test: {
     // The css source pins (endCopy.test.ts) need the real stylesheet text.
     // With `css` unset vitest stubs EVERY .css import to an empty string --
