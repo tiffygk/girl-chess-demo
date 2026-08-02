@@ -17,8 +17,14 @@ import { fileURLToPath } from "url";
 // machine), fall back to the nearest package.json directory so the
 // existing lazy fallback-probe still engages honestly instead of silently
 // resolving to nowhere.
-function findRepoRoot(): string {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
+// Review fix F2 (Opus review of ab814d4..1c31dab, 2026-08-02, Invariant
+// rule): exported, with an optional startDir, so the fallback arm (no
+// ancestor has weights/ at all) is directly testable against a synthesized
+// temp dir tree -- see paths.test.ts. Production callers (REPO_ROOT below)
+// still call it with no argument and get exactly the prior behavior: this
+// module's own on-disk location, via import.meta.url, never process.cwd().
+export function findRepoRoot(startDir: string = path.dirname(fileURLToPath(import.meta.url))): string {
+  let dir = startDir;
   let nearestPkgRoot: string | null = null;
   for (let i = 0; i < 12; i++) {
     const hasPkg = fs.existsSync(path.join(dir, "package.json"));
@@ -28,7 +34,7 @@ function findRepoRoot(): string {
     if (parent === dir) break; // reached filesystem root
     dir = parent;
   }
-  return nearestPkgRoot ?? path.dirname(fileURLToPath(import.meta.url));
+  return nearestPkgRoot ?? startDir;
 }
 
 const REPO_ROOT = findRepoRoot();
