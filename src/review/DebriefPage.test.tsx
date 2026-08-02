@@ -281,4 +281,24 @@ describe("PastGamesDrawer (Wave 3.5, item 2): row restructure for the delete X",
     );
     expect(html).toContain("could not delete that game. try again.");
   });
+
+  // Round 2, item 6 (owner ruling, 2026-08-01 playtest): "X is slightly too
+  // low (not vertically centered)". A text glyph's vertical placement rides
+  // on font metrics (ascent/descent), which is exactly why it drifted --
+  // swapping to a geometric SVG glyph (paired crossing lines, same
+  // construction the settings gear already uses) makes centering a layout
+  // fact instead of a font fact. This only covers the IDLE state; the
+  // armed "sure?" state is untouched text per the owner's "keep the armed
+  // color as is" ruling.
+  it("the idle delete X renders a geometric SVG glyph (not a text character), so its centering doesn't depend on font metrics", () => {
+    const html = renderToStaticMarkup(
+      <PastGamesDrawer open games={[GAME]} onSelect={noop} onClose={noop} onDelete={noop} />
+    );
+    const deleteOpen = html.indexOf('class="past-games-delete"');
+    expect(deleteOpen).toBeGreaterThan(-1);
+    const deleteClose = html.indexOf("</button>", deleteOpen);
+    const deleteButtonHtml = html.slice(deleteOpen, deleteClose);
+    expect(deleteButtonHtml).toContain("<svg");
+    expect(deleteButtonHtml).not.toContain("×"); // no bare × text glyph left in the idle button
+  });
 });

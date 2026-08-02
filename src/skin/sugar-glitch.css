@@ -1727,19 +1727,37 @@
    uses for endgame-controls' button.small.confirming (sugar-glitch.css:192)
    -- same destructive accent everywhere in this palette (also
    .debrief-card-negative's pink alarm tint), never a new color invented for
-   this one button. */
+   this one button.
+   Round 2, item 6 (owner ruling, 2026-08-01 playtest): idle resting palette
+   restyled to match the settings cog (GamePage.tsx's .settings-gear/
+   gear-svg) -- same #7A6BB5 signal-ink glyph color and the same squishy
+   press-shadow language the two-axis law requires of any touchable control
+   (was flat, box-shadow: none, which is what read as "cream/weird" against
+   the candy buttons around it). Border width/style (1.5px solid) is kept
+   as-is on purpose -- the armed rule below overrides only border-color and
+   relies on this shorthand for its own width/style, so touching it here
+   would silently change the armed look too. Geometry: the glyph itself
+   moved from a text "×" to DeleteXIcon's SVG (DebriefPage.tsx) so vertical
+   centering is a layout fact, not a font-metrics fact; this rule only
+   needs to center the icon's flex box, which align-items/justify-content
+   already did. */
 .gc-app button.past-games-delete {
   position: absolute; top: 6px; right: 6px;
   width: 22px; height: 22px; padding: 0;
   display: flex; align-items: center; justify-content: center;
-  font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: 13px; line-height: 1;
-  color: #9C8FC7; background: #fff;
+  color: #7A6BB5; background: #fff;
   border: 1.5px solid #E3D9F5; border-radius: 999px;
-  box-shadow: none; transform: none;
-  transition: background .12s ease, color .12s ease;
+  box-shadow: 0 2px 0 #C9BFEF, 0 4px 8px rgba(90,70,180,.18); transform: none;
+  transition: background .12s ease, color .12s ease, box-shadow .12s ease, transform .12s ease;
 }
-.gc-app button.past-games-delete:hover { background: #F4F0FF; color: #7A6BB5; }
-.gc-app button.past-games-delete:active { box-shadow: none; transform: none; }
+.gc-app button.past-games-delete:hover {
+  background: #F4F0FF; color: #7A6BB5; transform: translateY(-1px);
+  box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.22);
+}
+.gc-app button.past-games-delete:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 #C9BFEF, 0 3px 6px rgba(90,70,180,.16);
+}
 /* Armed ("sure?") -- the button itself morphs, no modal, same construction
    as .confirming: text swaps to a compact "sure?" and the whole button
    flips to the magenta/magenta-dark destructive pair. */
