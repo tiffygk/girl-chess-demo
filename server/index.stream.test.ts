@@ -59,12 +59,91 @@ describe("POST /api/game/:id/chat/stream (B-stream)", () => {
     const frames = parseFrames(r.text);
     expect(frames.length).toBeGreaterThanOrEqual(3);
     expect(frames[frames.length - 1].event).toBe("done");
-    const deltaFrames = frames.slice(0, -1);
-    expect(deltaFrames.every((f) => f.event === "delta")).toBe(true);
+    // Task 1c (2026-08-02): status frames now interleave with delta frames
+    // (a status:drafting frame precedes the delta replay) -- filter to the
+    // delta-only subset rather than assuming every non-final frame is one.
+    const deltaFrames = frames.filter((f) => f.event === "delta");
     expect(deltaFrames.map((f) => (f.data as { text: string }).text)).toEqual([
       "e4 ",
       "opens things up nicely for you.",
     ]);
+  }, 20000);
+
+  // Task 1c (coach-truth-speed latency round, 2026-08-02): the staged
+  // status chip -- REAL pipeline events, no unvalidated prose. Given the
+  // owner ruling that no unvalidated prose is ever shown, and chat.ts's
+  // buffered-flush-after-validation behaviour (UNCHANGED by this task), the
+  // buffered delta replay ("drafting") can only ever begin AFTER validation
+  // ("checking") has already passed -- so the real, honest order is
+  // thinking -> checking -> drafting, never drafting before checking.
+  it("emits status frames in the real pipeline order (thinking, checking, drafting on first delta), each carrying ONLY {phase}, never prose", async () => {
+    await ready;
+    gm.setCoachBackendForTesting({
+      name: "fake-streaming",
+      async available() {
+        return true;
+      },
+      async generate() {
+        throw new Error("generate() should not be called when generateStream is used");
+      },
+      async generateStream(_prompt, _timeoutMs, onDelta) {
+        onDelta("e4 ");
+        onDelta("opens things up nicely for you.");
+        return "e4 opens things up nicely for you.";
+      },
+    });
+
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(app).post(`/api/game/${g.body.gameId}/move`)
+      .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
+
+    const r = await request(app).post(`/api/game/${g.body.gameId}/chat/stream`)
+      .send({ message: "what did I just play?", context: { mode: "live" } })
+      .expect(200);
+
+    const frames = parseFrames(r.text);
+    expect(frames.map((f) => f.event)).toEqual(["status", "status", "status", "delta", "delta", "done"]);
+    const statusFrames = frames.filter((f) => f.event === "status");
+    expect(statusFrames.map((f) => (f.data as { phase: string }).phase)).toEqual(["thinking", "checking", "drafting"]);
+    // every status frame carries ONLY {phase} -- never the model's own text.
+    for (const f of statusFrames) {
+      expect(Object.keys(f.data as object)).toEqual(["phase"]);
+    }
+  }, 20000);
+
+  it("fires a status:redrafting frame alongside the existing redraft frame when attempt 0 fails validation", async () => {
+    await ready;
+    let call = 0;
+    gm.setCoachBackendForTesting({
+      name: "fake-non-streaming",
+      async available() {
+        return true;
+      },
+      async generate() {
+        call += 1;
+        // Attempt 0: an off-game move -> validateChat rejects it -> regen.
+        return call === 1 ? "she plays Qh5xf7 next." : "e4 opens things up nicely for you.";
+      },
+    });
+
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(app).post(`/api/game/${g.body.gameId}/move`)
+      .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
+
+    const r = await request(app).post(`/api/game/${g.body.gameId}/chat/stream`)
+      .send({ message: "what did I just play?", context: { mode: "live" } })
+      .expect(200);
+
+    const frames = parseFrames(r.text);
+    const events = frames.map((f) => f.event);
+    // thinking (attempt 0) -> checking (attempt 0, fails) -> redraft (the
+    // existing frame) -> status:redrafting (attempt 1, NEW) -> checking
+    // (attempt 1, passes) -> done (non-streaming backend, no delta frames).
+    expect(events).toEqual(["status", "status", "redraft", "status", "status", "done"]);
+    const phases = frames.filter((f) => f.event === "status").map((f) => (f.data as { phase: string }).phase);
+    expect(phases).toEqual(["thinking", "checking", "redrafting", "checking"]);
   }, 20000);
 
   it("the done frame's envelope matches the JSON route's response shape exactly", async () => {
@@ -130,10 +209,16 @@ describe("POST /api/game/:id/chat/stream (B-stream)", () => {
       .expect(200);
 
     const frames = parseFrames(r.text);
-    expect(frames).toHaveLength(1); // no deltas at all -- straight to done
-    expect(frames[0].event).toBe("done");
-    expect((frames[0].data as { ok: boolean; text: string }).ok).toBe(true);
-    expect((frames[0].data as { ok: boolean; text: string }).text.length).toBeGreaterThan(0);
+    // Task 1c (2026-08-02): status:thinking + status:checking now precede
+    // done even on the non-streaming path (no deltas -- a non-streaming
+    // backend never populates attemptDeltas, so no status:drafting fires
+    // either) -- filter to the delta-only subset for the "no deltas" claim
+    // rather than asserting a bare frame count.
+    expect(frames.filter((f) => f.event === "delta")).toHaveLength(0);
+    expect(frames[frames.length - 1].event).toBe("done");
+    const done = frames[frames.length - 1];
+    expect((done.data as { ok: boolean; text: string }).ok).toBe(true);
+    expect((done.data as { ok: boolean; text: string }).text.length).toBeGreaterThan(0);
   }, 20000);
 
   it("emits an error frame (not a thrown 500) for chat on a nonexistent game", async () => {

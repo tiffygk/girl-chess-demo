@@ -1,6 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { chatWithCoach, streamChatWithCoach, rateTrace, type ChatContext, type ChatResponse } from "./api";
 import { anchorForFocus, focusKey, shouldInjectAnchor, type ThreadEntry } from "./chatThread";
+import type { ChatStatusPhase } from "./chatStream";
+
+// Task 1c (coach-truth-speed latency round, 2026-08-02): the staged
+// perceived-progress copy, driven by REAL pipeline events only (server/
+// coach/chat.ts's onAttemptStart/onValidateStart, server/index.ts's status
+// frame) -- never unvalidated prose (owner ruling stands). "redrafting"
+// falls back to the same "thinking" copy: by the time that phase's frame
+// reaches the client, onRedraft has already fired and swapped the render
+// into the muted "let me redo that" bubble below, so this entry is a type-
+// completeness fallback, not a copy that's actually seen.
+const STATUS_PHASE_COPY: Record<ChatStatusPhase, string> = {
+  thinking: "cookie is thinking…",
+  drafting: "cookie is drafting…",
+  checking: "cookie is checking her work…",
+  redrafting: "cookie is thinking…",
+};
 
 // Increment 3.9, Task 4 (F19): thumbs up/down with feedback capture on any
 // traced coach output. Exported here and imported by GamePage's coach
@@ -184,6 +200,11 @@ export function CoachChat({
   // the bubble into; the FIRST delta that arrives after a redraft replaces
   // this bubble's text rather than appending to it (see send() below).
   const [streamDraft, setStreamDraft] = useState<{ text: string; muted: boolean } | null>(null);
+  // Task 1c: the staged status phase, null until the first status frame of
+  // a request lands. Reset alongside streamDraft on every new send and on a
+  // game-id change -- same lifecycle, it only ever describes the CURRENT
+  // in-flight request.
+  const [statusPhase, setStatusPhase] = useState<ChatStatusPhase | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const requestTokenRef = useRef(0);
   const openSignalRef = useRef(openSignal);
@@ -202,6 +223,7 @@ export function CoachChat({
     setDraft("");
     setPending(false);
     setStreamDraft(null);
+    setStatusPhase(null);
     setOpen(false);
     lastInjectedKeyRef.current = null;
   }, [gameId]);
@@ -250,6 +272,7 @@ export function CoachChat({
     setMessages((prev) => [...prev, { kind: "message", role: "user", text }]);
     setDraft("");
     setStreamDraft(null);
+    setStatusPhase(null);
     const context = buildContext();
 
     // Shared terminal handling for BOTH the streaming path's done/error
@@ -259,6 +282,7 @@ export function CoachChat({
     const settle = (res: ChatResponse | null) => {
       if (requestTokenRef.current !== token) return; // superseded — drop it
       setStreamDraft(null);
+      setStatusPhase(null);
       // Minor fix (task-reviewer, pre-existing): `res.text != null` rather
       // than truthiness — an empty-string reply is a real (if odd) reply,
       // not a failure, and shouldn't fall through to the fallback copy.
@@ -306,6 +330,12 @@ export function CoachChat({
         if (requestTokenRef.current !== token) return;
         awaitingReplacement = true;
         setStreamDraft((prev) => ({ text: prev?.text ?? "", muted: true }));
+      },
+      // Task 1c: drives the phase copy in the "cookie is thinking…" bubble
+      // below. Real pipeline events only -- never carries prose.
+      onStatus: (phase) => {
+        if (requestTokenRef.current !== token) return;
+        setStatusPhase(phase);
       },
       onDone: (res) => settle(res),
       onError: (res) => settle(res),
@@ -437,16 +467,18 @@ export function CoachChat({
               </div>
             );
           })}
-          {/* B-stream: "cookie is thinking…" stays up until the first delta
-              lands (streamDraft is still null at that point); once text
-              starts streaming in, this swaps to the draft bubble below --
-              same mount point, never two bubbles at once. Reuses the
-              existing .chat-thinking class (not a new one) for the
-              dimmed/italic draft treatment the brief calls for: skin/**
-              already styles `.chat-thinking .chat-bubble-text` exactly that
-              way, and this wave does not touch src/skin/** (a parallel wave
-              owns it). No thumbs, no chip on either bubble — those only
-              ever attach to a settled ThreadEntry in `messages` above. */}
+          {/* B-stream / Task 1c (2026-08-02): the staged status bubble stays
+              up until the first delta lands (streamDraft is still null at
+              that point); once text starts streaming in, this swaps to the
+              draft bubble below -- same mount point, never two bubbles at
+              once. Its copy now tracks statusPhase (thinking/drafting/
+              checking, real pipeline events, never prose) instead of a
+              fixed "cookie is thinking…" string. Reuses the existing
+              .chat-thinking class (not a new one) for the dimmed/italic
+              draft treatment: skin/** already styles
+              `.chat-thinking .chat-bubble-text` exactly that way. No
+              thumbs, no chip on either bubble — those only ever attach to a
+              settled ThreadEntry in `messages` above. */}
           {pending && streamDraft && (
             <div className="chat-bubble chat-bubble-coach chat-thinking pop-in">
               <p className="chat-bubble-text">{streamDraft.text}</p>
@@ -455,7 +487,7 @@ export function CoachChat({
           )}
           {pending && !streamDraft && (
             <div className="chat-bubble chat-bubble-coach chat-thinking pop-in">
-              <p className="chat-bubble-text">cookie is thinking…</p>
+              <p className="chat-bubble-text">{STATUS_PHASE_COPY[statusPhase ?? "thinking"]}</p>
             </div>
           )}
         </div>

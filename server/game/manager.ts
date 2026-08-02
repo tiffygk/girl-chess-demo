@@ -1006,7 +1006,15 @@ export class GameManager {
     // Threaded straight through to chatWithCoach's own opts below — this
     // method has no opinion about SSE at all, only about forwarding the two
     // hooks to the one place (chat.ts) that actually owns the attempt loop.
-    streamOpts?: { onDelta?: (text: string) => void; onRedraft?: () => void }
+    // Task 1c (2026-08-02): onAttemptStart/onValidateStart are the same
+    // kind of additive, opinion-free forward -- this method still has no
+    // idea what a "status frame" is, it only passes the two hooks through.
+    streamOpts?: {
+      onDelta?: (text: string) => void;
+      onRedraft?: () => void;
+      onAttemptStart?: () => void;
+      onValidateStart?: () => void;
+    }
   ): Promise<
     | { ok: false; error?: string }
     | {
@@ -1140,6 +1148,8 @@ export class GameManager {
       intent,
       onDelta: streamOpts?.onDelta,
       onRedraft: streamOpts?.onRedraft,
+      onAttemptStart: streamOpts?.onAttemptStart,
+      onValidateStart: streamOpts?.onValidateStart,
       standingNotes,
     });
 

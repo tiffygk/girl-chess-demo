@@ -1343,7 +1343,24 @@ export async function chat(
   // call site (chat.test.ts and its siblings, manager.ts pre-this-wave) omits
   // it and gets exactly today's behavior. manager.ts reads listCoachNotes and
   // passes them here; this function only forwards them to buildChatPrompt.
-  opts?: { budgetMs?: number; intent?: ChatIntent; onDelta?: (text: string) => void; onRedraft?: () => void; standingNotes?: string[] }
+  // Task 1c (coach-truth-speed latency round, 2026-08-02): onAttemptStart/
+  // onValidateStart are the two hooks the staged status chip needs --
+  // additive/optional, every existing call site untouched. Both fire with
+  // NO arguments and carry no model text: onAttemptStart right before EACH
+  // backend.generateStream/generate call (attempt 0 and, if a regen starts,
+  // attempt 1 again -- the SSE route tells the two apart the same way it
+  // already tells attempt 1 apart for onRedraft, by call order, not by an
+  // argument this function would have to pass); onValidateStart right after
+  // the backend returns, before validateChat/validateChatGeneral runs.
+  opts?: {
+    budgetMs?: number;
+    intent?: ChatIntent;
+    onDelta?: (text: string) => void;
+    onRedraft?: () => void;
+    onAttemptStart?: () => void;
+    onValidateStart?: () => void;
+    standingNotes?: string[];
+  }
 ): Promise<{
   text: string;
   source: "model" | "template";
@@ -1456,6 +1473,10 @@ export async function chat(
     // trade-off (owner-approved): no live typing during generation, the
     // visible stream starts only after validation.
     const attemptDeltas: string[] = [];
+    // Task 1c: fires right before the backend is actually called -- a REAL
+    // pipeline event, not a guess. Attempt 0 fires this once; a regen
+    // (attempt 1) fires it again, same as onRedraft just above.
+    opts?.onAttemptStart?.();
     try {
       // B-stream: one ternary, no duplicated attempt loop. Streaming is used
       // only when the backend actually implements it AND the caller asked
@@ -1487,6 +1508,9 @@ export async function chat(
       break;
     }
 
+    // Task 1c: fires the moment the backend has returned, right before
+    // validateChat/validateChatGeneral runs -- a real event, not a delay.
+    opts?.onValidateStart?.();
     const trimmed = attemptOutput.trim();
     // Task 2 (Wave D): the general route validates with validateChatGeneral
     // (no SAN-allowlist check) instead of validateChat -- everything else

@@ -11,7 +11,7 @@
 //
 // Frame wire shape (server/index.ts's writeFrame): one blank-line-terminated
 // SSE record per frame --
-//   event: <delta|redraft|done|error>\n
+//   event: <status|delta|redraft|done|error>\n
 //   data: <json>\n
 //   \n
 // A chunk boundary from the network has NO relationship to a frame boundary
@@ -21,9 +21,16 @@
 // only ever emits fully-parsed frames.
 import type { ChatResponse } from "./api";
 
+// Task 1c (coach-truth-speed latency round, 2026-08-02): the four staged
+// status phases, REAL pipeline events only -- never carries prose. Its own
+// union type (not a bare string) so an unrecognized phase is a type error
+// at every call site, not a silent no-op.
+export type ChatStatusPhase = "thinking" | "drafting" | "checking" | "redrafting";
+
 export type ChatStreamFrame =
   | { event: "delta"; data: { text: string } }
   | { event: "redraft"; data: Record<string, never> }
+  | { event: "status"; data: { phase: ChatStatusPhase } }
   | { event: "done"; data: ChatResponse }
   | { event: "error"; data: ChatResponse };
 
@@ -37,7 +44,7 @@ export function initChatStream(): ChatStreamState {
 
 const EVENT_PREFIX = "event: ";
 const DATA_PREFIX = "data: ";
-const KNOWN_EVENTS = new Set(["delta", "redraft", "done", "error"]);
+const KNOWN_EVENTS = new Set(["delta", "redraft", "status", "done", "error"]);
 
 // A single "event: X\ndata: Y" block (no trailing blank line -- the caller
 // below has already split on "\n\n"). Returns null for anything malformed or
