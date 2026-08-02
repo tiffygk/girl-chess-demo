@@ -481,6 +481,23 @@ describe("GameManager", () => {
     expect((await gm.computeHint(999999)).ok).toBe(false);
   }, 10000);
 
+  // Round 3, Q2 step 2: the manager's own record of the last hint it computed
+  // for a live game, keyed to the fen it was computed for -- the shelf
+  // source Task 3's chat fold reads from.
+  it("computeHint records lastHint {fen, facts, at} on the live game", async () => {
+    const { gameId } = await gm.newGame(sessionId, 1100);
+    const fenBefore = (gm as any).games.get(gameId).chess.fen();
+    const res = await gm.computeHint(gameId);
+    expect(res.ok).toBe(true);
+    const live = (gm as any).games.get(gameId);
+    expect(live.lastHint).toBeDefined();
+    expect(live.lastHint.fen).toBe(fenBefore);
+    if (res.ok) {
+      expect(live.lastHint.facts).toBe(res.facts);
+    }
+    expect(typeof live.lastHint.at).toBe("number");
+  }, 40000);
+
   // Increment 3a Wave 2: narrate(). Uses setCoachBackendForTesting to inject
   // a fake — never probes or invokes the real claude CLI / ollama (brief:
   // "do NOT invoke the real claude CLI in tests"). This also exercises the

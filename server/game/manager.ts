@@ -41,7 +41,17 @@ import { ollamaBackend } from "../coach/backends/ollama";
 import { agentSdkBackend } from "../coach/backends/agent-sdk";
 import { noBackend, type CoachBackend } from "../coach/backends/types";
 
-interface LiveGame { chess: Chess; opponent: MaiaOpponent; ply: number; finished: boolean }
+interface LiveGame {
+  chess: Chess;
+  opponent: MaiaOpponent;
+  ply: number;
+  finished: boolean;
+  /** Round 3 (Q2 step 2): the last hint computed for THIS game, keyed to the
+   *  fen it was computed for, so chat can fold the hint's verified findings
+   *  onto the shelf when she asks about the same position. In-memory only,
+   *  no schema change. */
+  lastHint?: { fen: string; facts: HintFacts; at: number };
+}
 
 // Wave 4, item 3 (2026-08-01, game-164): the coach's acknowledgment for a
 // recorded note. A CODE constant, deterministically appended by chat() ONLY
@@ -918,6 +928,7 @@ export class GameManager {
     const fen = live.chess.fen();
     const facts = await computeHintFacts(fen, this.evaluator);
     if (!facts) return { ok: false };
+    live.lastHint = { fen, facts, at: Date.now() };
     logGameEvent(
       gameId,
       "hint_compute",
