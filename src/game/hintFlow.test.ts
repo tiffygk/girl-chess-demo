@@ -245,10 +245,32 @@ describe("selectRung (priority ladder, first true wins)", () => {
   it("3. fork motif -> fork", () => {
     expect(selectRung(ctx({ threat: forkThreat }))).toBe("fork");
   });
-  it("4. counter-fork: a DEFENDED capture motif AND best move forks", () => {
-    const defended: ThreatFacts = { ...captureMovedThreat, capturedSquareDefended: true };
+  it("4. counter-fork: a DEFENDED, GENUINELY LOSING capture AND best move forks", () => {
+    // her queen took a pawn and gets recaptured (defended) -> net -8, a real
+    // material loss, so "you're losing material, but your piece forks" is true.
+    const lopsided: ThreatFacts = {
+      ...captureMovedThreat,
+      capturedSquareDefended: true,
+      capturedPieceKind: "q",
+      herCapturedPieceKind: "p",
+    };
     const bf: HintFacts = { ...bestFacts, recommendation: forksRec };
-    expect(selectRung(ctx({ threat: defended, bestFacts: bf }))).toBe("counter-fork");
+    expect(selectRung(ctx({ herPieceKind: "q", threat: lopsided, bestFacts: bf }))).toBe("counter-fork");
+  });
+  it("4. counter-fork does NOT fire on a defended EVEN trade (QxQ recaptured) -- not material loss", () => {
+    // her queen took a queen and gets recaptured -> net 0. "losing material"
+    // would be a false claim; fall through past the counter-fork rung.
+    const evenTrade: ThreatFacts = {
+      ...captureMovedThreat,
+      capturedSquareDefended: true,
+      capturedPieceKind: "q",
+      herCapturedPieceKind: "q",
+    };
+    const bf: HintFacts = { ...bestFacts, recommendation: forksRec };
+    const rung = selectRung(ctx({ herPieceKind: "q", threat: evenTrade, bestFacts: bf }));
+    expect(rung).not.toBe("counter-fork");
+    const copy = rungCopy("right", 2, ctx({ herPieceKind: "q", threat: evenTrade, bestFacts: bf }))!;
+    expect(copy).not.toMatch(/losing material|winning material|material's slipping/);
   });
   it("4. a defended capture WITHOUT a best-move fork falls past counter-fork", () => {
     const defended: ThreatFacts = { ...captureMovedThreat, capturedSquareDefended: true };
@@ -386,7 +408,7 @@ describe("conversion override outranks the right-P2 ladder", () => {
     const copy = rungCopy("right", 2, ctx({ threat: forkThreat }))!;
     expect(copy).toMatch(/fork/);
   });
-  it("conversion override never leaks into any other rung", () => {
+  it("conversion override never leaks into the right branch's other rungs", () => {
     const conversion = "conversion copy that must not appear here";
     expect(rungCopy("right", 1, ctx({ threat: forkThreat, conversionCopy: conversion }))).not.toBe(
       conversion
@@ -395,6 +417,40 @@ describe("conversion override outranks the right-P2 ladder", () => {
     expect(
       rungCopy("right", 3, ctx({ threat: forkThreat, bestFacts, fen, conversionCopy: conversion }))
     ).not.toBe(conversion);
+  });
+
+  // IMPORTANT 3: on the WRONG branch the decided-position copy must still
+  // reach the player, but wrong-P2's piece-naming job has to survive -- so
+  // conversionCopy is PREPENDED (the conversion story leads) rather than
+  // replacing the naming.
+  it("wrong-P2 PREPENDS conversionCopy and keeps the piece-naming copy", () => {
+    const conversion = "still winning, but that gives back your knight for nothing.";
+    const copy = rungCopy("wrong", 2, ctx({ threat: forkThreat, bestFacts, conversionCopy: conversion }))!;
+    expect(copy.startsWith(conversion)).toBe(true);
+    expect(copy).toContain("bishop"); // the best piece still named
+    expect(copy).toContain("c1"); // its FROM square still named
+  });
+  it("wrong-P2 without conversionCopy is unchanged (pure piece-naming, no lead sentence)", () => {
+    const copy = rungCopy("wrong", 2, ctx({ threat: forkThreat, bestFacts }))!;
+    expect(copy).toContain("bishop");
+    expect(copy).toContain("c1");
+    expect(copy).not.toContain("winning");
+  });
+});
+
+// ---- IMPORTANT 1: mate-rung voice (house rule: "her" is always mallow) ----
+
+describe("mate rung: every variant says mallow has the mate against the player", () => {
+  it("no mate-pool variant reads as a mate FOR/toward mallow ('for her' / 'coming for her')", () => {
+    const seen = new Set<string>();
+    // seed = (gameId*31 + pendingPly) % 3 -- ply 0,1,2 covers the whole pool.
+    for (let ply = 0; ply < 6; ply++) {
+      seen.add(rungCopy("right", 2, ctx({ threat: mateThreat, gameId: 0, pendingPly: ply }))!);
+    }
+    expect(seen.size).toBeGreaterThanOrEqual(3); // the whole pool was covered
+    for (const copy of seen) {
+      expect(copy, `side-ambiguous mate copy: "${copy}"`).not.toMatch(/\bfor her\b/);
+    }
   });
 });
 
