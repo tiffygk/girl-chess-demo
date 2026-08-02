@@ -6,7 +6,7 @@ import {
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
   insertVerdict, getAllChatMessages, listCoachNotes,
 } from "../store/db";
-import { GameManager, BACKEND_CACHE_TTL_MS, buildVerdictFactsJson } from "./manager";
+import { GameManager, BACKEND_CACHE_TTL_MS, buildVerdictFactsJson, COACH_NOTE_ACK } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
 // Task 5 reviewer fix: the "ollama unavailable" test below spies on this
 // module's own available() rather than pre-seeding pickCoachBackend's cache,
@@ -676,7 +676,10 @@ describe("GameManager", () => {
   // acknowledgment -- but ONLY when the insert actually happened, so the coach
   // never claims a memory it doesn't have.
   describe("coach_notes write path (Wave 4 item 3)", () => {
-    const ACK = "noted for real this time. it'll be in my head next game.";
+    // Round 2, item 8 (owner ruling, 2026-08-01 playtest): imports the real
+    // constant (rather than a hand-copied literal) so this test can never
+    // silently drift from the copy manager.ts actually sends.
+    const ACK = COACH_NOTE_ACK;
     function fakeAnswer(text: string) {
       gm.setCoachBackendForTesting({
         name: "fake",
@@ -722,6 +725,44 @@ describe("GameManager", () => {
       expect(listCoachNotes().length).toBe(before);
       if (res.ok) expect(res.text.includes(ACK)).toBe(false);
     }, 20000);
+
+    // Round 2, item 8 (owner ruling, 2026-08-01 playtest): "she asked twice
+    // for a note in her playtest and got nothing" -- her real phrasing here,
+    // verbatim from the ruling. Before this fix RECORD_REQUEST_RE's family
+    // didn't cover "make a note" at all, so this test end-to-ends the full
+    // path: detection (intent.ts), the write (coach_notes), and the ack.
+    it("recognizes the owner's own verbatim phrasing from the playtest and acknowledges it", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      await gm.playerMove(g.gameId, "e2", "e4", undefined, 500);
+      fakeAnswer("that's fine. keep developing.");
+
+      const before = listCoachNotes().length;
+      const msg = "let's make a note of this for analysis later";
+      const res = await gm.chat(g.gameId, { message: msg, context: { mode: "live" } });
+      expect(res.ok).toBe(true);
+
+      const notes = listCoachNotes();
+      expect(notes.length).toBe(before + 1);
+      expect(notes[0].note).toContain(msg);
+      if (res.ok) expect(res.text.endsWith(ACK)).toBe(true);
+    }, 20000);
+
+    // Round 2, item 8: the ack must read warmly regardless of WHICH
+    // phrasing fired it -- including phrasings that only mean "I'm
+    // annotating for my dev partner" rather than "remember this chess idea
+    // for my next game". The old copy ("noted for real this time...") was a
+    // meta callback to the game-164 persistence bug this whole feature
+    // exists to fix -- not something cookie, in-character, would ever say
+    // to the player. Pinned as a real content assertion (not a tautological
+    // self-equality) so a regression back to that old copy fails here.
+    it("the acknowledgment copy is warm, in cookie's voice, and carries no meta reference to a past bug", () => {
+      expect(COACH_NOTE_ACK).not.toMatch(/this time/i);
+      expect(COACH_NOTE_ACK).not.toMatch(/for real/i);
+      // voice convention (coach.md's own "format: lowercase")
+      expect(COACH_NOTE_ACK).toBe(COACH_NOTE_ACK.toLowerCase());
+      // voice convention: no em-dashes
+      expect(COACH_NOTE_ACK).not.toMatch(/—|--/);
+    });
   });
 
   // Task 8 (inc 3.95): coach-backend hardening bundle, three fixes.

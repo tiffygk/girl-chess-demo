@@ -27,6 +27,9 @@ import type { GameListEntry, MoveClassification, TurningPoint, TurningLine, Summ
 // which only ever renders via renderToStaticMarkup -- no onClick fires
 // there).
 import { clickDelete, disarmArmed, type ArmState } from "./deleteArm";
+// Round 2, item 9 (owner ruling, 2026-08-01 playtest): render startedAt in
+// the viewer's local timezone, not a raw slice of the server's UTC string.
+import { localDateFromStartedAt } from "./localDate";
 import { moveNumberForPly } from "./debriefLesson";
 import { debriefBullets, affordancesForBullet, type DebriefBullet } from "./debriefBullets";
 // Increment 3.91 (Task 4): the four-part note, rendered under a turning-
@@ -113,6 +116,27 @@ function resultWord(result: string): string {
 function eloFromOpponent(opponent: string): string {
   const m = opponent.match(/(\d+)\s*$/);
   return m ? m[1] : opponent;
+}
+
+// Round 2, item 6 (owner ruling, 2026-08-01 playtest): the idle delete X was
+// "slightly too low (not vertically centered)" -- a bare "×" text glyph's
+// on-screen position rides on the font's own ascent/descent metrics, which
+// is exactly the kind of thing that silently drifts. A geometric SVG glyph
+// (two crossing lines, same construction the settings-gear icon already
+// uses -- GamePage.tsx's gear-svg) makes centering a layout fact instead of
+// a font fact: stroke=currentColor so it inherits .past-games-delete's CSS
+// color/hover rules with no duplicated palette. Idle state only -- the
+// armed "sure?" state stays plain text, untouched (owner: keep its color
+// exactly as is).
+function DeleteXIcon() {
+  return (
+    <svg className="past-games-delete-icon" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+      <g stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+        <line x1="2" y1="2" x2="10" y2="10" />
+        <line x1="10" y1="2" x2="2" y2="10" />
+      </g>
+    </svg>
+  );
 }
 
 interface TurningPointCardProps {
@@ -708,7 +732,7 @@ export function PastGamesDrawer({ open, games, onSelect, onClose, onDelete, dele
                 onMouseEnter={() => handleRowMouseEnter(g.id)}
               >
                 <button className="past-games-select" onClick={() => onSelect(g)}>
-                  <span className="past-games-date">{g.startedAt.slice(0, 10)}</span>
+                  <span className="past-games-date">{localDateFromStartedAt(g.startedAt)}</span>
                   <span className="past-games-opponent">mallow {eloFromOpponent(g.opponent)}</span>
                   <span className="past-games-result">{resultWord(g.result)}</span>
                   <span className="past-games-lesson">{g.lesson ?? "no clear lesson yet"}</span>
@@ -718,7 +742,7 @@ export function PastGamesDrawer({ open, games, onSelect, onClose, onDelete, dele
                   aria-label={armed === g.id ? "confirm delete" : "delete game"}
                   onClick={(e) => handleDeleteClick(e, g.id)}
                 >
-                  {armed === g.id ? "sure?" : "×"}
+                  {armed === g.id ? "sure?" : <DeleteXIcon />}
                 </button>
               </div>
             ))}

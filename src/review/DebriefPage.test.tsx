@@ -18,6 +18,10 @@ import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DebriefPage, PastGamesDrawer, type DebriefPageProps } from "./DebriefPage";
 import type { TurningPoint, TurningLine, SummaryMove, GameListEntry } from "../game/api";
+// Source pin follows postgame.test.ts/endCopy.test.ts's established
+// pattern: a bundler-safe `?raw` import (vite.config.ts's test.css: true)
+// rather than node:fs, since src/ has no Node types under tsconfig.app.json.
+import cssSrc from "../skin/sugar-glitch.css?raw";
 
 // Scholar's Mate up to black's losing 6th ply -- the same real,
 // independently-checkable fixture followedBest.test.ts/chatFocus.test.ts/
@@ -280,5 +284,39 @@ describe("PastGamesDrawer (Wave 3.5, item 2): row restructure for the delete X",
       />
     );
     expect(html).toContain("could not delete that game. try again.");
+  });
+
+  // Round 2, item 6 (owner ruling, 2026-08-01 playtest): "X is slightly too
+  // low (not vertically centered)". A text glyph's vertical placement rides
+  // on font metrics (ascent/descent), which is exactly why it drifted --
+  // swapping to a geometric SVG glyph (paired crossing lines, same
+  // construction the settings gear already uses) makes centering a layout
+  // fact instead of a font fact. This only covers the IDLE state; the
+  // armed "sure?" state is untouched text per the owner's "keep the armed
+  // color as is" ruling.
+  it("the idle delete X renders a geometric SVG glyph (not a text character), so its centering doesn't depend on font metrics", () => {
+    const html = renderToStaticMarkup(
+      <PastGamesDrawer open games={[GAME]} onSelect={noop} onClose={noop} onDelete={noop} />
+    );
+    const deleteOpen = html.indexOf('class="past-games-delete"');
+    expect(deleteOpen).toBeGreaterThan(-1);
+    const deleteClose = html.indexOf("</button>", deleteOpen);
+    const deleteButtonHtml = html.slice(deleteOpen, deleteClose);
+    expect(deleteButtonHtml).toContain("<svg");
+    expect(deleteButtonHtml).not.toContain("×"); // no bare × text glyph left in the idle button
+  });
+
+  // Opus review fix (round 2, applied 2026-08-02): the idle-state rewrite
+  // above dropped font-family/font-weight from the base
+  // `.gc-app button.past-games-delete` rule -- harmless for the idle state
+  // (an SVG glyph, unaffected by font weight) but the ARMED "sure?" state
+  // is still plain text and used to inherit weight 700 from that same base
+  // rule. With the base rule's font-weight gone, "sure?" silently fell back
+  // to the global `.gc-app button` rule's weight 600 -- a regression the
+  // owner's "keep the armed state as is" ruling explicitly forbids. Pinned
+  // directly on the armed rule (not the base one) so the weight is
+  // guaranteed regardless of which rule a future edit touches.
+  it("the armed 'sure?' state's own rule sets font-weight: 700 (owner: keep the armed state as is)", () => {
+    expect(cssSrc).toMatch(/\.gc-app button\.past-games-delete\.armed \{[^}]*font-weight: 700;[^}]*\}/);
   });
 });
