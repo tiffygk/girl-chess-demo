@@ -53,6 +53,14 @@ export interface HintFacts extends MoveFacts {
   // HINT_TRADE_MARGIN_CP -- lets Task 6's copy explain "this trades but
   // it's the strongest here" instead of staying silent about it.
   trade: boolean;
+  /** Round 3 (Q2 step 1): the chosen line's own centipawn score, side-to-move
+   *  signed at the hinted position -- previously discarded at computeHint's
+   *  return. null when the chosen eval is a mate (see evalMate). */
+  evalCp: number | null;
+  /** Round 3 (Q2 step 1): the chosen line's mate distance, side-to-move
+   *  signed -- the fact that made trace-190's Ng5 a forced-mate hint. null
+   *  when the score is a centipawn eval. */
+  evalMate: number | null;
 }
 
 /** Score from the perspective of the side to move in the searched position. */
@@ -189,5 +197,7 @@ export async function computeHint(fen: string, evaluator: Evaluator): Promise<Hi
     recommendation,
     pv: chosen.pv ?? [],
     trade,
+    evalCp: chosen.cp,
+    evalMate: chosen.mate,
   };
 }
