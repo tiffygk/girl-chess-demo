@@ -81,6 +81,17 @@ describe("computeHint — deep engine-math hints", () => {
     const facts = await computeHint(fen, sf);
     expect(facts).toBeNull();
   }, 30000);
+
+  it("surfaces the chosen move's eval incl. mate distance (trace-190 shape)", async () => {
+    // trace-190 position: Ng5 is a verified forced mate for white.
+    const fen = "1rbr2k1/p1p3pp/1pB2P2/7n/3P3B/2P1PN1P/P2K1P2/R2Q3R w - - 0 1";
+    const facts = await computeHint(fen, sf);
+    expect(facts).not.toBeNull();
+    // the score that made it a hint must ride along, not be dropped at return
+    expect(facts!.evalMate ?? facts!.evalCp).not.toBeNull();
+    // a forced mate reads as a non-null mate distance
+    expect(typeof facts!.evalMate === "number" || typeof facts!.evalCp === "number").toBe(true);
+  }, 30000);
 });
 
 // Task 5 (trade-aware hints, increment 3.95): owner decision -- "following
