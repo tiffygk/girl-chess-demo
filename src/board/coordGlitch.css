@@ -1,0 +1,32 @@
+/* Round 2, item 6 (owner ruling, 2026-08-01 playtest): "the board-coordinate
+   glitch effect used to fire often and now almost never does ... want the
+   old feel back." Mechanism: coordinate spans only ever glitched via
+   .coord-lit/.coord-lit-origin (src/skin/sugar-glitch.css), which the
+   hint-tree round narrowed to fire ONLY at the last press of a decided
+   hint branch (see GamePage.tsx's hintReveal, Board.tsx's coordGlitchBurst
+   effect) -- so most presses on the ladder showed nothing happening.
+
+   This restores the old FREQUENCY without leaking the answer early: every
+   hint-ladder press now bumps a transient, NON-directional
+   `coord-glitch-burst` class on every coordinate span (Board.tsx). It
+   reuses `preGlitch` -- src/skin/sugar-glitch.css's existing RGB-split
+   flicker keyframe (already used for a piece's pre-move glitch) -- BY
+   NAME rather than duplicating or editing it there. Both files load as
+   plain global CSS (no CSS modules, see App.tsx's side-effect imports), so
+   the keyframe name resolves across files.
+
+   Deliberately kept OUT of src/skin/sugar-glitch.css on purpose: that file
+   is owner-protected (the narrow-window fold), and this effect has nothing
+   to do with layout/fold behavior -- a new file scoped to the board
+   component avoids any risk to that file's protected diff surface.
+
+   Specificity note: `.coords-sharp span.coord-glitch-burst` (3 classes + 1
+   type) matches `.coords-sharp span.coord-lit`'s specificity tier, so when
+   a press's burst and the reveal rung's directional lit state land on the
+   same span at the same time, source order decides (this file loads after
+   sugar-glitch.css, so the burst animation wins for its own short life);
+   the burst class clears itself well before the lit state would, so the
+   directional state is always what's left on screen once it does. */
+.gc-app .coords-sharp span.coord-glitch-burst {
+  animation: preGlitch .22s steps(1) 2;
+}

@@ -180,8 +180,45 @@ export function isOffTopic(message: string): boolean {
 // over precision would cost a real question a spurious "noted" line and a note
 // the player never asked for, so precision wins here, the same as every other
 // checker in this directory.
-const RECORD_REQUEST_RE =
-  /(?:please\s+record\b|\brecord this\b|\bmark this\b|(?<!\b(?:don't|do not|didn't|cannot|can't|not|never|won't|wouldn't)\s)\bremember this\b)/i;
+// Round 2, item 8 (owner ruling, 2026-08-01 playtest): "she asked twice for
+// a note in her playtest and got nothing" -- her real phrasing, "let's make
+// a note of this for analysis later", matched none of the original four
+// (record this / mark this / please record / remember this). Extends the
+// family to the note-taking phrasings the ruling names: make a note, take a
+// note, note this, jot this/that down, write this/that down, add a note.
+// Same precedence-of-precision philosophy as the original four (a false
+// negative just falls through to a normal reply; a false positive costs a
+// real question a spurious "noted" line): a negated form ("don't make a
+// note of this") or a retrospective QUESTION about whether a note already
+// exists ("did you make a note of that?") must not fire.
+//
+// The two guards are named fragments, not hand-copied into every
+// alternative, so the list can't silently drift out of sync with itself.
+const NOTE_NEGATION_GUARD =
+  String.raw`(?<!\b(?:don't|do not|didn't|doesn't|cannot|can't|not|never|won't|wouldn't|haven't|hasn't)\s)`;
+// "did/have/has/does <1-4 words> ___" immediately before the phrase --
+// catches "did you make a note", "have you noted this", "does the coach
+// note this automatically" style retrospective checks about a note that
+// may already exist, as distinct from a fresh imperative request. The
+// bounded {0,3} lets the subject be more than one word ("the coach") without
+// letting the lookbehind run unbounded.
+const NOTE_QUESTION_GUARD = String.raw`(?<!\b(?:did|have|has|does)\s+\w+(?:\s+\w+){0,3}\s)`;
+
+const RECORD_REQUEST_RE = new RegExp(
+  [
+    String.raw`please\s+record\b`,
+    String.raw`\brecord this\b`,
+    String.raw`\bmark this\b`,
+    NOTE_NEGATION_GUARD + String.raw`\bremember this\b`,
+    NOTE_NEGATION_GUARD + NOTE_QUESTION_GUARD + String.raw`\bmake a note\b`,
+    NOTE_NEGATION_GUARD + NOTE_QUESTION_GUARD + String.raw`\btake a note\b`,
+    NOTE_NEGATION_GUARD + NOTE_QUESTION_GUARD + String.raw`\bnote this\b`,
+    NOTE_NEGATION_GUARD + String.raw`\bjot (?:this|that) down\b`,
+    NOTE_NEGATION_GUARD + String.raw`\bwrite (?:this|that) down\b`,
+    NOTE_NEGATION_GUARD + NOTE_QUESTION_GUARD + String.raw`\badd a note\b`,
+  ].join("|"),
+  "i"
+);
 
 export function isRecordRequest(message: string): boolean {
   return RECORD_REQUEST_RE.test(message);

@@ -170,3 +170,46 @@ describe("isRecordRequest (Wave 4 item 3)", () => {
     expect(isRecordRequest("what should i play here?")).toBe(false);
   });
 });
+
+// Round 2, item 8 (owner ruling, 2026-08-01 playtest): "she asked twice for
+// a note in her playtest and got nothing" -- coach_notes stayed empty
+// because her real phrasing, "let's make a note of this for analysis
+// later", matched none of the original four. This extends the family to
+// the note-taking phrasings the ruling names, keeping the same
+// negation-guard philosophy the original four already established: a
+// negated form or a retrospective QUESTION about whether a note already
+// exists must not fire, since neither is a fresh request to write one.
+describe("isRecordRequest (Round 2, item 8): the 'make a note' family", () => {
+  it("fires on the owner's own verbatim phrasing from the playtest", () => {
+    expect(isRecordRequest("let's make a note of this for analysis later")).toBe(true);
+  });
+
+  it("fires on each new phrasing in a natural sentence", () => {
+    expect(isRecordRequest("make a note of that for me")).toBe(true);
+    expect(isRecordRequest("can you take a note of this line?")).toBe(true);
+    expect(isRecordRequest("note this, it's a recurring mistake")).toBe(true);
+    expect(isRecordRequest("jot this down for later")).toBe(true);
+    expect(isRecordRequest("jot that down please")).toBe(true);
+    expect(isRecordRequest("write this down for my next game")).toBe(true);
+    expect(isRecordRequest("write that down, it matters")).toBe(true);
+    expect(isRecordRequest("add a note about this blunder")).toBe(true);
+  });
+
+  it("does NOT fire on a retrospective question asking whether a note already exists", () => {
+    expect(isRecordRequest("did you make a note of that?")).toBe(false);
+    expect(isRecordRequest("have you taken a note of this yet?")).toBe(false);
+    expect(isRecordRequest("does the coach note this automatically?")).toBe(false);
+  });
+
+  it("does NOT fire on a negated form of the new phrasings", () => {
+    expect(isRecordRequest("don't make a note of this, I take it back")).toBe(false);
+    expect(isRecordRequest("please don't write this down")).toBe(false);
+    expect(isRecordRequest("I didn't jot this down")).toBe(false);
+    expect(isRecordRequest("never take a note of my openings")).toBe(false);
+  });
+
+  it("still does NOT fire on an unrelated question with no note-taking language", () => {
+    expect(isRecordRequest("what should i play here?")).toBe(false);
+    expect(isRecordRequest("was my knight move okay?")).toBe(false);
+  });
+});
