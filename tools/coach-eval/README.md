@@ -107,6 +107,34 @@ most rows). Chess correctness and subjective usefulness are NOT mechanized —
 the blinded owner read is the instrument for those (see `render.ts`'s
 output).
 
+## TTFP / TTFW -- time to first progress / word (Task 1e, latency round, 2026-08-02)
+
+Wall latency (`latencyMs`, above) is not the owner's real experience -- she
+waits for *something to happen*, not for the whole answer. Two new fields on
+`AnswerRow`:
+
+- **`ttfwMs`** -- ms from the `chat()` call to the FIRST content delta
+  `run.ts` receives through `opts.onDelta`. `chat.ts` buffers a whole
+  attempt's deltas and only replays them once that attempt validates (Wave
+  3, item 2 -- no unvalidated prose is ever shown), so this times the first
+  moment the client would start rendering anything, not the first raw model
+  token.
+- **`ttfpMs`** -- ms to the first status/progress signal. Until Task 1c lands
+  `chat()`'s `onAttemptStart`/`onValidateStart` hooks, there is no separate
+  status frame to time, so `ttfpMs` mirrors `ttfwMs` exactly -- this is the
+  honest pre-1c baseline the plan's before/after comparison uses. Once 1c
+  ships, `ttfpMs` times the earlier "cookie is thinking..." status frame and
+  will read materially lower than `ttfwMs`.
+
+Both are `null` (never 0) for a row that served a template (no stream ever
+happened) or predates this instrument. `score.ts`'s `summarizeTtf(rows)`
+aggregates an already arm-filtered row set into `{ttfpMedianMs, ttfpP90Ms,
+ttfwMedianMs, ttfwP90Ms, n}`, excluding nulls from the percentile rather than
+counting them as 0 -- same never-pooled-across-arms discipline every other
+axis in this harness follows. `render.ts` surfaces the cross-rep aggregate
+(`ModelSummary.ttfAgg`) as its own table in every per-arm section of
+`metrics-blinded.md` and the `--single` report.
+
 ## Isolation (hard rules, enforced at runtime)
 
 - **Never opens `data/girlchess.db`.** `run.ts` copies it (plus `-wal`/

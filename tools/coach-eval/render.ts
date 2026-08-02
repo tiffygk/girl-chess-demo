@@ -24,7 +24,7 @@
 import fs from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
-import { scoreAnswer, summarizePipeline, TEMPLATE_RATE_PASS_MAX, LENGTH_MAX_WORDS, CONCISION_TARGET_WORDS, type AnswerRow, type Scorecard } from "./score";
+import { scoreAnswer, summarizePipeline, summarizeTtf, TEMPLATE_RATE_PASS_MAX, LENGTH_MAX_WORDS, CONCISION_TARGET_WORDS, type AnswerRow, type Scorecard } from "./score";
 import type { QuestionTag, Arm } from "./fixtures";
 import { parseArgs } from "./util";
 
@@ -99,6 +99,13 @@ interface PooledPipeline {
   totalRows: number;
   failureRows: number;
   causeSplit: CauseSplit;
+  // Task 1e: pooled (all reps, this arm only) TTFP/TTFW median+p90, null
+  // rows (template rows, non-streaming backends, pre-1e raw files) excluded
+  // -- see score.ts's summarizeTtf.
+  ttfpMedianMs: number | null;
+  ttfpP90Ms: number | null;
+  ttfwMedianMs: number | null;
+  ttfwP90Ms: number | null;
 }
 export interface ModelSummary {
   reps: number;
@@ -118,6 +125,16 @@ export interface ModelSummary {
   // AxisAgg shape -- decide.ts's new timeout-rate deciding axis (every arm,
   // reliability outranks every voice/length axis) reads this.
   pipelineAgg: { timeoutRate: AxisAgg };
+  // Task 1e (coach-truth-speed latency round, 2026-08-02): cross-rep
+  // median/min/max of each rep's own TTFP (first status/progress frame) and
+  // TTFW (first content delta) median/p90, same {median,min,max,perRep}
+  // shape latencyAgg already uses -- and the SAME never-pooled-across-arms
+  // discipline (buildModelSummary has no idea "arm" exists; callers pass an
+  // already arm-filtered file set). Until Task 1c lands, every row's
+  // ttfpMs === ttfwMs (no status frames exist yet to time separately), so
+  // ttfpMedian/ttfpP90 and ttfwMedian/ttfwP90 are identical pre-1c -- the
+  // honest baseline Task 1c's before/after compares against.
+  ttfAgg: { ttfpMedian: AxisAgg; ttfpP90: AxisAgg; ttfwMedian: AxisAgg; ttfwP90: AxisAgg };
 }
 export interface ArmSummary {
   sonnet: ModelSummary;
@@ -213,6 +230,12 @@ export function buildModelSummary(files: RepFile[]): ModelSummary {
   const medianSeries: RepAxis[] = [];
   const p90Series: RepAxis[] = [];
   const timeoutRateSeries: RepAxis[] = [];
+  // Task 1e: per-rep TTFP/TTFW median+p90 series, aggregated cross-rep the
+  // same way medianSeries/p90Series already are (aggregateAxis below).
+  const ttfpMedianSeries: RepAxis[] = [];
+  const ttfpP90Series: RepAxis[] = [];
+  const ttfwMedianSeries: RepAxis[] = [];
+  const ttfwP90Series: RepAxis[] = [];
   const allRows: AnswerRow[] = [];
   for (const f of sorted) {
     allRows.push(...f.rows);
@@ -235,9 +258,15 @@ export function buildModelSummary(files: RepFile[]): ModelSummary {
     medianSeries.push({ rep: f.rep, rate: pipe.total === 0 ? null : pipe.medianLatencyMs, n: pipe.total });
     p90Series.push({ rep: f.rep, rate: pipe.total === 0 ? null : pipe.p90LatencyMs, n: pipe.total });
     timeoutRateSeries.push({ rep: f.rep, rate: pipe.total === 0 ? null : timeoutRate, n: pipe.total });
+    const ttf = summarizeTtf(f.rows);
+    ttfpMedianSeries.push({ rep: f.rep, rate: ttf.ttfpMedianMs, n: ttf.n });
+    ttfpP90Series.push({ rep: f.rep, rate: ttf.ttfpP90Ms, n: ttf.n });
+    ttfwMedianSeries.push({ rep: f.rep, rate: ttf.ttfwMedianMs, n: ttf.n });
+    ttfwP90Series.push({ rep: f.rep, rate: ttf.ttfwP90Ms, n: ttf.n });
   }
   const pooled = summarizePipeline(allRows);
   const pooledTimeoutRate = pooled.total === 0 ? 0 : pooled.timeoutCount / pooled.total;
+  const pooledTtf = summarizeTtf(allRows);
   return {
     reps: sorted.length,
     axes: {
@@ -270,6 +299,10 @@ export function buildModelSummary(files: RepFile[]): ModelSummary {
           templatesOnlyCount: pooled.templatesOnlyCount,
           offTopicCount: pooled.offTopicCount,
         },
+        ttfpMedianMs: pooledTtf.ttfpMedianMs,
+        ttfpP90Ms: pooledTtf.ttfpP90Ms,
+        ttfwMedianMs: pooledTtf.ttfwMedianMs,
+        ttfwP90Ms: pooledTtf.ttfwP90Ms,
       },
     },
     latencyAgg: {
@@ -282,6 +315,12 @@ export function buildModelSummary(files: RepFile[]): ModelSummary {
       // uses -- decide.ts's new timeout-rate deciding axis (every arm) reads
       // this, with the same disjoint-rep-ranges discipline as jargon/length.
       timeoutRate: aggregateAxis(timeoutRateSeries),
+    },
+    ttfAgg: {
+      ttfpMedian: aggregateAxis(ttfpMedianSeries),
+      ttfpP90: aggregateAxis(ttfpP90Series),
+      ttfwMedian: aggregateAxis(ttfwMedianSeries),
+      ttfwP90: aggregateAxis(ttfwP90Series),
     },
   };
 }
@@ -694,6 +733,15 @@ function writeArmSection(arm: Arm, A: ColumnAgg, B: ColumnAgg): string[] {
     `| median latency (ms, cross-rep median (min–max)) | ${fmtMsAgg(sa.latencyAgg.median)} | ${fmtMsAgg(sb.latencyAgg.median)} |`,
     `| p90 latency (ms, cross-rep median (min–max)) -- the axis that actually failed her, never pooled away | ${fmtMsAgg(sa.latencyAgg.p90)} | ${fmtMsAgg(sb.latencyAgg.p90)} |`,
     "",
+    "### TTFP/TTFW -- time to first progress/word (Task 1e, NEW 2026-08-02; pre-1c, ttfp==ttfw, the honest baseline)",
+    "",
+    "| metric | A | B |",
+    "|---|---|---|",
+    `| TTFP median (ms) | ${fmtMsAgg(sa.ttfAgg.ttfpMedian)} | ${fmtMsAgg(sb.ttfAgg.ttfpMedian)} |`,
+    `| TTFP p90 (ms) | ${fmtMsAgg(sa.ttfAgg.ttfpP90)} | ${fmtMsAgg(sb.ttfAgg.ttfpP90)} |`,
+    `| TTFW median (ms) | ${fmtMsAgg(sa.ttfAgg.ttfwMedian)} | ${fmtMsAgg(sb.ttfAgg.ttfwMedian)} |`,
+    `| TTFW p90 (ms) | ${fmtMsAgg(sa.ttfAgg.ttfwP90)} | ${fmtMsAgg(sb.ttfAgg.ttfwP90)} |`,
+    "",
     "### pipeline failures BY CAUSE (E0, 2026-07-31) -- pooled, this arm only, never pooled across causes into one outage number",
     "",
     "| cause | A | B |",
@@ -862,6 +910,15 @@ function writeSingleArmSection(arm: Arm, summary: ModelSummary, rows: AnswerRow[
     `| timeout rate | ${pct(summary.pipeline.pooled.timeoutRate)} |`,
     `| median latency (ms, cross-rep median (min-max)) | ${fmtMsAgg(summary.latencyAgg.median)} |`,
     `| p90 latency (ms, cross-rep median (min-max)) | ${fmtMsAgg(summary.latencyAgg.p90)} |`,
+    "",
+    "### TTFP/TTFW -- time to first progress/word (Task 1e, NEW 2026-08-02; pre-1c, ttfp==ttfw, the honest baseline)",
+    "",
+    "| metric | value |",
+    "|---|---|",
+    `| TTFP median (ms) | ${fmtMsAgg(summary.ttfAgg.ttfpMedian)} |`,
+    `| TTFP p90 (ms) | ${fmtMsAgg(summary.ttfAgg.ttfpP90)} |`,
+    `| TTFW median (ms) | ${fmtMsAgg(summary.ttfAgg.ttfwMedian)} |`,
+    `| TTFW p90 (ms) | ${fmtMsAgg(summary.ttfAgg.ttfwP90)} |`,
     "",
     "### pipeline failures BY CAUSE (E0) -- pooled, this arm only, never pooled across causes into one outage number",
     "",

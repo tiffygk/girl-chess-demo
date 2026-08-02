@@ -9,6 +9,7 @@ import {
   checkPendingAwareness,
   scoreAnswer,
   summarizePipeline,
+  summarizeTtf,
   type AnswerRow,
 } from "./score";
 import {
@@ -409,6 +410,62 @@ describe("summarizePipeline per-cause counts (E0, 2026-07-31)", () => {
     expect(summary.timeoutCount).toBe(0);
     expect(summary.validationFailedCount).toBe(0);
     expect(summary.offTopicCount).toBe(0);
+  });
+});
+
+// Task 1e (coach-truth-speed latency round, 2026-08-02): the eval harness's
+// new time-to-first-progress/word instrument. `summarizeTtf` is the per-arm
+// aggregate render.ts calls with an already-arm-filtered row set (same "call
+// it once per arm" discipline `summarizePipeline` and `axisRateAndN`
+// already use) -- it must never pool across arms itself.
+describe("summarizeTtf", () => {
+  it("computes the correct median and p90 for a known set of ttfwMs values", () => {
+    const rows = [{ ttfwMs: 100 }, { ttfwMs: 200 }, { ttfwMs: 300 }, { ttfwMs: 400 }];
+    const summary = summarizeTtf(rows);
+    expect(summary.ttfwMedianMs).toBeCloseTo(250);
+    expect(summary.ttfwP90Ms).toBeCloseTo(370);
+    expect(summary.n).toBe(4);
+  });
+
+  it("excludes null/undefined rows from the percentile rather than counting them as 0", () => {
+    const rows = [{ ttfwMs: 100 }, { ttfwMs: null }, { ttfwMs: 300 }, { ttfwMs: undefined }];
+    const summary = summarizeTtf(rows);
+    // median of [100, 300] is 200 -- a bogus 0 for the null rows would pull
+    // this toward 50 instead.
+    expect(summary.ttfwMedianMs).toBeCloseTo(200);
+    expect(summary.n).toBe(2);
+  });
+
+  it("returns all-null with n:0 for an all-null/empty row set (never NaN or 0)", () => {
+    expect(summarizeTtf([])).toEqual({ ttfpMedianMs: null, ttfpP90Ms: null, ttfwMedianMs: null, ttfwP90Ms: null, n: 0 });
+    expect(summarizeTtf([{ ttfwMs: null }, { ttfpMs: null }])).toEqual({
+      ttfpMedianMs: null,
+      ttfpP90Ms: null,
+      ttfwMedianMs: null,
+      ttfwP90Ms: null,
+      n: 0,
+    });
+  });
+
+  it("aggregates ttfp and ttfw independently -- a row missing one still contributes the other", () => {
+    const rows = [
+      { ttfpMs: 50, ttfwMs: 500 },
+      { ttfpMs: 60, ttfwMs: null },
+    ];
+    const summary = summarizeTtf(rows);
+    expect(summary.ttfpMedianMs).toBeCloseTo(55);
+    expect(summary.ttfwMedianMs).toBeCloseTo(500);
+  });
+
+  it("aggregates board-live and general arms independently -- filtering the same pool by arm changes the result", () => {
+    const boardLive = [{ arm: "board-live", ttfwMs: 100 }, { arm: "board-live", ttfwMs: 200 }] as (AnswerRow & { ttfwMs: number })[];
+    const general = [{ arm: "general", ttfwMs: 900 }, { arm: "general", ttfwMs: 1100 }] as (AnswerRow & { ttfwMs: number })[];
+    const all = [...boardLive, ...general];
+    const boardLiveSummary = summarizeTtf(all.filter((r) => r.arm === "board-live"));
+    const generalSummary = summarizeTtf(all.filter((r) => r.arm === "general"));
+    expect(boardLiveSummary.ttfwMedianMs).toBeCloseTo(150);
+    expect(generalSummary.ttfwMedianMs).toBeCloseTo(1000);
+    expect(boardLiveSummary.ttfwMedianMs).not.toBe(generalSummary.ttfwMedianMs);
   });
 });
 

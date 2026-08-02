@@ -53,6 +53,19 @@ export interface AnswerRow {
   // fixtureId (a stale-fixture run silently picked up over the current one
   // -- the defect this field exists to make mechanically impossible).
   fixtureFen?: string;
+  // Task 1e (coach-truth-speed latency round, 2026-08-02): time-to-first-
+  // progress / time-to-first-word, in ms from the chat() call to the first
+  // status frame (ttfpMs) and the first content delta (ttfwMs)
+  // respectively. Both optional/additive -- an older raw json predating this
+  // field simply has neither, and summarizeTtf treats that exactly like an
+  // explicit null (excluded from the percentile, not counted as 0). A row
+  // that served a template with no stream (source !== "model", or a
+  // non-streaming backend) carries null for both -- there was no delta to
+  // time. Until Task 1c lands its onAttemptStart/onValidateStart status
+  // hooks, run.ts sets ttfpMs = ttfwMs (no status frames exist yet to time
+  // separately) -- the honest pre-1c baseline the plan calls for.
+  ttfpMs?: number | null;
+  ttfwMs?: number | null;
 }
 
 export interface AxisResult {
@@ -335,6 +348,38 @@ export function summarizePipeline(rows: { source: string; cause?: string; regenC
     validationFailedCount,
     templatesOnlyCount,
     offTopicCount,
+  };
+}
+
+// Task 1e: TTFP (time-to-first-progress)/TTFW (time-to-first-word) per-arm
+// aggregate. Callers pass an ALREADY arm-filtered row set -- same "call it
+// once per arm, never pool" discipline summarizePipeline/axisRateAndN
+// (render.ts) already use; this function has no idea "arm" exists, it just
+// aggregates whatever rows it's handed. Null/undefined values (a template
+// row, a non-streaming backend, an old raw file predating this field) are
+// EXCLUDED from the percentile, never counted as 0 -- a bogus 0 would drag
+// the median toward the fast end and hide exactly the tail this instrument
+// exists to measure. Empty/all-null input returns all-null, never NaN/0
+// (same convention aggregateAxis in render.ts already established).
+export interface TtfSummary {
+  ttfpMedianMs: number | null;
+  ttfpP90Ms: number | null;
+  ttfwMedianMs: number | null;
+  ttfwP90Ms: number | null;
+  n: number; // rows carrying a non-null ttfwMs
+}
+
+export function summarizeTtf(rows: { ttfpMs?: number | null; ttfwMs?: number | null }[]): TtfSummary {
+  const ttfp = rows.map((r) => r.ttfpMs).filter((v): v is number => typeof v === "number");
+  const ttfw = rows.map((r) => r.ttfwMs).filter((v): v is number => typeof v === "number");
+  const sortedP = [...ttfp].sort((a, b) => a - b);
+  const sortedW = [...ttfw].sort((a, b) => a - b);
+  return {
+    ttfpMedianMs: sortedP.length === 0 ? null : percentile(sortedP, 0.5),
+    ttfpP90Ms: sortedP.length === 0 ? null : percentile(sortedP, 0.9),
+    ttfwMedianMs: sortedW.length === 0 ? null : percentile(sortedW, 0.5),
+    ttfwP90Ms: sortedW.length === 0 ? null : percentile(sortedW, 0.9),
+    n: ttfw.length,
   };
 }
 
