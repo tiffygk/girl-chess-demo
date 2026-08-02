@@ -1467,11 +1467,23 @@ export async function chat(
           ? await backend.generateStream(attemptPrompt, timeoutMs, (t) => attemptDeltas.push(t))
           : await backend.generate(attemptPrompt, timeoutMs);
     } catch (err) {
-      // Backend error/timeout at any attempt short-circuits straight to the
-      // template below -- never worth a second network/process call,
-      // mirrors narrate()'s discipline exactly.
       attemptOutput = `[backend error] ${err instanceof Error ? err.message : String(err)}`;
       failureCause = isTimeoutError(err) ? "timeout" : "backend-down";
+      // Wave 3, item 4 regression (live-eval): an attempt-0 TIMEOUT must not
+      // throw away the reserved half of the budget. The cap means "attempt 0
+      // may not consume more than half", NOT "a slow answer dies at half" --
+      // so a first-attempt timeout retries ONCE with the SAME base prompt
+      // (nothing was invalid, so no corrective suffix) and the FULL remaining
+      // budget. failureCause stays "timeout" as the marker for the cases where
+      // the retry can't help (skipped under MIN_ATTEMPT_MS, or times out
+      // again); it is cleared to null the moment the retry validates (see the
+      // result.ok branch). A NON-timeout backend error, or a timeout on the
+      // retry itself (attempt 1), still short-circuits straight to the
+      // template -- never worth a third call.
+      if (attempt === 0 && isTimeoutError(err)) {
+        regenCount = 1; // the retry is a genuine second generation
+        continue; // attempt 1's guard fires onRedraft + enforces the floor
+      }
       break;
     }
 
@@ -1488,6 +1500,10 @@ export async function chat(
         : ({ ok: false, violations: [] } as const);
     if (result.ok) {
       modelText = trimmed;
+      // Wave 3, item 4 regression: a prior attempt-0 timeout set failureCause
+      // as a marker -- clear it now that a later attempt produced a clean
+      // model answer, so the recovered reply never reports a timeout cause.
+      failureCause = null;
       // Wave 3, item 2: only now that the attempt validated do its buffered
       // deltas reach the client -- replayed in the same chunks the backend
       // produced (the client renders either a single flush or a chunked

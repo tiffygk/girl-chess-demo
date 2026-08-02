@@ -128,6 +128,101 @@ describe("chat() — tiered budget as a TOTAL, not per-attempt (B1)", () => {
     expect(calls).toEqual([45000, 80000]);
   });
 
+  // Wave 3, item 4 regression (live-eval): the attempt-0 cap must mean
+  // "attempt 0 may not consume more than half", NOT "a slow answer dies at
+  // half". A TIMEOUT on attempt 0 (distinct from a validation failure) now
+  // retries ONCE with the full remaining budget and the SAME base prompt
+  // (nothing was invalid -> no corrective suffix), firing onRedraft. Live-eval
+  // on this branch had 4/13 questions fall to template at exactly ~22502ms
+  // (the 45s/2 cap) with regen=0 -- 31% template rate vs a 5-12% baseline.
+  it("an attempt-0 TIMEOUT retries once with the full remaining budget and the same base prompt, no corrective suffix", async () => {
+    const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "review" });
+    const calls: number[] = [];
+    const prompts: string[] = [];
+    let call = 0;
+    const backend = fakeBackend(async (prompt, timeoutMs) => {
+      calls.push(timeoutMs);
+      prompts.push(prompt);
+      call += 1;
+      if (call === 1) {
+        // The fake decouples the simulated clock from the handed timeout so
+        // the remainder handed to the retry is observably LARGER than the cap
+        // (a capped retry would show 45000, a full-remainder retry 80000).
+        now += 10000;
+        throw new Error("claude cli timed out after 45000ms");
+      }
+      return "e4 is a fine start for you.";
+    });
+    const redraftCalls: number[] = [];
+
+    const result = await chat(
+      "was my opening okay?",
+      [],
+      facts,
+      backend,
+      { gameId, ply: 1, kind: "chat" },
+      { budgetMs: 90000, onRedraft: () => redraftCalls.push(1) }
+    );
+
+    expect(calls).toEqual([45000, 80000]); // cap on attempt 0, full remainder on the retry
+    expect(prompts[0]).toBe(prompts[1]); // same base prompt
+    expect(prompts[1]).not.toContain("rewrite it using only moves"); // no corrective suffix
+    expect(redraftCalls.length).toBe(1);
+    expect(result.source).toBe("model");
+    expect(result.text).toBe("e4 is a fine start for you.");
+    expect(result.cause).toBeUndefined();
+  });
+
+  it("a TIMEOUT on the retry too falls to the slow template with cause timeout, onRedraft fired once", async () => {
+    const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "review" });
+    let call = 0;
+    const backend = fakeBackend(async (_prompt, timeoutMs) => {
+      call += 1;
+      now += 10000;
+      throw new Error(`claude cli timed out after ${timeoutMs}ms`);
+    });
+    const redraftCalls: number[] = [];
+
+    const result = await chat(
+      "was my opening okay?",
+      [],
+      facts,
+      backend,
+      { gameId, ply: 1, kind: "chat" },
+      { budgetMs: 90000, onRedraft: () => redraftCalls.push(1) }
+    );
+
+    expect(call).toBe(2); // attempt 0 + one retry
+    expect(redraftCalls.length).toBe(1);
+    expect(result.source).toBe("template");
+    expect(result.cause).toBe("timeout");
+  });
+
+  it("the retry after an attempt-0 timeout is skipped when under MIN_ATTEMPT_MS remain, still a timeout template", async () => {
+    const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "review" });
+    let call = 0;
+    const backend = fakeBackend(async (_prompt, timeoutMs) => {
+      call += 1;
+      now += 90000 - (MIN_ATTEMPT_MS - 1000); // leaves < MIN_ATTEMPT_MS after attempt 0
+      throw new Error(`claude cli timed out after ${timeoutMs}ms`);
+    });
+    const redraftCalls: number[] = [];
+
+    const result = await chat(
+      "was my opening okay?",
+      [],
+      facts,
+      backend,
+      { gameId, ply: 1, kind: "chat" },
+      { budgetMs: 90000, onRedraft: () => redraftCalls.push(1) }
+    );
+
+    expect(call).toBe(1); // retry skipped -- not enough budget left
+    expect(redraftCalls.length).toBe(0);
+    expect(result.source).toBe("template");
+    expect(result.cause).toBe("timeout");
+  });
+
   it("the regen is skipped once fewer than MIN_ATTEMPT_MS remain, and the reply falls back to a template", async () => {
     const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
     let calls = 0;
