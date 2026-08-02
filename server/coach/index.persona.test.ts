@@ -176,6 +176,21 @@ describe("real coach.md (Task 2)", () => {
     expect(persona.chatAnswerShapes).toContain("small enough to carry into the next game");
   });
 
+  // Wave 4 review residual (Important, 2026-08-01): nothing stops the model's
+  // own free-text reply from promising to remember/record something -- the
+  // record request rides in the prompt and the opener primes memory claims, so
+  // the player could see the model promise persistence (a redundant double-ack
+  // on success, or a lone FALSE promise if the insert throws -- the exact
+  // game-164 shape). The persona's chat system prompt now forbids the model
+  // from making that claim itself; the deterministic ack is the only place a
+  // "saved" statement is ever allowed to come from.
+  it("chat system prompt forbids the model from claiming it will remember/record something itself", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain(
+      "never claim you'll remember, record, or note something yourself"
+    );
+  });
+
   it("answer shapes obey the voice block: no notation, no engine word, no signed number", () => {
     const persona = parseRealCoachMd();
     expect(persona.chatAnswerShapes).not.toMatch(/\bengine\b/i);

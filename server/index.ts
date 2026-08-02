@@ -304,7 +304,18 @@ app.get("/api/traces/rated", (req, res) => {
     res.status(400).json({ ok: false });
     return;
   }
-  const gameId = req.query.game !== undefined ? Number(req.query.game) : null;
+  // Review residual (Minor, 2026-08-01): a present-but-non-numeric ?game=
+  // (Number("abc") -> NaN) used to slip through to an empty 200; it now 400s,
+  // consistent with the rating validation above. Absent game stays null (all
+  // games).
+  let gameId: number | null = null;
+  if (req.query.game !== undefined) {
+    gameId = Number(req.query.game);
+    if (!Number.isInteger(gameId)) {
+      res.status(400).json({ ok: false });
+      return;
+    }
+  }
   try {
     res.json({ ok: true, traces: getRatedTraces(gameId, rating) });
   } catch (error) {

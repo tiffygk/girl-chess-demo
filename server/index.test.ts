@@ -528,6 +528,15 @@ describe("api", () => {
     expect(res.body.ok).toBe(false);
   });
 
+  // Wave 4 review residual (Minor, 2026-08-01): a non-numeric ?game= used to
+  // slip through (Number("abc") -> NaN -> empty 200). It now 400s, consistent
+  // with the sibling rating validation.
+  it("GET /api/traces/rated rejects a non-numeric game param with 400", async () => {
+    await ready;
+    const res = await request(app).get("/api/traces/rated?rating=1&game=abc").expect(400);
+    expect(res.body.ok).toBe(false);
+  });
+
   // Wave 4, item 3 (2026-08-01): the owner-facing management route for
   // cross-game memory -- GET lists the notes, DELETE removes one by id.
   it("GET /api/coach-notes lists notes and DELETE /api/coach-notes/:id removes one", async () => {
