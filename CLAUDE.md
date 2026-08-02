@@ -30,10 +30,15 @@ register (merge ruling OD-1, import-games OD-2, thinking-bound gate OD-3 with th
 key still unopened, budget retune OD-4) and says explicitly what round-3's Wave 0 needs from her before
 Wave 1 can start.
 
-**FIRST ACTION:** the merge is DONE — `main` == `13a2afc`. Pick up Round-3 at W1 (the fact shelf) per
-`.superpowers/sdd/rounds/2026-08-03-round3/plan.md` and the round-3 continuation handoff, and surface the
-still-open owner decisions: OD-2 (import her playtest games 166/167 — real db untouched either way),
-OD-3(a) (hand her the blinded b180 worksheet, key unopened), OD-4 (chat-budget retune, follows OD-3).
+**FIRST ACTION:** the merge is DONE — `main` == `bf5e728` (branch tip `13a2afc` + this doc). **IN-FLIGHT
+as of the 2026-08-02 execution session — read `.superpowers/sdd/rounds/2026-08-03-round3/RESUME-2026-08-02.md`
+FIRST:** W1 (fact shelf) dispatched to a Sonnet subagent committing per task (check `git log bf5e728..HEAD`);
+the W5 opponent-move-highlight badge dispatched to a Fable subagent building a proposal artifact into vault
+`3 visual/opponent-move-highlight-proposal.html` (library-first, needs owner eye then approval); the CLAUDE.md
+auto-commit Stop hook is installed in `.claude/settings.local.json`. Owner rulings this session: OD-1 merge
+(done), OD-2 import game 167 ONLY (queued — needs a careful tested real-db write, spec in RESUME), W5 design
+start (in flight). Then continue Round-3: W2 sequential after W1, W4 severable, and surface the
+still-open owner decisions OD-3(a) (hand her the blinded b180 worksheet, key unopened), OD-4 (chat-budget retune, follows OD-3).
 Post-merge housekeeping: the `wt-hinttree` scratch teardown (`wt-hinttree/data` + `.playtest-scratch`) is
 a deliberate MANUAL follow-up — the Directory rule forbids an agent deleting a directory, and a stale
 vite still listens on `:4173` — so leave it for the owner or a supervised step.
