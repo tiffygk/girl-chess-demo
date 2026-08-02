@@ -3,7 +3,7 @@ import fs from "fs";
 import { createRequire } from "module";
 import os from "os";
 import path from "path";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { CoachBackend } from "./types";
 
@@ -138,7 +138,16 @@ function subscriptionOnlyEnv(): Record<string, string | undefined> {
 // (`settingSources: []`), neutral cwd. The coach prompt embeds untrusted
 // chat text; with no tools and no MCP there is nothing for a
 // prompt-injection attempt to execute.
-function buildOptions(abortController: AbortController) {
+// Prompt-caching round (2026-08-02 latency plan, Task 3a build-out): the
+// spike (spike-3a-caching.md) proved `query()` reuses cache across separate
+// one-shot calls, under this backend's exact security posture, when the
+// SAME byte-identical text rides in `options.systemPrompt` as a `string[]`
+// with the SDK's own exported cache-boundary marker. stablePrefix is
+// undefined on every pre-this-round call site (backend.generate/
+// generateStream's new 3rd/4th param is optional) -- so buildOptions grows
+// no `systemPrompt` field and every caller that doesn't pass it gets
+// byte-identical options to before.
+function buildOptions(abortController: AbortController, stablePrefix?: string) {
   return {
     model: AGENT_SDK_MODEL,
     maxTurns: 1,
@@ -148,7 +157,27 @@ function buildOptions(abortController: AbortController) {
     settingSources: [] as never[],
     env: subscriptionOnlyEnv(),
     abortController,
+    ...(stablePrefix ? { systemPrompt: [stablePrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY] } : {}),
   };
+}
+
+// The seam's contract (types.ts): `prompt` is ALWAYS the complete, ready-
+// to-send text on its own, and stablePrefix (when present) is always a
+// leading substring of it followed by "\n" -- chat.ts builds it that way,
+// and every backend that ignores stablePrefix relies on `prompt` staying
+// whole. Once that text is moved into `systemPrompt` above, sending it a
+// second time as literal `prompt` content would duplicate it (wasted
+// tokens, a confusing double instruction) and defeat the point of caching
+// it separately -- so this strips exactly that leading substring back out.
+// Defensive fallback: if the invariant ever doesn't hold (prompt doesn't
+// actually start with stablePrefix -- should never happen from chat.ts),
+// send the untouched prompt rather than mangling it; the systemPrompt is
+// still set, just with stablePrefix's content appearing twice in that edge
+// case instead of the model losing text.
+export function splitStablePrefix(prompt: string, stablePrefix: string | undefined): string {
+  if (!stablePrefix) return prompt;
+  const withSeparator = `${stablePrefix}\n`;
+  return prompt.startsWith(withSeparator) ? prompt.slice(withSeparator.length) : prompt;
 }
 
 // One stateless one-shot turn (sdk-api-notes.md Q2): the terminal
@@ -157,11 +186,15 @@ function buildOptions(abortController: AbortController) {
 // Bounding (timeout/abort) is the caller's job (available()/generate()
 // below), not this function's -- keeps the two callers' Promise.race
 // wiring in one place each, mirroring ollama.ts's fetch-wrapped shape.
-async function runQuery(prompt: string, abortController: AbortController): Promise<string> {
+async function runQuery(
+  prompt: string,
+  abortController: AbortController,
+  stablePrefix?: string
+): Promise<string> {
   let result = "";
   const stream = query({
-    prompt,
-    options: buildOptions(abortController),
+    prompt: splitStablePrefix(prompt, stablePrefix),
+    options: buildOptions(abortController, stablePrefix),
   }) as AsyncGenerator<SDKMessage, void>;
   for await (const message of stream) {
     if (message.type === "result") {
@@ -194,12 +227,13 @@ async function runQuery(prompt: string, abortController: AbortController): Promi
 async function runQueryStream(
   prompt: string,
   abortController: AbortController,
-  onDelta: (text: string) => void
+  onDelta: (text: string) => void,
+  stablePrefix?: string
 ): Promise<string> {
   let result = "";
   const stream = query({
-    prompt,
-    options: { ...buildOptions(abortController), includePartialMessages: true },
+    prompt: splitStablePrefix(prompt, stablePrefix),
+    options: { ...buildOptions(abortController, stablePrefix), includePartialMessages: true },
   }) as AsyncGenerator<SDKMessage, void>;
   for await (const message of stream) {
     if (message.type === "stream_event") {
@@ -244,7 +278,7 @@ export const agentSdkBackend: CoachBackend = {
       clearTimeout(timer);
     }
   },
-  async generate(prompt, timeoutMs) {
+  async generate(prompt, timeoutMs, stablePrefix) {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -254,7 +288,7 @@ export const agentSdkBackend: CoachBackend = {
       }, timeoutMs);
     });
     try {
-      return await Promise.race([runQuery(prompt, controller), timeout]);
+      return await Promise.race([runQuery(prompt, controller, stablePrefix), timeout]);
     } finally {
       clearTimeout(timer);
     }
@@ -263,7 +297,7 @@ export const agentSdkBackend: CoachBackend = {
   // above (same reject message shape -- "timed out" -- so chat.ts's
   // isTimeoutError classification is unchanged for the streaming path too),
   // delegating only to runQueryStream instead of runQuery.
-  async generateStream(prompt, timeoutMs, onDelta) {
+  async generateStream(prompt, timeoutMs, onDelta, stablePrefix) {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -273,7 +307,7 @@ export const agentSdkBackend: CoachBackend = {
       }, timeoutMs);
     });
     try {
-      return await Promise.race([runQueryStream(prompt, controller, onDelta), timeout]);
+      return await Promise.race([runQueryStream(prompt, controller, onDelta, stablePrefix), timeout]);
     } finally {
       clearTimeout(timer);
     }

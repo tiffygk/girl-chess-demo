@@ -1177,7 +1177,17 @@ function standingNotesBlock(notes: string[]): string | undefined {
 // (a separate, owner-editable section of personas/coach.md -- see
 // server/coach/index.ts's Persona type) after the shared chat system prompt,
 // and swaps in generalFactsForModel's compact projection.
-function buildChatPrompt(
+//
+// Prompt-caching round (2026-08-02 latency plan, Task 3a build-out): split
+// out of a single-string builder into { stablePrefix, dynamic } so chat()
+// can hand the byte-identical-per-voice-and-intent persona+answer-shapes
+// block to a backend separately from the per-call variable content (facts,
+// history, the player's message). stablePrefix + "\n" + dynamic is exactly
+// the string the old single-string builder returned -- same sections, same
+// order, nothing dropped or reordered (proven by
+// chat.stablePrefix.test.ts's reassembly assertion). Exported for that
+// direct unit test; chat() below is the only production caller.
+export function buildChatPromptParts(
   facts: ChatFactList,
   history: { role: "user" | "coach"; text: string }[],
   userMessage: string,
@@ -1189,7 +1199,7 @@ function buildChatPrompt(
   // rendered as their own block. Defaults empty, so every existing call site
   // and the no-notes case render exactly today's prompt.
   standingNotes: string[] = []
-): string {
+): { stablePrefix: string; dynamic: string } {
   // Wave 4, item 1 (2026-08-01, game-164 follow-up): the general fragment is
   // appended only on the general route (byte-identical board prompt preserved);
   // the answer shapes are appended UNCONDITIONALLY after that, because the two
@@ -1200,7 +1210,12 @@ function buildChatPrompt(
     intent === "general"
       ? [persona.chatSystemPrompt, persona.chatGeneralPrompt].filter(Boolean).join("\n\n")
       : persona.chatSystemPrompt;
-  const systemPrompt = [baseSystemPrompt, persona.chatAnswerShapes].filter(Boolean).join("\n\n");
+  // This is the stable prefix: it varies only by coach-voice preference and
+  // intent (board vs. general each get their own persona text) -- for a
+  // fixed voice+intent pair it is byte-identical on every call, which is
+  // exactly what the spike (spike-3a-caching.md) measured the SDK caching.
+  // Each distinct voice/intent combination simply caches separately.
+  const stablePrefix = [baseSystemPrompt, persona.chatAnswerShapes].filter(Boolean).join("\n\n");
   const factsPayload = intent === "general" ? generalFactsForModel(facts) : factsForModel(facts, mentioned);
   // Wave 3, item 1: the focus section rides only on the board route (the one
   // that carries focusPosition facts -- classifyIntent forces "board" whenever
@@ -1209,8 +1224,7 @@ function buildChatPrompt(
   // marked as background.
   const focusSection = intent === "general" ? undefined : focusedMomentSection(facts);
   const notesBlock = standingNotesBlock(standingNotes);
-  return [
-    systemPrompt,
+  const dynamic = [
     "",
     "fact list (json):",
     // B4c (2026-07-27, coach-truth-speed round): dropped the 2-space indent
@@ -1231,6 +1245,7 @@ function buildChatPrompt(
     "",
     `player: ${userMessage}`,
   ].join("\n");
+  return { stablePrefix, dynamic };
 }
 
 // Task 3a (R2, voice-enforcement round): one corrective line per violation
@@ -1431,7 +1446,16 @@ export async function chat(
       // best-effort context, never load-bearing.
     }
   }
-  const basePrompt = buildChatPrompt(facts, history, userMessage, persona, intent, mentioned, rejectedContext, opts?.standingNotes ?? []);
+  // Prompt-caching round: stablePrefix is the byte-identical (per voice +
+  // intent) persona+answer-shapes text, handed to the backend separately
+  // below; basePrompt/attemptPrompt stay the FULL concatenation (unchanged
+  // from before this round) -- every existing prompt-content assertion,
+  // and the advice_traces row this function writes, keep seeing exactly
+  // the same complete text they always did.
+  const { stablePrefix, dynamic: baseDynamic } = buildChatPromptParts(
+    facts, history, userMessage, persona, intent, mentioned, rejectedContext, opts?.standingNotes ?? []
+  );
+  const basePrompt = [stablePrefix, baseDynamic].join("\n");
 
   let attemptPrompt = basePrompt;
   let attemptOutput = "";
@@ -1485,8 +1509,8 @@ export async function chat(
       // path.
       attemptOutput =
         backend.generateStream && opts?.onDelta
-          ? await backend.generateStream(attemptPrompt, timeoutMs, (t) => attemptDeltas.push(t))
-          : await backend.generate(attemptPrompt, timeoutMs);
+          ? await backend.generateStream(attemptPrompt, timeoutMs, (t) => attemptDeltas.push(t), stablePrefix)
+          : await backend.generate(attemptPrompt, timeoutMs, stablePrefix);
     } catch (err) {
       attemptOutput = `[backend error] ${err instanceof Error ? err.message : String(err)}`;
       failureCause = isTimeoutError(err) ? "timeout" : "backend-down";
