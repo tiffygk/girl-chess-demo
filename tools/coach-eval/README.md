@@ -107,7 +107,7 @@ most rows). Chess correctness and subjective usefulness are NOT mechanized —
 the blinded owner read is the instrument for those (see `render.ts`'s
 output).
 
-## TTFP / TTFW -- time to first progress / word (Task 1e, latency round, 2026-08-02)
+## TTFP / TTFW -- time to first progress / word (Task 1e, latency round, 2026-08-02; TTFP wiring fixed by review F1)
 
 Wall latency (`latencyMs`, above) is not the owner's real experience -- she
 waits for *something to happen*, not for the whole answer. Two new fields on
@@ -119,12 +119,17 @@ waits for *something to happen*, not for the whole answer. Two new fields on
   3, item 2 -- no unvalidated prose is ever shown), so this times the first
   moment the client would start rendering anything, not the first raw model
   token.
-- **`ttfpMs`** -- ms to the first status/progress signal. Until Task 1c lands
-  `chat()`'s `onAttemptStart`/`onValidateStart` hooks, there is no separate
-  status frame to time, so `ttfpMs` mirrors `ttfwMs` exactly -- this is the
-  honest pre-1c baseline the plan's before/after comparison uses. Once 1c
-  ships, `ttfpMs` times the earlier "cookie is thinking..." status frame and
-  will read materially lower than `ttfwMs`.
+- **`ttfpMs`** -- ms to the first status/progress signal: `run.ts`'s
+  `callChatWithTiming` wires `chat()`'s `opts.onAttemptStart` hook (Task 1c)
+  and timestamps its first fire, from the SAME start point `ttfwMs` uses.
+  Since `onAttemptStart` fires right before the backend call even begins,
+  `ttfpMs` reads near-0ms in practice -- `ttfwMs` (gated behind the full
+  generate+validate) is what carries the real wait. (Original 65fb9fe landed
+  before Task 1c's hooks existed and aliased `ttfpMs = ttfwMs` unconditionally
+  as an honest interim baseline; that aliasing went stale the moment 151e7fb
+  added the hooks and was never updated -- caught by Opus review F1 and fixed
+  the same round. `run.test.ts` proves the real wiring with a fake backend
+  whose first delta is delayed well past its attempt-start signal.)
 
 Both are `null` (never 0) for a row that served a template (no stream ever
 happened) or predates this instrument. `score.ts`'s `summarizeTtf(rows)`
