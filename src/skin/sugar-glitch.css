@@ -1764,6 +1764,7 @@
 .gc-app button.past-games-delete.armed {
   width: auto; height: auto; padding: 4px 10px;
   font-size: 10.5px; letter-spacing: .02em;
+  font-weight: 700;
   color: #fff; background: #FF3DA6;
   border-color: #C22B7E;
   box-shadow: 0 2px 0 #C22B7E, 0 4px 8px rgba(255,61,166,.3);
