@@ -174,10 +174,29 @@ function buildOptions(abortController: AbortController, stablePrefix?: string) {
 // send the untouched prompt rather than mangling it; the systemPrompt is
 // still set, just with stablePrefix's content appearing twice in that edge
 // case instead of the model losing text.
+//
+// Review fix F3 (Opus review of ab814d4..1c31dab, 2026-08-02): drift is
+// CONFIRMED IMPOSSIBLE in the current wiring (chat.ts's basePrompt always
+// starts with stablePrefix + "\n"; the corrective suffix is appended, never
+// prepended; the timeout retry reuses basePrompt unchanged) -- but this
+// branch had no signal at all if that ever stopped being true. A future
+// edit that prepends anything to attemptPrompt would silently double-send
+// the persona (wasted tokens, defeats caching) with zero observability.
+// console.warn (not throw -- fail toward duplication, never crash the
+// chat) names the drift so it shows up in server logs instead of hiding.
 export function splitStablePrefix(prompt: string, stablePrefix: string | undefined): string {
   if (!stablePrefix) return prompt;
   const withSeparator = `${stablePrefix}\n`;
-  return prompt.startsWith(withSeparator) ? prompt.slice(withSeparator.length) : prompt;
+  if (!prompt.startsWith(withSeparator)) {
+    console.warn(
+      `[agent-sdk] splitStablePrefix: stablePrefix drift -- prompt does not start with the expected ` +
+        `stablePrefix + "\\n" (stablePrefix ${stablePrefix.length} chars, prompt ${prompt.length} chars). ` +
+        `Sending the prompt untouched (systemPrompt is still set) -- the persona text is being sent ` +
+        `TWICE this call, wasting tokens. This should never happen from chat.ts; investigate the caller.`
+    );
+    return prompt;
+  }
+  return prompt.slice(withSeparator.length);
 }
 
 // One stateless one-shot turn (sdk-api-notes.md Q2): the terminal

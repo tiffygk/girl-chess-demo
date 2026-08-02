@@ -14,7 +14,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
   return { ...actual, query: queryMock };
 });
 
-import { agentSdkBackend } from "./agent-sdk";
+import { agentSdkBackend, splitStablePrefix } from "./agent-sdk";
 import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 
 function successIterable(text: string) {
@@ -79,5 +79,54 @@ describe("agentSdkBackend: stable-prefix system-prompt wiring", () => {
     expect(call.options.systemPrompt).toEqual([stablePrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY]);
     expect(call.prompt).toBe("dynamic text");
     expect(seen).toEqual(["hi"]);
+  });
+});
+
+// Review fix F3 (Opus review of ab814d4..1c31dab, 2026-08-02, Invariant
+// rule + observability). Confirmed impossible in current wiring (chat.ts
+// always builds attemptPrompt starting with stablePrefix + "\n") -- but the
+// non-matching branch had no test and no log, so a future edit that
+// prepends anything to attemptPrompt would silently defeat caching (a
+// double-send of the persona) with zero signal. Locks the deliberate
+// fail-toward-duplication contract: on drift, splitStablePrefix returns the
+// prompt UNTOUCHED (never mangled/truncated) and warns by name, so content
+// is never lost even in a case that should never happen.
+describe("splitStablePrefix: drift fallback contract (F3)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns the prompt untouched when it does not start with stablePrefix + newline", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const prompt = "totally different text, does not carry the prefix at all";
+    const result = splitStablePrefix(prompt, "stable text");
+    expect(result).toBe(prompt);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0].join(" ")).toMatch(/stablePrefix/i);
+  });
+
+  it("returns the prompt untouched, with no warning, when stablePrefix is undefined (the common no-caching case)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const prompt = "any prompt at all";
+    expect(splitStablePrefix(prompt, undefined)).toBe(prompt);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("does not warn on the normal matching case (prefix + newline is a real leading substring)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    splitStablePrefix("stable\ndynamic", "stable");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("generate(): on drift, systemPrompt is still set (fail toward duplication, not content loss) and prompt is the FULL untouched text", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    queryMock.mockReturnValue(successIterable("ok"));
+    const stablePrefix = "stable text";
+    const driftedPrompt = "this prompt was never built with the stable prefix leading it";
+    await agentSdkBackend.generate(driftedPrompt, 5000, stablePrefix);
+
+    const call = queryMock.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    expect(call.options.systemPrompt).toEqual([stablePrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY]);
+    expect(call.prompt).toBe(driftedPrompt);
   });
 });
