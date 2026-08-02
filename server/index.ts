@@ -1,6 +1,7 @@
 import express from "express";
 import { openDb, createSession, addModeMinutes, rateAdviceTrace, getRatedTraces, listCoachNotes, deleteCoachNote } from "./store/db";
 import { GameManager } from "./game/manager";
+import { servedCommit } from "./version";
 
 export const app = express();
 app.use(express.json());
@@ -13,7 +14,7 @@ openDb(process.env.NODE_ENV === "test" ? ":memory:" : process.env.DB_PATH || "da
 export const gm = new GameManager();
 export const ready = gm.init();
 
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, commit: servedCommit() }));
 
 app.post("/api/session", (_req, res) => res.json({ sessionId: createSession() }));
 
@@ -424,5 +425,5 @@ app.post("/api/session/:id/mode", (req, res) => {
 
 if (process.env.NODE_ENV !== "test") {
   const PORT = Number(process.env.PORT) || 3001;
-  ready.then(() => app.listen(PORT, () => console.log(`girl-chess server on :${PORT}`)));
+  ready.then(() => app.listen(PORT, () => console.log(`girl-chess server on :${PORT} (commit ${servedCommit()})`)));
 }
