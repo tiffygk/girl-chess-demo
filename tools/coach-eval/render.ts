@@ -691,6 +691,7 @@ const ARM_LABEL: Record<Arm, string> = {
   mate: "mate (suite NM forced-mate naming fixtures -- see suites/nm.ts for the real gate, this section is descriptive only)",
   long: "long (suite CE early/late latency cells -- see suites/ce.ts for the real gate, this section is descriptive only)",
   "general-theory": `general-theory (round-3 isolated 10-question pure-chess-theory subset, ${LENGTH_MAX_WORDS}-word hard cap, CHAT_TIMEOUT_MS)`,
+  numbers: "numbers (coach-eval instrument improvements, number-asking fixtures -- see fixtures.ts NUMBER_QUESTIONS for the real gate, this section is descriptive only)",
 };
 
 function writeArmSection(arm: Arm, A: ColumnAgg, B: ColumnAgg): string[] {

@@ -206,6 +206,7 @@ const ARM_BUDGET_LABEL: Record<Arm, string> = {
   // A/B -- same "exists only to satisfy Record<Arm, string>" note as
   // fork/mate/long above.
   "general-theory": "live-nudge budget (CHAT_TIMEOUT_MS, 45s) -- isolated single-model arm, decideArm never runs on it",
+  numbers: "live-nudge budget (CHAT_TIMEOUT_MS, 45s) -- acceptance-only arm, decideArm never runs on it",
 };
 
 export interface ArmDecisionInputs extends DecideInputs {
