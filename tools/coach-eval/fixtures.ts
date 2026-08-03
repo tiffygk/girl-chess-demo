@@ -29,7 +29,17 @@
 // board-live so a scoring/reporting bug in one class can never silently
 // change board-live's frozen 65-question numbers (same discipline "general"
 // and "board-review" already established in wave E1).
-export type Arm = "board-live" | "general" | "board-review" | "fork" | "mate" | "long";
+// Round-3 fact-shelf coach round (2026-08-03): "general-theory" is a TENTH,
+// wholly separate arm for the 10 owner-approved pure-chess-theory questions
+// (verbatim text, see GENERAL_THEORY_QUESTIONS_RAW below) -- added so a
+// single `--arm general-theory` run.ts invocation can eval EXACTLY these 10
+// and nothing else, isolated from the frozen "general" arm's own 15
+// questions (which stay byte-identical). Deliberately its own arm rather
+// than appended to "general": the whole point is a clean, small, filterable
+// subset for a 3-arm (GC_COACH_THINKING default/low/disabled) single-model
+// eval, and folding it into "general" would silently change that arm's
+// long-frozen 15-question denominator.
+export type Arm = "board-live" | "general" | "board-review" | "fork" | "mate" | "long" | "general-theory";
 
 export type LiveFixtureId = "C1" | "C2" | "C3" | "C4" | "C5";
 // Eval-instrument-repair round (2026-07-28): the board-review arm's own
@@ -697,6 +707,71 @@ export const GENERAL_QUESTIONS: GeneralQuestion[] = GENERAL_QUESTIONS_RAW.map((q
   tag: "general" as const,
 }));
 
+// ---- arm: general-theory (round-3 fact-shelf coach round, 2026-08-03) -----
+//
+// 10 owner-approved pure-chess-theory questions, used VERBATIM (owner's own
+// wording, casing, punctuation -- do not edit for style, same discipline
+// gen-01's real-refused-question entry above follows). Every one is a
+// next-game/theory question with no reference to "this position" -- the
+// class the "general" arm already exists to measure -- but this is a
+// DISTINCT, isolated 10-question subset (its own arm, not folded into
+// "general") so a single `--arm general-theory` run.ts invocation selects
+// EXACTLY these 10 for a clean 3-arm (GC_COACH_THINKING default/low/
+// disabled) single-model eval, without touching the frozen 15-question
+// "general" arm at all.
+//
+// `ctx` pins a real fixture so the harness can assemble a real fact list
+// (gameSans/turningPoints/perPly) for the coach to optionally cite as an
+// illustration, exactly like the "general" arm's own ctx field -- a
+// general-theory answer is not required to reference the position (graded
+// by validateChatGeneral, same as "general"). Anchors are spread 2-per-
+// fixture across all five of C1-C5 so no single position owns the set.
+//
+// ROUTING FINDING (verified 2026-08-03 against the shipped classifyIntent,
+// tools/coach-eval/generalTheory.test.ts's own "routes as documented" test):
+// only 5 of these 10 (gt-03/04/05/07/10) fire intent.ts's GENERAL_MARKER_RE
+// and route "general". The other 5 (gt-01/02/06/08/09) carry none of that
+// regex's phrases ("how do i", "when should i", "is it worth", "difference
+// between", "stud(y|ying|ies)", etc.) and fall through classifyIntent's
+// declared board-is-the-default rule straight to "board" -- a real, current
+// router gap, not a harness defect (the fixtures/arm wiring here are
+// correct; the questions are used verbatim per the owner's brief). Reported
+// to the owner rather than silently patched -- see
+// `.superpowers/sdd/rounds/2026-08-03-round3/report-general-theory-fixtures.md`.
+export interface GeneralTheoryQuestion {
+  id: string;
+  arm: "general-theory";
+  tag: "general";
+  ctx: FixtureId;
+  probe: boolean;
+  q: string;
+  note?: string;
+}
+
+const GENERAL_THEORY_QUESTIONS_RAW: Omit<GeneralTheoryQuestion, "arm" | "tag">[] = [
+  { id: "gt-01", ctx: "C1", probe: false, q: "what's another opening that would work well from a setup like mine?" },
+  { id: "gt-02", ctx: "C1", probe: false, q: "besides just developing pieces, what should i actually be trying to do in the opening?" },
+  { id: "gt-03", ctx: "C2", probe: false, q: "when is it worth giving up the bishop pair?" },
+  { id: "gt-04", ctx: "C2", probe: false, q: "what makes a pawn weak, and how do i avoid creating weak ones?" },
+  { id: "gt-05", ctx: "C3", probe: false, q: "how do i decide whether to play on the kingside or the queenside?" },
+  { id: "gt-06", ctx: "C3", probe: false, q: "what's the idea behind parking a knight on an outpost?" },
+  { id: "gt-07", ctx: "C4", probe: false, q: "as a rule, when should i trade queens versus keep them on the board?" },
+  { id: "gt-08", ctx: "C4", probe: false, q: "what are the key principles for a king-and-pawn endgame?" },
+  { id: "gt-09", ctx: "C5", probe: false, q: "what does it mean to play for the initiative instead of just reacting?" },
+  {
+    id: "gt-10",
+    ctx: "C5",
+    probe: false,
+    q: "how do i come up with a plan when i don't see any threats or openings for attacks? i'm not sure how to do defense or offense if everything seems even.",
+  },
+];
+
+export const GENERAL_THEORY_QUESTIONS: GeneralTheoryQuestion[] = GENERAL_THEORY_QUESTIONS_RAW.map((q) => ({
+  ...q,
+  arm: "general-theory" as const,
+  tag: "general" as const,
+}));
+
 // ---- arm: board-review (Wave E1; REBUILT 2026-07-28) ----------------------
 //
 // Board questions against a FINISHED game -- exercises the 90s
@@ -1010,5 +1085,14 @@ export const BOARD_REVIEW_QUESTION_COUNT = BOARD_REVIEW_QUESTIONS.length; // 16
 export const FORK_QUESTION_COUNT = FORK_QUESTIONS.length; // 6 fixtures x 2 = 12
 export const MATE_QUESTION_COUNT = MATE_QUESTIONS.length; // 7
 export const LONG_QUESTION_COUNT = LONG_QUESTIONS.length; // 4
+// Round-3 fact-shelf coach round: the isolated 10-question general-theory
+// arm, additive on top of the 119 above (96 + 23).
+export const GENERAL_THEORY_QUESTION_COUNT = GENERAL_THEORY_QUESTIONS.length; // 10
 export const TOTAL_QUESTION_COUNT =
-  BOARD_LIVE_QUESTION_COUNT + GENERAL_QUESTION_COUNT + BOARD_REVIEW_QUESTION_COUNT + FORK_QUESTION_COUNT + MATE_QUESTION_COUNT + LONG_QUESTION_COUNT;
+  BOARD_LIVE_QUESTION_COUNT +
+  GENERAL_QUESTION_COUNT +
+  BOARD_REVIEW_QUESTION_COUNT +
+  FORK_QUESTION_COUNT +
+  MATE_QUESTION_COUNT +
+  LONG_QUESTION_COUNT +
+  GENERAL_THEORY_QUESTION_COUNT;

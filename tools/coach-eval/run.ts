@@ -11,11 +11,15 @@
 //   --model sonnet|opus       required
 //   --wiring legacy|threaded  required
 //   --out <dir>               output dir (default: runs/<timestamp>)
-//   --arm <name>              board-live|general|board-review -- run only
-//                             that arm's questions, without disturbing the
-//                             others. Applied AFTER buildQuestionList()'s
-//                             own drift assertion against the full,
-//                             unfiltered TOTAL_QUESTION_COUNT.
+//   --arm <name>              board-live|general|board-review|fork|mate|
+//                             long|general-theory -- run only that arm's
+//                             questions, without disturbing the others.
+//                             Applied AFTER buildQuestionList()'s own drift
+//                             assertion against the full, unfiltered
+//                             TOTAL_QUESTION_COUNT. general-theory (round-3
+//                             fact-shelf coach round) is the isolated
+//                             10-question pure-chess-theory subset; e.g.
+//                             `--arm general-theory` runs exactly those 10.
 //   --limit N                 smoke-test only: run the first N questions
 //                             (of whatever --arm selected, or all arms)
 //   --warmup N                N throwaway calls through the identical chat()
@@ -79,6 +83,7 @@ import {
   FORK_QUESTIONS,
   MATE_QUESTIONS,
   LONG_QUESTIONS,
+  GENERAL_THEORY_QUESTIONS,
   FORK_FIXTURE_IDS,
   MATE_FIXTURE_IDS,
   LONG_FIXTURE_IDS,
@@ -240,7 +245,18 @@ function buildQuestionList(): EvalQuestion[] {
   const fork: EvalQuestion[] = FORK_QUESTIONS.map((f) => ({ id: f.id, arm: f.arm, tag: f.tag, q: f.q, ctx: f.ctx, probe: f.probe }));
   const mate: EvalQuestion[] = MATE_QUESTIONS.map((m) => ({ id: m.id, arm: m.arm, tag: m.tag, q: m.q, ctx: m.ctx, probe: m.probe }));
   const long: EvalQuestion[] = LONG_QUESTIONS.map((l) => ({ id: l.id, arm: l.arm, tag: l.tag, q: l.q, ctx: l.ctx, probe: l.probe }));
-  const all = [...base, ...pending, ...affirmation, ...general, ...boardReview, ...fork, ...mate, ...long];
+  // Round-3 fact-shelf coach round: the isolated 10-question general-theory
+  // arm -- same bare-context shape as "general" (buildContext's fallthrough
+  // branch), just its own arm so it can be selected alone via --arm.
+  const generalTheory: EvalQuestion[] = GENERAL_THEORY_QUESTIONS.map((g) => ({
+    id: g.id,
+    arm: g.arm,
+    tag: g.tag,
+    q: g.q,
+    ctx: g.ctx,
+    probe: g.probe,
+  }));
+  const all = [...base, ...pending, ...affirmation, ...general, ...boardReview, ...fork, ...mate, ...long, ...generalTheory];
   if (all.length !== TOTAL_QUESTION_COUNT) {
     throw new Error(`question list drift: built ${all.length}, fixtures.ts declares ${TOTAL_QUESTION_COUNT}`);
   }
@@ -539,7 +555,7 @@ async function main() {
   // files it discovers in one directory, so mixing a filtered and an
   // unfiltered run in the same --out would fail that check, correctly).
   const armFilter = args.arm as Arm | undefined;
-  const VALID_ARMS: Arm[] = ["board-live", "general", "board-review", "fork", "mate", "long"];
+  const VALID_ARMS: Arm[] = ["board-live", "general", "board-review", "fork", "mate", "long", "general-theory"];
   if (armFilter && !VALID_ARMS.includes(armFilter)) {
     throw new Error(`--arm must be one of ${VALID_ARMS.join("|")} (got ${JSON.stringify(args.arm)})`);
   }
