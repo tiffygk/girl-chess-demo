@@ -1118,6 +1118,10 @@ export class GameManager {
     // Highlight-a-move (Task 8): straight off the same moveRows Task 1
     // widened with `highlighted` -- no extra query.
     const highlightedPlies = moveRows.filter((r: any) => r.highlighted === 1).map((r: any) => r.ply as number);
+    // Round 3 (Q2 step 3): the manager's own lastHint record (Task 2) is the
+    // shelf source -- undefined for a finished/never-hinted game, in which
+    // case assembleChatFactList's fen-match simply never fires.
+    const live = this.games.get(gameId);
     const facts = assembleChatFactList(
       gameMoves,
       body.context,
@@ -1127,7 +1131,8 @@ export class GameManager {
         status: finished ? "finished" : "in-progress",
         outcome,
       },
-      highlightedPlies.length > 0 ? highlightedPlies : undefined
+      highlightedPlies.length > 0 ? highlightedPlies : undefined,
+      live?.lastHint ? { fen: live.lastHint.fen, facts: live.lastHint.facts } : undefined
     );
 
     const historyRows = getChatMessages(gameId, CHAT_HISTORY_WINDOW);

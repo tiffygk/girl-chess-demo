@@ -968,4 +968,99 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(suffix.toLowerCase()).toContain("restate only what the fact list proves");
     });
   });
+
+  // Round 3 (Q2 step 3): the hint shelf fold. lastHint is keyed to the exact
+  // fen it was computed for -- a match against the live currentFen (or a
+  // focused turning point's own pre-move fen) folds it in; anything else is
+  // a stale hint from a position the board has moved past and must be
+  // dropped.
+  describe("assembleChatFactList: hint shelf fold (Q2 step 3)", () => {
+    const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    it("projects the hint shelf when the hint's fen matches the live currentFen", () => {
+      const facts = assembleChatFactList(
+        [], // no moves played -- currentFen is the start position
+        { mode: "live" },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          fen: START_FEN,
+          facts: {
+            bestUci: "e2e4",
+            pv: ["e2e4", "e7e5"],
+            evalCp: null,
+            evalMate: 3,
+            trade: false,
+            escalated: false,
+          },
+        }
+      );
+      expect(facts.hintFindings).toBeDefined();
+      expect(facts.hintFindings!.fen).toBe(START_FEN);
+      expect(facts.hintFindings!.bestSan).toBe("e4");
+      expect(facts.hintFindings!.bestUci).toBe("e2e4");
+      expect(facts.hintFindings!.pvSans).toEqual(["e4", "e5"]);
+      expect(facts.hintFindings!.evalMate).toBe(3);
+      expect(facts.hintFindings!.evalCp).toBeNull();
+      // the shelf's own best/pv sans must be legally speakable
+      expect(facts.allowedSans).toContain("e4");
+      expect(facts.allowedSans).toContain("e5");
+    });
+
+    it("projects the hint shelf when the hint's fen matches a focused turning point's pre-move position", () => {
+      const facts = assembleChatFactList(
+        [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }],
+        { mode: "live", turningPointFocus: { ply: 1, san: "e4", label: "opening" } },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          fen: START_FEN, // the position BEFORE ply 1 -- what focusPosition derives to
+          facts: {
+            bestUci: "e2e4",
+            pv: ["e2e4"],
+            evalCp: 30,
+            evalMate: null,
+            trade: false,
+            escalated: false,
+            recommendation: { san: "e4" },
+          },
+        }
+      );
+      expect(facts.hintFindings).toBeDefined();
+      expect(facts.hintFindings!.fen).toBe(facts.focusPosition!.fen);
+      expect(facts.hintFindings!.recommendationSan).toBe("e4");
+    });
+
+    it("drops the hint shelf when the board has moved on (stale fen)", () => {
+      const facts = assembleChatFactList(
+        [{ ply: 1, san: "e4" }], // currentFen is now AFTER e4, not the start position
+        { mode: "live" },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          fen: START_FEN,
+          facts: {
+            bestUci: "e2e4",
+            pv: ["e2e4"],
+            evalCp: null,
+            evalMate: 3,
+            trade: false,
+            escalated: false,
+          },
+        }
+      );
+      expect(facts.hintFindings).toBeUndefined();
+    });
+
+    it("every existing call site (no 7th arg) is unaffected -- hintFindings stays undefined", () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      expect(facts.hintFindings).toBeUndefined();
+    });
+  });
 });
