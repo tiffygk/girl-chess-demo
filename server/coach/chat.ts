@@ -194,6 +194,23 @@ export interface ChatOutcome {
   finalPly: number;
 }
 
+// Round 3 (Q2 step 3): the hint engine's own verified findings for the exact
+// position she is asking about, folded onto ChatFactList.hintFindings ONLY
+// when the shelf's fen matches the position in play (see the fold below).
+// bestSan/pvSans are converted uci->san at the matched fen so they are
+// speakable the same way perPlyAnalysis's bestSan/pvSans already are.
+export interface HintFindings {
+  fen: string; // the position this shelf entry is valid for
+  bestSan: string; // chosen best move in SAN, converted from bestUci at the fen
+  bestUci: string;
+  evalCp: number | null; // side-to-move signed at fen
+  evalMate: number | null; // side-to-move signed at fen
+  pvSans: string[]; // the verified line, uci->san from fen
+  trade: boolean;
+  escalated: boolean;
+  recommendationSan?: string; // recommendation.san when present
+}
+
 export interface ChatFactList {
   gameSans: string[]; // every san played, in order
   currentFen: string; // final position (review) / live position (live)
@@ -296,6 +313,13 @@ export interface ChatFactList {
   // into turningPoints/allowedSans: a highlighted ply that was never an
   // actual turning point would drift validateChat's SAN allow-list.
   highlightedPlies?: number[];
+  // Round 3 fact shelf (Q2): the hint engine's own verified line for the
+  // position she is asking about, folded in ONLY when lastHint.fen matches
+  // currentFen (live) or focusPosition.fen (focused ask). This is the
+  // position the chat otherwise knows least -- perPlyAnalysis covers played
+  // plies only. Absent when there is no matching hint, so ordinary chat is
+  // untouched.
+  hintFindings?: HintFindings;
 }
 
 // Every position-shaped fact the coach gets, derived from one chess.js
@@ -424,7 +448,25 @@ export function assembleChatFactList(
   // moves.highlighted column. Every existing caller (every test, every
   // pre-this-round call site) omits it and gets undefined -- unchanged
   // behavior.
-  highlightedPlies?: number[]
+  highlightedPlies?: number[],
+  // Round 3 (Q2 step 3): additive optional 7th param, same "caller derives,
+  // this function only carries it through" discipline as every other
+  // optional param here. manager.ts passes live.lastHint. Only folded into
+  // hintFindings when its fen matches currentFen or focusPosition.fen (see
+  // below) -- a stale hint from a position the board has moved past is
+  // dropped, never shown as if it still applied.
+  hintCandidate?: {
+    fen: string;
+    facts: {
+      bestUci: string;
+      pv: string[];
+      evalCp: number | null;
+      evalMate: number | null;
+      trade: boolean;
+      escalated: boolean;
+      recommendation?: { san: string };
+    };
+  }
 ): ChatFactList {
   const chess = new Chess();
   const ordered = [...gameMoves].sort((a, b) => a.ply - b.ply);
@@ -549,6 +591,59 @@ export function assembleChatFactList(
   // legality check above. Only ever a real legal move by the time it's here.
   if (verifiedPendingMove?.san) sans.add(verifiedPendingMove.san);
 
+  // Round 3 (Q2 step 3): fold the hint shelf into the fact list ONLY when
+  // its fen matches the position actually in play -- live currentFen, or the
+  // focused turning point's own pre-move fen when she's asking about a past
+  // moment. A shelf entry for a fen that matches neither is a hint from a
+  // position the board has since moved past and must be dropped, never
+  // shown as if it still applied (fen-keying, same discipline as
+  // focusPosition itself). pv/bestUci are converted uci->san by replay from
+  // the matched fen, same discipline perPlyAnalysis's bestSan/pvSans
+  // already follow -- stop at the first illegal move rather than throw.
+  let hintFindings: ChatFactList["hintFindings"];
+  if (hintCandidate) {
+    const matchFen =
+      hintCandidate.fen === currentFen
+        ? currentFen
+        : focusPosition && hintCandidate.fen === focusPosition.fen
+          ? focusPosition.fen
+          : undefined;
+    if (matchFen) {
+      const hc = hintCandidate;
+      const board = new Chess(matchFen);
+      const bestMove = board.move({
+        from: hc.facts.bestUci.slice(0, 2),
+        to: hc.facts.bestUci.slice(2, 4),
+        promotion: (hc.facts.bestUci.slice(4, 5) || undefined) as "q" | "r" | "b" | "n" | undefined,
+      });
+      const bestSan = bestMove?.san ?? hc.facts.bestUci;
+      const pvBoard = new Chess(matchFen);
+      const pvSans: string[] = [];
+      for (const u of hc.facts.pv) {
+        const mv = pvBoard.move({
+          from: u.slice(0, 2),
+          to: u.slice(2, 4),
+          promotion: (u.slice(4, 5) || undefined) as "q" | "r" | "b" | "n" | undefined,
+        });
+        if (!mv) break;
+        pvSans.push(mv.san);
+      }
+      hintFindings = {
+        fen: matchFen,
+        bestSan,
+        bestUci: hc.facts.bestUci,
+        evalCp: hc.facts.evalCp,
+        evalMate: hc.facts.evalMate,
+        pvSans,
+        trade: hc.facts.trade,
+        escalated: hc.facts.escalated,
+        recommendationSan: hc.facts.recommendation?.san,
+      };
+      sans.add(bestSan);
+      for (const s of pvSans) sans.add(s);
+    }
+  }
+
   return {
     gameSans,
     currentFen,
@@ -567,6 +662,7 @@ export function assembleChatFactList(
     contested,
     perPlyAnalysis,
     highlightedPlies,
+    hintFindings,
   };
 }
 
