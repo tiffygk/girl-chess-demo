@@ -35,7 +35,11 @@ import { parseArgs } from "./util";
 // OWN scorers (tools/coach-eval/suites/{fh,nm,ce}.ts) are what actually gate
 // FH-01..03/NM-01..02/CE-01..05, this list only controls what render.ts's
 // per-arm section table shows.
-const ARMS: Arm[] = ["board-live", "general", "board-review", "fork", "mate", "long"];
+// Round-3 fact-shelf coach round: "general-theory" (the isolated 10-question
+// pure-chess-theory subset) added -- needed so `render.ts --single` picks up
+// and renders that arm's section rather than silently omitting it (armsInData
+// membership below is checked against this list).
+const ARMS: Arm[] = ["board-live", "general", "board-review", "fork", "mate", "long", "general-theory"];
 
 // ---- multi-rep aggregation types (summary.json schema) -------------------
 
@@ -686,6 +690,7 @@ const ARM_LABEL: Record<Arm, string> = {
   fork: "fork (suite FH forced-loss honesty fixtures -- see suites/fh.ts for the real gate, this section is descriptive only)",
   mate: "mate (suite NM forced-mate naming fixtures -- see suites/nm.ts for the real gate, this section is descriptive only)",
   long: "long (suite CE early/late latency cells -- see suites/ce.ts for the real gate, this section is descriptive only)",
+  "general-theory": `general-theory (round-3 isolated 10-question pure-chess-theory subset, ${LENGTH_MAX_WORDS}-word hard cap, CHAT_TIMEOUT_MS)`,
 };
 
 function writeArmSection(arm: Arm, A: ColumnAgg, B: ColumnAgg): string[] {

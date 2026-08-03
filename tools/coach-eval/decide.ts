@@ -201,6 +201,11 @@ const ARM_BUDGET_LABEL: Record<Arm, string> = {
   fork: "live-nudge budget (CHAT_TIMEOUT_MS, 45s) -- acceptance-only arm, decideArm never runs on it",
   mate: "live-nudge budget (CHAT_TIMEOUT_MS, 45s) -- acceptance-only arm, decideArm never runs on it",
   long: "live-nudge budget (CHAT_TIMEOUT_MS, 45s) -- acceptance-only arm, decideArm never runs on it",
+  // Round-3 fact-shelf coach round: the isolated 10-question general-theory
+  // arm is a single-model 3-arm (GC_COACH_THINKING) acceptance eval, not an
+  // A/B -- same "exists only to satisfy Record<Arm, string>" note as
+  // fork/mate/long above.
+  "general-theory": "live-nudge budget (CHAT_TIMEOUT_MS, 45s) -- isolated single-model arm, decideArm never runs on it",
 };
 
 export interface ArmDecisionInputs extends DecideInputs {
