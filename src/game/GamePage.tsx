@@ -39,7 +39,7 @@ import {
 import { turningLineArrows, arrowsToHighlights, type ArrowColor } from "./reviewArrows";
 import { followedBest, playedArrowForPly } from "../review/followedBest";
 import { describeMove, type MoveRender } from "./describeMove";
-import { pushLiveMove, setHighlight, markableWindow, type LiveMove } from "./liveMoves";
+import { pushLiveMove, setHighlight, pairWindow, liveMovesFromSummary, type LiveMove } from "./liveMoves";
 import { HighlightPocket } from "./HighlightPocket";
 import { victimKind, materialDiff, rollbackCapture, capturesAtPly, type CapturedBySide } from "./captures";
 import { kingInCheckSquare } from "./checkState";
@@ -253,7 +253,7 @@ export function GamePage() {
   // the game is over, and mirrorRef is a ref -- it never triggers a
   // render). Appended alongside lastMove at each settle site below, cleared
   // on new game the same place lastMove is. Read by the highlight pocket
-  // (Task 3) via markableWindow, mounted in her PlayerBar below.
+  // (Task 3, W5 pairs) via pairWindow, mounted in her PlayerBar below.
   const [liveMoves, setLiveMoves] = useState<LiveMove[]>([]);
   // A5: transient status-line hint for a click that was meaningful but
   // couldn't do what it looked like (currently: "can't castle right now").
@@ -602,7 +602,9 @@ export function GamePage() {
       mirrorRef.current = mirror;
       setFen(mirror.fen());
       setGameId(id);
-      setLiveMoves(s.moves.map((m) => ({ ply: m.ply, san: m.san, highlighted: !!m.highlighted })));
+      // W5: side rides the summary datum (server-derived once at load) and
+      // is carried through as data by the liveMoves boundary mapper.
+      setLiveMoves(liveMovesFromSummary(s.moves));
       setCaptured(capturesAtPly(s.moves, s.moves.length));
       lastReplyAtRef.current = Date.now();
       // Normalize the URL to exactly ?game=<id> on a successful resume (the
@@ -790,7 +792,7 @@ export function GamePage() {
         // once here so the revert branches below can roll back the SAME
         // ply if the move never actually lands server-side.
         const playedPly = mirror.history().length;
-        setLiveMoves((prev) => pushLiveMove(prev, { ply: playedPly, san: mv.san, highlighted: false }));
+        setLiveMoves((prev) => pushLiveMove(prev, { ply: playedPly, san: mv.san, highlighted: false, side: "her" }));
 
         const timeSpentMs = Date.now() - lastReplyAtRef.current;
         // Turn state lives in the player bars now (top bar's "thinking..."
@@ -881,10 +883,11 @@ export function GamePage() {
           // A4: Mallow's reply just settled — the highlight moves to her
           // move now, same "both sides" lichess convention.
           setLastMove({ from: replyRender.from, to: replyRender.to });
-          // Mallow's move also joins the live list (for ply-identity
-          // bookkeeping) even though markableWindow's isHerPly filter means
-          // she can never highlight it -- out of scope, see the plan.
-          setLiveMoves((prev) => pushLiveMove(prev, { ply: mirror.history().length, san: replyMove.san, highlighted: false }));
+          // Mallow's move joins the live list AND is highlightable now (W5
+          // opponent-move highlight, owner-approved 2026-08-02): it becomes
+          // the right-hand magenta badge of the newest pair in the pocket.
+          // side is set here, at the producer that knows whose move it is.
+          setLiveMoves((prev) => pushLiveMove(prev, { ply: mirror.history().length, san: replyMove.san, highlighted: false, side: "mallow" }));
         }
 
         setFen(res.fen);
@@ -2406,7 +2409,7 @@ export function GamePage() {
           pocket={
             gameOver == null && !reviewGame ? (
               <HighlightPocket
-                moves={markableWindow(liveMoves, 3)}
+                pairs={pairWindow(liveMoves, 3)}
                 disabled={togglesDisabled}
                 onToggle={handleHighlightToggle}
               />

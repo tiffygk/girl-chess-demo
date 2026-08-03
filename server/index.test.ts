@@ -391,10 +391,12 @@ describe("api", () => {
     expect(Array.isArray(summary.body.classifications)).toBe(true);
     // Increment 3c: `moves` (ply/san, for the debrief's client-side rewind
     // seam) rides alongside the existing arrays. Highlight-a-move (Task 1)
-    // widens each row with `highlighted` (false when never flagged).
+    // widens each row with `highlighted` (false when never flagged). W5
+    // (opponent-move highlight) widens it again with `side`, derived once
+    // at the data load (ply 1 is hers -- the conversion.ts rule).
     expect(Array.isArray(summary.body.moves)).toBe(true);
     expect(summary.body.moves.length).toBeGreaterThanOrEqual(1);
-    expect(summary.body.moves[0]).toEqual({ ply: 1, san: expect.any(String), highlighted: false });
+    expect(summary.body.moves[0]).toEqual({ ply: 1, san: expect.any(String), highlighted: false, side: "her" });
   }, 20000);
 
   // Highlight-a-move (Task 1): POST /api/game/:id/move/:ply/highlight
