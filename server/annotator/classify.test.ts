@@ -4,7 +4,7 @@ import path from "path";
 import { Chess } from "chess.js";
 import type { Evaluation, Evaluator } from "../engines/types";
 import { StockfishEvaluator } from "../engines/stockfish";
-import { classifyMove, ADVICE_LEVELS, DEFAULT_ADVICE_LEVEL, isAdviceLevel } from "./classify";
+import { classifyMove, ADVICE_LEVELS, DEFAULT_ADVICE_LEVEL, isAdviceLevel, BETTER_CLAIM_MIN_CP } from "./classify";
 
 // Task 6 (judge strictness dial, F10 tuning): a mocked evaluator per
 // existing classify.test patterns (see adjudicate.test.ts's MockEvaluator)
@@ -653,5 +653,52 @@ describe("classifyMove — real engine math", () => {
     const verdict = await classifyMove(setup, move, sf);
     expect(verdict.tier).toBe("silent");
     expect(verdict.facts).toBeUndefined();
+    expect(verdict.claimsBetterMove).toBe(false); // no "after" position -- nothing to compare against
+  }, 15000);
+});
+
+// Round 3 Task 11 (item 5, trust floor): "we shouldn't try to invent better
+// moves for her to have done" -- a surface may only assert "a better move
+// existed" when the engine's own delta clears BETTER_CLAIM_MIN_CP, or a
+// concrete tactical motif (capture/fork/mate/check) is present regardless of
+// delta size. Uses the module-level FixedDeltaEvaluator/ScriptedEvaluator
+// mocks defined above so the delta and the opponent's refutation motif are
+// both under exact test control (a real-engine fixture landing on an exact
+// known delta AND a known motif at a chosen position is impractical).
+describe("classifyMove — claimsBetterMove (Task 11, BETTER_CLAIM_MIN_CP)", () => {
+  it("a sub-150cp gap with no tactical motif does not claim a better move existed", async () => {
+    const chess = new Chess();
+    const move = chess.move({ from: "e2", to: "e4" });
+    // afterEval.bestMove e7e5 replays as a quiet, non-capturing, non-checking
+    // reply -- threat.motif comes back "positional", the vague case this gate
+    // exists to exclude.
+    const verdict = await classifyMove(chess, move, new FixedDeltaEvaluator(73));
+    expect(verdict.deltaCp).toBe(73);
+    expect(BETTER_CLAIM_MIN_CP).toBe(150);
+    expect(73).toBeLessThan(BETTER_CLAIM_MIN_CP);
+    expect(verdict.threat?.motif).toBe("positional");
+    expect(verdict.claimsBetterMove).toBe(false);
+  }, 15000);
+
+  it("a >=150cp gap does claim a better move existed, even with no concrete motif", async () => {
+    const chess = new Chess();
+    const move = chess.move({ from: "e2", to: "e4" });
+    const verdict = await classifyMove(chess, move, new FixedDeltaEvaluator(210));
+    expect(verdict.deltaCp).toBe(210);
+    expect(verdict.threat?.motif).toBe("positional"); // still no motif -- the delta alone carries it
+    expect(verdict.claimsBetterMove).toBe(true);
+  }, 15000);
+
+  it("a concrete tactical motif (capture-moved) claims a better move existed even below 150cp", async () => {
+    const chess = new Chess("3rk3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // Nd5, quiet, not a capture
+    const evaluator = new ScriptedEvaluator(
+      { cp: 500, mate: null, bestMove: "e1e2", pv: [] },
+      { cp: -430, mate: null, bestMove: "d8d5", pv: [] } // Rxd5 recaptures her just-moved knight
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.deltaCp).toBe(70); // below BETTER_CLAIM_MIN_CP(150)
+    expect(verdict.threat?.motif).toBe("capture-moved");
+    expect(verdict.claimsBetterMove).toBe(true); // the motif carries it, not the delta
   }, 15000);
 });
