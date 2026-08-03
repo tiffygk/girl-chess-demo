@@ -1,6 +1,6 @@
 import { Chess, type Move, type Square } from "chess.js";
 import type { Evaluator } from "../engines/types";
-import { deriveThreatFacts, type ThreatFacts } from "./motifs";
+import { deriveThreatFacts, type ThreatFacts, type ThreatMotif } from "./motifs";
 import { conversionForMove, type MoveConversionEvent } from "./conversion";
 
 // Wave C (hint escalation): "what was best instead" at the position BEFORE
@@ -59,6 +59,15 @@ export interface Verdict {
   // em-dashes, no emojis, per CLAUDE.md's coach-copy rule (this text
   // reaches the same judge surface, even though it isn't cookie's voice).
   conversionCopy?: string;
+  // Round 3 Task 11 (item 5, trust floor): whether it is honest to assert "a
+  // better move existed" for this verdict. Gated on either a delta big
+  // enough to be a real edge (>= BETTER_CLAIM_MIN_CP) or a concrete tactical
+  // reason (threat.motif is a capture/fork/mate/check, not a vague
+  // "positional" preference or a quiet promotion) -- a sub-threshold gap
+  // with no concrete motif is engine noise/style, not a claim the model or
+  // judge copy should ever assert. False on the checkmate short-circuit
+  // (there's no "after" position to compare against).
+  claimsBetterMove: boolean;
 }
 
 // The user-facing "judge strictness" dial (how chatty the judge is; UI
@@ -124,6 +133,27 @@ const MATE_SCORE_CP = 100_000;
 // mirroring this file's EVAL_MOVETIME_MS) is exactly "two named constants,
 // same value today, free to diverge later" rather than a shared import.
 const DECIDED_BAND_CP = 300;
+
+// Round 3 Task 11 (item 5 / OD-5, trust floor -- "we shouldn't try to invent
+// better moves for her to have done"): a surface may assert "a better move
+// existed" only when the engine's own delta is at/above this, or the
+// position carries a concrete tactical motif regardless of delta size (a
+// hanging fork or a missed mate is worth naming even at a modest cp gap).
+// Owner-calibratable starting value, decided in build per "don't ask her
+// about colours and thresholds" -- verify against real play, not an ask-back.
+export const BETTER_CLAIM_MIN_CP = 150;
+
+// The motifs.ts vocabulary that counts as "concrete" for the gate above --
+// deliberately excludes "positional" (a vague preference, not a reason) and
+// "promotion-threat" (present but quiet; naming a promotion isn't the same
+// as naming a capture/fork/mate/check the player can act on).
+const CONCRETE_BETTER_MOVE_MOTIFS = new Set<ThreatMotif>([
+  "capture-moved",
+  "capture-other",
+  "fork",
+  "mate-threat",
+  "check-threat",
+]);
 
 // Piece-letter -> plain-English name, scoped to this file's own copy the
 // same way every other server/annotator/*.ts module keeps its own small
@@ -216,7 +246,15 @@ export async function classifyMove(
   // left to evaluate (no replies exist), so short-circuit before touching
   // the evaluator.
   if (chess.isCheckmate()) {
-    return { tier: "silent", deltaCp: 0, mateAgainst: false, mateBefore: null, mateAfter: null, latencyMs: Date.now() - start };
+    return {
+      tier: "silent",
+      deltaCp: 0,
+      mateAgainst: false,
+      mateBefore: null,
+      mateAfter: null,
+      latencyMs: Date.now() - start,
+      claimsBetterMove: false,
+    };
   }
 
   // Defensive fallback: an unrecognized level (stale/garbled client value,
@@ -382,5 +420,12 @@ export async function classifyMove(
     tier = "silent";
   }
 
-  return { tier, deltaCp, mateAgainst, mateBefore, mateAfter, latencyMs: Date.now() - start, facts, threat, conversionCopy };
+  // Round 3 Task 11: the concrete-motif half of the gate reads `threat` --
+  // already computed above for every non-checkmate verdict, zero new engine
+  // calls. Math.abs guards the (rare, eval-noise) case where deltaCp comes
+  // back negative.
+  const claimsBetterMove =
+    Math.abs(deltaCp) >= BETTER_CLAIM_MIN_CP || (threat !== undefined && CONCRETE_BETTER_MOVE_MOTIFS.has(threat.motif));
+
+  return { tier, deltaCp, mateAgainst, mateBefore, mateAfter, latencyMs: Date.now() - start, facts, threat, conversionCopy, claimsBetterMove };
 }
