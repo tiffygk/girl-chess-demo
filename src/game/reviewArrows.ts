@@ -151,6 +151,37 @@ export function turningLineArrows(
   return arrows;
 }
 
+// F4 replay off-by-one (owner ruling 2026-08-03, game 169): the REPLAY of an
+// opponent-inaccuracy card must make the inaccuracy itself the focus. The
+// full-context set above (mallow's slip + the best punish + her actual
+// punish, three arrows at once) is right for "ask about this", but on a
+// replay click the owner read her own cyan/green punish as the card's
+// subject and expected the bishop the card is about (game 169, her Bh6 at
+// ply 18 vs Nxd5+ at ply 19). So the replay framing for an opponent-ply
+// line is the SOLE magenta arrow for mallow's own move (line.playedFromTo),
+// on the same post-inaccuracy board handleRewind already sets
+// (fenAtPly(line.ply)) — the punish/best/mallow-best clutter is suppressed,
+// never re-coloured (de-emphasis would still leave three arrows competing
+// for "the subject").
+//
+// A her-ply line's replay framing is BYTE-UNCHANGED — it delegates straight
+// to turningLineArrows (regression pin in reviewArrows.test.ts). So does an
+// opponent-ply line whose own playedFromTo never resolved: full context
+// beats an arrowless board, and it keeps GamePage's played-arrow fallback
+// (keyed on played/found/mallow colours) from unshifting a cyan arrow onto
+// mallow's own endpoints — exactly the mislabel this ruling exists to stop.
+export function turningLineReplayArrows(
+  line: TurningLine,
+  fb?: FollowedBest,
+  gameSans?: SummaryMove[]
+): ReviewArrow[] {
+  const isOpponentPly = line.ply % 2 === 0;
+  if (isOpponentPly && line.playedFromTo) {
+    return [{ ...line.playedFromTo, color: "mallow" }];
+  }
+  return turningLineArrows(line, fb, gameSans);
+}
+
 // Increment 3.95 (Task 4, Part 2): highlights are always just the arrows'
 // own endpoints, so deriving them FROM whatever arrows array actually ends
 // up on screen (rather than re-deriving separately from `line`) keeps the

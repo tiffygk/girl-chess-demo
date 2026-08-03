@@ -39,7 +39,7 @@ import {
   pendingMoveContext,
   resolvePlyFocus,
 } from "./chatFocus";
-import { turningLineArrows, arrowsToHighlights, type ArrowColor } from "./reviewArrows";
+import { turningLineArrows, turningLineReplayArrows, arrowsToHighlights, type ArrowColor } from "./reviewArrows";
 import { followedBest, playedArrowForPly } from "../review/followedBest";
 import { describeMove, type MoveRender } from "./describeMove";
 import { pushLiveMove, setHighlight, pairWindow, liveMovesFromSummary, type LiveMove } from "./liveMoves";
@@ -1556,8 +1556,19 @@ export function GamePage() {
   // resolved). Centralized so the "found" dedup case (which legitimately has
   // no "played"-coloured arrow at all — see reviewArrows.ts) doesn't
   // re-trigger the fallback and double up on the same move.
+  // F4 (owner ruling 2026-08-03, game 169): `intent` splits the two framings
+  // this helper serves. "ask" (the default — handleAskAboutTurningPoint/
+  // handleAskAboutPly) keeps the full-context arrow set; "replay"
+  // (handleRewind only) routes through turningLineReplayArrows, which for an
+  // OPPONENT-ply line focuses the inaccuracy itself as the sole magenta
+  // arrow and is byte-identical to the context framing for everything else —
+  // see that function's header and reviewArrows.test.ts's regression pins.
   const buildArrowsForPly = useCallback(
-    (line: TurningLine | undefined, ply: number): { from: string; to: string; color: ArrowColor }[] => {
+    (
+      line: TurningLine | undefined,
+      ply: number,
+      intent: "ask" | "replay" = "ask"
+    ): { from: string; to: string; color: ArrowColor }[] => {
       if (!activeReviewMoves) return [];
       const fb = followedBest(line, activeReviewMoves);
       // activeReviewMoves rides along so a her-ply card can draw mallow's
@@ -1565,7 +1576,11 @@ export function GamePage() {
       // recommended, mallow's recommended, and her actual move all rendered,
       // but mallow's actual never did, so the only arrow on mallow's half of
       // the board depicted a move that never happened.
-      const arrows = line ? turningLineArrows(line, fb, activeReviewMoves) : [];
+      const arrows = line
+        ? intent === "replay"
+          ? turningLineReplayArrows(line, fb, activeReviewMoves)
+          : turningLineArrows(line, fb, activeReviewMoves)
+        : [];
       // Review fix (Wave F, 2026-07-27, finding 7): "mallow" added to the
       // guard alongside "played"/"found". An opponent-ply line with no `fb`
       // (e.g. mallow's slip was the game's last move -- no reply exists to
@@ -1802,7 +1817,12 @@ export function GamePage() {
       // bullet-section replay) or one whose own playedFromTo never
       // resolved — see buildArrowsForPly's own fallback above.
       const line = turningLines.find((l) => l.ply === ply);
-      const arrows = buildArrowsForPly(line, ply);
+      // F4 (owner ruling 2026-08-03): "replay" intent — an opponent-ply
+      // card's replay frames the inaccuracy itself (sole magenta arrow),
+      // never her punish; a her-ply replay is byte-unchanged. The lookup
+      // above stays keyed by the point's OWN ply — the investigation's
+      // `point.ply + 1` was ruled backwards AND would make this find() miss.
+      const arrows = buildArrowsForPly(line, ply, "replay");
       setReviewArrows(arrows);
       setReviewHighlights(arrowsToHighlights(arrows));
       // Reviewer fix (Task 7 follow-up, tidiness): replaying ANY card (the
