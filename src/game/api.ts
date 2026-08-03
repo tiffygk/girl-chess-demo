@@ -407,6 +407,18 @@ export interface ChatContext {
     // debriefBullets.ts/turningPointNote.ts already use for this same fact.
     playedNextSan?: string;
     followedBest?: boolean;
+    // Opponent-move-analysis plan (2026-08-03), Wave C: only populated for a
+    // MALLOW-ply focus (chatFocus.ts's opponentMoveFocusContext), straight off
+    // the matching HighlightLine's own already-computed fields (Wave A,
+    // server/annotator/highlightLines.ts -- one place, never re-derived
+    // here). Absent for every her-ply focus (turningPointFocusContext never
+    // sets these), so JSON.stringify drops the keys there and that prompt
+    // path stays byte-identical (chat.stablePrefix discipline). Lets
+    // server/coach/chat.ts's checkOpponentQualityClaims answer "did mallow
+    // actually play the engine's own best move" from a fact already in hand,
+    // never by re-deriving it from the model's own prose.
+    matchedBest?: boolean | null;
+    quality?: "best" | "solid" | "fine" | "slip" | "unknown";
   };
   // Task 1 (R2, pending-move context threading): mirrors
   // server/coach/chat.ts's ChatContext.pendingMove verbatim -- see

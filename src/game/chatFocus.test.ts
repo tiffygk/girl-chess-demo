@@ -6,8 +6,10 @@ import {
   reconcileChatFocus,
   pvUciToSan,
   pendingMoveContext,
+  opponentMoveFocusContext,
+  resolvePlyFocus,
 } from "./chatFocus";
-import type { SummaryMove, TurningLine } from "./api";
+import type { SummaryMove, TurningLine, HighlightLine, MoveClassification } from "./api";
 
 describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", () => {
   describe("hintFocusContext", () => {
@@ -429,6 +431,201 @@ describe("chatFocus.ts (Task 7, ask-about-this focus -> ChatContext mapping)", (
       });
 
       expect(result).toEqual({});
+    });
+  });
+
+  // Opponent-move-analysis plan (2026-08-03), Wave C: the honest minimal
+  // focus for a ply with no TurningPoint and no MoveClassification -- either
+  // a mallow ply (which NEVER carries a classification, classifications.ts's
+  // header) or the ~97% of her own moves that carry no classification
+  // either. Real facts only: ply/san off the caller's own gameSans row,
+  // bestSan/pvSans off the matching HighlightLine when one was found.
+  // followedBest/playedNextSan are never set here -- unlike
+  // turningPointFocusContext, this never calls followedBest() at all, since
+  // followedBest's seedPly = ply - (ply % 2) is the getTurningLines
+  // convention (her REPLY's alternatives for an opponent ply); a
+  // HighlightLine seeds at p-1 UNIVERSALLY (mallow's own alternatives for a
+  // mallow ply) -- semantically different bestSan/pvSans that followedBest
+  // must never compare against.
+  describe("opponentMoveFocusContext", () => {
+    it("labels a mallow-ply focus 'mallow's move' and carries the HighlightLine's bestSan/pvSans/matchedBest/quality", () => {
+      const line: HighlightLine = {
+        ply: 8,
+        side: "mallow",
+        san: "Nc6",
+        bestSan: "Re8",
+        pvSans: ["Re8", "Qd2"],
+        matchedBest: false,
+        quality: "slip",
+        gapCp: 220,
+        mateInvolved: false,
+        decided: false,
+      };
+      expect(opponentMoveFocusContext(8, "Nc6", "mallow", line)).toEqual({
+        ply: 8,
+        san: "Nc6",
+        label: "mallow's move",
+        bestSan: "Re8",
+        pvSans: ["Re8", "Qd2"],
+        matchedBest: false,
+        quality: "slip",
+      });
+    });
+
+    it("labels a her-ply fallback focus 'a move you highlighted' and omits matchedBest/quality entirely", () => {
+      const line: HighlightLine = {
+        ply: 7,
+        side: "her",
+        san: "Nf3",
+        bestSan: "Nf3",
+        pvSans: ["Nf3"],
+        matchedBest: true,
+        quality: "best",
+        gapCp: 0,
+        mateInvolved: false,
+        decided: false,
+      };
+      const result = opponentMoveFocusContext(7, "Nf3", "her", line);
+      expect(result).toEqual({
+        ply: 7,
+        san: "Nf3",
+        label: "a move you highlighted",
+        bestSan: "Nf3",
+        pvSans: ["Nf3"],
+      });
+      expect(result.matchedBest).toBeUndefined();
+      expect(result.quality).toBeUndefined();
+    });
+
+    it("tolerates an undefined line -- bestSan/pvSans stay undefined, never guessed", () => {
+      expect(opponentMoveFocusContext(8, "Nc6", "mallow", undefined)).toEqual({
+        ply: 8,
+        san: "Nc6",
+        label: "mallow's move",
+        bestSan: undefined,
+        pvSans: undefined,
+        matchedBest: undefined,
+        quality: undefined,
+      });
+    });
+
+    it("never sets followedBest/playedNextSan -- unknown, never asserted, for either side", () => {
+      const line: HighlightLine = {
+        ply: 8,
+        side: "mallow",
+        san: "Nc6",
+        bestSan: "Re8",
+        pvSans: ["Re8"],
+        matchedBest: false,
+        quality: "slip",
+        gapCp: 220,
+        mateInvolved: false,
+        decided: false,
+      };
+      const result = opponentMoveFocusContext(8, "Nc6", "mallow", line) as Record<string, unknown>;
+      expect("followedBest" in result ? result.followedBest : undefined).toBeUndefined();
+      expect("playedNextSan" in result ? result.playedNextSan : undefined).toBeUndefined();
+    });
+  });
+
+  // Opponent-move-analysis plan, Wave C: the pure decision GamePage's
+  // handleAskAboutPly now delegates to (after its own TurningPoint check,
+  // unchanged) -- centralizes the branch so the "sibling no-op" bug (an
+  // unclassified highlighted ply, either side, silently doing nothing) is
+  // unit-testable without a .tsx harness.
+  describe("resolvePlyFocus (no-op fix: the sibling gap this wave closes)", () => {
+    const GAME_SANS: SummaryMove[] = [
+      { ply: 1, san: "e4", side: "her" },
+      { ply: 2, san: "e5", side: "mallow" },
+      { ply: 3, san: "Nf3", side: "her" },
+      { ply: 4, san: "Nc6", side: "mallow" },
+    ];
+    const NO_CLASSIFICATIONS: MoveClassification[] = [];
+    const NO_TURNING_LINES: TurningLine[] = [];
+
+    it("a mallow ply with no classification (the pre-fix no-op) now resolves to a real focus instead of undefined", () => {
+      const highlightLines: HighlightLine[] = [
+        {
+          ply: 4,
+          side: "mallow",
+          san: "Nc6",
+          bestSan: "Bc5",
+          pvSans: ["Bc5"],
+          matchedBest: false,
+          quality: "fine",
+          gapCp: 80,
+          mateInvolved: false,
+          decided: false,
+        },
+      ];
+      const resolution = resolvePlyFocus(4, GAME_SANS, NO_CLASSIFICATIONS, NO_TURNING_LINES, highlightLines);
+      expect(resolution).toBeDefined();
+      expect(resolution?.side).toBe("mallow");
+      expect(resolution?.focus).toEqual({
+        ply: 4,
+        san: "Nc6",
+        label: "mallow's move",
+        bestSan: "Bc5",
+        pvSans: ["Bc5"],
+        matchedBest: false,
+        quality: "fine",
+      });
+    });
+
+    it("an unclassified HER ply (the ~97% case, cyan drawer) also resolves instead of no-op'ing", () => {
+      const highlightLines: HighlightLine[] = [
+        {
+          ply: 3,
+          side: "her",
+          san: "Nf3",
+          bestSan: "Nf3",
+          pvSans: ["Nf3"],
+          matchedBest: true,
+          quality: "best",
+          gapCp: 0,
+          mateInvolved: false,
+          decided: false,
+        },
+      ];
+      const resolution = resolvePlyFocus(3, GAME_SANS, NO_CLASSIFICATIONS, NO_TURNING_LINES, highlightLines);
+      expect(resolution).toBeDefined();
+      expect(resolution?.side).toBe("her");
+      expect(resolution?.focus.label).toBe("a move you highlighted");
+      expect(resolution?.focus.bestSan).toBe("Nf3");
+    });
+
+    it("a classified her ply still takes the existing turningPointFocusContext path (turningLines, gameSans threaded, unchanged)", () => {
+      const classifications: MoveClassification[] = [{ ply: 3, classification: "inaccuracy" }];
+      const line: TurningLine = { ply: 3, bestSan: "Bb5", pvSans: ["Bb5"] };
+      const resolution = resolvePlyFocus(3, GAME_SANS, classifications, [line], []);
+      expect(resolution?.focus.label).toBe("inaccuracy");
+      expect(resolution?.focus.bestSan).toBe("Bb5");
+    });
+
+    it("returns undefined when the ply has no resolvable san/side (should not happen, but never a guess)", () => {
+      expect(resolvePlyFocus(99, GAME_SANS, NO_CLASSIFICATIONS, NO_TURNING_LINES, [])).toBeUndefined();
+    });
+
+    // Invariant rule (CLAUDE.md, ply-parity-encode-in-types precedent): reads
+    // `move.side` off the caller's own data, never `ply % 2` -- falsified
+    // here with a fixture where the two deliberately DISAGREE (ply 4 is even
+    // but its own row says "her"). Every real game in this codebase has
+    // side agree with parity (she is always white), so this fixture is
+    // artificial on purpose: it is the only way to prove resolvePlyFocus
+    // reads the datum rather than recomputing it, mirroring the mutation
+    // check performed by hand for this wave (temporarily swapping this
+    // read for `ply % 2 === 1 ? "her" : "mallow"` makes this exact test go
+    // red; reverted immediately after confirming that).
+    it("reads side from the data field, not ply parity -- an even ply whose own row says \"her\" resolves as her, not mallow", () => {
+      const contraryGameSans: SummaryMove[] = [
+        { ply: 1, san: "e4", side: "her" },
+        { ply: 2, san: "e5", side: "mallow" },
+        { ply: 3, san: "Nf3", side: "her" },
+        { ply: 4, san: "Qh5", side: "her" },
+      ];
+      const resolution = resolvePlyFocus(4, contraryGameSans, NO_CLASSIFICATIONS, NO_TURNING_LINES, []);
+      expect(resolution?.side).toBe("her");
+      expect(resolution?.focus.label).toBe("a move you highlighted");
     });
   });
 });
