@@ -203,60 +203,60 @@ export function deriveThreatFacts(
     // the refutation capture, herColor to move, exactly what pv[1] onward
     // describes. afterEval.pv[0] is the refutation itself (bestUci, already
     // replayed above as `mv`); pv[1] is the engine's own chosen reply.
+    //
+    // Whole-branch review correction (2026-08-03, Important finding 2): this
+    // used to also flip recaptureHolds false whenever pv[1] simply wasn't
+    // the recapture ("the engine declines it"). That is NOT evidence the
+    // recapture loses material -- a stronger zwischenzug can exist even when
+    // the recapture is perfectly safe, and this afterEval carries no fact at
+    // all about what recapturing actually leads to in that case (the pv
+    // never plays or evaluates it). "No facts, no claim": only the branch
+    // below, where the engine's OWN line actually plays the recapture and
+    // then demonstrates a concrete follow-up loss, is real evidence.
     let recaptureHolds = true;
     let recaptureRefusalReason: string | undefined;
-    if (capturedSquareDefended && afterEval.pv.length >= 2) {
+    if (capturedSquareDefended && afterEval.pv.length >= 3) {
       const pv1 = afterEval.pv[1];
-      if (pv1 && pv1.length >= 4) {
-        const pv1To = pv1.slice(2, 4);
-        const isRecapture = pv1To === actualCaptureSquare;
-        if (!isRecapture) {
-          // The engine's own best play DECLINES the recapture entirely --
-          // the strongest possible signal that taking it isn't actually
-          // safe, regardless of why (trace-180: hxg4 hangs the rook to
-          // Qxh1, so the engine retreats instead of recapturing at all).
-          try {
-            const declineMv = new Chess(probe.fen()).move({
-              from: pv1.slice(0, 2),
-              to: pv1.slice(2, 4),
-              promotion: (pv1.slice(4, 5) as "q" | "r" | "b" | "n" | undefined) ?? "q",
-            });
-            if (declineMv) {
-              recaptureHolds = false;
-              recaptureRefusalReason = declineMv.san;
-            }
-          } catch {
-            // Replay failed -- leave recaptureHolds true; nothing proven.
-          }
-        } else if (afterEval.pv.length >= 3) {
-          // The recapture DOES happen in the engine's own line -- check
-          // whether the very next move then grabs something worth more
-          // than what was just recaptured (deflection/overload one ply
-          // deeper than the simple "does a legal recapture exist" check).
-          try {
-            const recaptureProbe = new Chess(probe.fen());
-            const recaptureMv = recaptureProbe.move({
-              from: pv1.slice(0, 2),
-              to: pv1.slice(2, 4),
-              promotion: (pv1.slice(4, 5) as "q" | "r" | "b" | "n" | undefined) ?? "q",
-            });
-            const recapturedValue = recaptureMv?.captured ? (PIECE_VALUE[recaptureMv.captured] ?? 0) : 0;
-            const pv2 = afterEval.pv[2];
-            const pv2Mv = pv2 && pv2.length >= 4
-              ? recaptureProbe.move({
-                  from: pv2.slice(0, 2),
-                  to: pv2.slice(2, 4),
-                  promotion: (pv2.slice(4, 5) as "q" | "r" | "b" | "n" | undefined) ?? "q",
-                })
-              : null;
-            const followUpValue = pv2Mv?.captured ? (PIECE_VALUE[pv2Mv.captured] ?? 0) : 0;
-            if (pv2Mv?.captured && followUpValue > recapturedValue) {
+      if (pv1 && pv1.length >= 4 && pv1.slice(2, 4) === actualCaptureSquare) {
+        // The recapture DOES happen in the engine's own line -- check
+        // whether the very next move then grabs something worth more than
+        // what was just recaptured (deflection/overload one ply deeper than
+        // the simple "does a legal recapture exist" check).
+        try {
+          const recaptureProbe = new Chess(probe.fen());
+          const recaptureMv = recaptureProbe.move({
+            from: pv1.slice(0, 2),
+            to: pv1.slice(2, 4),
+            promotion: (pv1.slice(4, 5) as "q" | "r" | "b" | "n" | undefined) ?? "q",
+          });
+          const recapturedValue = recaptureMv?.captured ? (PIECE_VALUE[recaptureMv.captured] ?? 0) : 0;
+          const pv2 = afterEval.pv[2];
+          const pv2Mv = pv2 && pv2.length >= 4
+            ? recaptureProbe.move({
+                from: pv2.slice(0, 2),
+                to: pv2.slice(2, 4),
+                promotion: (pv2.slice(4, 5) as "q" | "r" | "b" | "n" | undefined) ?? "q",
+              })
+            : null;
+          const followUpValue = pv2Mv?.captured ? (PIECE_VALUE[pv2Mv.captured] ?? 0) : 0;
+          // Union-review correction: a bigger follow-up capture is only real
+          // evidence of an overload if the player has no legal recapture ON
+          // the follow-up's own captured square -- otherwise the trade just
+          // continues one ply deeper (recaptureProbe is already advanced
+          // past pv2Mv, her side to move) and can be even or favorable, not
+          // a proven net loss.
+          if (pv2Mv?.captured && followUpValue > recapturedValue) {
+            const followUpSquare = resolveCaptureSquare(pv2Mv, herColor);
+            const canRerecapture = recaptureProbe
+              .moves({ verbose: true })
+              .some((m) => m.to === followUpSquare && (m.flags.includes("c") || m.flags.includes("e")));
+            if (!canRerecapture) {
               recaptureHolds = false;
               recaptureRefusalReason = pv2Mv.san;
             }
-          } catch {
-            // Replay failed -- leave recaptureHolds true; nothing proven.
           }
+        } catch {
+          // Replay failed -- leave recaptureHolds true; nothing proven.
         }
       }
     }
