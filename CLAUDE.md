@@ -1,47 +1,19 @@
-## ACTIVE WORK -- start here (updated 2026-08-02, trimmed for length — full history in `docs/changelog.md`)
+## ACTIVE WORK -- start here (updated 2026-08-03, trimmed for length — full history in `docs/changelog.md`)
 
-**ROUND 3 (fact-shelf coach) IS PLANNED, NOT STARTED.** Read `6 handoffs/HANDOFF — Round 3
-continuation (2026-08-02).md` FIRST — it is written to be acted on directly and carries the full
-current-state detail this section only summarizes: branch/stack state, the owner-decision register,
-what runs first, and which two in-flight items to verify before trusting. Round-3 folds the game-167
-playtest ruling, the coach-latency root-cause investigation (root = unbounded adaptive thinking, not
-network/prompt/infra), the coach-quality brainstorm (chat is bad because it's model-first over facts
-that cover only played moves — the fix is a fact shelf, the same inversion that made the hints good),
-and a three-arm eval into one plan: `.superpowers/sdd/rounds/2026-08-03-round3/plan.md` (repo,
-task-by-task) / vault "2 build/Girl Chess — Round 3 Plan (2026-08-02).md" (owner mirror — verified in
-sync with the repo copy, session-gone task included in both).
+**Read `6 handoffs/HANDOFF — Round 3 continuation (2026-08-03).md` FIRST** — it is written to be acted
+on directly and is the current pickup point: current state, the key decisions (OD-3b thinking =
+attempt-0 `low` for ALL coach chat including postgame review, router fix approved and mid-build), the
+open queue, and full relaunch briefs for the 3 in-flight agents as of 2026-08-03 (game investigation
+into the owner's newest real game's 3 reported bugs; the opponent-move-analysis plan; the router build
+in `wt-router`/`round/2026-08-03-router`, which has uncommitted progress on disk that must not be
+discarded). Round-3's overnight work (merge, W1 fact shelf, W2 trust floor, W5 opponent-highlight
+badge, game-167 import, the OD-3b eval) is DONE and merged/committed on `main`; two branches
+(`round/2026-08-03-thinking-low`, `round/2026-08-03-router`) are built/building and HELD for owner
+ship. The prior 2026-08-02 continuation handoff is superseded — its content is folded into the new one
+where still relevant. Owner is playing real games throughout on `npm run dev` (real db,
+http://localhost:5173/api :3001) — check for that before any gate run or CPU-heavy work.
 
-**Branch `round/2026-08-01-hint-tree` was MERGED to `main` on 2026-08-02 (owner-ruled OD-1 = merge);
-`main` is now at `13a2afc` (clean fast-forward, +47 commits) plus this doc commit.** All 47 commits
-were reviewed and clean; the last two (`abe5e67` 3-minute chat budgets, `13a2afc` the `GC_COACH_THINKING`
-knob) shipped with the merge — the knob is disabled by default and its unset case is test-verified
-byte-identical, so **the merge ships NO thinking-bound decision.** STILL OPEN after the merge: OD-3
-(whether to bound the model's thinking — needs her blinded read of the b180 worksheet, key unopened) and
-Round-3 W1 (the fact shelf / getting Stockfish's full facts to the coach); see the round-3 continuation
-handoff and `.superpowers/sdd/rounds/2026-08-03-round3/plan.md`. Prior
-rounds this section used to track (game-160 RCA phase A, the rca-eval acceptance loop, the 07-29
-resume-games round, gate non-determinism) are all MERGED/CLOSED — see `docs/changelog.md` and
-`6 handoffs/HANDOFF — Gate determinism + backup hygiene (2026-07-30).md` if you need that history; they
-are no longer where you pick up.
-
-**If the owner says only "start again" or "continue", this is where you pick up.** Read the round-3
-continuation handoff named above in full before doing anything else — it has the owner-decision
-register (merge ruling OD-1, import-games OD-2, thinking-bound gate OD-3 with the blinded worksheet
-key still unopened, budget retune OD-4) and says explicitly what round-3's Wave 0 needs from her before
-Wave 1 can start.
-
-**FIRST ACTION:** the merge is DONE — `main` == `bf5e728` (branch tip `13a2afc` + this doc). **IN-FLIGHT
-as of the 2026-08-02 execution session — read `.superpowers/sdd/rounds/2026-08-03-round3/RESUME-2026-08-02.md`
-FIRST:** W1 (fact shelf) dispatched to a Sonnet subagent committing per task (check `git log bf5e728..HEAD`);
-the W5 opponent-move-highlight badge dispatched to a Fable subagent building a proposal artifact into vault
-`3 visual/opponent-move-highlight-proposal.html` (library-first, needs owner eye then approval); the CLAUDE.md
-auto-commit Stop hook is installed in `.claude/settings.local.json`. Owner rulings this session: OD-1 merge
-(done), OD-2 import game 167 ONLY (queued — needs a careful tested real-db write, spec in RESUME), W5 design
-start (in flight). Then continue Round-3: W2 sequential after W1, W4 severable, and surface the
-still-open owner decisions OD-3(a) (hand her the blinded b180 worksheet, key unopened), OD-4 (chat-budget retune, follows OD-3).
-Post-merge housekeeping: the `wt-hinttree` scratch teardown (`wt-hinttree/data` + `.playtest-scratch`) is
-a deliberate MANUAL follow-up — the Directory rule forbids an agent deleting a directory, and a stale
-vite still listens on `:4173` — so leave it for the owner or a supervised step.
+**If the owner says only "start again" or "continue", this is where you pick up.**
 
 **Hard rules, quick index (full text further down this file):** never run `npm run gate` while she's
 playing (the in-play guard checks this now, but ask/wait anyway); a backup is only a restore point if
