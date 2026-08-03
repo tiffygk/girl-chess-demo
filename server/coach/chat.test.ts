@@ -1011,6 +1011,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
             evalMate: 3,
             trade: false,
             escalated: false,
+            verified: true,
           },
         }
       );
@@ -1043,6 +1044,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
             evalMate: null,
             trade: false,
             escalated: false,
+            verified: true,
             recommendation: { san: "e4" },
           },
         }
@@ -1069,6 +1071,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
             evalMate: 3,
             trade: false,
             escalated: false,
+            verified: true,
           },
         }
       );

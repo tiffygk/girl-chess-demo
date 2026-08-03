@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Chess } from "chess.js";
 import type { Evaluation, Evaluator } from "../engines/types";
 import { StockfishEvaluator } from "../engines/stockfish";
-import { computeHint, HINT_MAX_LOSS_CP, HINT_TRADE_MARGIN_CP } from "./hint";
+import { computeHint, computePositionView, HINT_MAX_LOSS_CP, HINT_TRADE_MARGIN_CP } from "./hint";
 
 // Real engine, same pattern as classify.test.ts — no mocks exist in this repo.
 describe("computeHint — deep engine-math hints", () => {
@@ -192,5 +192,46 @@ describe("computeHint — trade-aware selection (Task 5, mocked evaluator)", () 
     expect(facts).toBeTruthy();
     expect(facts!.bestUci).toBe("d1d5");
     expect(facts!.trade).toBe(false);
+  });
+});
+
+// Round 3 whole-branch review (2026-08-03), Important finding 1: the shelf
+// carried no fact distinguishing computeHint's deep, verified search from
+// computePositionView's fast, explicitly-unverified bounded read -- so
+// hintFindingsForModel in chat.ts had no honest way to tell the two apart
+// and labeled BOTH "verified... trust this over your own reasoning." This
+// `verified` flag is that provenance fact: true only for the deep hint
+// ladder's own search, false for the fast position view, always present so
+// a consumer can never fall back to a stale default.
+describe("HintFacts.verified — provenance flag distinguishing the deep hint ladder from the fast position view", () => {
+  class FixedEvaluator implements Evaluator {
+    constructor(private ev: Evaluation) {}
+    async init() {}
+    async evaluate(): Promise<Evaluation> {
+      return this.ev;
+    }
+    quit() {}
+  }
+
+  it("computeHint's deep, verification-backed search marks its result verified:true", async () => {
+    // Rxd5 is overwhelmingly best and trivially holds up under
+    // hintHoldsUp's verification pass -- no escalation, straight through.
+    const fen = "k7/8/8/3q4/8/8/3R4/K7 w - - 0 1";
+    const facts = await computeHint(
+      fen,
+      new FixedEvaluator({ cp: 900, mate: null, bestMove: "d2d5", pv: ["d2d5"] })
+    );
+    expect(facts).toBeTruthy();
+    expect(facts!.verified).toBe(true);
+  });
+
+  it("computePositionView's fast, single-PV bounded read marks its result verified:false", async () => {
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const facts = await computePositionView(
+      fen,
+      new FixedEvaluator({ cp: 30, mate: null, bestMove: "e2e4", pv: ["e2e4", "e7e5"] })
+    );
+    expect(facts).toBeTruthy();
+    expect(facts!.verified).toBe(false);
   });
 });
