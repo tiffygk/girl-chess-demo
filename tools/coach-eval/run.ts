@@ -662,6 +662,12 @@ async function main() {
       hasBestLine: !!(pinnedRow?.best_move || pinnedRow?.pv),
       hasMate: pinnedRow?.eval_mate != null,
       hasPendingMove: !!question.pending,
+      // OD-3b instrument repair (2026-08-03): the "general"/"general-theory"
+      // arms pin `ctx` only so assembleChatFactList has a game to build a
+      // context from -- the question itself doesn't concern that position
+      // (see difficulty.ts's POSITION_AGNOSTIC_ARMS and its own comment for
+      // why this field is what un-degenerates shelfCovered).
+      arm: question.arm,
     };
     const difficulty = classifyDifficulty(shelfSignal);
     const isShelfCovered = shelfCovered(shelfSignal);
