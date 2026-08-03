@@ -254,7 +254,10 @@ describe("F4: ratchet allowlists are pinned -- growth requires editing this test
     expect([...KNOWN_UNCONVERTED_GAMES].sort((a, b) => a - b)).toEqual([]);
   });
   it("KNOWN_EM_DASH_TRACES", () => {
-    expect([...KNOWN_EM_DASH_TRACES].sort((a, b) => a - b)).toEqual([46, 94, 123, 191, 193]);
+    // 196/197/199/202 added 2026-08-03 (unbreak-main F2): game 169's
+    // pre-normalization coach output, allowlisted as history once
+    // normalizeEmDash shipped so no NEW row can leak an em-dash silently.
+    expect([...KNOWN_EM_DASH_TRACES].sort((a, b) => a - b)).toEqual([46, 94, 123, 191, 193, 196, 197, 199, 202]);
   });
   it("KNOWN_DEFENSE_CLAIM_TRACES", () => {
     expect([...KNOWN_DEFENSE_CLAIM_TRACES].sort((a, b) => a - b)).toEqual([118]);

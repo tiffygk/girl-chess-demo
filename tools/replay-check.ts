@@ -244,7 +244,7 @@ export function missedMateInvariant(moves: MoveEval[], events: { ply: number }[]
 // the moment she plays (new traces appear mid-round) and could mask a new
 // leak.
 export const KNOWN_UNCONVERTED_GAMES = new Set<number>([]); // emptied 2026-07-29: the detector ships; any entry ever added here again is a regression being hidden.
-export const KNOWN_EM_DASH_TRACES = new Set([46, 94, 123, 191, 193]); // rca F; 191/193 = game 167's imported historical coach traces (real past playtest output, owner-authorized 2026-08-02)
+export const KNOWN_EM_DASH_TRACES = new Set([46, 94, 123, 191, 193, 196, 197, 199, 202]); // rca F; 191/193 = game 167's imported historical coach traces (real past playtest output, owner-authorized 2026-08-02); 196/197/199/202 = game 169 plies 22/34, pre-normalization coach output (2026-08-03), fixed at source by normalizeEmDash (server/coach/textNormalize.ts) in the unbreak-main round's F2 fix
 // Measured 2026-07-29 (Step 5): 10 of 123 advice_traces rows carry the
 // pending-move claim shape (context.pendingMove + currentFen); of those,
 // exactly one -- trace 118 -- flags a real pre/post-move adjudication
