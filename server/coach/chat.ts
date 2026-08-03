@@ -854,7 +854,13 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
     const last = line?.[line.length - 1];
     if (line && last && last.endsWith("#")) focusMateNs.push(Math.ceil(line.length / 2));
   }
-  violations.push(...checkMateClaims(text, facts.perPlyAnalysis ?? [], focusMateNs));
+  // Round 3 (Q2 step 4): facts.hintFindings?.evalMate is undefined when no
+  // shelf entry matches this position (preserves the no-truth-source cut),
+  // null when a shelf entry exists but found no forced mate (now
+  // adjudicated), or a number the shelf vouches for -- see
+  // checkMateClaims's own comment for why the undefined/null distinction
+  // must NOT be collapsed with `?? null` here.
+  violations.push(...checkMateClaims(text, facts.perPlyAnalysis ?? [], focusMateNs, facts.hintFindings?.evalMate));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };
