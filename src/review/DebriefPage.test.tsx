@@ -173,6 +173,18 @@ describe("DebriefPage (Wave B, D0 fix): a highlighted mallow ply never produces 
     expect(html).not.toContain("knight to c6");
   });
 
+  // OD-D detail (owner ruling, 2026-08-03): the cyan kicker reads "your
+  // moves you highlighted" so it parallels the magenta sibling's "mallow's
+  // moves you highlighted". Reversible copy.
+  it("the cyan kicker names the seat: 'your moves you highlighted'", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage
+        {...baseProps({ gameSans: MIXED_HIGHLIGHT_SANS, totalPlies: 4, turningPoints: [] })}
+      />
+    );
+    expect(html).toContain("your moves you highlighted · 1 move");
+  });
+
   it("a summary row with no side field still lands in the ledger (pre-W5 back-compat: only a proven mallow row is excluded)", () => {
     const gameSans: SummaryMove[] = [
       { ply: 1, san: "e4" },
