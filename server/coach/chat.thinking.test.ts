@@ -69,4 +69,30 @@ describe("chat() OD-3b thinking-pref escalation", () => {
     expect(result.source).toBe("model");
     expect(seenPrefs).toEqual(["low", "default"]);
   });
+
+  // Whole-branch review (2026-08-03), Minor-1: the timeout-retry regen (a
+  // first attempt that throws a "timed out" error, distinct from the
+  // validation-failure regen the test above already covers) must ALSO
+  // escalate to 'default' on attempt 1. The code path was already correct
+  // before this test existed (thinkingPref is derived from `attempt` alone,
+  // not re-branched per failure route) -- this test exists so a future edit
+  // to the timeout branch (e.g. `continue` -> `break`, or moving the
+  // thinkingPref derivation inside an attempt-specific branch) cannot
+  // silently regress it while the validation-failure test still passes.
+  it("a timeout-retry regen uses default (escalation)", async () => {
+    const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+    const seenPrefs: (ThinkingPref | undefined)[] = [];
+    let call = 0;
+    const backend = fakeBackend(async (_prompt, _timeoutMs, _stablePrefix, _onUsage, thinkingPref) => {
+      call++;
+      seenPrefs.push(thinkingPref);
+      if (call === 1) throw new Error("request timed out");
+      return "e4 is a fine start for you.";
+    });
+
+    const result = await chat("what's happening?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(result.source).toBe("model");
+    expect(seenPrefs).toEqual(["low", "default"]);
+  });
 });

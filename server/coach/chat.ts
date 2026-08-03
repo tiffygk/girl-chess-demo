@@ -1843,6 +1843,17 @@ export async function chat(
     // the model's best effort rather than the fast path's cap. Decided
     // from `attempt` alone, not re-derived from intent, since both the
     // validation-failure and timeout-retry routes land on attempt 1.
+    // Whole-branch review (2026-08-03), Important-1 flagged this as a
+    // scope leak (review/postgame chat also dropping to 'low'), proposing
+    // a mode gate. REVERSED same day on segmented OD-3b eval evidence
+    // (board-review arm, n=48/pref): low wins on the FINISHED-game/review
+    // arm too -- fewer templates (21% vs 29% default/35% disabled), fastest
+    // (7.0s p50), and MORE complete answers (75 words vs default's 63); a
+    // sampled review tactical question got a full correct answer from low
+    // while default timed out into a template and disabled couldn't work
+    // it out. CHAT_REVIEW_BUDGET_MS's 180s is a timeout ceiling, not a
+    // think-harder directive -- there is no mode gate here; review chat
+    // uses the exact same thinkingForIntent(intent) attempt-0 pref as live.
     const thinkingPref = attempt === 0 ? thinkingForIntent(intent) : "default";
     // Task 1c: fires right before the backend is actually called -- a REAL
     // pipeline event, not a guess. Attempt 0 fires this once; a regen
