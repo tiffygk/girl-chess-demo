@@ -9,7 +9,7 @@ import {
 } from "../store/db";
 import { classifyMove, isAdviceLevel, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
 import { adjudicatePosition } from "../annotator/adjudicate";
-import { computeHint as computeHintFacts, type HintFacts } from "../annotator/hint";
+import { computeHint as computeHintFacts, computePositionView, type HintFacts } from "../annotator/hint";
 import { moveEndpoints } from "../annotator/moveEndpoints";
 import { deriveContinuation } from "../annotator/continuation";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
@@ -1122,6 +1122,23 @@ export class GameManager {
     // shelf source -- undefined for a finished/never-hinted game, in which
     // case assembleChatFactList's fen-match simply never fires.
     const live = this.games.get(gameId);
+    // Round 3 (B1, Task 6): when chat opens on a live position with no
+    // matching hint yet -- the common case, since a hint is player-
+    // initiated and rare -- score the current position with a fast,
+    // bounded engine call so a why/lookahead question still has facts to
+    // ground on (trace-185). Reuses this.evaluator (zero new engine
+    // processes) and caches the result onto live.lastHint exactly like a
+    // real hint would, so a follow-up question about the SAME position
+    // does not recompute.
+    if (live && !live.finished && body.context.mode === "live") {
+      const liveFen = live.chess.fen();
+      if (!live.lastHint || live.lastHint.fen !== liveFen) {
+        const positionView = await computePositionView(liveFen, this.evaluator);
+        if (positionView) {
+          live.lastHint = { fen: liveFen, facts: positionView, at: Date.now() };
+        }
+      }
+    }
     const facts = assembleChatFactList(
       gameMoves,
       body.context,
