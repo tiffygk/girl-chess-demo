@@ -38,8 +38,25 @@
 // routing at all; they remain live for isOffTopic, a separate and much
 // narrower check (see that function's own header comment).
 import { SAN_RE } from "./validate";
+import type { ThinkingPref } from "./backends/types";
 
 export type ChatIntent = "board" | "general";
+
+// OD-3b (coach thinking-config round, 2026-08-03): the explicit SEAM a
+// future per-route thinking override lives behind. chat.ts's attempt loop
+// calls this for attempt 0 ONLY -- a regen always escalates to 'default'
+// unconditionally, regardless of intent (see chat.ts's own comment on
+// that). Every route defaults to 'low' today: a future per-route override
+// (e.g. general -> a different pref, once the router fix + the general
+// eval land) is meant to be a one-line `case` add inside the switch below,
+// not a structural change -- deliberately NOT added yet, per explicit
+// owner instruction (it waits on that router fix + eval).
+export function thinkingForIntent(intent: ChatIntent): ThinkingPref {
+  switch (intent) {
+    default:
+      return "low";
+  }
+}
 
 // A non-global copy of validate.ts's shared SAN_RE: that regex carries the
 // `g` flag and is used elsewhere via String.match (which resets lastIndex

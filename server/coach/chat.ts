@@ -25,7 +25,7 @@ import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims } from "./placementClaims";
 import { checkMateClaims } from "./mateClaims";
 import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
-import { isOffTopic, mentionedPlies, type ChatIntent } from "./intent";
+import { isOffTopic, mentionedPlies, thinkingForIntent, type ChatIntent } from "./intent";
 
 // Round 3 (Q4, trace-180): the recapture-viability exemption checkDefenseClaims
 // takes -- shared by both validateChat's board route and validateChatGeneral,
@@ -1833,6 +1833,17 @@ export async function chat(
     // trade-off (owner-approved): no live typing during generation, the
     // visible stream starts only after validation.
     const attemptDeltas: string[] = [];
+    // OD-3b (coach thinking-config round, 2026-08-03): attempt 0 answers
+    // fast/concise at the pref thinkingForIntent(intent) names (every
+    // route defaults to 'low' today -- see that function's own seam
+    // comment); a regen (attempt 1) UNCONDITIONALLY escalates to 'default'
+    // (full unbounded adaptive thinking) regardless of intent -- it is the
+    // rescue for an attempt that already failed validation once (or, for
+    // the timeout-retry branch below, failed to finish at all), so it gets
+    // the model's best effort rather than the fast path's cap. Decided
+    // from `attempt` alone, not re-derived from intent, since both the
+    // validation-failure and timeout-retry routes land on attempt 1.
+    const thinkingPref = attempt === 0 ? thinkingForIntent(intent) : "default";
     // Task 1c: fires right before the backend is actually called -- a REAL
     // pipeline event, not a guess. Attempt 0 fires this once; a regen
     // (attempt 1) fires it again, same as onRedraft just above.
@@ -1845,8 +1856,15 @@ export async function chat(
       // path.
       attemptOutput =
         backend.generateStream && opts?.onDelta
-          ? await backend.generateStream(attemptPrompt, timeoutMs, (t) => attemptDeltas.push(t), stablePrefix, opts?.onUsage)
-          : await backend.generate(attemptPrompt, timeoutMs, stablePrefix, opts?.onUsage);
+          ? await backend.generateStream(
+              attemptPrompt,
+              timeoutMs,
+              (t) => attemptDeltas.push(t),
+              stablePrefix,
+              opts?.onUsage,
+              thinkingPref
+            )
+          : await backend.generate(attemptPrompt, timeoutMs, stablePrefix, opts?.onUsage, thinkingPref);
     } catch (err) {
       attemptOutput = `[backend error] ${err instanceof Error ? err.message : String(err)}`;
       failureCause = isTimeoutError(err) ? "timeout" : "backend-down";
