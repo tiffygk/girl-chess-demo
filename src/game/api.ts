@@ -630,6 +630,13 @@ export interface SummaryMove {
   // play. Optional so any pre-existing summary caller (fixture, snapshot)
   // that doesn't supply it keeps compiling unchanged.
   highlighted?: boolean;
+  // W5 (opponent-move highlight): whose move this is, sent by the server on
+  // every summary row (manager.getSummary derives it once at its own data
+  // load -- the conversion.ts precedent). Optional here only so the many
+  // pre-existing review fixtures keep compiling; consumers read it as data
+  // (see liveMoves.ts's liveMovesFromSummary) and never re-derive it from
+  // the ply index in a view.
+  side?: "her" | "mallow";
 }
 
 export interface SummaryResponse {

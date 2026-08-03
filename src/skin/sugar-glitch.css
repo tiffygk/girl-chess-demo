@@ -756,51 +756,103 @@
    at 8); it floats over the bottom rank only while open. */
 .gc-app .highlight-tray {
   position: absolute; right: 12px; bottom: calc(100% + 8px); z-index: 9;
-  width: 216px; background: #FFF; border-radius: 16px;
+  width: 236px; background: #FFF; border-radius: 16px;
   box-shadow: 0 4px 0 #C9BFEF, 0 12px 22px rgba(90,70,180,.28);
   padding: 10px 12px;
-  display: flex; flex-direction: column; gap: 6px;
+  display: flex; flex-direction: column; gap: 8px;
 }
 .gc-app .highlight-tray-kicker {
   font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
   letter-spacing: .14em; text-transform: lowercase; color: #6952C4;
   margin-bottom: 2px;
 }
-/* The toggle — the mockup's one control recipe, .thumb-btn family. */
-.gc-app .highlight-toggle {
-  display: inline-flex; align-items: center; width: 100%; justify-content: flex-start;
-  height: 30px; padding: 5px 11px;
-  background: #FFF; border: 1.5px solid #E3D9F5; border-radius: 12px;
-  box-shadow: 0 3px 0 #E3D9F5; cursor: pointer;
-  font-family: 'Fredoka', sans-serif;
-  transition: transform .12s ease, box-shadow .12s ease;
+/* W5 (opponent-move highlight; proposal of record: vault
+   "3 visual/opponent-move-highlight-proposal.html", owner-approved
+   2026-08-02, both-can-be-lit ruling). The tray row is a move PAIR: her
+   badge left (cyan voice), mallow's reply right (magenta voice — the
+   OPPONENT, never cookie's lavender). Two-axis law: SAN is machine move
+   data, so the badge is SHARP — Chakra Petch 700, chamfered clip-path
+   (5px cut, the name plates' 7px scaled down one tier), hard drop-shadow
+   via filter (box-shadow dies under clip-path), no press shadow (you
+   cannot press words). Resting = light outline chip; lit = SOLID pour of
+   the seat's saturated voice with legible ink, plus the escaped dead
+   pixel on the wrapper, OUTSIDE the clip so the chamfer can't eat it.
+   All hexes pre-exist in this file; the lit pulse runs only while the
+   popover tray is open, so the always-on-screen effects budget is
+   untouched. */
+.gc-app .highlight-pair-row { display: flex; align-items: center; gap: 8px; }
+.gc-app .mv-num {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-style: italic;
+  font-size: 11px; letter-spacing: .06em;
+  color: #6952C4; text-shadow: 1px 1px 0 #fff;
+  width: 22px; flex: none; text-align: right;
+  font-variant-numeric: tabular-nums;
 }
-.gc-app .highlight-toggle:hover { transform: translateY(-1px); }
-.gc-app .highlight-toggle:active { transform: translateY(2px); box-shadow: 0 1px 0 #E3D9F5; }
-.gc-app .highlight-toggle .highlight-ring { margin-right: 6px; }
-.gc-app .highlight-toggle-num {
-  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px;
-  letter-spacing: .04em; color: #9C8FC7; margin-right: 5px;
+/* the badge: an unclipped wrapper button carries the hard shadow and the
+   lit pixel; the clipped body carries the tint and the SAN. */
+.gc-app .mv-badge {
+  position: relative; display: inline-flex; flex: none;
+  border: none; background: none; padding: 0; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
-.gc-app .highlight-toggle-san {
-  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
-  letter-spacing: .02em; color: #4A3B7E;
+.gc-app .mv-body {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-width: 72px; height: 26px; padding: 0 10px;
+  white-space: nowrap;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 13px;
+  letter-spacing: .04em; font-variant-numeric: tabular-nums;
   text-transform: none; /* SAN keeps its true case */
+  border: 2px solid;
+  border-radius: 0; /* the sharp class never rounds — corners are cut */
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+  transition: background .12s ease, border-color .12s ease;
 }
-.gc-app .highlight-toggle.highlighted {
-  background: rgba(35,229,255,.14); border-color: #23E5FF; box-shadow: none;
+/* resting — the seat tints exactly as the name plates do */
+.gc-app .mv-you .mv-body {
+  background: #E4F7FB; border-color: #23A8C7; color: #1A7A93;
+  filter: drop-shadow(2px 2px 0 rgba(26,122,147,.45));
 }
-.gc-app .highlight-toggle.highlighted .highlight-ring { border: none; background: #23E5FF; }
-.gc-app .highlight-toggle.highlighted .highlight-toggle-san { color: #1A7A93; }
-.gc-app .highlight-toggle.highlighted:hover { transform: none; }
-.gc-app .highlight-toggle.highlighted:active { transform: none; box-shadow: none; }
+.gc-app .mv-mallow .mv-body {
+  background: #FFE9F4; border-color: #FF3DA6; color: #C22B7E;
+  filter: drop-shadow(2px 2px 0 rgba(194,43,126,.45));
+}
+/* hover — the sharp register acknowledges without squishing */
+.gc-app .mv-you:hover .mv-body { background: #D7FAFF; }
+.gc-app .mv-mallow:hover .mv-body { background: #FFD6EC; }
+/* highlighted — the badge INVERTS: lit is a solid pour of the seat's
+   saturated voice with the ink flipped to stay legible. Both badges can
+   be lit at once (owner ruling, non-exclusive). */
+.gc-app .mv-you.lit .mv-body {
+  background: #23E5FF; border-color: #23A8C7; color: #1A7A93;
+  animation: litPulseYou 1.1s ease-in-out infinite;
+}
+.gc-app .mv-mallow.lit .mv-body {
+  background: #FF3DA6; border-color: #C22B7E; color: #fff;
+  animation: litPulseMal 1.1s ease-in-out infinite;
+}
+@keyframes litPulseYou {
+  0%, 100% { filter: drop-shadow(2px 2px 0 rgba(26,122,147,.45)) drop-shadow(0 0 6px rgba(35,229,255,.65)); }
+  50%      { filter: drop-shadow(2px 2px 0 rgba(26,122,147,.45)) drop-shadow(0 0 10px rgba(35,229,255,.9)); }
+}
+@keyframes litPulseMal {
+  0%, 100% { filter: drop-shadow(2px 2px 0 rgba(194,43,126,.45)) drop-shadow(0 0 6px rgba(255,61,166,.65)); }
+  50%      { filter: drop-shadow(2px 2px 0 rgba(194,43,126,.45)) drop-shadow(0 0 10px rgba(255,61,166,.9)); }
+}
+/* the escaped dead pixel surfaces on the wrapper, outside the clip; its
+   ink stays darker than the now-solid fill so it still reads */
+.gc-app .mv-badge.lit::after {
+  content: ""; position: absolute; width: 5px; height: 5px;
+  top: -3px; right: 8px; z-index: 2;
+}
+.gc-app .mv-you.lit::after { background: #1A7A93; }
+.gc-app .mv-mallow.lit::after { background: #C22B7E; }
+.gc-app .mv-badge:focus-visible { outline: 2px dashed #6952C4; outline-offset: 3px; }
 /* <=480: after the base rules above — equal specificity, source order
    decides (the chat-corner precedent's own rule). */
 @media (max-width: 480px) {
-  .gc-app .highlight-toggle { height: 26px; padding: 4px 8px; }
-  .gc-app .highlight-toggle-san { font-size: 11.5px; }
-  .gc-app .highlight-toggle-num { font-size: 9px; }
-  .gc-app .highlight-toggle .highlight-ring { width: 6px; height: 6px; }
+  .gc-app .highlight-tray { width: 216px; }
+  .gc-app .mv-body { min-width: 64px; height: 24px; font-size: 12px; padding: 0 8px; }
+  .gc-app .mv-num { font-size: 10px; width: 18px; }
 }
 
 /* Mallow's decline bark anchors to her bar (the top of the board), poking

@@ -394,11 +394,20 @@ export class GameManager {
     ok: true;
     turningPoints: TurningPoint[];
     classifications: { ply: number; classification: string }[];
-    moves: { ply: number; san: string; highlighted: boolean }[];
+    moves: { ply: number; san: string; highlighted: boolean; side: "her" | "mallow" }[];
   } {
     let persisted = getTurningPoints(gameId);
     const rows = getGameMoves(gameId);
-    const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, highlighted: r.highlighted === 1 }));
+    // W5 (opponent-move highlight): `side` rides every summary row, derived
+    // ONCE here at the data load (the conversion.ts rule: odd plies hers,
+    // even mallow's, encoded as data so no view ever re-derives it from a
+    // ply index).
+    const moves = rows.map((r: any) => ({
+      ply: r.ply,
+      san: r.san,
+      highlighted: r.highlighted === 1,
+      side: (r.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
+    }));
 
     const persistedVersion = persisted.length > 0 ? (persisted[0].algo_version ?? 1) : TP_ALGO_VERSION;
     if (persisted.length > 0 && persistedVersion < TP_ALGO_VERSION) {
