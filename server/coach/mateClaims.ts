@@ -21,7 +21,18 @@ const THEN_MATE_RE = /\bin (\d+)$/;
 export function checkMateClaims(
   text: string,
   perPly: { evalMate: number | null; then?: string }[],
-  focusMateNs: number[]
+  focusMateNs: number[],
+  // Round 3 (Q2 step 4): the fact shelf's verified mate distance for the
+  // EXACT position being discussed (Task 3's HintFindings.evalMate) -- a
+  // new, non-overlapping truth source from perPlyAnalysis/focusMateNs (grep
+  // confirmed, see commit body). undefined (the value every pre-round-3
+  // caller gets by omitting this param) means "no shelf entry was even
+  // checked for this position" -- the existing no-truth-source cut below
+  // still applies. null means a shelf entry EXISTS but found no forced mate
+  // here -- a real, checked answer, so a claim is now adjudicated against
+  // it rather than silently let through. A number means the shelf found a
+  // forced mate of that distance and vouches for it.
+  hintShelfMateN?: number | null
 ): string[] {
   const truth = new Set<number>(focusMateNs);
   for (const p of perPly) {
@@ -29,7 +40,15 @@ export function checkMateClaims(
     const m = p.then?.match(THEN_MATE_RE);
     if (m) truth.add(parseInt(m[1], 10));
   }
-  if (truth.size === 0) return [];
+  if (hintShelfMateN !== null && hintShelfMateN !== undefined) truth.add(Math.abs(hintShelfMateN));
+  // No truth source AT ALL (declared cut, mirrored in the tests): if
+  // nothing was ever checked -- no per-ply evals, no focused line, and the
+  // shelf was never queried for this position (hintShelfMateN omitted) --
+  // don't adjudicate; a live game before its first judge eval is the
+  // motivating case. Once the shelf HAS been queried (hintShelfMateN
+  // passed, even as null for "checked, no mate"), there is a real signal to
+  // adjudicate against, so this cut no longer applies.
+  if (truth.size === 0 && hintShelfMateN === undefined) return [];
 
   const violations: string[] = [];
   for (const m of text.matchAll(MATE_CLAIM_RE)) {

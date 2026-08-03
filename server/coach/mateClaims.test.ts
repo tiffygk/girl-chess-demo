@@ -37,4 +37,24 @@ describe("checkMateClaims", () => {
   it("negative evalMate (mate against the player) still vouches for its N", () => {
     expect(checkMateClaims("she had mate in 2 on you.", [{ evalMate: -2 }], [])).toEqual([]);
   });
+
+  // Round 3 (Q2 step 4): the hint shelf's own verified mate distance is a
+  // NEW truth source -- before this, a mate the shelf found but that never
+  // got played (so no perPly evalMate exists) could only ever be DENIED.
+  it("a mate claim grounded in the hint shelf validates clean (trace-190)", () => {
+    // Before round 3, the truth set was empty here and the model could only
+    // DENY the mate.
+    const violations = checkMateClaims(
+      "there's a forced mate in 3 starting with Ng5",
+      [],
+      [],
+      3 // NEW: hintShelfMateN -- the shelf's evalMate distance
+    );
+    expect(violations).toHaveLength(0);
+  });
+
+  it("a mate claim with NO grounding is still blocked", () => {
+    const violations = checkMateClaims("there's a forced mate in 5", [], [], null);
+    expect(violations.length).toBeGreaterThan(0);
+  });
 });
