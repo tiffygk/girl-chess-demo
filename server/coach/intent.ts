@@ -33,10 +33,18 @@
 // So this is now inverted: "board" is the unconditional default, and
 // "general" is reached ONLY through an explicit marker naming a genuinely
 // next-game/theory question (hasGeneralMarker below) -- never through the
-// mere ABSENCE of a board signal. hasBoardSignal/SAN_TEST_RE/
-// PIECE_MOVE_VERB_RE/etc. below are no longer part of classifyIntent's own
-// routing at all; they remain live for isOffTopic, a separate and much
-// narrower check (see that function's own header comment).
+// mere ABSENCE of a board signal.
+//
+// Router-fix round (2026-08-03): hasBoardSignal is live in classifyIntent
+// again, but ONLY as a tier-2 NEGATIVE gate -- its presence BLOCKS the
+// second, narrower general door (ABSTRACT_THEORY_RE, below), it never
+// TRIGGERS a route by itself. Tier 1 (hasGeneralMarker) is untouched and
+// still the sole unconditional door; tier 2 fires only when a message
+// carries BOTH a tier-2 marker AND zero board signal. The F1 inversion
+// reasoning above (absence-of-signal must never widen scope) still governs:
+// SAN_TEST_RE/PIECE_MOVE_VERB_RE/etc. remain live for isOffTopic too, a
+// separate and much narrower check (see that function's own header
+// comment).
 import { SAN_RE } from "./validate";
 
 export type ChatIntent = "board" | "general";
@@ -112,6 +120,57 @@ function hasGeneralMarker(message: string): boolean {
   return GENERAL_MARKER_RE.test(message);
 }
 
+// Router-fix round (2026-08-03): tier 2 of the general door. The round-3
+// general-theory arm (tools/coach-eval/fixtures.ts, gt-01..gt-10, owner-
+// verbatim) proved 5 of 10 natural theory questions carry NONE of
+// GENERAL_MARKER_RE's phrases and mis-routed to board. Each alternative
+// below is justified by one of those five and names a genuinely abstract
+// question SHAPE -- never a keyword chosen to make one string pass (this
+// file's own standing rule). Unlike tier 1, these fire ONLY when
+// hasBoardSignal(message) is false (see classifyIntent): a message carrying
+// a SAN, a piece-move phrase, a move number, a demonstrative, or "my
+// <phase>" keeps the board route no matter what tier-2 phrase it also
+// carries. That gate is what makes this widening safe against the
+// check-wider-than-it-claims bug class.
+const ABSTRACT_THEORY_RE = new RegExp(
+  [
+    // gt-06 "what's the idea behind parking a knight on an outpost?" --
+    // the why-does-this-pattern-exist shape. The negative lookahead keeps
+    // the deictic forms ("the idea behind this?") AND the possessive forms
+    // on board: open-10, a real frozen board-live fixture, is "what is the
+    // idea behind my opponent's setup?" -- a this-game question carrying NO
+    // hasBoardSignal match, found by the planning-time corpus sweep, which
+    // the bare marker would have swallowed. "behind that move" is board
+    // twice over (lookahead + DEMONSTRATIVE_RE through the gate).
+    String.raw`\bwhat(?:'s| is) the (?:idea|point|purpose) behind (?!(?:this|that|it|my|your|her|his|their)\b)`,
+    // gt-09 "what does it mean to play for the initiative..." -- the
+    // definitional what-does-it-mean-to-<concept> shape.
+    String.raw`\bwhat does it mean to\b`,
+    // gt-08 "what are the key principles for a king-and-pawn endgame?" --
+    // principle vocabulary is theory vocabulary; a live sentence pairing it
+    // with the position ("the principle behind this position") is board via
+    // the gate's demonstrative check.
+    String.raw`\bprinciples?\b`,
+    // gt-01 "what's another opening that would work well from a setup like
+    // mine?" -- asking for a DIFFERENT opening than the one played is
+    // inherently a next-game question. Deliberately NOT the bare plural
+    // "openings": gt-10's own text uses "openings for attacks" in the
+    // gaps-in-a-position sense, so the plural collides with a live meaning.
+    String.raw`\banother opening\b`,
+    // gt-02 "...what should i actually be trying to do in the opening?" --
+    // goals-in-a-phase-in-the-abstract. The generic article is the theory
+    // signal; the possessive form ("my opening") is a board signal via
+    // MY_PHASE_RE and wins through the gate. A phase-less "what should i be
+    // trying to do" stays board -- ambiguity resolves to board, unchanged.
+    String.raw`\btrying to do in the (?:opening|middlegame|endgame)\b`,
+    // gt-07 "as a rule, when should i trade queens..." (already tier-1 via
+    // "when should i") -- the explicit rule-request frame, kept because it
+    // is the single most literal way she asks for theory.
+    String.raw`\bas a rule\b`,
+  ].join("|"),
+  "i"
+);
+
 /**
  * Deterministic, model-free router. "board" is the unconditional default;
  * "general" is reached only through hasFocus/hasPendingMove being false AND
@@ -128,6 +187,10 @@ export function classifyIntent(
   // Unconditional: no marker, no status, overrides this.
   if (ctx.hasFocus || ctx.hasPendingMove) return "board";
   if (hasGeneralMarker(message)) return "general";
+  // Tier 2 (router-fix round, 2026-08-03): abstract-theory phrasings, gated
+  // on the ABSENCE of any positive board signal so the widened door cannot
+  // swallow a real board question. See ABSTRACT_THEORY_RE's comment.
+  if (ABSTRACT_THEORY_RE.test(message) && !hasBoardSignal(message)) return "general";
   // Ambiguity resolves to board -- the declared failure preference, true
   // for BOTH ctx.status values. Live ("in-progress"): this is the exact
   // failure this fix exists to close -- "is this ok" carries zero
