@@ -616,3 +616,71 @@ describe("an unprovable phase (no board to derive it from) is omitted, never fab
     expect(capturedPrompt).toContain('"perPlyAnalysis"');
   });
 });
+
+// Round 3 (Q2/B1, Task 5): factsForModel is private -- same "assert against
+// the actual prompt string" discipline this file already uses for the
+// evalCp/evalMate sanitize rule above. The hint shelf's own evalCp must be
+// sanitized the same way (never a raw centipawn number); evalMate is a
+// distance, not a score, so it is allowed to read as a number.
+describe("factsForModel — the hint shelf renders as its own model-facing section (Q2/B1)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  it("the model-facing facts render the hint shelf as its own labeled section", async () => {
+    const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      {
+        fen: START_FEN,
+        facts: {
+          bestUci: "g1f3", // Nf3 -- distinct from a pawn push, unambiguous SAN
+          pv: ["g1f3"],
+          evalCp: null,
+          evalMate: 3,
+          trade: false,
+          escalated: false,
+        },
+      }
+    );
+    expect(facts.hintFindings?.bestSan).toBe("Nf3"); // fixture sanity
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "there's something forcing here for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why is that the move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toMatch(/hint engine.*verified line for this position/i);
+    expect(capturedPrompt).toMatch(/Nf3/);
+    expect(capturedPrompt).toMatch(/mate.*3/i);
+  });
+
+  it("never leaks the shelf's raw evalCp as a centipawn number", async () => {
+    const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      {
+        fen: START_FEN,
+        facts: { bestUci: "g1f3", pv: ["g1f3"], evalCp: 234, evalMate: null, trade: false, escalated: false },
+      }
+    );
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "that develops nicely for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why is that the move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).not.toContain("234");
+  });
+});
