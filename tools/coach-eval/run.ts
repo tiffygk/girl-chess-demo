@@ -95,6 +95,8 @@ import {
 } from "./fixtures";
 import type { AnswerRow } from "./score";
 import { parseArgs, sha256File, timestamp } from "./util";
+import type { CoachUsage } from "../../server/coach/backends/types";
+import { classifyDifficulty, shelfCovered } from "./difficulty";
 
 // Review fix F1 (Opus review of ab814d4..1c31dab, 2026-08-02): the exact
 // shape of chat()'s exported function, via an `import type` query rather
@@ -383,6 +385,7 @@ export async function callChatWithTiming(
   outcome: { text: string; source: string; cause?: string; traceId?: number };
   ttfpMs: number | null;
   ttfwMs: number | null;
+  usage: CoachUsage[];
 }> {
   const ttfStart = performance.now();
   let ttfpMs: number | null = null;
@@ -393,13 +396,23 @@ export async function callChatWithTiming(
   const onDelta = () => {
     if (ttfwMs === null) ttfwMs = performance.now() - ttfStart;
   };
+  // OD-3b (post-shelf eval instrumentation, 2026-08-02): one entry per
+  // backend call chat() makes for this question, in attempt order -- so a
+  // regen (2 attempts) leaves 2 entries and the real billed spend of BOTH
+  // attempts stays visible, never just the one that produced the final
+  // answer. Matches chat.usage.test.ts's own "fires once per attempt"
+  // contract exactly; this array is that contract's raw log.
+  const usage: CoachUsage[] = [];
+  const onUsage = (u: CoachUsage) => {
+    usage.push(u);
+  };
   let outcome: { text: string; source: string; cause?: string; traceId?: number };
   try {
-    outcome = await chatFn(question, history, facts, backend, trace, { ...baseOpts, onAttemptStart, onDelta });
+    outcome = await chatFn(question, history, facts, backend, trace, { ...baseOpts, onAttemptStart, onDelta, onUsage });
   } catch (err) {
     outcome = { text: "", source: "error", cause: err instanceof Error ? err.message : String(err) };
   }
-  return { outcome, ttfpMs, ttfwMs };
+  return { outcome, ttfpMs, ttfwMs, usage };
 }
 
 async function main() {
@@ -619,6 +632,24 @@ async function main() {
     const intent = classifyIntent(question.q, { hasFocus, hasPendingMove, status });
     const budgetMs = finished ? CHAT_REVIEW_BUDGET_MS : CHAT_TIMEOUT_MS;
 
+    // OD-3b (post-shelf eval instrumentation, 2026-08-02): the shelf-
+    // coverage/difficulty signal, read straight off the SAME pinned-ply
+    // MoveRow engineBestForFixture already reads above -- best_move/pv
+    // non-null means the engine has a concrete line for this position,
+    // eval_mate non-null means it has a forced mate. `question.pending`
+    // (not `ctx.pendingMove`, which is wiring-dependent -- see buildContext
+    // above) is the same field score.ts's checkPendingAwareness and this
+    // row's own `pending:` field below both key off, so "does this row
+    // carry a pending move" means the same thing everywhere in this file.
+    const pinnedRow = rows.find((r) => r.ply === fixture.ply);
+    const shelfSignal = {
+      hasBestLine: !!(pinnedRow?.best_move || pinnedRow?.pv),
+      hasMate: pinnedRow?.eval_mate != null,
+      hasPendingMove: !!question.pending,
+    };
+    const difficulty = classifyDifficulty(shelfSignal);
+    const isShelfCovered = shelfCovered(shelfSignal);
+
     const start = Date.now();
     // Task 1e (coach-truth-speed latency round, 2026-08-02) + review fix F1
     // (2026-08-02): callChatWithTiming wires ttfpMs to the first
@@ -626,7 +657,7 @@ async function main() {
     // ttfwMs to the first onDelta fire (the first validated word), both
     // timestamped with performance.now() (sub-ms, monotonic) from the same
     // start -- see its own doc comment above for the full rationale.
-    const { outcome, ttfpMs, ttfwMs } = await callChatWithTiming(
+    const { outcome, ttfpMs, ttfwMs, usage } = await callChatWithTiming(
       chat,
       question.q,
       [],
@@ -667,14 +698,21 @@ async function main() {
       measuredLatencyMs,
       ttfpMs,
       ttfwMs,
+      usage,
+      difficulty,
+      shelfCovered: isShelfCovered,
     };
     results.push(row);
     // Write incrementally -- a mid-run crash loses nothing (v1 lost the
     // whole run to a single crash; this rewrites the full array to disk
     // after every answer, which at 65 rows is cheap).
     fs.writeFileSync(rawPath, JSON.stringify(results, null, 2));
+    const usageSummary =
+      usage.length > 0
+        ? `usage=${usage.map((u) => `in:${u.inputTokens}/out:${u.outputTokens}/think:${u.thinkingTokens ?? "n/a"}`).join(",")}`
+        : "usage=none";
     console.log(
-      `[coach-eval] [${results.length}/${questions.length}] ${question.id} [${question.arm}/${intent}] (${fixture.id}) -> ${outcome.source} ${latencyMs}ms regen=${regenCount} ttfw=${ttfwMs !== null ? Math.round(ttfwMs) + "ms" : "n/a"}`
+      `[coach-eval] [${results.length}/${questions.length}] ${question.id} [${question.arm}/${intent}] (${fixture.id}) -> ${outcome.source} ${latencyMs}ms regen=${regenCount} ttfw=${ttfwMs !== null ? Math.round(ttfwMs) + "ms" : "n/a"} difficulty=${difficulty} shelfCovered=${isShelfCovered} ${usageSummary}`
     );
   }
 

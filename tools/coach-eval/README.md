@@ -140,6 +140,59 @@ axis in this harness follows. `render.ts` surfaces the cross-rep aggregate
 (`ModelSummary.ttfAgg`) as its own table in every per-arm section of
 `metrics-blinded.md` and the `--single` report.
 
+## OD-3b: usage tokens + shelf-coverage/difficulty (post-shelf eval instrumentation, 2026-08-02)
+
+Built to re-price the `GC_COACH_THINKING` 3-arm re-run (env var unset /
+`low` / `disabled`, set externally per invocation -- `run.ts` itself knows
+nothing about the knob, same as the b180 run before it) after W1 raised
+fact-shelf coverage, and to explain WHY the `disabled` arm was measured as
+both most-preferred AND most-timing-out in the pre-shelf b180 run. Two
+additive fields on `AnswerRow`, both computed inside `run.ts`'s per-question
+loop with zero db reads beyond what it already fetches:
+
+- **`usage: CoachUsage[]`** -- one entry per backend call `chat()` made for
+  this question, in attempt order (so `usage.length` agrees with
+  `regenCount` by construction). Each entry is `{inputTokens, outputTokens,
+  thinkingTokens}`, read from the agent-sdk backend's terminal SDK result
+  message (`usage.input_tokens` / `usage.output_tokens` /
+  `usage.output_tokens_details.thinking_tokens` -- see
+  `@anthropic-ai/sdk`'s `BetaUsage`/`BetaOutputTokensDetails` types).
+  `thinkingTokens` is `null`, never `0`, when the SDK reports no breakdown
+  (a response with no thinking block) -- never conflate "not measured" with
+  "measured zero." Wired via a NEW, additive, optional 4th/5th param on
+  `CoachBackend.generate()`/`generateStream()` (`onUsage?`), the same
+  "ignore it, get identical behavior" contract `stablePrefix` already
+  established -- only `agent-sdk.ts` calls it; `ollama.ts`/`claude-cli.ts`/
+  the template backend need zero edits. `chat.ts`'s own `opts.onUsage` hook
+  forwards it straight through, firing once per attempt (including a
+  validation-failed attempt 0 that never reaches a visible answer -- that
+  attempt still spent real billed tokens, and the whole point is to make
+  that spend visible even when the row's FINAL answer is a template). See
+  `server/coach/backends/agent-sdk.usage.test.ts` and
+  `server/coach/chat.usage.test.ts` for the red-first proofs.
+- **`shelfCovered: boolean`** + **`difficulty: DifficultyTag`**
+  (`tools/coach-eval/difficulty.ts`) -- the PRIMARY segmentation axis for
+  the bimodal hypothesis ("`disabled` renders cleanly + concisely when the
+  shelf covers the question, and templates when it doesn't -- no facts and
+  no reasoning budget to work one out"). `shelfCovered` is true exactly
+  when the pinned ply's own db row (the SAME `MoveRow` `engineBestForFixture`
+  already reads) carries a concrete engine fact: a non-null `best_move`/`pv`
+  (a line to state) or a non-null `eval_mate` (a forced mate to state).
+  `difficulty` is a finer 3-bucket label over the same signal
+  (`tactical-or-mate` when the pinned ply has a forced mate; `direct-fact`
+  when the question carries a pending move, or when neither a mate nor a
+  best line exists; `needs-line` otherwise) -- reported alongside
+  `shelfCovered` for a closer look, but report code must always pivot the
+  covered/uncovered split on `shelfCovered` directly, never re-derive it
+  from the label. See `difficulty.ts`'s own doc comment for the exact
+  derivation and `difficulty.test.ts` for the red-first proof (written
+  before the module existed).
+
+Both fields are logged per-row in `run.ts`'s own console output
+(`difficulty=... shelfCovered=... usage=in:X/out:Y/think:Z,...`) alongside
+the existing latency/regen line, so a live run is legible without waiting
+for `render.ts`.
+
 ## Isolation (hard rules, enforced at runtime)
 
 - **Never opens `data/girlchess.db`.** `run.ts` copies it (plus `-wal`/

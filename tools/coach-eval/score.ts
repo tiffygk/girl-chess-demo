@@ -8,6 +8,8 @@
 // re-running the model).
 
 import { checkVoice, checkRegister, SENTENCE_END_RE } from "../../server/coach/voiceRules";
+import type { CoachUsage } from "../../server/coach/backends/types";
+import type { DifficultyTag } from "./difficulty";
 // Note (eval-instrument-repair round, 2026-07-28): this module used to import
 // GENERAL_MAX_WORDS from server/coach/chat.ts as the general/board-review
 // length budget, under the skill's "share the enforcer's own budgets with the
@@ -66,6 +68,31 @@ export interface AnswerRow {
   // separately) -- the honest pre-1c baseline the plan calls for.
   ttfpMs?: number | null;
   ttfwMs?: number | null;
+  // OD-3b (post-shelf eval instrumentation, 2026-08-02): one entry per
+  // backend call chat() made answering this question, in attempt order --
+  // so `usage.length` IS the true attempt count (1 = no regen, 2 = regen),
+  // agreeing with `regenCount` above by construction rather than by a
+  // second independent count. Empty array (never undefined -- an older raw
+  // json predating this field also has no key at all, which stays
+  // undefined; run.ts always writes at least `[]`) when the row's source
+  // never reached a backend call at all (off-topic redirect, a
+  // templates-only short-affirmation route) or a non-agent-sdk backend
+  // that never calls onUsage. See CoachUsage's own doc comment
+  // (backends/types.ts) for the null-vs-zero discipline on thinkingTokens.
+  usage?: CoachUsage[];
+  // OD-3b: the PRIMARY segmentation axis for the disabled-arm bimodal
+  // hypothesis ("concise+good when the shelf covers the question, templates
+  // when it doesn't") -- true when the pinned ply's own db row carries a
+  // renderable engine fact (a best_move/pv or an eval_mate) for the
+  // position this question concerns. A first-class boolean, reported
+  // alongside `difficulty` but never derived FROM it -- report code must
+  // pivot covered-vs-uncovered on this field directly. See difficulty.ts's
+  // own doc comment for the exact derivation.
+  shelfCovered?: boolean;
+  // OD-3b: a finer 3-bucket label over the SAME observable signal
+  // (direct-fact / needs-line / tactical-or-mate) -- see difficulty.ts.
+  // Informational alongside shelfCovered, never a substitute for it.
+  difficulty?: DifficultyTag;
 }
 
 export interface AxisResult {
