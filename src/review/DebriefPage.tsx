@@ -19,7 +19,14 @@
 // is words, not numbers" (brief).
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import type { GameListEntry, MoveClassification, TurningPoint, TurningLine, SummaryMove } from "../game/api";
+import type {
+  GameListEntry,
+  MoveClassification,
+  TurningPoint,
+  TurningLine,
+  SummaryMove,
+  HighlightLine,
+} from "../game/api";
 // Wave 3.5, item 2 (owner ask, 2026-08-01): the past-games delete X's
 // two-step "you sure?" arm/disarm state -- pure, unit-tested on its own
 // (deleteArm.test.ts) since PastGamesDrawer itself has no interactive
@@ -80,6 +87,10 @@ import { AnalysisLegend } from "./AnalysisLegendRail";
 // HighlightedMovesSection.tsx. Zero highlights renders nothing at all.
 import { buildHighlightedRows } from "./highlightedMoves";
 import { HighlightedMovesSection } from "./HighlightedMovesSection";
+// Wave B (opponent-move-analysis plan, 2026-08-03): the magenta sibling --
+// mallow's highlighted moves, graded from Wave A's HighlightLine facts.
+import { buildMallowHighlightedRows } from "./mallowHighlightedMoves";
+import { MallowHighlightedSection } from "./MallowHighlightedSection";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -468,6 +479,13 @@ export interface DebriefPageProps {
   // to a synthetic focus built from the ply's MoveClassification when no
   // TurningPoint exists there (see GamePage's handleAskAboutPly).
   onAskAboutPly: (ply: number) => void;
+  // Wave B (opponent-move-analysis plan, 2026-08-03): Wave A's per-
+  // highlighted-ply engine facts, BOTH sides. OPTIONAL by contract -- with
+  // the prop absent/empty this page compiles and renders exactly as before;
+  // Wave C's GamePage passes the fetched rows. Only the side === "mallow"
+  // rows render here (the magenta sibling below the cyan ledger); her rows
+  // keep flowing through buildHighlightedRows untouched.
+  highlightLines?: HighlightLine[];
 }
 
 export function DebriefPage({
@@ -488,6 +506,7 @@ export function DebriefPage({
   onExitExplore,
   onAskAboutTurningPoint,
   onAskAboutPly,
+  highlightLines,
 }: DebriefPageProps) {
   const bullets = debriefBullets({
     turningPoints,
@@ -543,6 +562,10 @@ export function DebriefPage({
     // see it. The missed-win point is the only fact that can.
     turningPoints,
   });
+  // Wave B: mallow's highlighted plies, graded from the HighlightLine facts
+  // (side filter is the builder's own, on the row's `side` field). Zero
+  // mallow rows renders nothing at all -- the dead-chrome ruling.
+  const mallowHighlightedRows = buildMallowHighlightedRows(highlightLines ?? [], gameSans);
   return (
     <div className="debrief pop-in">
       <AnalysisLegend showAllowedRow={computeShowAllowedRow(turningLines, gameSans, rewindPly)} />
@@ -592,6 +615,14 @@ export function DebriefPage({
           gameSans={gameSans}
           onRewind={onRewind}
           onTryLine={onTryLine}
+          onAskAboutPly={onAskAboutPly}
+          exploring={!!exploring}
+        />
+      )}
+      {mallowHighlightedRows.length > 0 && (
+        <MallowHighlightedSection
+          rows={mallowHighlightedRows}
+          onRewind={onRewind}
           onAskAboutPly={onAskAboutPly}
           exploring={!!exploring}
         />

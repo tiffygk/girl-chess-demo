@@ -17,7 +17,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DebriefPage, PastGamesDrawer, type DebriefPageProps } from "./DebriefPage";
-import type { TurningPoint, TurningLine, SummaryMove, GameListEntry } from "../game/api";
+import type { TurningPoint, TurningLine, SummaryMove, GameListEntry, HighlightLine } from "../game/api";
 // Source pin follows postgame.test.ts/endCopy.test.ts's established
 // pattern: a bundler-safe `?raw` import (vite.config.ts's test.css: true)
 // rather than node:fs, since src/ has no Node types under tsconfig.app.json.
@@ -196,6 +196,94 @@ describe("DebriefPage (Wave B, D0 fix): a highlighted mallow ply never produces 
       <DebriefPage {...baseProps({ gameSans, totalPlies: 4, turningPoints: [] })} />
     );
     expect(html).toMatch(/you highlighted · 1 move</);
+  });
+});
+
+// Wave B (opponent-move-analysis plan, 2026-08-03): the magenta sibling
+// drawer. DebriefPage gains an OPTIONAL `highlightLines` prop (Wave A's
+// HighlightLine rows); it filters side === "mallow" via
+// buildMallowHighlightedRows and mounts MallowHighlightedSection AFTER the
+// cyan ledger. Prop absent/empty or her-side-only: nothing renders (the
+// dead-chrome ruling) and the page is exactly as before -- the shared
+// contract Wave C's GamePage wiring depends on.
+describe("DebriefPage (Wave B): the magenta mallow drawer", () => {
+  const MIXED_SANS: SummaryMove[] = [
+    { ply: 1, san: "e4", side: "her" },
+    { ply: 2, san: "e5", side: "mallow" },
+    { ply: 3, san: "Qh5", highlighted: true, side: "her" },
+    { ply: 4, san: "Nc6", highlighted: true, side: "mallow" },
+  ];
+  const MALLOW_LINE: HighlightLine = {
+    ply: 4,
+    side: "mallow",
+    san: "Nc6",
+    pvSans: ["Nc6"],
+    matchedBest: true,
+    quality: "best",
+    gapCp: 0,
+    mateInvolved: false,
+    decided: false,
+  };
+  const HER_LINE: HighlightLine = {
+    ply: 3,
+    side: "her",
+    san: "Qh5",
+    pvSans: [],
+    matchedBest: null,
+    quality: "unknown",
+    gapCp: null,
+    mateInvolved: false,
+    decided: false,
+  };
+
+  it("mounts the magenta section AFTER the cyan ledger, with replay + ask-cookie buttons and NO try-the-line", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage
+        {...baseProps({
+          gameSans: MIXED_SANS,
+          totalPlies: 4,
+          turningPoints: [],
+          highlightLines: [HER_LINE, MALLOW_LINE],
+        })}
+      />
+    );
+    // React SSR escapes the apostrophe: "mallow's" -> "mallow&#x27;s".
+    const magentaIdx = html.indexOf("mallow&#x27;s moves you highlighted · 1 move");
+    const cyanIdx = html.indexOf("your moves you highlighted · 1 move");
+    expect(magentaIdx).toBeGreaterThan(-1);
+    expect(cyanIdx).toBeGreaterThan(-1);
+    expect(magentaIdx).toBeGreaterThan(cyanIdx);
+    // The magenta section's own scope: the verdict chip, the seat kicker,
+    // the two buttons -- and never a try-the-line (OD-C).
+    const magenta = html.slice(magentaIdx);
+    expect(magenta).toContain("the computer&#x27;s pick");
+    expect(magenta).toContain("mallow&#x27;s move<");
+    expect(magenta).toContain("ask cookie about this");
+    expect(magenta).toContain("mhl-card");
+    expect(magenta).not.toContain("try the line");
+  });
+
+  it("renders nothing magenta when the prop is absent (the pre-Wave-C page, byte-compatible)", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ gameSans: MIXED_SANS, totalPlies: 4, turningPoints: [] })} />
+    );
+    expect(html).not.toContain("mallow&#x27;s moves you highlighted");
+    expect(html).not.toContain("mhl-");
+  });
+
+  it("renders nothing magenta when only her-side lines exist (dead-chrome rule: zero mallow rows, zero chrome)", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage
+        {...baseProps({
+          gameSans: MIXED_SANS,
+          totalPlies: 4,
+          turningPoints: [],
+          highlightLines: [HER_LINE],
+        })}
+      />
+    );
+    expect(html).not.toContain("mallow&#x27;s moves you highlighted");
+    expect(html).not.toContain("mhl-");
   });
 });
 
