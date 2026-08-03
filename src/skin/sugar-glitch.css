@@ -1678,6 +1678,60 @@
   .gc-app .highlight-card-note { font-size: 13px; }
 }
 
+/* Wave B (opponent-move-analysis plan, 2026-08-03): the MAGENTA sibling
+   drawer (MallowHighlightedSection) -- mallow's highlighted moves, mounted
+   directly below the cyan study ledger. Proposal of record: vault
+   "3 visual/opponent-drawer-proposal.html" (owner-approved OD-D). Same
+   skeleton as .highlight-* above, re-voiced: ONLY the dot, chips, card
+   tint/border, card kicker and SAN ink move to the shipped W5 magenta
+   family (#C22B7E ink, #FFD6EC tint, low-alpha #C22B7E washes); the
+   neutral furniture (white rows, #E3D9F5 strokes, section kicker, move
+   numbers, caret) is the cyan ledger's own classes reused. Statement tier,
+   NOT whisper: this is the machine analyzing mallow, not mallow speaking.
+   Magenta-as-alarm is acceptable here because this whole drawer is a
+   mallow-voice surface (the W5 badge precedent). The one lavender element
+   inside it is .debrief-ask-btn -- cookie's own affordance, reused
+   verbatim, deliberately not repainted. No new hex values. */
+.gc-app .mhl-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: #C22B7E; box-shadow: 0 0 0 1.5px #FFF;
+}
+.gc-app .highlight-ledger-row .mhl-dot { margin-right: 7px; }
+/* four verdict chips, one anatomy (.highlight-chip's 8.5px recipe), four
+   weights: matched-best = strongest outline (the engine agreeing is the
+   headline verdict); solid = calm pink fill; slip = the one alarming
+   verdict, full magenta pour, white ink; no read = honest absence, dashed
+   neutral edge, deliberately the only chip with no magenta in it. */
+.gc-app .mhl-chip-best { color: #C22B7E; background: rgba(194,43,126,.14); border: 1px solid #C22B7E; }
+.gc-app .mhl-chip-solid { color: #C22B7E; background: #FFD6EC; border: 1px solid rgba(194,43,126,.35); }
+.gc-app .mhl-chip-slip { color: #FFF; background: #C22B7E; border: 1px solid #C22B7E; }
+.gc-app .mhl-chip-noread { color: #7A6BB5; background: #FFF; border: 1px dashed #9A8BC9; }
+/* the open card: flat magenta tint + inset left rule, the cyan card's
+   exact recipe with the seat's saturated ink. */
+.gc-app .mhl-card {
+  background: rgba(194,43,126,.08);
+  border: 1.5px solid #FFD6EC; border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: inset 2px 0 0 #C22B7E;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.gc-app .mhl-card-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #C22B7E;
+  flex: 1 1 auto;
+}
+.gc-app .mhl-card-san {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10.5px;
+  letter-spacing: .04em; color: #C22B7E;
+  text-transform: none; /* SAN keeps its true case */
+}
+/* <=480: the magenta card tightens exactly as the cyan one does above; the
+   proposal verified no structural overrides are needed at narrow widths
+   (the debrief column is already narrower than a 480px viewport). */
+@media (max-width: 480px) {
+  .gc-app .mhl-card { padding: 9px 12px; }
+}
+
 .gc-app .debrief-footer {
   display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
 }
