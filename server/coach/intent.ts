@@ -147,10 +147,32 @@ const ABSTRACT_THEORY_RE = new RegExp(
     // definitional what-does-it-mean-to-<concept> shape.
     String.raw`\bwhat does it mean to\b`,
     // gt-08 "what are the key principles for a king-and-pawn endgame?" --
-    // principle vocabulary is theory vocabulary; a live sentence pairing it
-    // with the position ("the principle behind this position") is board via
-    // the gate's demonstrative check.
-    String.raw`\bprinciples?\b`,
+    // TIGHTENED (router-fix round, 2026-08-03; final-whole-branch-review
+    // finding, see
+    // .superpowers/sdd/rounds/2026-08-03-round3/brief-router-fix-review.md).
+    // The bare word alone is NOT a reliable theory signal: "is this a good
+    // principle to follow?" and "is my knight on a good principle?" carry it
+    // too, and neither is caught by hasBoardSignal -- DEMONSTRATIVE_RE only
+    // matches the literal phrases "this move/this position/.../here", never
+    // a bare "this"/"it", and MY_PHASE_RE only matches a possessive GAME
+    // PHASE ("my opening"), not a possessive piece ("my knight"). The old
+    // promise (this comment used to claim a live "this position" pairing
+    // "is board via the gate's demonstrative check") was therefore false for
+    // every bare-deictic/concrete-piece phrasing, which is exactly what the
+    // review caught. Now requires one of three explicit abstract FRAMES
+    // instead of the bare word: a phase/scope adjective directly before it
+    // ("opening/middlegame/endgame/general/key principles"), a
+    // "principles for/of <topic>" complement (guarded against a deictic
+    // complement the same way the idea/point/purpose alternative above is),
+    // or the literal question-opener "what are the (key) principles". None
+    // of the three mis-routed board strings carries any of these frames, so
+    // they now fall through this door to the file's own
+    // ambiguity-resolves-to-board default (classifyIntent's final return);
+    // gt-08 carries two of the three ("key principles" and "principles
+    // for") and keeps firing.
+    String.raw`\bwhat are the (?:key )?principles\b`,
+    String.raw`\b(?:opening|middlegame|endgame|general|key)\s+principles?\b`,
+    String.raw`\bprinciples?\s+(?:for|of)\s+(?!(?:this|that|it|my|your|her|his|their)\b)`,
     // gt-01 "what's another opening that would work well from a setup like
     // mine?" -- asking for a DIFFERENT opening than the one played is
     // inherently a next-game question. Deliberately NOT the bare plural
