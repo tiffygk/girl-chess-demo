@@ -684,3 +684,49 @@ describe("factsForModel — the hint shelf renders as its own model-facing secti
     expect(capturedPrompt).not.toContain("234");
   });
 });
+
+// Round 3 (trace 126, old L2): the per-ply projection carries an explicit
+// move-number fact alongside ply, so the coach can name "move 4" the way
+// she reads a game instead of computing (or worse, stating) a raw ply
+// count. Same "assert against the actual prompt string" discipline as the
+// describe blocks above -- factsForModel is private.
+describe("factsForModel — per-ply entries carry an explicit move number, not just raw ply (trace 126, L2)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  it("ply 7 (white's 4th move) is labeled move 4 in the model-facing projection", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 7, san: "Nf3", evalCp: 20, evalMate: null, bestSan: "Nf3", pvSans: [] },
+    ];
+    const facts = assembleChatFactList([], {}, undefined, perPly);
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "that develops your knight nicely.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("how did move 4 go?", [], facts, backend, { gameId, ply: 7, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"move":4');
+  });
+
+  it("ply 8 (mallow's 4th move) is ALSO labeled move 4 -- same pair, opposite side", async () => {
+    const perPly: ChatPerPlyInput[] = [
+      { ply: 8, san: "Nc6", evalCp: -20, evalMate: null, bestSan: "Nc6", pvSans: [] },
+    ];
+    const facts = assembleChatFactList([], {}, undefined, perPly);
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "a natural developing reply.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("what did she just play?", [], facts, backend, { gameId, ply: 8, kind: "chat" });
+
+    expect(capturedPrompt).toContain('"move":4');
+    expect(capturedPrompt).toContain('"side":"mallow"');
+  });
+});
