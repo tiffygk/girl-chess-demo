@@ -4,7 +4,7 @@
 // this round's behavior change answers.
 
 import { describe, it, expect } from "vitest";
-import { turningLineArrows, arrowsToHighlights } from "./reviewArrows";
+import { turningLineArrows, turningLineReplayArrows, arrowsToHighlights } from "./reviewArrows";
 import type { TurningLine } from "./api";
 import type { FollowedBest } from "../review/followedBest";
 
@@ -200,6 +200,101 @@ describe("turningLineArrows", () => {
     expect(arrows).toContainEqual({ from: "d1", to: "f3", color: "played" });
     expect(arrows).toContainEqual({ from: "d1", to: "f3", color: "best" });
     expect(arrows.some((a) => a.color === "found")).toBe(false);
+  });
+});
+
+// F4 replay off-by-one (owner ruling 2026-08-03, game 169): a REPLAY of an
+// opponent-inaccuracy card must make the inaccuracy itself the focus — the
+// board at the moment the inaccuracy is on the board, with mallow's move
+// (magenta, line.playedFromTo) as the sole highlighted move, NOT her punish.
+// The "ask about this" framing keeps the full context set (pinned below);
+// only the replay framing changes.
+//
+// Fixture = game 169's real data (read from a WAL-safe copy of the owner's
+// db, 2026-08-03): ply 18 Bh6 f8→h6 (mallow's inaccuracy), ply 19 Nxd5+
+// c3→d5 (her punish, which IS the stored best reply — the followed arm).
+describe("opponent-inaccuracy replay framing (game 169, F4)", () => {
+  const game169Line = () =>
+    line({
+      ply: 18, // even — mallow's ply
+      playedFromTo: { from: "f8", to: "h6" }, // Bh6, the inaccuracy
+      bestFromTo: { from: "c3", to: "d5" }, // the best punish
+    });
+  const followedPunish = () =>
+    fb({ seedPly: 17, playerPly: 19, playedFromTo: { from: "c3", to: "d5" }, followed: true });
+  const missedPunish = () =>
+    fb({ seedPly: 17, playerPly: 19, playedFromTo: { from: "d2", to: "d3" }, followed: false });
+
+  it("REPRODUCE the game-169 symptom: the current context framing draws her punish alongside the inaccuracy", () => {
+    // turningLineArrows is what handleRewind's replay path renders today —
+    // the punish arrow (here "found": she played the exact best reply)
+    // shares the board with mallow's Bh6, and the owner read the punish as
+    // the card's subject. This test PINS that full-context set for the
+    // "ask about this" path, which must not change.
+    const arrows = turningLineArrows(game169Line(), followedPunish());
+    expect(arrows).toContainEqual({ from: "f8", to: "h6", color: "mallow" });
+    expect(arrows).toContainEqual({ from: "c3", to: "d5", color: "found" }); // the punish — the symptom
+  });
+
+  it("replay framing: the inaccuracy is the SOLE arrow — no punish, no best, no clutter (followed arm)", () => {
+    const arrows = turningLineReplayArrows(game169Line(), followedPunish());
+    expect(arrows).toEqual([{ from: "f8", to: "h6", color: "mallow" }]);
+  });
+
+  it("replay framing: sole inaccuracy arrow in the not-followed arm too (no cyan played, no green best, no dashed mallow-best)", () => {
+    const l = line({
+      ply: 18,
+      playedFromTo: { from: "f8", to: "h6" },
+      bestFromTo: { from: "c3", to: "d5" },
+      threat: { from: "h5", to: "f7" }, // dashed hypothetical — clutter on a replay
+    });
+    const arrows = turningLineReplayArrows(l, missedPunish());
+    expect(arrows).toEqual([{ from: "f8", to: "h6", color: "mallow" }]);
+  });
+
+  it("HER-ply replay framing is BYTE-UNCHANGED from the context framing (regression pin)", () => {
+    // 1. e4 e5 2. g4 d5 — her inaccuracy at ply 3 (g4), the same real
+    // fixture the four-state describe above uses.
+    const sans = [
+      { ply: 1, san: "e4" },
+      { ply: 2, san: "e5" },
+      { ply: 3, san: "g4" },
+      { ply: 4, san: "d5" },
+    ];
+    const herLine = line({
+      ply: 3,
+      playedFromTo: { from: "g2", to: "g4" },
+      bestFromTo: { from: "d2", to: "d4" },
+      threat: { from: "d8", to: "h4" },
+    });
+    const herFb = fb({ seedPly: 2, playerPly: 3, playedFromTo: { from: "g2", to: "g4" }, followed: false });
+    expect(turningLineReplayArrows(herLine, herFb, sans)).toEqual(turningLineArrows(herLine, herFb, sans));
+    // and the followed her-ply arm too
+    const followedLine = line({
+      ply: 3,
+      playedFromTo: { from: "d1", to: "f3" },
+      bestFromTo: { from: "d1", to: "f3" },
+    });
+    const followedFb = fb({ playerPly: 3, playedFromTo: { from: "d1", to: "f3" }, followed: true });
+    expect(turningLineReplayArrows(followedLine, followedFb, sans)).toEqual(
+      turningLineArrows(followedLine, followedFb, sans)
+    );
+  });
+
+  it("opponent-ply line whose own playedFromTo never resolved falls back to the full context set (never an empty board)", () => {
+    const l = line({
+      ply: 18,
+      bestFromTo: { from: "c3", to: "d5" },
+    });
+    expect(turningLineReplayArrows(l, missedPunish())).toEqual(turningLineArrows(l, missedPunish()));
+  });
+
+  it("replay highlights follow the sole arrow: exactly the inaccuracy's two endpoints, kind 'mallow'", () => {
+    const highlights = arrowsToHighlights(turningLineReplayArrows(game169Line(), followedPunish()));
+    expect(highlights).toEqual([
+      { square: "f8", kind: "mallow" },
+      { square: "h6", kind: "mallow" },
+    ]);
   });
 });
 
