@@ -746,6 +746,12 @@ export const GENERAL_QUESTIONS: GeneralQuestion[] = GENERAL_QUESTIONS_RAW.map((q
 // correct; the questions are used verbatim per the owner's brief). Reported
 // to the owner rather than silently patched -- see
 // `.superpowers/sdd/rounds/2026-08-03-round3/report-general-theory-fixtures.md`.
+//
+// CLOSED (router-fix round, 2026-08-03): server/coach/intent.ts's tier-2
+// ABSTRACT_THEORY_RE, gated on !hasBoardSignal, now routes all 5 formerly
+// mis-routed questions (and thus all 10) to "general" -- see
+// `2 build/Girl Chess — Router Fix Plan (2026-08-03).md` and
+// tools/coach-eval/generalTheory.test.ts's updated ROUTING_TRUTH.
 export interface GeneralTheoryQuestion {
   id: string;
   arm: "general-theory";

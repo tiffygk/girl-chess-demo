@@ -11,15 +11,17 @@
 // one entry from GENERAL_THEORY_QUESTIONS_RAW, or flipping one entry's arm/
 // tag, or changing one entry's ctx, each independently turns this file red.
 //
-// The routing describe block below does NOT assert "all 10 route general" --
-// that would be a false, permanently-red assertion. Verified against the
-// shipped classifyIntent (server/coach/intent.ts), only 5 of the 10 fire
-// GENERAL_MARKER_RE and route "general"; the other 5 fall through to "board"
-// (a real router gap, not a fixture defect -- see fixtures.ts's own comment
-// on GENERAL_THEORY_QUESTIONS_RAW and the round's report). This test pins
-// that AUDITED truth table so a future change to intent.ts or to this
-// question set that silently flips a question's route goes red immediately,
-// without asserting something false about today's router.
+// UPDATE (router-fix round, 2026-08-03): the routing describe block below
+// USED to pin an audited 5/5 general/board split -- asserting "all 10 route
+// general" would have been a false, permanently-red assertion against the
+// router as it existed before this round (only tier-1 GENERAL_MARKER_RE,
+// see fixtures.ts's own comment on GENERAL_THEORY_QUESTIONS_RAW). That
+// router gap (gt-01/02/06/08/09 falling through to "board") is now CLOSED
+// by server/coach/intent.ts's tier-2 ABSTRACT_THEORY_RE, gated on
+// !hasBoardSignal. All 10 general-theory questions now route "general"; the
+// block below pins that as the new truth table so a future change to
+// intent.ts or to this question set that silently flips a question's route
+// goes red immediately.
 import { describe, it, expect } from "vitest";
 import { classifyIntent } from "../../server/coach/intent";
 import {
@@ -90,26 +92,26 @@ describe("general-theory arm loads exactly the 10 owner-approved fixtures", () =
   });
 });
 
-// Verified 2026-08-03 against the shipped classifyIntent -- see this file's
-// header comment for why this is a pinned truth table, not a universal
-// "route as general" assertion.
+// Verified 2026-08-03 against the shipped classifyIntent, POST router-fix
+// (tier-2 ABSTRACT_THEORY_RE, gated on !hasBoardSignal, closes the
+// gt-01/02/06/08/09 gap) -- see this file's header comment.
 const ROUTING_TRUTH: Record<string, "general" | "board"> = {
-  "gt-01": "board",
-  "gt-02": "board",
+  "gt-01": "general",
+  "gt-02": "general",
   "gt-03": "general",
   "gt-04": "general",
   "gt-05": "general",
-  "gt-06": "board",
+  "gt-06": "general",
   "gt-07": "general",
-  "gt-08": "board",
-  "gt-09": "board",
+  "gt-08": "general",
+  "gt-09": "general",
   "gt-10": "general",
 };
 
 describe("general-theory routing through the SAME classifyIntent manager.ts calls (router finding, 2026-08-03)", () => {
-  it("5 of 10 route general, 5 of 10 route board -- pinned so a future drift is caught, not silently reintroduced or hidden", () => {
-    expect(Object.values(ROUTING_TRUTH).filter((v) => v === "general").length).toBe(5);
-    expect(Object.values(ROUTING_TRUTH).filter((v) => v === "board").length).toBe(5);
+  it("10 of 10 route general -- pinned so a future drift is caught, not silently reintroduced or hidden", () => {
+    expect(Object.values(ROUTING_TRUTH).filter((v) => v === "general").length).toBe(10);
+    expect(Object.values(ROUTING_TRUTH).filter((v) => v === "board").length).toBe(0);
     for (const q of GENERAL_THEORY_QUESTIONS) {
       // hasFocus/hasPendingMove are always false for this arm (bare context,
       // no hintFocus/pending move attached -- same ctx run.ts's own
@@ -118,14 +120,16 @@ describe("general-theory routing through the SAME classifyIntent manager.ts call
       // board-review). Mirrors score.test.ts's existing "general-arm intent
       // routing" describe block's own ctx shape exactly.
       const intent = classifyIntent(q.q, { hasFocus: false, hasPendingMove: false, status: "in-progress" });
-      expect(intent, `"${q.id}" routing drifted from the audited 2026-08-03 baseline`).toBe(ROUTING_TRUTH[q.id]);
+      expect(intent, `"${q.id}" routing drifted from the audited 2026-08-03 post-fix baseline`).toBe(
+        ROUTING_TRUTH[q.id]
+      );
     }
   });
 
-  it("documents which 5 mis-route to board, for the owner (not a blocker on this task, but a real router gap)", () => {
+  it("the mis-routed-to-board set is empty (router-fix round, 2026-08-03 closed the gap)", () => {
     const misrouted = GENERAL_THEORY_QUESTIONS.filter(
       (q) => classifyIntent(q.q, { hasFocus: false, hasPendingMove: false, status: "in-progress" }) === "board"
     ).map((q) => q.id);
-    expect(misrouted.sort()).toEqual(["gt-01", "gt-02", "gt-06", "gt-08", "gt-09"]);
+    expect(misrouted).toEqual([]);
   });
 });
