@@ -132,7 +132,11 @@ const MATE_SCORE_CP = 100_000;
 // this codebase's own precedent (adjudicate.ts's ADJUDICATE_MOVETIME_MS
 // mirroring this file's EVAL_MOVETIME_MS) is exactly "two named constants,
 // same value today, free to diverge later" rather than a shared import.
-const DECIDED_BAND_CP = 300;
+// Exported (opponent-move-analysis plan, Wave A, 2026-08-03): highlightLines.ts's
+// `decided` flag imports this exact constant rather than re-declaring 300 a
+// third time -- same value, same reasoning, one source of truth for "is this
+// position already decided" across both consumers.
+export const DECIDED_BAND_CP = 300;
 
 // Round 3 Task 11 (item 5 / OD-5, trust floor -- "we shouldn't try to invent
 // better moves for her to have done"): a surface may assert "a better move

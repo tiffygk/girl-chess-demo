@@ -62,7 +62,10 @@ export function HighlightedMovesSection({
   return (
     <div className="highlight-ledger">
       <span className="debrief-bullet-kicker">
-        you highlighted · {rows.length} move{rows.length === 1 ? "" : "s"}
+        {/* OD-D detail (owner ruling, 2026-08-03): names the seat so it
+            parallels the magenta sibling's "mallow's moves you highlighted".
+            Reversible copy. */}
+        your moves you highlighted · {rows.length} move{rows.length === 1 ? "" : "s"}
       </span>
       {rows.map((row) => {
         if (row.ply !== shownOpen && !single) {

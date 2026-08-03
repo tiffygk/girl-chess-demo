@@ -4,7 +4,7 @@ import { Chess } from "chess.js";
 import {
   openDb, createSession, getGameMoves, getGameEvents, getVerdicts, getGame, getAdviceTraces,
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
-  insertVerdict, getAllChatMessages, listCoachNotes,
+  insertVerdict, getAllChatMessages, listCoachNotes, setMoveHighlighted,
 } from "../store/db";
 import { GameManager, BACKEND_CACHE_TTL_MS, buildVerdictFactsJson, COACH_NOTE_ACK } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
@@ -1444,6 +1444,103 @@ describe("GameManager", () => {
 
     // Zero heal-write: reading turning-lines must never mutate turning_points.
     expect(getTurningPointsAllVersions(g).length).toBe(before);
+  });
+
+  // Opponent-move-analysis plan (2026-08-03), Wave A: getHighlightLines --
+  // the real GameManager integration (real pvLine, real getGameMoves), one
+  // level up from highlightLines.test.ts's pure-function unit coverage.
+  describe("getHighlightLines (opponent-move-analysis plan, Wave A)", () => {
+    it("returns a line for a highlighted HER ply, side='her', seeded at p-1", () => {
+      const g = createGame(sessionId, "maia-1100");
+      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      attachEval(g, 1, { cp: 25, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      attachEval(g, 2, { cp: 20, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
+      recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
+      // Realistic: the highlighted ply's OWN eval also attaches (fire-and-
+      // forget, every ply -- see manager.ts's attachEval comment); its
+      // absence would (correctly) degrade the whole line to "unknown",
+      // which is a separate case covered below.
+      attachEval(g, 3, { cp: -18, mate: null, bestMove: "b8c6", pv: ["b8c6"] });
+      setMoveHighlighted(g, 3, true);
+
+      const result = gm.getHighlightLines(g);
+      expect(result.ok).toBe(true);
+      expect(result.lines).toHaveLength(1);
+      const line = result.lines[0];
+      expect(line.ply).toBe(3);
+      expect(line.side).toBe("her");
+      expect(line.san).toBe("Nf3");
+      // seedPly = 2 (ply 3 - 1), whose eval is realistic (attached after
+      // 1.e4 e5, white to move) -- matches getTurningLines' own realistic
+      // fixture one level down.
+      expect(line.bestSan).toBe("Nf3");
+      expect(line.pvSans).toEqual(["Nf3", "Nc6", "Bc4"]);
+      expect(line.matchedBest).toBe(true);
+      expect(line.quality).toBe("best");
+    });
+
+    it("returns a line for a highlighted MALLOW ply, side='mallow', seeded at p-1 -- the case getTurningLines cannot serve", () => {
+      const g = createGame(sessionId, "maia-1100");
+      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      attachEval(g, 1, { cp: 25, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      attachEval(g, 2, { cp: 20, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
+      recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
+      // Realistic: eval of fenAfter(ply 3) = after 1.e4 e5 2.Nf3, black to
+      // move -- the correct seed for a ply-4 (mallow) highlight.
+      attachEval(g, 3, { cp: 15, mate: null, bestMove: "b8c6", pv: ["b8c6", "f1c4", "f8c5"] });
+      recordMove({ gameId: g, ply: 4, san: "Nc6", uci: "b8c6", fenAfter: "fen4", timeSpentMs: 0 });
+      attachEval(g, 4, { cp: 10, mate: null, bestMove: "f1c4", pv: ["f1c4"] });
+      setMoveHighlighted(g, 4, true);
+
+      const result = gm.getHighlightLines(g);
+      expect(result.ok).toBe(true);
+      const line = result.lines.find((l) => l.ply === 4);
+      expect(line?.side).toBe("mallow");
+      expect(line?.bestSan).toBe("Nc6");
+      expect(line?.pvSans).toEqual(["Nc6", "Bc4", "Bc5"]);
+      expect(line?.matchedBest).toBe(true);
+    });
+
+    it("serves BOTH a highlighted her-ply and a highlighted mallow-ply from one game read, unfiltered by side", () => {
+      const g = createGame(sessionId, "maia-1100");
+      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      attachEval(g, 1, { cp: 25, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      attachEval(g, 2, { cp: 20, mate: null, bestMove: "g1f3", pv: ["g1f3"] });
+      recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
+      attachEval(g, 3, { cp: 15, mate: null, bestMove: "b8c6", pv: ["b8c6"] });
+      recordMove({ gameId: g, ply: 4, san: "Nc6", uci: "b8c6", fenAfter: "fen4", timeSpentMs: 0 });
+      setMoveHighlighted(g, 3, true);
+      setMoveHighlighted(g, 4, true);
+
+      const result = gm.getHighlightLines(g);
+      expect(result.lines.map((l) => l.side).sort()).toEqual(["her", "mallow"]);
+    });
+
+    it("never writes to the db (read-only, mirrors getTurningLines' never-writes rule)", () => {
+      const g = createGame(sessionId, "maia-1100");
+      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      attachEval(g, 1, { cp: 25, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      setMoveHighlighted(g, 2, true);
+      const before = getGameMoves(g);
+
+      gm.getHighlightLines(g);
+
+      const after = getGameMoves(g);
+      expect(after).toEqual(before);
+    });
+
+    it("degrades gracefully (empty lines, ok:true) for a game with zero highlighted plies", () => {
+      const g = createGame(sessionId, "maia-1100");
+      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+
+      const result = gm.getHighlightLines(g);
+      expect(result.ok).toBe(true);
+      expect(result.lines).toEqual([]);
+    });
   });
 
   // Review finding 2: threatForPly must only attach `threat` when a

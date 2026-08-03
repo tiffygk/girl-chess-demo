@@ -407,6 +407,18 @@ export interface ChatContext {
     // debriefBullets.ts/turningPointNote.ts already use for this same fact.
     playedNextSan?: string;
     followedBest?: boolean;
+    // Opponent-move-analysis plan (2026-08-03), Wave C: only populated for a
+    // MALLOW-ply focus (chatFocus.ts's opponentMoveFocusContext), straight off
+    // the matching HighlightLine's own already-computed fields (Wave A,
+    // server/annotator/highlightLines.ts -- one place, never re-derived
+    // here). Absent for every her-ply focus (turningPointFocusContext never
+    // sets these), so JSON.stringify drops the keys there and that prompt
+    // path stays byte-identical (chat.stablePrefix discipline). Lets
+    // server/coach/chat.ts's checkOpponentQualityClaims answer "did mallow
+    // actually play the engine's own best move" from a fact already in hand,
+    // never by re-deriving it from the model's own prose.
+    matchedBest?: boolean | null;
+    quality?: "best" | "solid" | "fine" | "slip" | "unknown";
   };
   // Task 1 (R2, pending-move context threading): mirrors
   // server/coach/chat.ts's ChatContext.pendingMove verbatim -- see
@@ -735,6 +747,37 @@ export interface TurningLinesResponse {
 
 export function getTurningLines(gameId: number): Promise<TurningLinesResponse> {
   return getJson(`/game/${gameId}/turning-lines`);
+}
+
+// Opponent-move-analysis plan (2026-08-03), Wave A: mirrors
+// server/annotator/highlightLines.ts's HighlightLine (hand-mirroring, same
+// convention as TurningLine above) -- one row per HIGHLIGHTED ply, EITHER
+// side, seeded at p-1 universally (the seam TurningLine's own seedPly
+// formula deliberately cannot provide for mallow's plies). Every from/to
+// and SAN on the wire is server-derived by chess.js replay, never guessed
+// client-side; `side` rides the row, derived once server-side at the data
+// load -- never re-derived from `ply % 2` here.
+export interface HighlightLine {
+  ply: number;
+  side: "her" | "mallow";
+  san: string;
+  bestSan?: string;
+  bestFromTo?: { from: string; to: string };
+  pvSans: string[];
+  matchedBest: boolean | null;
+  quality: "best" | "solid" | "fine" | "slip" | "unknown";
+  gapCp: number | null;
+  mateInvolved: boolean;
+  decided: boolean;
+}
+
+export interface HighlightLinesResponse {
+  ok: boolean;
+  lines: HighlightLine[];
+}
+
+export function getHighlightLines(gameId: number): Promise<HighlightLinesResponse> {
+  return getJson(`/game/${gameId}/highlight-lines`);
 }
 
 // Increment 3.91 (Task 5): the "try the line" sandbox's engine move.
