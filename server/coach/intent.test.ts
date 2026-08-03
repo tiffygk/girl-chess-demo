@@ -268,3 +268,35 @@ describe("classifyIntent tier-2 abstract-theory markers (router-fix round, 2026-
     }
   });
 });
+
+// Final-review fix (router-fix round, 2026-08-03; see
+// .superpowers/sdd/rounds/2026-08-03-round3/brief-router-fix-review.md): the
+// bare `\bprinciples?\b` alternative had no shape constraint at all, so any
+// live board question carrying the bare word -- even one pairing it with a
+// bare deictic ("this"/"it") or a concrete piece -- fell through the tier-2
+// door, because DEMONSTRATIVE_RE (and the rest of hasBoardSignal) only
+// catches the literal phrases "this move/this position/this game/that
+// move/that line/here", never bare "this"/"that"/"it". These three are the
+// finding's own concrete repro strings; each must go RED if the tightened
+// frame requirement is reverted back to the bare word.
+describe("classifyIntent tier-2 principles alternative -- overbroad-bare-word fix (router-fix round, 2026-08-03)", () => {
+  it("a live board question carrying bare 'principle' but no abstract frame stays board", () => {
+    expect(classifyIntent("what's the principle behind this?", ctx())).toBe("board");
+    expect(classifyIntent("is this a good principle to follow?", ctx())).toBe("board");
+    expect(classifyIntent("is my knight on a good principle?", ctx())).toBe("board");
+  });
+
+  it("gt-08 keeps its abstract frame ('key principles for') and stays general in both a live and a finished chat", () => {
+    const q = "what are the key principles for a king-and-pawn endgame?";
+    expect(classifyIntent(q, ctx())).toBe("general");
+    expect(classifyIntent(q, ctx({ status: "finished" }))).toBe("general");
+  });
+
+  it("the brief's other named-general phrasings still route general", () => {
+    expect(classifyIntent("what are the opening principles I should know?", ctx())).toBe("general");
+    expect(classifyIntent("what are some good endgame principles?", ctx())).toBe("general");
+    expect(classifyIntent("can you explain some general principles of chess?", ctx())).toBe("general");
+    expect(classifyIntent("what are the principles of a good pawn structure?", ctx())).toBe("general");
+    expect(classifyIntent("what are the principles for winning an endgame?", ctx())).toBe("general");
+  });
+});
