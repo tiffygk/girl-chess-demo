@@ -15,6 +15,7 @@ import {
   fetchGames,
   deleteGame,
   getTurningLines,
+  getHighlightLines,
   exploreReply,
   highlightMove,
   type MoveResponse,
@@ -27,6 +28,7 @@ import {
   type TurningLine,
   type TurningPoint,
   type MoveClassification,
+  type HighlightLine,
 } from "./api";
 import { CoachChat, ThumbRating } from "./CoachChat";
 import {
@@ -35,6 +37,7 @@ import {
   reconcileChatFocus,
   pvUciToSan,
   pendingMoveContext,
+  resolvePlyFocus,
 } from "./chatFocus";
 import { turningLineArrows, arrowsToHighlights, type ArrowColor } from "./reviewArrows";
 import { followedBest, playedArrowForPly } from "../review/followedBest";
@@ -388,6 +391,13 @@ export function GamePage() {
   // last clicked; both clear on backToEnd/backToPlay/new game so they never
   // bleed into live play.
   const [turningLines, setTurningLines] = useState<TurningLine[]>([]);
+  // Opponent-move-analysis plan (2026-08-03), Wave C: the debrief's per-
+  // highlighted-ply engine facts for EITHER side (Wave A's endpoint),
+  // fetched alongside turningLines below and looked up by ply in
+  // handleAskAboutPly (via resolvePlyFocus) -- turningLines only ever
+  // carries HER turning points, so a mallow-ply "ask about this" has nothing
+  // to ground itself in without this.
+  const [highlightLines, setHighlightLines] = useState<HighlightLine[]>([]);
   const [reviewArrows, setReviewArrows] = useState<{ from: string; to: string; color: ArrowColor }[]>([]);
   const [reviewHighlights, setReviewHighlights] = useState<{ square: string; kind: ArrowColor }[]>([]);
   // Increment 3.91 (Task 6): "try the line" — a debrief turning-point card's
@@ -547,6 +557,9 @@ export function GamePage() {
     // Increment 3.91 (Task 4): a fresh/new game must never carry over the
     // last debrief's turning-lines cache or board arrows.
     setTurningLines([]);
+    // Opponent-move-analysis plan (2026-08-03), Wave C: same reasoning --
+    // highlightLines is per-debrief, never carried into a fresh game.
+    setHighlightLines([]);
     setReviewArrows([]);
     setReviewHighlights([]);
   }, []);
@@ -708,6 +721,28 @@ export function GamePage() {
       })
       .catch(() => {
         if (!cancelled) setTurningLines([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewGame, gameOver, gameId]);
+
+  // Opponent-move-analysis plan (2026-08-03), Wave C: fetch the per-
+  // highlighted-ply engine facts for EITHER side (Wave A's endpoint)
+  // alongside turningLines above -- same "which debrief is active" id, its
+  // own effect so a failure/slow response on one fetch never blocks the
+  // other. Looked up by ply in handleAskAboutPly (via resolvePlyFocus) and
+  // passed straight to DebriefPage for the magenta drawer (Wave B).
+  useEffect(() => {
+    const debriefGameId = reviewGame ? reviewGame.id : gameOver ? gameId : null;
+    if (!debriefGameId) return;
+    let cancelled = false;
+    getHighlightLines(debriefGameId)
+      .then((r) => {
+        if (!cancelled) setHighlightLines(r.ok ? r.lines : []);
+      })
+      .catch(() => {
+        if (!cancelled) setHighlightLines([]);
       });
     return () => {
       cancelled = true;
@@ -1680,13 +1715,20 @@ export function GamePage() {
   // `classifications` list — see debriefBullets.ts's buildCouldBeBetter).
   // When a real TurningPoint exists at this ply, this is just
   // handleAskAboutTurningPoint's own path (reuse it, don't fork the arrow/
-  // focus logic in two places). Otherwise, the focus is built from the
-  // MoveClassification alone — every field on it (`ply`, `san` from
-  // activeReviewMoves, `label` from the classification string) is a real,
-  // already-in-hand fact; nothing is invented. A ply with neither a
-  // TurningPoint nor a resolvable san/classification (should not happen —
-  // affordancesForBullet only gates on ply != null) is a no-op rather than a
-  // guess.
+  // focus logic in two places).
+  //
+  // Opponent-move-analysis plan (2026-08-03), Wave C: everything past the
+  // TurningPoint check now delegates to chatFocus.ts's resolvePlyFocus,
+  // which picks between the three remaining cases (a mallow ply; a her ply
+  // WITH a classification, the pre-existing path; a her ply with NO
+  // classification) and builds that case's focus from real facts only --
+  // see that function's own header. This closes TWO no-ops the old
+  // `if (!cls || !san) return;` gate silently produced: a highlighted mallow
+  // ply (classifications are her-moves-only by design, so `cls` was always
+  // undefined) and the ~97% of her own highlighted moves that also carry no
+  // classification. A ply resolvePlyFocus can't resolve at all (should not
+  // happen — affordancesForBullet only gates on ply != null) stays a no-op
+  // rather than a guess.
   const handleAskAboutPly = useCallback(
     (ply: number) => {
       const point = activeTurningPoints.find((p) => p.ply === ply);
@@ -1694,25 +1736,23 @@ export function GamePage() {
         handleAskAboutTurningPoint(point);
         return;
       }
-      const cls = activeClassifications.find((c) => c.ply === ply);
-      const san = activeReviewMoves?.[ply - 1]?.san;
-      if (!cls || !san) return;
-      const line = turningLines.find((l) => l.ply === ply);
+      const resolution = resolvePlyFocus(
+        ply,
+        activeReviewMoves ?? undefined,
+        activeClassifications,
+        turningLines,
+        highlightLines
+      );
+      if (!resolution) return;
       if (activeReviewMoves) {
         setFen(fenAtPly(activeReviewMoves, ply));
         setResyncTick((t) => t + 1);
         setRewindPly(ply);
-        const arrows = buildArrowsForPly(line, ply);
+        const arrows = buildArrowsForPly(resolution.line, ply);
         setReviewArrows(arrows);
         setReviewHighlights(arrowsToHighlights(arrows));
       }
-      setChatFocus({
-        turningPointFocus: turningPointFocusContext(
-          { ply, san, label: cls.classification },
-          line,
-          activeReviewMoves ?? undefined
-        ),
-      });
+      setChatFocus({ turningPointFocus: resolution.focus });
       requestChatOpen();
     },
     [
@@ -1720,6 +1760,7 @@ export function GamePage() {
       activeClassifications,
       activeReviewMoves,
       turningLines,
+      highlightLines,
       buildArrowsForPly,
       handleAskAboutTurningPoint,
       requestChatOpen,
@@ -1911,6 +1952,7 @@ export function GamePage() {
       setReviewArrows([]);
       setReviewHighlights([]);
       setTurningLines([]);
+      setHighlightLines([]);
       setPastGamesOpen(false);
       // Increment 3.95 (Task 7): a newly-opened past game must never carry
       // the last one's "ask about this" focus.
@@ -1938,6 +1980,7 @@ export function GamePage() {
     setReviewArrows([]);
     setReviewHighlights([]);
     setTurningLines([]);
+    setHighlightLines([]);
     // Increment 3.95 (Task 7): leaving review mode drops its focus too.
     setChatFocus({});
     // Increment 3.91 (Task 6): same reasoning as selectPastGame above — an
@@ -2606,6 +2649,7 @@ export function GamePage() {
                 turningPoints={liveSummary.turningPoints}
                 classifications={liveSummary.classifications}
                 turningLines={turningLines}
+                highlightLines={highlightLines}
                 gameSans={liveSummary.moves}
                 totalPlies={liveSummary.moves.length}
                 result={gameOver.result}
@@ -2630,6 +2674,7 @@ export function GamePage() {
           turningPoints={reviewGame.summary.turningPoints}
           classifications={reviewGame.summary.classifications}
           turningLines={turningLines}
+          highlightLines={highlightLines}
           gameSans={reviewGame.summary.moves}
           totalPlies={reviewGame.summary.moves.length}
           result={reviewGame.result}
