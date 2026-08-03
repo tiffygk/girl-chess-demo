@@ -175,6 +175,58 @@ describe("deriveThreatFacts", () => {
     expect(facts!.capturedSquareDefended).toBe(false);
   });
 
+  // Round 3 (Q4, trace-180): a legal recapture existing is not proof it's
+  // SAFE. game 167's real position: her g2-g4 lets the f6 knight take
+  // Nxg4; the h3 pawn CAN legally recapture (hxg4), but doing so drops the
+  // undefended h1 rook to Qxh1 -- an overload the old capturedSquareDefended
+  // boolean alone could never distinguish from a clean trade.
+  describe("recaptureHolds (Q4, trace-180)", () => {
+    // afterFen: real game-167 position after her actual move g2-g4
+    // (advice_traces id 180's currentFen with g2g4 replayed -- verified via
+    // chess.js). pv below is the REAL StockfishEvaluator line for this
+    // exact afterFen at 3000ms movetime -- the engine's own best reply to
+    // Nxg4 is Be2 (declining the recapture entirely), not hxg4, which is
+    // exactly the tell this feature exists to catch.
+    const afterFen = "r1b1k2r/pppp1ppp/2n1pn2/6Bq/2PP2P1/2PBPN1P/P4P2/R2QK2R b KQkq - 0 10";
+
+    it("recaptureHolds is false when the engine's own best line declines the recapture (trace-180 overload)", () => {
+      const afterEval: Evaluation = {
+        cp: -130,
+        mate: null,
+        bestMove: "f6g4", // Nxg4 -- captures her just-moved g4 pawn
+        pv: ["f6g4", "d3e2"], // engine declines hxg4, retreats the bishop instead
+      };
+      const facts = deriveThreatFacts(afterFen, "g4", "w", afterEval);
+      expect(facts).toBeTruthy();
+      expect(facts!.motif).toBe("capture-moved");
+      expect(facts!.capturedSquareDefended).toBe(true); // a legal hxg4 recapture DOES exist
+      expect(facts!.recaptureHolds).toBe(false); // but the engine itself won't play it
+      expect(facts!.recaptureRefusalReason).toBe("Be2");
+    });
+
+    it("recaptureHolds is true for an ordinary sound recapture", () => {
+      // Same fixture as "capture-other, defended" above (Bxf5, pawn on e4
+      // defends it) -- pv now carries the actual recapture as the engine's
+      // chosen reply, with nothing bigger to grab afterward.
+      const afterFen2 = "2b3k1/8/8/5B2/4P3/8/8/6K1 b - - 0 1";
+      const afterEval: Evaluation = { cp: 0, mate: null, bestMove: "c8f5", pv: ["c8f5", "e4f5"] };
+      const facts = deriveThreatFacts(afterFen2, "a1", "w", afterEval);
+      expect(facts).toBeTruthy();
+      expect(facts!.capturedSquareDefended).toBe(true);
+      expect(facts!.recaptureHolds).toBe(true);
+      expect(facts!.recaptureRefusalReason).toBeUndefined();
+    });
+
+    it("recaptureHolds defaults true when the square isn't defended at all (nothing to disprove)", () => {
+      const afterFen2 = "2b3k1/8/8/5B2/8/8/8/6K1 b - - 0 1"; // no e4 pawn -- undefended
+      const afterEval: Evaluation = { cp: 300, mate: null, bestMove: "c8f5", pv: ["c8f5"] };
+      const facts = deriveThreatFacts(afterFen2, "a1", "w", afterEval);
+      expect(facts).toBeTruthy();
+      expect(facts!.capturedSquareDefended).toBe(false);
+      expect(facts!.recaptureHolds).toBe(true);
+    });
+  });
+
   it("resolveCaptureSquare: shared ep helper resolves the real captured-pawn square, exported for reuse by both derivations", () => {
     const probe = new Chess("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1");
     const mv = probe.move({ from: "e5", to: "d6" });

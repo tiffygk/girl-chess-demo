@@ -21,6 +21,19 @@ import type { CoachBackend } from "./backends/types";
 import { getPersona, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
+
+// Round 3 (Q4, trace-180): the recapture-viability exemption checkDefenseClaims
+// takes -- shared by both validateChat's board route and validateChatGeneral,
+// same "caller derives, checker only carries it through" discipline as every
+// other fact fold in this file. A square only qualifies when a legal
+// recapture exists (capturedSquareDefended) AND the engine's own line says
+// it doesn't actually hold (recaptureHolds === false); anything else leaves
+// the geometric checker's normal behavior untouched.
+function unsafeRecaptureSquaresFrom(threat: ChatContext["threat"]): string[] {
+  return threat?.capturedSquareDefended && threat.recaptureHolds === false && threat.capturesSquare
+    ? [threat.capturesSquare]
+    : [];
+}
 import { checkPlacementClaims } from "./placementClaims";
 import { checkMateClaims } from "./mateClaims";
 import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
@@ -826,9 +839,10 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
   // possibly a template). The two runs produce identical strings when both
   // flag, because the message states the truth the claim contradicts and
   // the claim is fixed, so a plain intersection is exact here.
-  const currentDefense = checkDefenseClaims(text, facts.currentFen);
+  const unsafeRecaptureSquares = unsafeRecaptureSquaresFrom(facts.context?.threat);
+  const currentDefense = checkDefenseClaims(text, facts.currentFen, unsafeRecaptureSquares);
   if (facts.focusPosition) {
-    const focusDefense = new Set(checkDefenseClaims(text, facts.focusPosition.fen));
+    const focusDefense = new Set(checkDefenseClaims(text, facts.focusPosition.fen, unsafeRecaptureSquares));
     violations.push(...currentDefense.filter((v) => focusDefense.has(v)));
   } else {
     violations.push(...currentDefense);
@@ -914,9 +928,10 @@ export function validateChatGeneral(
   const violations: string[] = [];
 
   if (replyReferencesPosition(text)) {
-    const currentDefense = checkDefenseClaims(text, facts.currentFen);
+    const unsafeRecaptureSquares = unsafeRecaptureSquaresFrom(facts.context?.threat);
+    const currentDefense = checkDefenseClaims(text, facts.currentFen, unsafeRecaptureSquares);
     if (facts.focusPosition) {
-      const focusDefense = new Set(checkDefenseClaims(text, facts.focusPosition.fen));
+      const focusDefense = new Set(checkDefenseClaims(text, facts.focusPosition.fen, unsafeRecaptureSquares));
       violations.push(...currentDefense.filter((v) => focusDefense.has(v)));
     } else {
       violations.push(...currentDefense);
