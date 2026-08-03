@@ -12,14 +12,20 @@
 //   --wiring legacy|threaded  required
 //   --out <dir>               output dir (default: runs/<timestamp>)
 //   --arm <name>              board-live|general|board-review|fork|mate|
-//                             long|general-theory -- run only that arm's
-//                             questions, without disturbing the others.
-//                             Applied AFTER buildQuestionList()'s own drift
-//                             assertion against the full, unfiltered
-//                             TOTAL_QUESTION_COUNT. general-theory (round-3
-//                             fact-shelf coach round) is the isolated
-//                             10-question pure-chess-theory subset; e.g.
-//                             `--arm general-theory` runs exactly those 10.
+//                             long|general-theory|numbers -- run only that
+//                             arm's questions, without disturbing the
+//                             others. Applied AFTER buildQuestionList()'s
+//                             own drift assertion against the full,
+//                             unfiltered TOTAL_QUESTION_COUNT.
+//                             general-theory (round-3 fact-shelf coach
+//                             round) is the isolated 10-question
+//                             pure-chess-theory subset; e.g. `--arm
+//                             general-theory` runs exactly those 10.
+//                             numbers (coach-eval instrument improvements,
+//                             2026-08-03) is the isolated 3-question
+//                             numbers-asking subset, each pinned to a
+//                             position with a known persisted eval_cp (see
+//                             fixtures.ts's NUMBER_EVAL_FACTS).
 //   --limit N                 smoke-test only: run the first N questions
 //                             (of whatever --arm selected, or all arms)
 //   --warmup N                N throwaway calls through the identical chat()
@@ -84,6 +90,7 @@ import {
   MATE_QUESTIONS,
   LONG_QUESTIONS,
   GENERAL_THEORY_QUESTIONS,
+  NUMBER_QUESTIONS,
   FORK_FIXTURE_IDS,
   MATE_FIXTURE_IDS,
   LONG_FIXTURE_IDS,
@@ -256,7 +263,19 @@ function buildQuestionList(): EvalQuestion[] {
     ctx: g.ctx,
     probe: g.probe,
   }));
-  const all = [...base, ...pending, ...affirmation, ...general, ...boardReview, ...fork, ...mate, ...long, ...generalTheory];
+  // coach-eval instrument improvements (2026-08-03): the isolated 3-question
+  // numbers-asking arm -- same bare-context "dir" shape as fork/mate/long
+  // (buildContext's fallthrough branch), just its own arm so it can be
+  // selected alone via --arm numbers.
+  const numbers: EvalQuestion[] = NUMBER_QUESTIONS.map((n) => ({
+    id: n.id,
+    arm: n.arm,
+    tag: n.tag,
+    q: n.q,
+    ctx: n.ctx,
+    probe: n.probe,
+  }));
+  const all = [...base, ...pending, ...affirmation, ...general, ...boardReview, ...fork, ...mate, ...long, ...generalTheory, ...numbers];
   if (all.length !== TOTAL_QUESTION_COUNT) {
     throw new Error(`question list drift: built ${all.length}, fixtures.ts declares ${TOTAL_QUESTION_COUNT}`);
   }
