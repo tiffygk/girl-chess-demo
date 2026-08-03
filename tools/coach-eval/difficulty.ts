@@ -11,9 +11,9 @@
 //     bimodal hypothesis ("disabled renders cleanly + concisely when the
 //     shelf COVERS the question, and templates when it does NOT -- no
 //     facts + no reasoning budget to work one out"). True exactly when the
-//     pinned ply's own db row carries a concrete engine fact: a best_move/
-//     pv (a line to state) or an eval_mate (a forced mate to state) for
-//     the position the question concerns. This is the SAME predicate
+//     pinned ply's own db row carries a concrete engine fact -- a best_move/
+//     pv (a line to state) or an eval_mate (a forced mate to state) -- FOR
+//     THE POSITION THE QUESTION CONCERNS. This is the SAME predicate
 //     run.ts's own engineBestForFixture/MATE_FACTS already treat as "this
 //     position has a real persisted engine fact" (see fixtures.ts's own
 //     comment on ENGINE_BEST_UCI_BY_FIXTURE) -- applied uniformly to every
@@ -31,10 +31,40 @@
 //     difficulty.test.ts's own consistency check for the direction that IS
 //     guaranteed).
 //
-// Pure: no db, no chess.js, no fs. run.ts is the only caller, and it reads
-// the MoveRow at fixture.ply (the SAME row engineBestForFixture already
-// reads) to build the ShelfSignal this module classifies.
+// Pure: no db, no chess.js, no fs (the `Arm` import below is TYPE-ONLY, so
+// it costs nothing at runtime and doesn't reach into fixtures.ts's data).
+// run.ts is the only caller, and it reads the MoveRow at fixture.ply (the
+// SAME row engineBestForFixture already reads) to build the ShelfSignal
+// this module classifies.
+import type { Arm } from "./fixtures";
+// FIX (OD-3b instrument repair, 2026-08-03): shelfCovered was degenerate --
+// true for all 1,071 rows in every arm (vault "Girl Chess -- OD-3b Post-
+// Shelf Eval Results (2026-08-03)", caveat (a)). Root cause: it read
+// hasBestLine/hasMate straight off the pinned ply's db row with no regard
+// for whether the QUESTION concerns that position at all. Real games are
+// analysed move-by-move, so nearly every ply row carries a best_move/pv --
+// which means "the position has engine data" was true almost everywhere,
+// even for the "general"/"general-theory" arms, whose questions are
+// deliberately NOT about the pinned position (fixtures.ts's own doc
+// comment on GeneralQuestion/GeneralTheoryQuestion: "a general answer is
+// not required to reference the position at all" -- ctx only exists so
+// assembleChatFactList has a game to build a context from). A theory
+// question like gt-01 ("what's another opening that would work well from
+// a setup like mine?") can't be answered by C1's pinned best line even
+// though that row happens to have one -- the shelf's fact isn't a fact
+// THIS question could cite. POSITION_AGNOSTIC_ARMS below is the single
+// place that distinction lives; both shelfCovered and classifyDifficulty
+// gate on it FIRST, before ever looking at hasBestLine/hasMate, so the two
+// functions can't drift onto different answers for the same row.
 export type DifficultyTag = "direct-fact" | "needs-line" | "tactical-or-mate";
+
+// The two arms whose questions are pinned to a fixture only for context-
+// assembly purposes (gameSans/turningPoints to optionally draw on), never
+// because the question is asking about that specific position's engine
+// line. See fixtures.ts's GeneralQuestion/GeneralTheoryQuestion doc
+// comments -- this is the same claim, read by the eval instrument rather
+// than just stated in a comment.
+const POSITION_AGNOSTIC_ARMS: ReadonlySet<Arm> = new Set<Arm>(["general", "general-theory"]);
 
 export interface ShelfSignal {
   // The pinned-ply db row carries a best_move or a non-empty pv -- "the
@@ -51,19 +81,28 @@ export interface ShelfSignal {
   // work out, so it classifies as direct-fact regardless of what the
   // position's own engine line says.
   hasPendingMove: boolean;
+  // Which arm this question belongs to (fixtures.ts's Arm type). Gates
+  // both functions below via POSITION_AGNOSTIC_ARMS -- see the module
+  // comment above for why this is the fix, not an add-on.
+  arm: Arm;
 }
 
-export function shelfCovered(signal: Pick<ShelfSignal, "hasBestLine" | "hasMate">): boolean {
+export function shelfCovered(signal: Pick<ShelfSignal, "hasBestLine" | "hasMate" | "arm">): boolean {
+  if (POSITION_AGNOSTIC_ARMS.has(signal.arm)) return false;
   return signal.hasBestLine || signal.hasMate;
 }
 
-// Order matters: a forced mate always wins (hardest bucket, even alongside
-// a pending move); a pending move next (the direct-fact case even when the
-// position separately has a best line); a bare best line last; anything
-// left over (no mate, no pending move, no best line -- e.g. an [open]
-// bucket "what did I do right?" commentary question) falls through to
-// direct-fact by default, since it asks for no concrete line at all.
+// Order matters: position-agnostic arms are decided first (direct-fact,
+// unconditionally -- a theory question never "needs a line" from a
+// position it isn't about); then a forced mate always wins (hardest
+// bucket, even alongside a pending move); a pending move next (the
+// direct-fact case even when the position separately has a best line); a
+// bare best line last; anything left over (no mate, no pending move, no
+// best line -- e.g. an [open] bucket "what did I do right?" commentary
+// question) falls through to direct-fact by default, since it asks for no
+// concrete line at all.
 export function classifyDifficulty(signal: ShelfSignal): DifficultyTag {
+  if (POSITION_AGNOSTIC_ARMS.has(signal.arm)) return "direct-fact";
   if (signal.hasMate) return "tactical-or-mate";
   if (signal.hasPendingMove) return "direct-fact";
   if (signal.hasBestLine) return "needs-line";
