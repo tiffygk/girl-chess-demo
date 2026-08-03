@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logHint, deleteGame } from "./api";
+import { logHint, deleteGame, modeTimer } from "./api";
 
 // Wave 0, item 1 (F0): hint telemetry was logging the OPPONENT's refutation
 // move under the field named `bestUci` for levels 1-3 -- any log analysis
@@ -127,5 +127,53 @@ describe("deleteGame (Wave 3.5, item 2): issues a real DELETE, no body", () => {
     expect(seenInit?.method).toBe("DELETE");
     expect(seenInit?.body).toBeUndefined();
     expect(res).toEqual({ ok: false, reason: "live" });
+  });
+});
+
+// Round 3 (session-gone recovery, owner ruling 2026-08-02): a stale tab's
+// mode heartbeat against a dead session used to keep firing every 30s
+// forever (each one swallowed by the existing `.catch(() => undefined)`),
+// producing 1,925+ server-side FK-500s in one night with zero client-side
+// signal. The server now answers a typed { ok:false, error:"session_gone" }
+// 404 (server/index.ts); modeTimer must stop its own interval the FIRST
+// time it sees that envelope and tell the caller exactly once, never retry.
+describe("modeTimer (session-gone recovery)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("stops after a session_gone response and fires onGone exactly once", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      async () => ({ json: async () => ({ ok: false, error: "session_gone" }) } as Response)
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onGone = vi.fn();
+    const stop = modeTimer(42, "game", onGone);
+
+    await vi.advanceTimersByTimeAsync(30_000); // first heartbeat -> session_gone
+    await vi.advanceTimersByTimeAsync(90_000); // three more intervals would have fired if not stopped
+
+    expect(onGone).toHaveBeenCalledTimes(1);
+    // No heartbeat spam: exactly one POST went out, then the timer cleared itself.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("keeps posting normally and never calls onGone while the session is alive", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => ({ json: async () => ({ ok: true }) } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onGone = vi.fn();
+    const stop = modeTimer(42, "game", onGone);
+
+    await vi.advanceTimersByTimeAsync(90_000); // three intervals
+
+    expect(onGone).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    stop();
   });
 });

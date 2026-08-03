@@ -291,11 +291,25 @@ export const attachEval = (gameId: number, ply: number, ev: Evaluation) =>
   db.prepare(
     "UPDATE moves SET eval_cp = ?, eval_mate = ?, best_move = ?, pv = ? WHERE game_id = ? AND ply = ?"
   ).run(ev.cp, ev.mate, ev.bestMove, ev.pv.join(" "), gameId, ply);
-export const addModeMinutes = (sessionId: number, mode: string, seconds: number) =>
+// Round 3 (session-gone recovery, owner ruling 2026-08-02): a session-scoped
+// write's cheap existence check, used to turn a dead-session heartbeat into
+// a typed 404 instead of an FK-500 (see addModeMinutes below and the
+// server/index.ts route that calls it).
+export const sessionExists = (sessionId: number): boolean =>
+  db.prepare("SELECT 1 FROM sessions WHERE id = ?").get(sessionId) !== undefined;
+// Round 3: no-ops cleanly against a session lost to a server restart / db
+// swap, returning false so the caller (the route) can turn it into a typed
+// session_gone response -- previously this INSERT hit the sessions FK and
+// threw, observed 1,925+ times in one night from a single stale browser
+// tab's heartbeat. Returns true on a real write, exactly as before.
+export const addModeMinutes = (sessionId: number, mode: string, seconds: number): boolean => {
+  if (!sessionExists(sessionId)) return false;
   db.prepare(
     `INSERT INTO mode_timers(session_id, mode, seconds) VALUES(?,?,?)
      ON CONFLICT(session_id, mode, day) DO UPDATE SET seconds = seconds + excluded.seconds`
   ).run(sessionId, mode, seconds);
+  return true;
+};
 export const getModeSeconds = (sessionId: number, mode: string) =>
   (db.prepare("SELECT seconds FROM mode_timers WHERE session_id = ? AND mode = ?").get(sessionId, mode) as
     | { seconds: number }

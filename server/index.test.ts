@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, vi } from "vitest";
 import request from "supertest";
 import { Chess } from "chess.js";
 import { app, ready, gm } from "./index";
@@ -228,6 +228,21 @@ describe("api", () => {
     await request(app).post(`/api/session/${sessionId}/mode`).send({ mode: "game", seconds: 45 }).expect(200);
 
     expect(getModeSeconds(sessionId, "game")).toBe(75);
+  });
+
+  // Round 3 (session-gone recovery, owner ruling 2026-08-02): "can we
+  // include in the round something that fixes that thing with the session
+  // ID? it's very confusing." A stale tab's mode heartbeat against a
+  // session id that no longer exists (server restart / db swap) must get a
+  // typed, recoverable signal -- never an unhandled FK-500.
+  it("POST /api/session/:id/mode on a dead session returns a typed session_gone 404, not a 500", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await request(app).post("/api/session/999999/mode").send({ mode: "game", seconds: 30 });
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ ok: false, error: "session_gone" });
+    // The repro this fixes: an unhandled FK error, not a clean typed response.
+    expect(errSpy.mock.calls.flat().join(" ")).not.toMatch(/FOREIGN KEY/i);
+    errSpy.mockRestore();
   });
 
   // C4 Part 2, inherited gap #2 (increment-1 review, verbatim): drive a game

@@ -33,6 +33,12 @@ export interface MoveResponse {
 
 export interface ModeResponse {
   ok: boolean;
+  // Round 3 (session-gone recovery, owner ruling 2026-08-02): present, and
+  // equal to "session_gone", exactly when the server's session row is gone
+  // (server/index.ts's typed 404). postJson never throws on a non-2xx
+  // status (it just parses the body), so this rides through as an ordinary
+  // field -- modeTimer below is the one consumer that acts on it.
+  error?: string;
 }
 
 export interface ResignResponse {
@@ -674,12 +680,31 @@ export function deleteGame(gameId: number): Promise<DeleteGameResponse> {
  * Posts elapsed seconds for `mode` every 30s while mounted.
  * Call inside a useEffect and return the cleanup:
  *   useEffect(() => modeTimer(sessionId, "game"), [sessionId]);
+ *
+ * Round 3 (session-gone recovery, owner ruling 2026-08-02): `onGone` is an
+ * additive optional 3rd param -- every pre-round-3 call site omits it and
+ * keeps today's behavior (a session_gone response was already silently
+ * swallowed by the `.catch`, just kept retrying forever; the only change
+ * for an omitted onGone is that the dead heartbeat now also stops itself).
+ * When the server reports the session is gone, the interval clears itself
+ * immediately and `onGone` fires exactly once -- never a retry loop, never
+ * repeat calls.
  */
-export function modeTimer(sessionId: number, mode: string): () => void {
-  const id = setInterval(() => {
-    reportMode(sessionId, mode, 30).catch(() => undefined);
+export function modeTimer(sessionId: number, mode: string, onGone?: () => void): () => void {
+  let stopped = false;
+  const id = setInterval(async () => {
+    if (stopped) return;
+    const res = await reportMode(sessionId, mode, 30).catch(() => undefined);
+    if (res?.error === "session_gone") {
+      stopped = true;
+      clearInterval(id);
+      onGone?.();
+    }
   }, 30_000);
-  return () => clearInterval(id);
+  return () => {
+    stopped = true;
+    clearInterval(id);
+  };
 }
 
 // Increment 3.91 (Task 2): mirrors server/game/manager.ts's TurningLine
