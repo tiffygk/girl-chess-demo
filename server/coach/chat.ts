@@ -889,15 +889,24 @@ export function asksForNumber(message: string): boolean {
   return NUMBER_ASK_RE.test(message);
 }
 
-// Round 3 Task 13: `opts.userAskedForNumber` scopes ONLY the two stated-
-// number checks below (a raw cp count, a signed eval number) -- the
-// notation ban and the jargon-word ban (engine/eval/centipawns/cp/ply named
-// as WORDS, with no number attached) stay banned unconditionally either
-// way. This is scoping an existing check, not adding a new truth source:
-// the raw evalCp/evalMate she's being told about is already in the fact
-// list (perPlyAnalysis, hintFindings) -- checkVoice previously refused to
-// let the model ever say it out loud, even when she asked outright.
-function checkVoice(text: string, opts: { userAskedForNumber?: boolean } = {}): string[] {
+// Round 3 Task 13 attempted to scope `opts.userAskedForNumber` to lift ONLY
+// the two stated-number checks below (a raw cp count, a signed eval number)
+// when she explicitly asked for the figure. Whole-branch review (2026-08-03,
+// Critical finding 1) reverted that lift: no TRUE cp/eval number is ever
+// routed into the model-facing projection to begin with (readForPly emits
+// WORDS only -- "you're much better" -- and chat.ts:433/1104/1285's own
+// comments are explicit that "factsForModel must never leak evalCp/evalMate
+// as numbers"). Disabling the number-ban on exactly the turn she asks for a
+// number, with no true number anywhere in her prompt to ground a reply in,
+// left the model free to fabricate one -- and turned off the one validator
+// that would have caught it. CONSERVATIVE FIX: the ban stays unconditional
+// regardless of `opts.userAskedForNumber` -- the coach must never state a
+// number it was never given. `opts.userAskedForNumber` is accepted (call
+// sites still pass it) but currently unused here; it becomes live again only
+// if a future change grounds the real evalCp into the on-ask prompt so a
+// TRUE number exists to validate against -- a behavior choice for the owner,
+// not made here.
+function checkVoice(text: string, _opts: { userAskedForNumber?: boolean } = {}): string[] {
   const violations: string[] = [];
 
   for (const raw of text.match(SAN_RE) ?? []) {
@@ -910,13 +919,11 @@ function checkVoice(text: string, opts: { userAskedForNumber?: boolean } = {}): 
     violations.push(`voice-word: ${m[0].toLowerCase()}`);
   }
 
-  if (!opts.userAskedForNumber) {
-    for (const m of text.matchAll(VOICE_CP_NUMBER_RE)) {
-      violations.push(`voice-number: ${m[0]}`);
-    }
-    for (const m of text.matchAll(VOICE_SIGNED_NUMBER_RE)) {
-      violations.push(`voice-number: ${m[0]}`);
-    }
+  for (const m of text.matchAll(VOICE_CP_NUMBER_RE)) {
+    violations.push(`voice-number: ${m[0]}`);
+  }
+  for (const m of text.matchAll(VOICE_SIGNED_NUMBER_RE)) {
+    violations.push(`voice-number: ${m[0]}`);
   }
 
   return violations;
