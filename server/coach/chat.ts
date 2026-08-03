@@ -1,4 +1,5 @@
 import { Chess } from "chess.js";
+import { toMoverCp } from "../annotator/classify";
 // Phase comes from src/review/gamePhases (lichess divider, latching
 // timeline) -- the SAME module the debrief renders from, imported, not
 // hand-mirrored. The old convention ("server never imports src, mirror
@@ -322,6 +323,14 @@ export interface ChatFactList {
     // never fabricate a phase or leak a placeholder string.
     phase: GamePhase | null;
     then?: string;
+    // Round 3 Task 12 (item 5/Q3, trust floor): the played-vs-best gap for
+    // THIS ply, in words, not a number -- distinct from `read`'s per-position
+    // bucket (readForPly, below), which describes the resulting position's
+    // overall state, not how much worse the played move was than the best
+    // one. Derived by assembleChatFactList from this array's own consecutive
+    // entries (see gapWordForPly); undefined when either side of the pair has
+    // no eval captured, same "no data, no claim" contract as `then`.
+    gap?: string;
   }[];
   // NOTE: no allowedSquares -- chat validation treats square names as free
   // geography (see validateChat below). Declared cut #2, not an oversight:
@@ -450,6 +459,51 @@ function readForPly(ply: number, evalCp: number | null, evalMate: number | null)
   return whiteCp <= -READ_MUCH_BETTER_CP ? "she's much better" : "she's a bit better";
 }
 
+// Round 3 Task 12 (item 5/Q3, trust floor): relative-gap language -- how
+// much worse the move actually played was than the best move available,
+// distinct from readForPly's per-position bucket above (which describes the
+// resulting position overall, not the size of the miss). Lets the coach
+// distinguish a real edge (trace-180, "clearly better, here's the tactic")
+// from engine noise or a bare style preference (trace-193, "no real gap,
+// style call"). The 35cp floor mirrors hint.ts's own HINT_TRADE_MARGIN_CP
+// ("genuinely comparable") rather than inventing a new number; the 150/300cp
+// steps mirror classify.ts's BETTER_CLAIM_MIN_CP (Task 11) and its own next
+// step up. hasMateOrMotif overrides straight to "decisively better" --
+// a forced mate gained or lost is decisive regardless of how small the
+// cp reading happens to look.
+export function gapWord(deltaCp: number, hasMateOrMotif: boolean): string {
+  if (hasMateOrMotif) return "decisively better";
+  const d = Math.abs(deltaCp);
+  if (d < 35) return "no real gap";
+  if (d < 150) return "slightly better";
+  if (d < 300) return "clearly better";
+  return "decisively better";
+}
+
+// Task 12 helper: derives one ply's gapWord honestly from the WHOLE-GAME
+// perPly array's own consecutive entries -- no new engine call, no new
+// stored column. `prior` is ply-1's own evalCp/evalMate, i.e. fenAfter(ply-1)
+// == fenBefore(ply), already signed for the mover of `ply` (same convention
+// manager.ts's own priorEval / toWhitePerspective above document); `current`
+// is ply's own evalCp/evalMate, i.e. fenAfter(ply), signed for the OPPONENT
+// (whoever moves next) -- toMoverCp+negation converts both to "how good was
+// this for the ply's own mover," exactly classify.ts's beforeEval/afterEval
+// convention. Returns undefined (never a guessed number) when either side of
+// the pair has no eval captured -- the array's very first entry has no prior
+// at all, and any ply whose eval never landed stays an honest gap.
+function gapWordForPly(
+  prior: { evalCp: number | null; evalMate: number | null },
+  current: { evalCp: number | null; evalMate: number | null }
+): string | undefined {
+  if (prior.evalCp === null && prior.evalMate === null) return undefined;
+  if (current.evalCp === null && current.evalMate === null) return undefined;
+  const bestEvalCp = toMoverCp({ cp: prior.evalCp, mate: prior.evalMate });
+  const actualEvalCp = -toMoverCp({ cp: current.evalCp, mate: current.evalMate });
+  const deltaCp = bestEvalCp - actualEvalCp;
+  const hasMate = prior.evalMate !== null || current.evalMate !== null;
+  return gapWord(deltaCp, hasMate);
+}
+
 // Pure: replays gameSans from the start position with chess.js so
 // currentFen/occupancy/legalSans are all DERIVED, never hand-computed --
 // castling rights, en passant, and promotion are exactly whatever the
@@ -511,9 +565,10 @@ export function assembleChatFactList(
   // reimplemented here).
   const phases = phasesForGame(ordered);
 
-  const perPlyAnalysis = perPly?.map((p) => ({
+  const perPlyAnalysis = perPly?.map((p, i) => ({
     ...p,
     phase: phases.phaseAt(p.ply),
+    gap: i > 0 ? gapWordForPly(perPly[i - 1], p) : undefined,
   }));
 
   const { fen: currentFen, toMove, occupancy, legalSans, contested } = derivePositionFacts(chess);
@@ -1134,8 +1189,8 @@ function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
       // (the union-review side-marker fix), and this additive field must not
       // disturb that pin.
       return deviated && p.then
-        ? { ply: p.ply, san: p.san, side, bestSan: p.bestSan, move, read, then: p.then }
-        : { ply: p.ply, san: p.san, side, bestSan: p.bestSan, move, read };
+        ? { ply: p.ply, san: p.san, side, bestSan: p.bestSan, move, read, ...(p.gap ? { gap: p.gap } : {}), then: p.then }
+        : { ply: p.ply, san: p.san, side, bestSan: p.bestSan, move, read, ...(p.gap ? { gap: p.gap } : {}) };
     }
     return {
       ply: p.ply,
@@ -1152,6 +1207,7 @@ function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
       ...(p.phase !== null ? { phase: p.phase } : {}),
       pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
       read,
+      ...(p.gap ? { gap: p.gap } : {}),
       ...(p.then ? { then: p.then } : {}),
     };
   });

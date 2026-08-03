@@ -6,7 +6,7 @@ import {
 } from "../store/db";
 import {
   assembleChatFactList, validateChat, chat, CHAT_HISTORY_WINDOW, CHAT_MAX_LEN,
-  correctiveSuffix,
+  correctiveSuffix, gapWord,
 } from "./chat";
 import type { ChatFactList } from "./chat";
 import { GameManager } from "../game/manager";
@@ -171,6 +171,103 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       const perPly = [{ ply: 55, san: "Nf7+", evalCp: null, evalMate: -3, bestSan: "Qh8#", pvSans: ["Qh8#"] }];
       const facts = assembleChatFactList(gameMoves, {}, [], perPly);
       expect(facts.allowedSans).toContain("Qh8#");
+    });
+  });
+
+  // Round 3 Task 12 (item 5/Q3, trust floor): relative-gap words -- distinct
+  // from readForPly's per-position bucket, gapWord answers "how much worse
+  // was the played move than the best one," in words a model may say without
+  // ever stating the underlying number.
+  describe("gapWord (Task 12)", () => {
+    it("gap words distinguish a style call from a real edge", () => {
+      expect(gapWord(30, false)).toBe("no real gap");
+      expect(gapWord(73, false)).toBe("slightly better");
+      expect(gapWord(210, false)).toBe("clearly better");
+      expect(gapWord(400, false)).toBe("decisively better");
+      expect(gapWord(20, true)).toBe("decisively better"); // mate/motif overrides
+    });
+
+    it("is symmetric on sign -- a negative deltaCp buckets the same as its magnitude", () => {
+      expect(gapWord(-73, false)).toBe("slightly better");
+      expect(gapWord(-400, false)).toBe("decisively better");
+    });
+  });
+
+  // Integration: assembleChatFactList threads gapWord onto each perPlyAnalysis
+  // entry, honestly derived from the array's own consecutive evalCp/evalMate
+  // pairs (fenAfter(ply-1) == fenBefore(ply)) -- no new engine call, no new
+  // stored column.
+  describe("assembleChatFactList — perPlyAnalysis carries gap (Task 12)", () => {
+    it("the first ply has no prior eval to compare against, so gap is undefined", () => {
+      const gameMoves = [{ ply: 1, san: "e4" }];
+      const perPly = [{ ply: 1, san: "e4", evalCp: 20, evalMate: null, bestSan: null, pvSans: [] }];
+      const facts = assembleChatFactList(gameMoves, {}, [], perPly);
+      expect(facts.perPlyAnalysis?.[0].gap).toBeUndefined();
+    });
+
+    it("a small played-vs-best gap reads as 'no real gap'", () => {
+      const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
+      // prior (ply 1) mover-perspective before-eval: +50. current (ply 2)
+      // opponent-perspective after-eval: -30 -> mover(ply2)-perspective 30.
+      // deltaCp = 50 - 30 = 20 < 35 -> "no real gap".
+      const perPly = [
+        { ply: 1, san: "e4", evalCp: 50, evalMate: null, bestSan: null, pvSans: [] },
+        { ply: 2, san: "e5", evalCp: -30, evalMate: null, bestSan: "c5", pvSans: ["c5"] },
+      ];
+      const facts = assembleChatFactList(gameMoves, {}, [], perPly);
+      expect(facts.perPlyAnalysis?.[1].gap).toBe("no real gap");
+    });
+
+    it("a large played-vs-best gap reads as 'decisively better'", () => {
+      const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
+      // deltaCp = 500 - (-400) = 900 -> decisively better.
+      const perPly = [
+        { ply: 1, san: "e4", evalCp: 500, evalMate: null, bestSan: null, pvSans: [] },
+        { ply: 2, san: "e5", evalCp: 400, evalMate: null, bestSan: "c5", pvSans: ["c5"] },
+      ];
+      const facts = assembleChatFactList(gameMoves, {}, [], perPly);
+      expect(facts.perPlyAnalysis?.[1].gap).toBe("decisively better");
+    });
+
+    it("a mate appearing on either side of the pair overrides straight to 'decisively better'", () => {
+      const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
+      const perPly = [
+        { ply: 1, san: "e4", evalCp: null, evalMate: 4, bestSan: null, pvSans: [] },
+        { ply: 2, san: "e5", evalCp: 10, evalMate: null, bestSan: "c5", pvSans: ["c5"] },
+      ];
+      const facts = assembleChatFactList(gameMoves, {}, [], perPly);
+      expect(facts.perPlyAnalysis?.[1].gap).toBe("decisively better");
+    });
+
+    it("a ply with no eval captured on either side of the pair leaves gap undefined, never a guessed number", () => {
+      const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
+      const perPly = [
+        { ply: 1, san: "e4", evalCp: null, evalMate: null, bestSan: null, pvSans: [] },
+        { ply: 2, san: "e5", evalCp: -30, evalMate: null, bestSan: "c5", pvSans: ["c5"] },
+      ];
+      const facts = assembleChatFactList(gameMoves, {}, [], perPly);
+      expect(facts.perPlyAnalysis?.[1].gap).toBeUndefined();
+    });
+
+    it("gap reaches the serialized fact JSON the model prompt is built from", async () => {
+      const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
+      const perPly = [
+        { ply: 1, san: "e4", evalCp: 500, evalMate: null, bestSan: null, pvSans: [] },
+        { ply: 2, san: "e5", evalCp: 400, evalMate: null, bestSan: "c5", pvSans: ["c5"] },
+      ];
+      const facts = assembleChatFactList(gameMoves, { mode: "review" }, [], perPly);
+
+      let capturedPrompt = "";
+      const backend = fakeBackend(async (prompt) => {
+        capturedPrompt = prompt;
+        return "that gap was decisively better -- e5 gave back the whole edge.";
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      await chat("how did move 1 go?", [], facts, backend, { gameId, ply: 2, kind: "chat" });
+
+      expect(capturedPrompt).toContain('"gap":"decisively better"');
     });
   });
 
