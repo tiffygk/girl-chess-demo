@@ -173,6 +173,19 @@ export interface ChatContext {
     // turningPointFocusContext).
     playedNextSan?: string;
     followedBest?: boolean;
+    // Opponent-move-analysis plan (2026-08-03), Wave C: hand-mirrors
+    // src/game/api.ts's ChatContext.turningPointFocus verbatim -- see that
+    // file's own comment. Populated ONLY for a mallow-ply focus (chatFocus
+    // .ts's opponentMoveFocusContext), straight off the matching
+    // HighlightLine's own already-computed fields (Wave A's
+    // server/annotator/highlightLines.ts -- one place, never re-derived
+    // here). Lets checkOpponentQualityClaims below answer "did mallow
+    // actually play the engine's own best move" from a fact already in
+    // hand, never by re-deriving it from the model's own prose. Absent for
+    // every her-ply focus, so JSON.stringify drops the keys there and that
+    // prompt path stays byte-identical (chat.stablePrefix discipline).
+    matchedBest?: boolean | null;
+    quality?: "best" | "solid" | "fine" | "slip" | "unknown";
   };
   // Task 1 (R2, pending-move context threading): the move she's picked up
   // and placed on the board but has NOT confirmed -- src/game/GamePage.tsx's
@@ -942,6 +955,63 @@ function checkVoice(text: string, _opts: { userAskedForNumber?: boolean } = {}):
   return violations;
 }
 
+// ---- opponent-move quality-claim validation (opponent-move-analysis plan) --
+// Wave C (2026-08-03). Scoped NARROWLY to an ACTIVE opponent-move focus --
+// never ordinary chat (the check-widening lesson, CLAUDE.md's invariant
+// rule: audit what's newly in scope before shipping a widened checker,
+// don't let the gate find a false positive). Fires only when
+// facts.focusPosition is set AND the focused ply is mallow's
+// (sideForPly(focus.ply) === "mallow" -- the same canonical function
+// focusedMomentSection above uses, never a second parity computation), and
+// only when facts.context.turningPointFocus itself carries matchedBest/
+// quality (set exclusively by chatFocus.ts's opponentMoveFocusContext for a
+// mallow-ply focus -- see ChatContext.turningPointFocus's own comment).
+//
+// The claim: the reply calls the focused move a mistake/blunder/bad while
+// the facts say matchedBest===true or quality is "best"/"solid" -- the
+// narrow, high-confidence honesty zone (§8 of the plan): a move that either
+// matched the engine's own top choice, or missed it by less than the
+// gapWord "no real gap" floor, can never legitimately read as a slip. A
+// "fine"/"slip" quality is NOT flagged here even alongside "mistake" --
+// this checker is not a second opinion on a genuine borderline call, only a
+// guard against contradicting a clean fact already in hand.
+//
+// Deliberately NOT folded into validateChat's violations array: every kind
+// in that array drives ONE regen (a second, ~20s model call, correctiveSuffix
+// appended to the PROMPT). This violation is answerable from a fact already
+// in hand (facts.context.turningPointFocus's own matchedBest/quality, both
+// server-computed once by Wave A's highlightLines.ts, never re-derived
+// here) -- correcting it costs a deterministic string append (0ms), not a
+// second model call. chat() below applies this AFTER the model/regen loop,
+// directly to the returned text, never inside the regen path.
+//
+// Producer grep (§4/§8's check-widening requirement, run before shipping):
+// the only producer of mistake/blunder/"bad" vocabulary that can reach THIS
+// route is the MODEL'S OWN generated reply text.
+// src/review/highlightedMoves.ts's SEVERITY_LINE lives on the debrief-only
+// path (verified 2026-07-29, CLAUDE.md: "the debrief/analysis path... contains
+// no LLM call at all") and never reaches chat; personas/coach.md's own
+// "never scold, never say mistake or wrong" line is an INSTRUCTION TO the
+// model, not a producer of the words into a reply. So a false positive here
+// can only ever come from the model's own prose, which is exactly what this
+// checker exists to catch.
+const OPPONENT_MISTAKE_WORD_RE = /\b(mistake|blunder(?:ed)?|bad move|a bad|played badly|screwed up|messed up)\b/i;
+
+export function checkOpponentQualityClaims(text: string, facts: ChatFactList): string | undefined {
+  const focus = facts.focusPosition;
+  if (!focus) return undefined;
+  if (sideForPly(focus.ply) !== "mallow") return undefined;
+  const tp = facts.context?.turningPointFocus;
+  if (!tp) return undefined;
+  const clean = tp.matchedBest === true || tp.quality === "best" || tp.quality === "solid";
+  if (!clean) return undefined;
+  if (!OPPONENT_MISTAKE_WORD_RE.test(text)) return undefined;
+
+  return tp.matchedBest === true || tp.quality === "best"
+    ? "\n\nactually, that move matched the computer's own top choice here -- not a mistake."
+    : "\n\nactually, that move was barely off the computer's own top choice here -- not a mistake.";
+}
+
 export function validateChat(
   text: string,
   facts: ChatFactList,
@@ -1422,11 +1492,34 @@ function formatHistory(history: { role: "user" | "coach"; text: string }[], back
 // told the model to prefer it over the running conversation. Returns a block
 // with a leading blank line so it joins as its own paragraph after history and
 // before the player line; undefined (no change) when nothing is focused.
+// Opponent-move-analysis plan (2026-08-03), Wave C: the focus section is
+// side-aware -- a MALLOW-ply focus (chatFocus.ts's opponentMoveFocusContext
+// on the client, threaded through ctx.turningPointFocus) gets a distinct
+// framing that names this as an opponent-move-analysis question, grounded
+// ONLY in the engine facts below it, and tells the model to say so plainly
+// when mallow matched the engine's own best move rather than inventing a
+// verdict the facts don't support. Side comes from sideForPly(focus.ply) --
+// the SAME canonical per-ply function perPlyForModel already uses to mark
+// every projected ply "you"/"mallow" (chat.sideLabel.test.ts) -- never a
+// second, independent parity computation written fresh here. A her-ply
+// focus takes the exact pre-existing branch, byte-identical to before this
+// wave (chat.stablePrefix/chat.focusPrompt.test.ts's own pin) -- prompt
+// caching and the latency baselines (CLAUDE.md) depend on that text never
+// shifting for an existing call shape.
 function focusedMomentSection(facts: ChatFactList): string | undefined {
   const focus = facts.focusPosition;
   const tp = facts.context?.turningPointFocus;
   if (!focus || !tp) return undefined;
   const moveNumber = Math.ceil(focus.ply / 2);
+  if (sideForPly(focus.ply) === "mallow") {
+    return (
+      `\nfocused moment: the player is asking about MALLOW'S move ${tp.san} at move ${moveNumber} (${focus.fen}) -- ` +
+      `explain what the computer was doing, grounded ONLY in the engine facts below; if mallow played the engine's ` +
+      `own best move, say so plainly; if the facts don't show a plan, say you can't tell. ` +
+      `this focused moment overrides whatever the conversation so far was about -- answer about THIS moment. ` +
+      `the conversation history above is background only.`
+    );
+  }
   return (
     `\nfocused moment: the player is asking about ${tp.san} at move ${moveNumber} (${focus.fen}). ` +
     `this focused moment overrides whatever the conversation so far was about -- answer about THIS moment. ` +
@@ -1959,7 +2052,19 @@ export async function chat(
           : persona.chatTemplates.redirect ??
             "keep it on the board. ask me about a move from this game and i'll break it down."
   );
-  const text = modelText ?? failureTemplate;
+  // Opponent-move-analysis plan (2026-08-03), Wave C: applied HERE, after the
+  // model/regen loop above -- never inside it. checkOpponentQualityClaims's
+  // own header explains why: the violation is answerable from a fact already
+  // in hand (facts.context.turningPointFocus's matchedBest/quality), so
+  // fixing it costs a deterministic string append (0ms), not a second,
+  // ~20s model call. Only ever applied to a genuine model reply (source
+  // "model") -- a template/apology never makes a claim about the move to
+  // begin with, so there is nothing for it to correct.
+  let text = modelText ?? failureTemplate;
+  if (modelText !== null) {
+    const correction = checkOpponentQualityClaims(text, facts);
+    if (correction) text = text + correction;
+  }
   const latencyMs = Date.now() - start;
 
   // kind is always literally "chat" for this surface -- not caller

@@ -5,7 +5,7 @@
 // coverage, same reasoning as hintFlow.ts/moveFlow.ts being their own
 // modules rather than inlined React state logic.
 import { Chess } from "chess.js";
-import type { ChatContext, SummaryMove, TurningLine, TurningPoint } from "./api";
+import type { ChatContext, HighlightLine, MoveClassification, SummaryMove, TurningLine, TurningPoint } from "./api";
 import type { HintBranch } from "./hintFlow";
 // Task 3 (Wave D, coach-truth-speed round, deferred from A1): the single
 // source of truth for "did she actually play the recommended move" --
@@ -131,6 +131,105 @@ export function turningPointFocusContext(
     playedNextSan: fb?.playedSan,
     followedBest: fb?.followed,
   };
+}
+
+/**
+ * Opponent-move-analysis plan (2026-08-03), Wave C: the honest minimal focus
+ * for a ply with neither a TurningPoint nor a MoveClassification -- a mallow
+ * ply (which never carries a classification at all, classifications.ts's own
+ * header) or the ~97% of her own moves that carry no classification either.
+ *
+ * Deliberately NOT built on turningPointFocusContext: that function calls
+ * followedBest(line, gameSans), whose seedPly = line.ply - (line.ply % 2) is
+ * the getTurningLines convention -- for an EVEN (mallow) ply it means "her
+ * reply's alternatives", the position AFTER mallow moved. A HighlightLine
+ * seeds at p-1 UNIVERSALLY (server/annotator/highlightLines.ts's header) --
+ * for a mallow ply that is mallow's OWN alternatives, a different position
+ * and a different move slot. Feeding a HighlightLine into followedBest would
+ * silently compare her actual next move's SAN against mallow's own
+ * alternative, an apples-to-oranges comparison that is wrong by construction,
+ * not just unlucky -- so this builder never calls followedBest at all;
+ * playedNextSan/followedBest simply never appear on the returned object,
+ * unknown and never asserted, for either side.
+ *
+ * `side` picks the label only ("mallow's move" vs "a move you highlighted")
+ * and gates matchedBest/quality -- those two fields are threaded from the
+ * HighlightLine's own already-computed facts (Wave A, one module, never
+ * re-derived here) ONLY for a mallow-ply focus, since they exist to answer a
+ * question about the COMPUTER's move; a her-ply fallback focus has no such
+ * question to answer, so they stay omitted there.
+ */
+export function opponentMoveFocusContext(
+  ply: number,
+  san: string,
+  side: "her" | "mallow",
+  line: Pick<HighlightLine, "bestSan" | "pvSans" | "matchedBest" | "quality"> | undefined
+): NonNullable<ChatContext["turningPointFocus"]> {
+  const base = {
+    ply,
+    san,
+    label: side === "mallow" ? "mallow's move" : "a move you highlighted",
+    bestSan: line?.bestSan,
+    pvSans: line?.pvSans,
+  };
+  if (side !== "mallow") return base;
+  return { ...base, matchedBest: line?.matchedBest, quality: line?.quality };
+}
+
+/**
+ * Opponent-move-analysis plan, Wave C: the pure decision GamePage's
+ * handleAskAboutPly delegates to for everything AFTER its own TurningPoint
+ * check (unchanged, still handled by handleAskAboutTurningPoint) -- picking
+ * which of the two remaining paths applies and building that path's focus,
+ * so the whole branch is unit-testable without a .tsx harness:
+ *
+ *   1. `side === "mallow"` -- the new opponent-move-analysis path, built from
+ *      the matching HighlightLine via opponentMoveFocusContext above. This is
+ *      the no-op this wave fixes: mallow plies never carry a classification,
+ *      so the old `cls && san` gate always fell through silently for them.
+ *   2. A her ply WITH a MoveClassification -- the existing, pre-this-wave
+ *      path, unchanged: turningPointFocusContext + the matching TurningLine +
+ *      gameSans (so followedBest keeps working exactly as it did before).
+ *   3. A her ply with NO classification (the ~97% case) -- the SIBLING no-op
+ *      this wave also fixes, same honest-minimal-focus treatment as (1),
+ *      re-labeled, sourced from the same HighlightLine fetch (its bestSan/
+ *      pvSans agree with turningLines' for an odd/her ply -- both seed at
+ *      p-1, see highlightLines.ts's header).
+ *
+ * Returns undefined (never a guess) when the ply has no resolvable san/side
+ * at all -- should not happen (only ever called for an actually-highlighted
+ * ply), but a caller with no `side` for whatever reason gets a clean no-op
+ * rather than a focus for a side it never confirmed.
+ */
+export function resolvePlyFocus(
+  ply: number,
+  gameSans: SummaryMove[] | undefined,
+  classifications: Pick<MoveClassification, "ply" | "classification">[],
+  turningLines: TurningLine[],
+  highlightLines: HighlightLine[]
+): { side: "her" | "mallow"; focus: NonNullable<ChatContext["turningPointFocus"]>; line: TurningLine | HighlightLine | undefined } | undefined {
+  const move = gameSans?.[ply - 1];
+  const san = move?.san;
+  const side = move?.side;
+  if (!san || !side) return undefined;
+
+  if (side === "mallow") {
+    const line = highlightLines.find((l) => l.ply === ply);
+    return { side, focus: opponentMoveFocusContext(ply, san, "mallow", line), line };
+  }
+
+  const cls = classifications.find((c) => c.ply === ply);
+  if (cls) {
+    const line = turningLines.find((l) => l.ply === ply);
+    return {
+      side,
+      focus: turningPointFocusContext({ ply, san, label: cls.classification }, line, gameSans),
+      line,
+    };
+  }
+
+  const line = highlightLines.find((l) => l.ply === ply);
+  return { side, focus: opponentMoveFocusContext(ply, san, "her", line), line };
 }
 
 /**
