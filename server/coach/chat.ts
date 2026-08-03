@@ -785,7 +785,11 @@ function checkSideAttributionClaims(text: string, facts: ChatFactList): string[]
 // close for chess-fact claims. Modeled on those checkers: precision over
 // recall, no engine call, three narrow claim shapes routed into the same
 // violations array validateChat already returns.
-const VOICE_BANNED_WORDS_RE = /\b(engine|evals?|evaluations?|centipawns?|cp)\b/gi;
+// Round 3 (trace 126, old L2): "ply" added -- engine-internal half-move
+// counting language, the same class of jargon as engine/eval/cp. She reads
+// a game in move-number pairs (the `move` field perPlyForModel/focusForModel
+// now carry alongside ply), never in raw plies.
+const VOICE_BANNED_WORDS_RE = /\b(engine|evals?|evaluations?|centipawns?|cp|ply)\b/gi;
 // A signed integer/decimal ("+50", "-3.4") -- a stated eval number for the
 // position. Deliberately requires the leading sign: an unsigned integer
 // ("mate in 3", "move 12") is a ply/mate count, not a position eval, and
@@ -977,6 +981,7 @@ function focusForModel(facts: ChatFactList) {
   const thenKeys = new Set(focus.occupancy.map(key));
   return {
     ply: focus.ply,
+    move: moveNumberOf(focus.ply),
     fen: focus.fen,
     toMove: focus.toMove,
     contested: focus.contested,
@@ -1055,6 +1060,16 @@ function sideForPly(ply: number): "you" | "mallow" {
   return ply % 2 === 1 ? "you" : "mallow";
 }
 
+// Round 3 (trace 126, old L2): the move number she'd actually use to talk
+// about this ply -- ply 7 and ply 8 are both "move 4" (white's half then
+// black's), matching how a player reads a game in numbered move pairs, not
+// raw engine-internal half-move plies. Additive alongside ply everywhere it
+// appears in the model-facing projection (ply itself stays -- chat.sideLabel
+// .test.ts pins "ply" and "side" appearing together in the same entry).
+function moveNumberOf(ply: number): number {
+  return Math.ceil(ply / 2);
+}
+
 function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
   const perPlyAnalysis = facts.perPlyAnalysis;
   if (!perPlyAnalysis) return undefined;
@@ -1091,21 +1106,27 @@ function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
   return perPlyAnalysis.map((p) => {
     const read = readForPly(p.ply, p.evalCp, p.evalMate);
     const side = sideForPly(p.ply);
+    const move = moveNumberOf(p.ply);
     if (!fullDetailPlies.has(p.ply)) {
       // Collapsed plies: then only where she deviated from best -- the
       // "what did i miss" set (62/91 plies on real game 150; +363 tokens
       // measured for the whole rule vs +508 for then-everywhere). A ply
       // where she played the best move has nothing missed to explain.
       const deviated = p.bestSan !== null && p.bestSan !== p.san;
+      // move sits AFTER bestSan, never between ply/san/side/bestSan -- those
+      // four are byte-pinned adjacent in manager.test.ts/chat.sideLabel.test.ts
+      // (the union-review side-marker fix), and this additive field must not
+      // disturb that pin.
       return deviated && p.then
-        ? { ply: p.ply, san: p.san, side, bestSan: p.bestSan, read, then: p.then }
-        : { ply: p.ply, san: p.san, side, bestSan: p.bestSan, read };
+        ? { ply: p.ply, san: p.san, side, bestSan: p.bestSan, move, read, then: p.then }
+        : { ply: p.ply, san: p.san, side, bestSan: p.bestSan, move, read };
     }
     return {
       ply: p.ply,
       san: p.san,
       side,
       bestSan: p.bestSan,
+      move,
       // Integration-round fix (2026-07-30): p.phase is null when
       // phasesForGame had no board to prove it from (see ChatFactList's own
       // comment on this field). Omit the key entirely rather than send

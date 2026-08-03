@@ -153,7 +153,9 @@ side: 'side' is 'you' on your own move, 'mallow' on hers, so check it
 before you say who played that ply's move -- never assume by counting.
 'opening' means the early plies, so pull the actual moves and our chess
 brain's read from those plies rather than describing openings in the
-abstract.
+abstract. name a move by its 'move' number, the way she reads a game
+('move 4'), never by its raw ply count -- 'ply' is our internal counting
+word, never hers.
 
 some plies in the per-ply analysis carry a 'then' fact: what our chess
 brain's line from just before that move actually leads to, already proven

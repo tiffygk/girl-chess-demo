@@ -878,6 +878,23 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice"))).toBe(true);
     });
 
+    // Round 3 (trace 126, old L2): "ply" is engine-internal counting
+    // language ("ply 7" for what she reads as "move 4") -- the same class
+    // of jargon engine/eval/cp already ban, matching how she actually reads
+    // a game (in move-number pairs, not raw half-move plies).
+    it("flags the standalone word 'ply'", () => {
+      const facts = voiceFacts();
+      const result = validateChat("that happened back at ply 7 for you.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-word"))).toBe(true);
+    });
+
+    it("does not flag 'apply' or 'multiply' -- 'ply' is banned as a whole word only", () => {
+      const facts = voiceFacts();
+      const result = validateChat("apply pressure here, then multiply the threats.", facts);
+      expect(result.ok).toBe(true);
+    });
+
     it("flags a signed positive number for the position", () => {
       const facts = voiceFacts();
       const result = validateChat("you're at +50 here.", facts);
