@@ -498,6 +498,35 @@ describe("GameManager", () => {
     expect(typeof live.lastHint.at).toBe("number");
   }, 40000);
 
+  // Round 3 (B1, Task 6): a "why was this recommended" / lookahead question
+  // asked BEFORE she ever opens the hint ladder previously had zero engine
+  // facts for the position at all (only computeHint -- player-initiated --
+  // ever populated lastHint). chat() must now populate a fast, unverified
+  // engine view of the CURRENT live position on demand so the shelf isn't
+  // empty for the coach's own most common "why" question (trace-185).
+  it("chat gets an engine view of the current position even with no prior hint (trace-185)", async () => {
+    const { gameId } = await gm.newGame(sessionId, 1100);
+    // No computeHint call -- she just asks "why was this recommended".
+    let capturedPrompt = "";
+    gm.setCoachBackendForTesting({
+      name: "fake-position-view",
+      async available() {
+        return true;
+      },
+      async generate(prompt: string) {
+        capturedPrompt = prompt;
+        return "that keeps your development on track.";
+      },
+    });
+    const result = await gm.chat(gameId, { message: "why was that recommended?", context: { mode: "live" } });
+    expect(result.ok).toBe(true);
+    expect(capturedPrompt).toContain('"hintFindings"');
+    expect(capturedPrompt).toMatch(/hint engine.*verified line for this position/i);
+    const live = (gm as any).games.get(gameId);
+    expect(live.lastHint).toBeDefined();
+    expect(live.lastHint.facts.pv.length).toBeGreaterThan(0);
+  }, 40000);
+
   // Increment 3a Wave 2: narrate(). Uses setCoachBackendForTesting to inject
   // a fake — never probes or invokes the real claude CLI / ollama (brief:
   // "do NOT invoke the real claude CLI in tests"). This also exercises the

@@ -201,3 +201,38 @@ export async function computeHint(fen: string, evaluator: Evaluator): Promise<Hi
     evalMate: chosen.mate,
   };
 }
+
+// Round 3 (B1, Task 6): a fast, UNVERIFIED engine view of any position --
+// distinct from computeHint's player-initiated, verified-hint contract
+// above. Exists so a live chat's "why was this recommended" / lookahead
+// question about the CURRENT position (asked before she ever opens the
+// deep hint ladder) has engine facts to ground on -- previously the shelf
+// stayed empty until she explicitly requested a hint. Bounded to
+// CHAT_POSITION_MOVETIME_MS (well under HINT_MOVETIME_MS) so opening chat
+// stays responsive: a single best line, no multipv candidate selection, no
+// verification retry. escalated and trade are always false here (both are
+// hint-ladder-specific framing that this fast path never computes) --
+// callers must not present this as a verified hint the way computeHint's
+// result is.
+export const CHAT_POSITION_MOVETIME_MS = 500;
+
+export async function computePositionView(
+  fen: string,
+  evaluator: Evaluator,
+  movetimeMs: number = CHAT_POSITION_MOVETIME_MS
+): Promise<HintFacts | null> {
+  const ev = await evaluator.evaluate(fen, movetimeMs);
+  const facts = deriveFacts(fen, ev.bestMove);
+  if (!facts) return null;
+  const recommendation = deriveRecommendationFacts(fen, ev.bestMove);
+  return {
+    ...facts,
+    bestFromSquare: facts.bestUci.slice(0, 2),
+    escalated: false,
+    recommendation,
+    pv: ev.pv ?? [],
+    trade: false,
+    evalCp: ev.cp,
+    evalMate: ev.mate,
+  };
+}
