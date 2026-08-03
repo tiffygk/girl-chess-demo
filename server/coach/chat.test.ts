@@ -1035,38 +1035,51 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
-  // Round 3 Task 13 (item 5/E, trust floor): the number ban above is scoped,
-  // not lifted -- a stated cp/signed number is allowed ONLY on the turn she
-  // explicitly asked for it. The jargon-word ban (engine/eval/centipawns/cp/
-  // ply named as bare words) and the raw-notation ban stay unconditional
-  // either way -- asking for a number never unlocks jargon or notation.
-  describe("validateChat / validateChatGeneral — numbers on explicit ask (Task 13)", () => {
+  // Whole-branch review (2026-08-03, Critical finding 1): W2 originally
+  // lifted the output number-ban whenever `userAskedForNumber` was true, on
+  // the theory that "she asked for it, so let it through" -- but no true cp
+  // value is EVER routed into the model's prompt (readForPly emits words
+  // only; see that function's own header comment and chat.ts:433/1104/1285's
+  // "never leak evalCp/evalMate as numbers" invariant). With the ban
+  // disabled on exactly the turn she asks for a number, and no true number
+  // in the fact list to ground a reply in, the model has no honest number to
+  // give and the validator that would have caught a fabricated one is
+  // exactly the one that got turned off. CONSERVATIVE FIX: keep the ban in
+  // effect even when she asked -- the coach must never state a number it
+  // was never given. `userAskedForNumber` is now unused by checkVoice/
+  // validateChat/validateChatGeneral (kept as an accepted, ignored opt for
+  // call-site compatibility) until a future change actually grounds the
+  // real evalCp into the on-ask prompt (see coach.md's "own opinion, not the
+  // number" guidance below for the honest decline in the meantime).
+  describe("validateChat / validateChatGeneral — a number is never allowed, even on explicit ask (Task 13 / review fix)", () => {
     function voiceFacts(): ChatFactList {
       return assembleChatFactList([{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }], { mode: "live" });
     }
 
-    it("stating a signed number unprompted is still banned (default, no opts)", () => {
+    it("stating a signed number unprompted is banned (default, no opts)", () => {
       const facts = voiceFacts();
       const result = validateChat("you're about +2.1 there.", facts);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-number"))).toBe(true);
     });
 
-    it("stating a signed number is allowed when the opts flag says she asked for it", () => {
+    it("stating a signed number STAYS banned even when the opts flag says she asked for it -- no true number exists to ground it", () => {
       const facts = voiceFacts();
       const result = validateChat("you're about +2.1 there.", facts, { userAskedForNumber: true });
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-number"))).toBe(true);
     });
 
     // Unspaced ("50cp"), same as the existing "flags an unspaced cp number"
     // pin above -- the bare word-jargon ban's \b can't reach inside "50cp"
-    // (no word boundary between a digit and a letter), so this text trips
-    // ONLY the number-cp check the opts flag scopes, unlike a spaced "50 cp"
-    // which would also independently trip the always-on bare-word ban.
-    it("stating an unspaced cp count is allowed when she asked for it", () => {
+    // (no word boundary between a digit and a letter), so this text would
+    // ONLY trip the number-cp check if that check were scoped off -- it
+    // must not be, so this stays flagged too.
+    it("an unspaced cp count STAYS banned even when she asked for it", () => {
       const facts = voiceFacts();
       const result = validateChat("you're up 50cp there.", facts, { userAskedForNumber: true });
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-number"))).toBe(true);
     });
 
     it("the jargon-word ban stays on even when she asked for the number -- 'centipawns' as a bare word is still flagged", () => {
@@ -1083,10 +1096,10 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-notation"))).toBe(true);
     });
 
-    it("validateChatGeneral honors the same opt", () => {
+    it("validateChatGeneral never lets a number through either, opt or no opt", () => {
       const facts = voiceFacts();
       expect(validateChatGeneral("you're about +2.1 there.", facts).ok).toBe(false);
-      expect(validateChatGeneral("you're about +2.1 there.", facts, { userAskedForNumber: true }).ok).toBe(true);
+      expect(validateChatGeneral("you're about +2.1 there.", facts, { userAskedForNumber: true }).ok).toBe(false);
     });
   });
 
