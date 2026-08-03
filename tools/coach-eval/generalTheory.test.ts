@@ -22,7 +22,14 @@
 // without asserting something false about today's router.
 import { describe, it, expect } from "vitest";
 import { classifyIntent } from "../../server/coach/intent";
-import { FIXTURES, GENERAL_THEORY_QUESTIONS, GENERAL_THEORY_QUESTION_COUNT, TOTAL_QUESTION_COUNT, type FixtureId } from "./fixtures";
+import {
+  FIXTURES,
+  GENERAL_THEORY_QUESTIONS,
+  GENERAL_THEORY_QUESTION_COUNT,
+  NUMBER_QUESTION_COUNT,
+  TOTAL_QUESTION_COUNT,
+  type FixtureId,
+} from "./fixtures";
 
 // Owner-approved verbatim text (brief's own numbered list, ids assigned in
 // list order) -- the ground truth this test checks fixtures.ts against.
@@ -47,8 +54,11 @@ describe("general-theory arm loads exactly the 10 owner-approved fixtures", () =
   it("has exactly 10 rows, and GENERAL_THEORY_QUESTION_COUNT/TOTAL_QUESTION_COUNT agree", () => {
     expect(GENERAL_THEORY_QUESTIONS.length).toBe(10);
     expect(GENERAL_THEORY_QUESTION_COUNT).toBe(10);
-    // 96 (frozen board-live/general/board-review) + 23 (RCA fork/mate/long) + 10 (this arm)
-    expect(TOTAL_QUESTION_COUNT).toBe(96 + 23 + 10);
+    // 96 (frozen board-live/general/board-review) + 23 (RCA fork/mate/long)
+    // + 10 (this arm) + the numbers arm's own count (added 2026-08-03,
+    // additive on top -- not this test's concern, but the sum must stay
+    // honest as new arms land).
+    expect(TOTAL_QUESTION_COUNT).toBe(96 + 23 + 10 + NUMBER_QUESTION_COUNT);
   });
 
   it("every expected id is present exactly once, with VERBATIM question text and the right ctx", () => {

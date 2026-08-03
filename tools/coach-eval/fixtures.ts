@@ -39,7 +39,15 @@
 // subset for a 3-arm (GC_COACH_THINKING default/low/disabled) single-model
 // eval, and folding it into "general" would silently change that arm's
 // long-frozen 15-question denominator.
-export type Arm = "board-live" | "general" | "board-review" | "fork" | "mate" | "long" | "general-theory";
+// coach-eval instrument improvements (2026-08-03): "numbers" is an eleventh,
+// isolated arm -- 3 questions that explicitly ASK for a number ("how many
+// centipawns am i up?", "what's the eval in numbers?", ...), pinned to
+// board-live fixtures with a real, known persisted eval_cp (see
+// NUMBER_EVAL_FACTS below). The numbers-on-ask path (does the coach actually
+// give a number when directly asked for one, and is that number the
+// engine's own persisted eval) had zero fixture coverage before this --
+// see NUMBER_QUESTIONS' own comment for detail.
+export type Arm = "board-live" | "general" | "board-review" | "fork" | "mate" | "long" | "general-theory" | "numbers";
 
 export type LiveFixtureId = "C1" | "C2" | "C3" | "C4" | "C5";
 // Eval-instrument-repair round (2026-07-28): the board-review arm's own
@@ -1050,6 +1058,59 @@ export const LONG_QUESTIONS: LongQuestion[] = LONG_FIXTURE_ORDER.map((ctx, i) =>
   q: "what should i play here?",
 }));
 
+// ---- arm: numbers (coach-eval instrument improvements, 2026-08-03) --------
+//
+// The harness had zero fixtures where the question EXPLICITLY asks for a
+// number -- every other arm asks for a move, a plan, or an explanation, so
+// the "does the coach actually answer with a number when directly asked
+// for one" path was untested. Three questions, each pinned to a board-live
+// fixture (C2/C3/C5) that already carries a real, persisted eval_cp (read
+// once from the db, same MoveRow.eval_cp column run.ts's own shelf-coverage
+// signal reads -- see NUMBER_EVAL_FACTS below for the exact values, so a
+// future checker can grade "did the coach's number match the engine's own
+// number" without re-deriving it). Deliberately reuses C2/C3/C5 rather than
+// minting new fixtures: the whole point is a KNOWN eval to check a number
+// against, and those three are already fixture-verified against the
+// scratch db at startup by run.ts's existing replay assertion.
+// Bare-context "dir" tag (same shape fork/mate/long already use) -- these
+// are live board questions about the CURRENT position's own numbers, not
+// general-theory questions, so they must route "board" through
+// classifyIntent exactly like fork/mate/long do (checked by
+// fixtures.test.ts's own routing assertion for this arm).
+export interface NumberQuestion {
+  id: string;
+  arm: "numbers";
+  tag: "dir";
+  ctx: FixtureId;
+  probe: false;
+  q: string;
+}
+const NUMBER_QUESTIONS_RAW: { id: string; ctx: FixtureId; q: string }[] = [
+  { id: "num-01", ctx: "C5", q: "how many centipawns am i up right now?" },
+  { id: "num-02", ctx: "C3", q: "what's the eval in numbers?" },
+  { id: "num-03", ctx: "C2", q: "exactly how much better is your move than mine, in numbers?" },
+];
+export const NUMBER_QUESTIONS: NumberQuestion[] = NUMBER_QUESTIONS_RAW.map((n) => ({
+  id: n.id,
+  arm: "numbers" as const,
+  tag: "dir" as const,
+  ctx: n.ctx,
+  probe: false as const,
+  q: n.q,
+}));
+
+// Per-number-question ground truth: the pinned ply's persisted eval_cp
+// (white's perspective, same MoveRow.eval_cp column run.ts reads), read
+// once from data/girlchess.db (readonly scratch copy) and transcribed here
+// -- never re-derived or guessed. This is the "known eval" NUMBER_QUESTIONS'
+// own comment promises; a future checker can compare a coach reply's cited
+// number against this value the same way MATE_FACTS anchors suite NM.
+export const NUMBER_EVAL_FACTS: Record<string, { ctx: FixtureId; evalCp: number }> = {
+  "num-01": { ctx: "C5", evalCp: 404 },
+  "num-02": { ctx: "C3", evalCp: 370 },
+  "num-03": { ctx: "C2", evalCp: -127 },
+};
+
 // chess.js piece-kind letter -> plain-language word, for the pending-
 // awareness mechanical check (methodology part 4, axis 5).
 export const PIECE_WORDS: Record<string, string> = {
@@ -1088,6 +1149,9 @@ export const LONG_QUESTION_COUNT = LONG_QUESTIONS.length; // 4
 // Round-3 fact-shelf coach round: the isolated 10-question general-theory
 // arm, additive on top of the 119 above (96 + 23).
 export const GENERAL_THEORY_QUESTION_COUNT = GENERAL_THEORY_QUESTIONS.length; // 10
+// coach-eval instrument improvements (2026-08-03): the isolated 3-question
+// numbers-asking arm, additive on top of the 129 above (96 + 23 + 10).
+export const NUMBER_QUESTION_COUNT = NUMBER_QUESTIONS.length; // 3
 export const TOTAL_QUESTION_COUNT =
   BOARD_LIVE_QUESTION_COUNT +
   GENERAL_QUESTION_COUNT +
@@ -1095,4 +1159,5 @@ export const TOTAL_QUESTION_COUNT =
   FORK_QUESTION_COUNT +
   MATE_QUESTION_COUNT +
   LONG_QUESTION_COUNT +
-  GENERAL_THEORY_QUESTION_COUNT;
+  GENERAL_THEORY_QUESTION_COUNT +
+  NUMBER_QUESTION_COUNT;

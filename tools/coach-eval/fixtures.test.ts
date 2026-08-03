@@ -22,6 +22,8 @@ import {
   FORK_QUESTION_COUNT,
   MATE_QUESTION_COUNT,
   LONG_QUESTION_COUNT,
+  GENERAL_THEORY_QUESTION_COUNT,
+  NUMBER_QUESTION_COUNT,
   TOTAL_QUESTION_COUNT,
   PIECE_WORDS,
   type Fixture,
@@ -37,11 +39,12 @@ describe("frozen counts stay byte-identical (RCA round is additive-only)", () =>
     expect(BOARD_LIVE_QUESTION_COUNT + GENERAL_QUESTION_COUNT + BOARD_REVIEW_QUESTION_COUNT).toBe(96);
   });
 
-  it("TOTAL_QUESTION_COUNT is the frozen 96 plus the three RCA groups (12 + 7 + 4 = 23) plus round-3's isolated general-theory 10", () => {
+  it("TOTAL_QUESTION_COUNT is the frozen 96 plus the three RCA groups (12 + 7 + 4 = 23) plus round-3's isolated general-theory 10 plus the numbers arm (2026-08-03)", () => {
     expect(FORK_QUESTION_COUNT).toBe(12);
     expect(MATE_QUESTION_COUNT).toBe(7);
     expect(LONG_QUESTION_COUNT).toBe(4);
-    expect(TOTAL_QUESTION_COUNT).toBe(96 + 23 + 10);
+    expect(GENERAL_THEORY_QUESTION_COUNT).toBe(10);
+    expect(TOTAL_QUESTION_COUNT).toBe(96 + 23 + 10 + NUMBER_QUESTION_COUNT);
   });
 });
 
