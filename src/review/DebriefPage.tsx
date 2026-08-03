@@ -519,8 +519,18 @@ export function DebriefPage({
   // Task 1 widened), same "no new prop" pattern the rest of this component
   // already uses for gameSans-derived data. The list feeds the study ledger
   // (game order, since gameSans is ply-ordered); the Set feeds the recap.
-  const highlightedPlyList = gameSans.filter((m) => m.highlighted).map((m) => m.ply);
-  const highlightedPlies = new Set(highlightedPlyList);
+  // Wave B D0 fix (opponent-move-analysis plan, 2026-08-03): W5 made both
+  // sides highlightable, so the cyan HER-ledger must exclude mallow's
+  // highlighted plies by the row's own `side` field (data, never ply
+  // parity). `!== "mallow"` rather than `=== "her"` on purpose: a pre-W5
+  // row with no side is hers by back-compat, only a PROVEN mallow row is
+  // filtered. Mallow's highlights render in their own magenta sibling
+  // below. The recap Set stays BOTH sides -- the move list marks every
+  // flagged ply, whoever played it (the W5 behavior).
+  const highlightedPlyList = gameSans
+    .filter((m) => m.highlighted && m.side !== "mallow")
+    .map((m) => m.ply);
+  const highlightedPlies = new Set(gameSans.filter((m) => m.highlighted).map((m) => m.ply));
   const highlightedRows = buildHighlightedRows({
     highlightedPlies: highlightedPlyList,
     gameSans,

@@ -145,6 +145,48 @@ describe("DebriefPage: highlighted plies in the move recap", () => {
   });
 });
 
+// Opponent-move-analysis plan (2026-08-03), Wave B, D0 fix: W5 made both
+// sides highlightable, but DebriefPage still built the cyan "you
+// highlighted" ledger from EVERY highlighted ply -- so a highlighted mallow
+// ply leaked in and rendered her-voice copy about mallow's move. The cyan
+// builder input must filter on the row's own `side` field (data, the W5
+// convention -- never re-derived from ply parity in a view).
+describe("DebriefPage (Wave B, D0 fix): a highlighted mallow ply never produces a cyan study-ledger row", () => {
+  const MIXED_HIGHLIGHT_SANS: SummaryMove[] = [
+    { ply: 1, san: "e4", side: "her" },
+    { ply: 2, san: "e5", side: "mallow" },
+    { ply: 3, san: "Qh5", highlighted: true, side: "her" },
+    { ply: 4, san: "Nc6", highlighted: true, side: "mallow" },
+  ];
+
+  it("only her own highlighted ply lands in the cyan ledger; mallow's is filtered out", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage
+        {...baseProps({ gameSans: MIXED_HIGHLIGHT_SANS, totalPlies: 4, turningPoints: [] })}
+      />
+    );
+    // Exactly one cyan row: the kicker counts her ply alone, not both.
+    expect(html).toMatch(/you highlighted · 1 move</);
+    // And mallow's move never renders as a cyan ledger phrase. (The move
+    // recap renders raw SAN "Nc6"; the plain-English phrase can only come
+    // from a leaked ledger row.)
+    expect(html).not.toContain("knight to c6");
+  });
+
+  it("a summary row with no side field still lands in the ledger (pre-W5 back-compat: only a proven mallow row is excluded)", () => {
+    const gameSans: SummaryMove[] = [
+      { ply: 1, san: "e4" },
+      { ply: 2, san: "e5" },
+      { ply: 3, san: "Qh5", highlighted: true },
+      { ply: 4, san: "Nc6" },
+    ];
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ gameSans, totalPlies: 4, turningPoints: [] })} />
+    );
+    expect(html).toMatch(/you highlighted · 1 move</);
+  });
+});
+
 // Union review consistency fix (2026-07-31): NEGATIVE_CARD_LABELS gates the
 // pink alarm tint (.debrief-card-negative). The new "conversion" kind's
 // label was never added, so a "you did not convert" card rendered in the
