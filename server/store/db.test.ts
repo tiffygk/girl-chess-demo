@@ -28,6 +28,9 @@ import {
   insertCoachNote,
   listCoachNotes,
   deleteCoachNote,
+  sessionExists,
+  addModeMinutes,
+  getModeSeconds,
 } from "./db";
 
 describe("store", () => {
@@ -539,5 +542,36 @@ describe("deleteGameRows (Wave 3.5 item 2 -- real per-game deletion)", () => {
     // Game 2's rows, in every one of the same tables, are untouched.
     expect(countsFor(g2)).toEqual(before2);
     expect(getGame(g2)).toBeTruthy();
+  });
+});
+
+// Round 3 (session-gone recovery, owner ruling 2026-08-02): after a server
+// restart or db swap, a browser tab still holding the old session id kept
+// POSTing its mode-timer heartbeat against a session row that no longer
+// exists, and addModeMinutes's INSERT hit the sessions FK and threw
+// (observed 1,925+ times in one night). sessionExists gives the route a
+// cheap existence check; addModeMinutes itself must no-op cleanly rather
+// than manufacture an FK-500 the caller cannot recover from.
+describe("session-gone recovery: sessionExists + addModeMinutes FK guard (owner ruling 2026-08-02)", () => {
+  it("sessionExists is true for a real session and false for one that was never created", () => {
+    openDb(":memory:");
+    const s = createSession();
+    expect(sessionExists(s)).toBe(true);
+    expect(sessionExists(999999)).toBe(false);
+  });
+
+  it("addModeMinutes against a nonexistent session does not throw an FK error", () => {
+    openDb(":memory:");
+    const ghostId = 999999; // never created -- simulates a session lost to a db swap
+    expect(sessionExists(ghostId)).toBe(false);
+    expect(() => addModeMinutes(ghostId, "game", 30)).not.toThrow();
+  });
+
+  it("addModeMinutes reports false for a dead session and true for a real write", () => {
+    openDb(":memory:");
+    const s = createSession();
+    expect(addModeMinutes(s, "game", 30)).toBe(true);
+    expect(getModeSeconds(s, "game")).toBe(30);
+    expect(addModeMinutes(999999, "game", 30)).toBe(false);
   });
 });

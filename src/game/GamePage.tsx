@@ -214,6 +214,13 @@ export function GamePage() {
   const [gameId, setGameId] = useState<number | null>(null);
   const [fen, setFen] = useState(() => new Chess().fen());
   const [fallback, setFallback] = useState(false);
+  // Round 3 (session-gone recovery, owner ruling 2026-08-02): "can we
+  // include in the round something that fixes that thing with the session
+  // ID? it's very confusing." Set once, by modeTimer's onGone hook, when
+  // the server reports this session's row no longer exists (a restart or
+  // db swap while this tab sat open). No toast spam, no retry loop -- one
+  // calm state, one action that recovers it.
+  const [sessionGone, setSessionGone] = useState(false);
   const [status, setStatus] = useState("finding an opponent...");
   const [gameOver, setGameOver] = useState<GameOverInfo | null>(null);
   const [takedownMove, setTakedownMove] = useState<Takedown | null>(null);
@@ -636,7 +643,7 @@ export function GamePage() {
 
   useEffect(() => {
     if (!sessionId) return;
-    return modeTimer(sessionId, "game");
+    return modeTimer(sessionId, "game", () => setSessionGone(true));
   }, [sessionId]);
 
   useEffect(() => {
@@ -2193,6 +2200,14 @@ export function GamePage() {
   return (
     <div className={"game-page" + (gameOver || reviewGame ? " postgame" : "")}>
       {fallback && <div className="fallback-banner">fallback opponents (lc0 unavailable)</div>}
+      {sessionGone && (
+        <div className="session-gone-banner">
+          <span>the server restarted while you were away, so this session closed.</span>
+          <button type="button" onClick={() => window.location.reload()}>
+            tap here to pick up fresh
+          </button>
+        </div>
+      )}
       <header className="header-band">
         <div className="header-lockup">
           <span className="wm" id="wordmark">

@@ -1183,6 +1183,29 @@
   margin-bottom: var(--space-2);
 }
 
+/* Round 3 (session-gone recovery, owner ruling 2026-08-02): same flat-tint
+   shape as .fallback-banner, but lavender -- cookie's own coach register,
+   never the magenta alarm color, because a server restart is not her
+   mistake. A new, isolated selector: does not touch .postgame/.status-line/
+   .action-slot/.coach-hint-band or any other protected fold element. */
+.gc-app .session-gone-banner {
+  display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+  font-size: 12.5px; font-weight: 600; color: #6952C4;
+  background: #F3EEFF; border: 1.5px solid rgba(105,82,196,.25);
+  padding: 8px 16px; border-radius: 999px;
+  box-shadow: none;
+  margin-bottom: var(--space-2);
+}
+.gc-app .session-gone-banner button {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
+  padding: 6px 14px; border: none; border-radius: 999px; cursor: pointer;
+  background: #E7DFFF; color: #6952C4;
+  box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.2);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.gc-app .session-gone-banner button:hover { box-shadow: 0 5px 0 #C9BFEF, 0 8px 14px rgba(90,70,180,.24); }
+.gc-app .session-gone-banner button:active { transform: translateY(2px); }
+
 .gc-app .status-line {
   margin-top: var(--space-3); font-size: 13.5px; font-weight: 700; color: #7A6BB5;
   text-align: center; line-height: 1.6; max-width: 540px; min-height: 22px;

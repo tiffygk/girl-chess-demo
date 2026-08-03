@@ -448,9 +448,16 @@ app.post("/api/explore/reply", async (req, res) => {
   }
 });
 
+// Round 3 (session-gone recovery, owner ruling 2026-08-02): a stale tab's
+// mode-timer heartbeat against a session lost to a server restart / db swap
+// used to hit the sessions FK and throw (1,925+ FK-500s in one night, zero
+// signal to the player). addModeMinutes now no-ops and reports false
+// instead of throwing; this route turns that into a typed, recoverable
+// 404 the client's modeTimer helper knows how to stop on.
 app.post("/api/session/:id/mode", (req, res) => {
   const { mode, seconds } = req.body;
-  addModeMinutes(Number(req.params.id), String(mode), Number(seconds) || 0);
+  const ok = addModeMinutes(Number(req.params.id), String(mode), Number(seconds) || 0);
+  if (!ok) return res.status(404).json({ ok: false, error: "session_gone" });
   res.json({ ok: true });
 });
 
