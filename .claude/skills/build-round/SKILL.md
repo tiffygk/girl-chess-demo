@@ -91,3 +91,15 @@ Run the review under **`superpowers:test-driven-development`**: a finding is pro
 ## Ledger
 
 `.superpowers/sdd/rounds/<date>-<slug>/` holds feedback.md, brief-*.md, report-*.md, review.md. The ledger is the memory between the two windows and every subagent — the controller reads briefs and verdicts from files, never from conversation history.
+
+## Watchdogs for long-running / detached work
+
+Any job that outlives a single tool call and does NOT auto-notify — an eval batch, a many-call model run, a background build, anything launched with `&` inside a `run_in_background` (which detaches PAST the harness's own completion notification) — gets a WATCHDOG the moment you dispatch it. Never depend on a single wake signal (memory: `critical-chains-need-a-controller-watchdog`).
+
+- **Arm the completion watchdog AT DISPATCH TIME** (a background poll loop that exits → one notification) on ANY of **completion / crash / stall** — cover all three, because silence must never read as "still running." completion = a done-marker the job writes (grep a log for `RUN DONE`); crash = the runner PID is gone with no done-marker; stall = the real progress artifact stops growing for a threshold set ABOVE the job's slowest single step.
+- **Key the progress signal to how the job actually writes** — two real traps, both hit 2026-08-03: (1) a `… | tail -2` per step flushes only at each step's END, so the log looks frozen mid-step → a false 10-min "stall"; (2) the harness writes its raw file INCREMENTALLY, so "file exists" ≠ "step done" → an early-fire check saw 3 of 119 rows. Watch the metric that actually moves while the job works (growing row/byte count of the output), not the file's existence or a buffered log.
+- **Add a backup heartbeat** — a second, independent timed wake set past the job's ETA — so a bug in the primary watchdog's own logic can't leave the chain hung overnight.
+- **Chain downstream passes through auto-notifying subagents** (analysis → dashboard → review): each notifies on completion, so each pass triggers the next with no polling. Only the raw batch job needs a hand-armed watchdog.
+- **Durable first:** every step writes its result to disk (per-coordinate out-dirs, the ledger) so a missed wake or crash is recoverable from bytes, not memory.
+
+**Not hooks.** The done/crash/stall conditions are job-specific and need controller judgment; a hook fires on a fixed tool/lifecycle event and cannot know what "done" looks like for an arbitrary batch. A watchdog is a dispatch-time action, documented here — hooks stay for judgment-free per-call guards (block `pkill`, warn on `gate`).
