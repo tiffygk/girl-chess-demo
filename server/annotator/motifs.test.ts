@@ -177,19 +177,35 @@ describe("deriveThreatFacts", () => {
 
   // Round 3 (Q4, trace-180): a legal recapture existing is not proof it's
   // SAFE. game 167's real position: her g2-g4 lets the f6 knight take
-  // Nxg4; the h3 pawn CAN legally recapture (hxg4), but doing so drops the
-  // undefended h1 rook to Qxh1 -- an overload the old capturedSquareDefended
-  // boolean alone could never distinguish from a clean trade.
+  // Nxg4; the h3 pawn CAN legally recapture (hxg4), and doing so genuinely
+  // does drop the undefended h1 rook to Qxh1 (verified separately by direct
+  // chess.js replay of hxg4 itself) -- an overload the old
+  // capturedSquareDefended boolean alone could never distinguish from a
+  // clean trade.
+  //
+  // Whole-branch review correction (2026-08-03, Important finding 2): the
+  // ORIGINAL fix for trace-180 concluded "unsafe" purely because the
+  // engine's own top pv[1] wasn't hxg4 (it retreats the bishop, Be2,
+  // instead) -- but declining a recapture is not evidence it loses
+  // material; a stronger zwischenzug can exist even when the recapture is
+  // perfectly safe. The Qxh1 refutation is real here, but this afterEval's
+  // pv never actually plays or evaluates hxg4 at all -- there is no
+  // engine-computed fact anywhere in this pv about what hxg4 leads to, only
+  // a fact about what the engine prefers instead. "No facts, no claim":
+  // recaptureHolds must stay true (and recaptureRefusalReason undefined)
+  // whenever pv[1] merely isn't the recapture, even in this real trace-180
+  // fixture -- the coverage loss (this specific overload can no longer be
+  // caught from a single non-exploring pv) is the honest tradeoff, not a
+  // regression. Before this correction, this test asserted false/"Be2".
   describe("recaptureHolds (Q4, trace-180)", () => {
     // afterFen: real game-167 position after her actual move g2-g4
     // (advice_traces id 180's currentFen with g2g4 replayed -- verified via
     // chess.js). pv below is the REAL StockfishEvaluator line for this
     // exact afterFen at 3000ms movetime -- the engine's own best reply to
-    // Nxg4 is Be2 (declining the recapture entirely), not hxg4, which is
-    // exactly the tell this feature exists to catch.
+    // Nxg4 is Be2 (declining the recapture entirely), not hxg4.
     const afterFen = "r1b1k2r/pppp1ppp/2n1pn2/6Bq/2PP2P1/2PBPN1P/P4P2/R2QK2R b KQkq - 0 10";
 
-    it("recaptureHolds is false when the engine's own best line declines the recapture (trace-180 overload)", () => {
+    it("recaptureHolds stays true when the engine's own best line merely declines the recapture -- decline is not evidence of unsafety, even here where hxg4 really does hang the rook", () => {
       const afterEval: Evaluation = {
         cp: -130,
         mate: null,
@@ -200,8 +216,8 @@ describe("deriveThreatFacts", () => {
       expect(facts).toBeTruthy();
       expect(facts!.motif).toBe("capture-moved");
       expect(facts!.capturedSquareDefended).toBe(true); // a legal hxg4 recapture DOES exist
-      expect(facts!.recaptureHolds).toBe(false); // but the engine itself won't play it
-      expect(facts!.recaptureRefusalReason).toBe("Be2");
+      expect(facts!.recaptureHolds).toBe(true); // no pv evidence hxg4 itself loses -- no claim
+      expect(facts!.recaptureRefusalReason).toBeUndefined();
     });
 
     it("recaptureHolds is true for an ordinary sound recapture", () => {
@@ -224,6 +240,50 @@ describe("deriveThreatFacts", () => {
       expect(facts).toBeTruthy();
       expect(facts!.capturedSquareDefended).toBe(false);
       expect(facts!.recaptureHolds).toBe(true);
+    });
+
+    // Round 3 whole-branch review (2026-08-03), Important finding 2: the
+    // engine's own reply merely NOT being the recapture is not evidence the
+    // recapture is unsafe -- a stronger zwischenzug can exist even when the
+    // recapture itself is perfectly safe (declining != losing). Same fixture
+    // as "recaptureHolds is true for an ordinary sound recapture" above
+    // (Bxf5, e4 pawn defends it), but the engine's own pv[1] plays a quiet
+    // king move instead of the recapture. Nothing here proves exf5 loses
+    // material, so recaptureHolds must stay true and recaptureRefusalReason
+    // must stay undefined -- "no facts, no claim," the same discipline this
+    // file follows everywhere else. Before the fix this asserted false/"Kg2".
+    it("recaptureHolds stays true when the engine's top line simply prefers a different (stronger, but not unsafety-proving) move over the recapture", () => {
+      const afterFen2 = "2b3k1/8/8/5B2/4P3/8/8/6K1 b - - 0 1";
+      const afterEval: Evaluation = { cp: 0, mate: null, bestMove: "c8f5", pv: ["c8f5", "g1g2"] };
+      const facts = deriveThreatFacts(afterFen2, "a1", "w", afterEval);
+      expect(facts).toBeTruthy();
+      expect(facts!.capturedSquareDefended).toBe(true); // exf5 is still a legal recapture
+      expect(facts!.recaptureHolds).toBe(true);
+      expect(facts!.recaptureRefusalReason).toBeUndefined();
+    });
+
+    // Round 3 whole-branch review, Important finding 2 (third bullet): the
+    // pv.length>=3 deflection branch flagged unsafe purely on raw captured-
+    // value comparison, without checking whether the player can recapture
+    // the follow-up capturer too -- an even (or favorable) trade one ply
+    // deeper must not read as an overload. Position: black Rxd5 captures her
+    // rook (defended by both her queen on d1 and her rook on h5); she
+    // recaptures Qxd5; black's OTHER rook (a5) then takes the queen (Rxd5,
+    // 9 > 5, the old raw-value trigger) -- but her h5 rook can still
+    // recapture that rook right back, so this is not proven unsafe.
+    it("recaptureHolds stays true when a bigger follow-up capture can itself be recaptured (continued trade, not a proven overload)", () => {
+      const afterFen = "3rk3/8/8/r2R3R/8/8/8/3QK3 b - - 0 1";
+      const afterEval: Evaluation = {
+        cp: 0,
+        mate: null,
+        bestMove: "d8d5",
+        pv: ["d8d5", "d1d5", "a5d5"],
+      };
+      const facts = deriveThreatFacts(afterFen, "d5", "w", afterEval);
+      expect(facts).toBeTruthy();
+      expect(facts!.capturedSquareDefended).toBe(true);
+      expect(facts!.recaptureHolds).toBe(true);
+      expect(facts!.recaptureRefusalReason).toBeUndefined();
     });
   });
 
