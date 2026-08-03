@@ -1140,8 +1140,32 @@ function pendingMoveForModel(pendingMove: ChatContext["pendingMove"]) {
 // None of them carry a cp/mate number today, so there is nothing else to
 // sanitize; perPlyAnalysis (via readForPly above) is the one real leak this
 // task closes.
+// Round 3 (Q2/B1, Task 5): the hint shelf's own model-facing projection.
+// evalCp is NEVER carried through as a raw number here -- same voice-rule
+// discipline readForPly already applies to perPlyAnalysis (Task 3b) -- but
+// evalMate IS stated as a number: it is a mate distance (a move count, like
+// "mate in 3"), not a centipawn score, and checkVoice's own signed-number
+// ban already exempts that exact shape (see voiceRules.test.ts's "mate in
+// 3" pin). Returns undefined when there is no shelf entry, so the "fact
+// list (json)" section omits the key entirely rather than emit a null.
+function hintFindingsForModel(hintFindings: ChatFactList["hintFindings"]) {
+  if (!hintFindings) return undefined;
+  const h = hintFindings;
+  const score = h.evalMate !== null
+    ? `verified forced mate in ${Math.abs(h.evalMate)}`
+    : "a verified best line (no mate)";
+  return {
+    note: "the hint engine's verified line for this position (deep multipv search, trust this over your own reasoning)",
+    bestSan: h.bestSan,
+    ...(h.trade ? { trade: "a trade, but the strongest move here" } : {}),
+    score,
+    ...(h.pvSans.length ? { line: h.pvSans.join(" ") } : {}),
+    ...(h.recommendationSan ? { recommendationSan: h.recommendationSan } : {}),
+  };
+}
+
 function factsForModel(facts: ChatFactList, mentioned: number[] = []) {
-  const { allowedSans, context, focusPosition, perPlyAnalysis, ...rest } = facts;
+  const { allowedSans, context, focusPosition, perPlyAnalysis, hintFindings, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
   if (context) {
     const { best, threat, herMove, hintFocus, pendingMove, ...restCtx } = context;
@@ -1167,6 +1191,7 @@ function factsForModel(facts: ChatFactList, mentioned: number[] = []) {
     focusPosition: focusForModel(facts),
     perPlyAnalysis: perPlyForModel(facts, mentioned),
     context: strippedContext,
+    hintFindings: hintFindingsForModel(hintFindings),
   };
 }
 
