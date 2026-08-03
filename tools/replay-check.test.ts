@@ -254,7 +254,7 @@ describe("F4: ratchet allowlists are pinned -- growth requires editing this test
     expect([...KNOWN_UNCONVERTED_GAMES].sort((a, b) => a - b)).toEqual([]);
   });
   it("KNOWN_EM_DASH_TRACES", () => {
-    expect([...KNOWN_EM_DASH_TRACES].sort((a, b) => a - b)).toEqual([46, 94, 123]);
+    expect([...KNOWN_EM_DASH_TRACES].sort((a, b) => a - b)).toEqual([46, 94, 123, 191, 193]);
   });
   it("KNOWN_DEFENSE_CLAIM_TRACES", () => {
     expect([...KNOWN_DEFENSE_CLAIM_TRACES].sort((a, b) => a - b)).toEqual([118]);
