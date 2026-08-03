@@ -873,7 +873,31 @@ const VOICE_SIGNED_NUMBER_RE = /[+-]\d+(?:\.\d+)?/g;
 // the letters immediately following it).
 const VOICE_CP_NUMBER_RE = /\b\d+(?:\.\d+)?\s*(?:cp|centipawns?)\b/gi;
 
-function checkVoice(text: string): string[] {
+// Round 3 Task 13 (item 5/E, trust floor): a small, precision-over-recall
+// detector for "did she explicitly ask for the number" -- deliberately
+// narrow, the same discipline every other checker in this file follows: a
+// false negative just means the coach keeps speaking in words (the existing
+// safe default); a false positive would let a number slip out unprompted,
+// exactly what the ban below exists to stop. Matches an explicit request
+// for the eval/score/number itself ("what's the eval", "give me the
+// number", "how many centipawns"), not any ordinary "who's better"/"am I
+// winning" question, which stays a words-only answer.
+const NUMBER_ASK_RE =
+  /\b(what'?s|what is|give me|tell me|show me)\b[^.?!]{0,30}\b(the\s+)?(number|score|eval(uation)?s?|centipawns?|cp)\b|\bhow (many|much)\b[^.?!]{0,20}\bcentipawns?\b/i;
+
+export function asksForNumber(message: string): boolean {
+  return NUMBER_ASK_RE.test(message);
+}
+
+// Round 3 Task 13: `opts.userAskedForNumber` scopes ONLY the two stated-
+// number checks below (a raw cp count, a signed eval number) -- the
+// notation ban and the jargon-word ban (engine/eval/centipawns/cp/ply named
+// as WORDS, with no number attached) stay banned unconditionally either
+// way. This is scoping an existing check, not adding a new truth source:
+// the raw evalCp/evalMate she's being told about is already in the fact
+// list (perPlyAnalysis, hintFindings) -- checkVoice previously refused to
+// let the model ever say it out loud, even when she asked outright.
+function checkVoice(text: string, opts: { userAskedForNumber?: boolean } = {}): string[] {
   const violations: string[] = [];
 
   for (const raw of text.match(SAN_RE) ?? []) {
@@ -886,17 +910,23 @@ function checkVoice(text: string): string[] {
     violations.push(`voice-word: ${m[0].toLowerCase()}`);
   }
 
-  for (const m of text.matchAll(VOICE_CP_NUMBER_RE)) {
-    violations.push(`voice-number: ${m[0]}`);
-  }
-  for (const m of text.matchAll(VOICE_SIGNED_NUMBER_RE)) {
-    violations.push(`voice-number: ${m[0]}`);
+  if (!opts.userAskedForNumber) {
+    for (const m of text.matchAll(VOICE_CP_NUMBER_RE)) {
+      violations.push(`voice-number: ${m[0]}`);
+    }
+    for (const m of text.matchAll(VOICE_SIGNED_NUMBER_RE)) {
+      violations.push(`voice-number: ${m[0]}`);
+    }
   }
 
   return violations;
 }
 
-export function validateChat(text: string, facts: ChatFactList): { ok: true } | { ok: false; violations: string[] } {
+export function validateChat(
+  text: string,
+  facts: ChatFactList,
+  opts: { userAskedForNumber?: boolean } = {}
+): { ok: true } | { ok: false; violations: string[] } {
   const allowedSans = new Set(facts.allowedSans);
   const violations: string[] = [];
 
@@ -931,8 +961,10 @@ export function validateChat(text: string, facts: ChatFactList): { ok: true } | 
   violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
   // Task 3a (R2, voice-enforcement round): no facts needed -- this checker
   // is about the SHAPE of the prose (notation/banned words/numbers), not
-  // whether a claim matches the position.
-  violations.push(...checkVoice(text));
+  // whether a claim matches the position. Round 3 Task 13: opts threads
+  // straight through, so this route's number ban scopes exactly the same
+  // way the general route's does below.
+  violations.push(...checkVoice(text, opts));
   // Forward-prediction round (2026-07-28): the then facts invite the model
   // to name mates by number -- adjudicate digit-form "mate in N" against
   // the Ns the fact list itself vouches for (evalMate, then claims, and a
@@ -998,7 +1030,8 @@ function replyReferencesPosition(text: string): boolean {
 // or square in it has nothing for them to check against.
 export function validateChatGeneral(
   text: string,
-  facts: ChatFactList
+  facts: ChatFactList,
+  opts: { userAskedForNumber?: boolean } = {}
 ): { ok: true } | { ok: false; violations: string[] } {
   const violations: string[] = [];
 
@@ -1015,7 +1048,7 @@ export function validateChatGeneral(
     violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
   }
 
-  violations.push(...checkVoice(text));
+  violations.push(...checkVoice(text, opts));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };
@@ -1690,6 +1723,11 @@ export async function chat(
   }
 
   const mentioned = mentionedPlies(userMessage, facts.gameSans.length);
+  // Round 3 Task 13 (item 5/E, trust floor): computed ONCE from THIS turn's
+  // own message -- userMessage does not change across the attempt/regen
+  // loop below, so this is the single source both validateChat/
+  // validateChatGeneral calls for the live attempt read.
+  const userAskedForNumber = asksForNumber(userMessage);
   // Wave 3, item 3 (F5 family, game-164): look up the most recent rejected
   // chat draft for this game that no valid reply has superseded (see
   // getLatestRejectedChatTrace). This call's OWN trace is written only at the
@@ -1810,8 +1848,8 @@ export async function chat(
     const result =
       trimmed.length > 0
         ? intent === "general"
-          ? validateChatGeneral(attemptOutput, facts)
-          : validateChat(attemptOutput, facts)
+          ? validateChatGeneral(attemptOutput, facts, { userAskedForNumber })
+          : validateChat(attemptOutput, facts, { userAskedForNumber })
         : ({ ok: false, violations: [] } as const);
     if (result.ok) {
       modelText = trimmed;

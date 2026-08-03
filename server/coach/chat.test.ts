@@ -5,8 +5,8 @@ import {
   getAdviceTraces, getAllChatMessages, insertChatMessage,
 } from "../store/db";
 import {
-  assembleChatFactList, validateChat, chat, CHAT_HISTORY_WINDOW, CHAT_MAX_LEN,
-  correctiveSuffix, gapWord,
+  assembleChatFactList, validateChat, validateChatGeneral, chat, CHAT_HISTORY_WINDOW, CHAT_MAX_LEN,
+  correctiveSuffix, gapWord, asksForNumber,
 } from "./chat";
 import type { ChatFactList } from "./chat";
 import { GameManager } from "../game/manager";
@@ -1032,6 +1032,77 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       const facts = voiceFacts();
       const result = validateChat("move 8 was the moment things turned.", facts);
       expect(result.ok).toBe(true);
+    });
+  });
+
+  // Round 3 Task 13 (item 5/E, trust floor): the number ban above is scoped,
+  // not lifted -- a stated cp/signed number is allowed ONLY on the turn she
+  // explicitly asked for it. The jargon-word ban (engine/eval/centipawns/cp/
+  // ply named as bare words) and the raw-notation ban stay unconditional
+  // either way -- asking for a number never unlocks jargon or notation.
+  describe("validateChat / validateChatGeneral — numbers on explicit ask (Task 13)", () => {
+    function voiceFacts(): ChatFactList {
+      return assembleChatFactList([{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }], { mode: "live" });
+    }
+
+    it("stating a signed number unprompted is still banned (default, no opts)", () => {
+      const facts = voiceFacts();
+      const result = validateChat("you're about +2.1 there.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-number"))).toBe(true);
+    });
+
+    it("stating a signed number is allowed when the opts flag says she asked for it", () => {
+      const facts = voiceFacts();
+      const result = validateChat("you're about +2.1 there.", facts, { userAskedForNumber: true });
+      expect(result.ok).toBe(true);
+    });
+
+    // Unspaced ("50cp"), same as the existing "flags an unspaced cp number"
+    // pin above -- the bare word-jargon ban's \b can't reach inside "50cp"
+    // (no word boundary between a digit and a letter), so this text trips
+    // ONLY the number-cp check the opts flag scopes, unlike a spaced "50 cp"
+    // which would also independently trip the always-on bare-word ban.
+    it("stating an unspaced cp count is allowed when she asked for it", () => {
+      const facts = voiceFacts();
+      const result = validateChat("you're up 50cp there.", facts, { userAskedForNumber: true });
+      expect(result.ok).toBe(true);
+    });
+
+    it("the jargon-word ban stays on even when she asked for the number -- 'centipawns' as a bare word is still flagged", () => {
+      const facts = voiceFacts();
+      const result = validateChat("that's a big centipawns swing.", facts, { userAskedForNumber: true });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-word"))).toBe(true);
+    });
+
+    it("the notation ban stays on even when she asked for the number", () => {
+      const facts = voiceFacts();
+      const result = validateChat("Nf3 is worth about +2.1.", facts, { userAskedForNumber: true });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-notation"))).toBe(true);
+    });
+
+    it("validateChatGeneral honors the same opt", () => {
+      const facts = voiceFacts();
+      expect(validateChatGeneral("you're about +2.1 there.", facts).ok).toBe(false);
+      expect(validateChatGeneral("you're about +2.1 there.", facts, { userAskedForNumber: true }).ok).toBe(true);
+    });
+  });
+
+  describe("asksForNumber (Task 13)", () => {
+    it("recognizes an explicit ask for the eval/score/number", () => {
+      expect(asksForNumber("what's the eval here?")).toBe(true);
+      expect(asksForNumber("what is the score right now?")).toBe(true);
+      expect(asksForNumber("can you give me the number?")).toBe(true);
+      expect(asksForNumber("just tell me the centipawns")).toBe(true);
+      expect(asksForNumber("how many centipawns am I up?")).toBe(true);
+    });
+
+    it("does not treat an ordinary strength question as an ask for the number", () => {
+      expect(asksForNumber("am I winning?")).toBe(false);
+      expect(asksForNumber("who's better here?")).toBe(false);
+      expect(asksForNumber("what's my best move?")).toBe(false);
     });
   });
 
