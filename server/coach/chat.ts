@@ -18,7 +18,7 @@ import { toMoverCp } from "../annotator/classify";
 // stop: phaseParity.test.ts will fail.
 import { phasesForGame, type GamePhase } from "../../src/review/gamePhases";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
-import type { CoachBackend } from "./backends/types";
+import type { CoachBackend, CoachUsage } from "./backends/types";
 import { getPersona, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
@@ -1667,6 +1667,17 @@ export async function chat(
   // already tells attempt 1 apart for onRedraft, by call order, not by an
   // argument this function would have to pass); onValidateStart right after
   // the backend returns, before validateChat/validateChatGeneral runs.
+  // OD-3b (post-shelf eval instrumentation, 2026-08-02): onUsage is the
+  // last field this opts object carries -- additive/optional, every
+  // existing call site (chat.test.ts and its siblings, manager.ts) omits it
+  // and gets exactly today's behavior. Forwarded straight through to
+  // whichever backend call this attempt makes (see the ternary below); a
+  // backend that doesn't call it back (ollama.ts, claude-cli.ts, the noop
+  // template backend) simply never fires it -- no special-casing needed
+  // here. Fires once PER ATTEMPT, including a validation-failed attempt 0
+  // that never reaches a caller-visible answer -- that attempt still spent
+  // real billed tokens, and the eval harness's whole point is to make that
+  // spend visible even when the row's final answer is a template.
   opts?: {
     budgetMs?: number;
     intent?: ChatIntent;
@@ -1674,6 +1685,7 @@ export async function chat(
     onRedraft?: () => void;
     onAttemptStart?: () => void;
     onValidateStart?: () => void;
+    onUsage?: (usage: CoachUsage) => void;
     standingNotes?: string[];
   }
 ): Promise<{
@@ -1814,8 +1826,8 @@ export async function chat(
       // path.
       attemptOutput =
         backend.generateStream && opts?.onDelta
-          ? await backend.generateStream(attemptPrompt, timeoutMs, (t) => attemptDeltas.push(t), stablePrefix)
-          : await backend.generate(attemptPrompt, timeoutMs, stablePrefix);
+          ? await backend.generateStream(attemptPrompt, timeoutMs, (t) => attemptDeltas.push(t), stablePrefix, opts?.onUsage)
+          : await backend.generate(attemptPrompt, timeoutMs, stablePrefix, opts?.onUsage);
     } catch (err) {
       attemptOutput = `[backend error] ${err instanceof Error ? err.message : String(err)}`;
       failureCause = isTimeoutError(err) ? "timeout" : "backend-down";

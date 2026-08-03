@@ -5,7 +5,7 @@ import os from "os";
 import path from "path";
 import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { CoachBackend } from "./types";
+import type { CoachBackend, CoachUsage } from "./types";
 
 // Warm-coach-backend round (2026-07-21). Per decision-no-warm-reserve.md
 // (Opus controller, amending the brief's Task 2): measured startup()/
@@ -226,16 +226,48 @@ export function splitStablePrefix(prompt: string, stablePrefix: string | undefin
   return prompt.slice(withSeparator.length);
 }
 
+// OD-3b (post-shelf eval instrumentation, 2026-08-02): the SDK's own
+// BetaUsage shape (sdk.d.ts:4272's NonNullableUsage, imported from
+// @anthropic-ai/sdk/resources/beta/messages/messages.d.ts:2707) -- named
+// locally rather than imported so this stays a narrow, defensive read (only
+// the three fields this backend reports) instead of a second full copy of
+// the SDK's usage type. output_tokens_details is read via `?.`, never
+// assumed present: messages.d.ts:1672 documents thinking_tokens as "output
+// tokens the model generated as internal reasoning", present only when a
+// thinking block actually ran.
+interface RawUsage {
+  input_tokens: number;
+  output_tokens: number;
+  output_tokens_details?: { thinking_tokens: number } | null;
+}
+
+// Never `0` for an unmeasured thinking count -- see CoachUsage's own doc
+// comment (types.ts) for why null-vs-zero matters here.
+function extractUsage(usage: RawUsage): CoachUsage {
+  return {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    thinkingTokens: usage.output_tokens_details?.thinking_tokens ?? null,
+  };
+}
+
 // One stateless one-shot turn (sdk-api-notes.md Q2): the terminal
 // `result`/`success` message carries the final text directly in
 // `result.result` -- never reassembled from assistant content blocks.
 // Bounding (timeout/abort) is the caller's job (available()/generate()
 // below), not this function's -- keeps the two callers' Promise.race
 // wiring in one place each, mirroring ollama.ts's fetch-wrapped shape.
+// OD-3b: onUsage (additive, optional) fires exactly once, from this SAME
+// terminal message, right before returning -- the one place this backend
+// ever sees token accounting. Never fired on the `error_during_execution`
+// (etc.) branch below: that branch throws before reaching it, and the
+// caller's own catch/regen handling already treats a thrown attempt as
+// contributing no usable answer.
 async function runQuery(
   prompt: string,
   abortController: AbortController,
-  stablePrefix?: string
+  stablePrefix?: string,
+  onUsage?: (usage: CoachUsage) => void
 ): Promise<string> {
   let result = "";
   const stream = query({
@@ -244,8 +276,10 @@ async function runQuery(
   }) as AsyncGenerator<SDKMessage, void>;
   for await (const message of stream) {
     if (message.type === "result") {
-      if (message.subtype === "success") result = message.result;
-      else throw new Error(`agent-sdk result error: ${JSON.stringify(message)}`);
+      if (message.subtype === "success") {
+        result = message.result;
+        onUsage?.(extractUsage(message.usage));
+      } else throw new Error(`agent-sdk result error: ${JSON.stringify(message)}`);
     }
   }
   return result.trim();
@@ -270,11 +304,15 @@ async function runQuery(
 // validateChat must always validate the same authoritative text the caller
 // ends up persisting/rendering as final, never a hand-assembled echo of what
 // was streamed.
+// OD-3b: onUsage (additive, optional) fires exactly once, from the SAME
+// terminal result message, never per delta -- a delta carries no usage
+// info at all, so firing it there would be a guess, not a read.
 async function runQueryStream(
   prompt: string,
   abortController: AbortController,
   onDelta: (text: string) => void,
-  stablePrefix?: string
+  stablePrefix?: string,
+  onUsage?: (usage: CoachUsage) => void
 ): Promise<string> {
   let result = "";
   const stream = query({
@@ -290,8 +328,10 @@ async function runQueryStream(
       continue;
     }
     if (message.type === "result") {
-      if (message.subtype === "success") result = message.result;
-      else throw new Error(`agent-sdk result error: ${JSON.stringify(message)}`);
+      if (message.subtype === "success") {
+        result = message.result;
+        onUsage?.(extractUsage(message.usage));
+      } else throw new Error(`agent-sdk result error: ${JSON.stringify(message)}`);
     }
   }
   return result.trim();
@@ -324,7 +364,7 @@ export const agentSdkBackend: CoachBackend = {
       clearTimeout(timer);
     }
   },
-  async generate(prompt, timeoutMs, stablePrefix) {
+  async generate(prompt, timeoutMs, stablePrefix, onUsage) {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -334,7 +374,7 @@ export const agentSdkBackend: CoachBackend = {
       }, timeoutMs);
     });
     try {
-      return await Promise.race([runQuery(prompt, controller, stablePrefix), timeout]);
+      return await Promise.race([runQuery(prompt, controller, stablePrefix, onUsage), timeout]);
     } finally {
       clearTimeout(timer);
     }
@@ -343,7 +383,7 @@ export const agentSdkBackend: CoachBackend = {
   // above (same reject message shape -- "timed out" -- so chat.ts's
   // isTimeoutError classification is unchanged for the streaming path too),
   // delegating only to runQueryStream instead of runQuery.
-  async generateStream(prompt, timeoutMs, onDelta, stablePrefix) {
+  async generateStream(prompt, timeoutMs, onDelta, stablePrefix, onUsage) {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -353,7 +393,7 @@ export const agentSdkBackend: CoachBackend = {
       }, timeoutMs);
     });
     try {
-      return await Promise.race([runQueryStream(prompt, controller, onDelta, stablePrefix), timeout]);
+      return await Promise.race([runQueryStream(prompt, controller, onDelta, stablePrefix, onUsage), timeout]);
     } finally {
       clearTimeout(timer);
     }
