@@ -58,7 +58,31 @@ export interface ThreatFacts {
   // present; only meaningful on capture motifs (false otherwise, since
   // there's nothing to defend).
   capturedSquareDefended: boolean;
+  // Round 3 (Q4, trace-180): a LEGAL recapture existing (capturedSquareDefended)
+  // is a geometric/legal-move fact, not a proof that recapturing is actually
+  // safe -- trace-180 (game 167, currentFen w/ her move g2-g4): the h-pawn
+  // CAN legally take hxg4, but doing so drops the h1 rook to Qxh1, an
+  // overload the "defended" framing hid entirely (owner feedback, verbatim:
+  // "the defending pawn can't take back without the queen taking the
+  // rook"). Derived from afterEval.pv (already-computed, zero new engine
+  // calls): true unless the engine's OWN best continuation either declines
+  // the recapture outright (afterEval.pv[1] doesn't land on the captured
+  // square -- the strongest signal that "defended" doesn't functionally
+  // hold) or takes it and then immediately loses something of greater
+  // value on the very next move (deflection/overload). Defaults true for
+  // the non-defended case (nothing to disprove) and whenever afterEval.pv
+  // is too short to check.
+  recaptureHolds: boolean;
+  // The SAN of the move that makes recapturing not worth it -- either the
+  // engine's own declining move (case above) or the follow-up capture that
+  // wins more than the recapture itself. Present only when recaptureHolds
+  // is false.
+  recaptureRefusalReason?: string;
 }
+
+// Round 3 (Q4): standard relative piece values for the "captures something
+// bigger" comparison below -- king excluded (never a capture target).
+const PIECE_VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
 
 const MINOR_PLUS = new Set(["n", "b", "r", "q"]);
 
@@ -174,6 +198,69 @@ export function deriveThreatFacts(
       motif = "positional";
     }
 
+    // Round 3 (Q4, trace-180): only meaningful when a legal recapture
+    // exists at all -- `probe` here is already the position right after
+    // the refutation capture, herColor to move, exactly what pv[1] onward
+    // describes. afterEval.pv[0] is the refutation itself (bestUci, already
+    // replayed above as `mv`); pv[1] is the engine's own chosen reply.
+    let recaptureHolds = true;
+    let recaptureRefusalReason: string | undefined;
+    if (capturedSquareDefended && afterEval.pv.length >= 2) {
+      const pv1 = afterEval.pv[1];
+      if (pv1 && pv1.length >= 4) {
+        const pv1To = pv1.slice(2, 4);
+        const isRecapture = pv1To === actualCaptureSquare;
+        if (!isRecapture) {
+          // The engine's own best play DECLINES the recapture entirely --
+          // the strongest possible signal that taking it isn't actually
+          // safe, regardless of why (trace-180: hxg4 hangs the rook to
+          // Qxh1, so the engine retreats instead of recapturing at all).
+          try {
+            const declineMv = new Chess(probe.fen()).move({
+              from: pv1.slice(0, 2),
+              to: pv1.slice(2, 4),
+              promotion: (pv1.slice(4, 5) as "q" | "r" | "b" | "n" | undefined) ?? "q",
+            });
+            if (declineMv) {
+              recaptureHolds = false;
+              recaptureRefusalReason = declineMv.san;
+            }
+          } catch {
+            // Replay failed -- leave recaptureHolds true; nothing proven.
+          }
+        } else if (afterEval.pv.length >= 3) {
+          // The recapture DOES happen in the engine's own line -- check
+          // whether the very next move then grabs something worth more
+          // than what was just recaptured (deflection/overload one ply
+          // deeper than the simple "does a legal recapture exist" check).
+          try {
+            const recaptureProbe = new Chess(probe.fen());
+            const recaptureMv = recaptureProbe.move({
+              from: pv1.slice(0, 2),
+              to: pv1.slice(2, 4),
+              promotion: (pv1.slice(4, 5) as "q" | "r" | "b" | "n" | undefined) ?? "q",
+            });
+            const recapturedValue = recaptureMv?.captured ? (PIECE_VALUE[recaptureMv.captured] ?? 0) : 0;
+            const pv2 = afterEval.pv[2];
+            const pv2Mv = pv2 && pv2.length >= 4
+              ? recaptureProbe.move({
+                  from: pv2.slice(0, 2),
+                  to: pv2.slice(2, 4),
+                  promotion: (pv2.slice(4, 5) as "q" | "r" | "b" | "n" | undefined) ?? "q",
+                })
+              : null;
+            const followUpValue = pv2Mv?.captured ? (PIECE_VALUE[pv2Mv.captured] ?? 0) : 0;
+            if (pv2Mv?.captured && followUpValue > recapturedValue) {
+              recaptureHolds = false;
+              recaptureRefusalReason = pv2Mv.san;
+            }
+          } catch {
+            // Replay failed -- leave recaptureHolds true; nothing proven.
+          }
+        }
+      }
+    }
+
     const facts: ThreatFacts = {
       motif,
       refutationUci: bestUci,
@@ -185,7 +272,9 @@ export function deriveThreatFacts(
       capturesHerJustMovedPiece,
       capturedSquareDefended,
       herCapturedPieceKind,
+      recaptureHolds,
     };
+    if (recaptureRefusalReason) facts.recaptureRefusalReason = recaptureRefusalReason;
 
     if (motif === "capture-moved" || motif === "capture-other") {
       facts.capturesSquare = actualCaptureSquare;

@@ -80,10 +80,26 @@ export function postMoveFen(fen: string, from: string, to: string): string | nul
 // the position (fen) via chess.js. Returns one "defense-claim: ..." string
 // per contradiction, [] if no claim was made or a claim couldn't be
 // confidently adjudicated (an unoccupied square).
-export function checkDefenseClaims(text: string, fen: string): string[] {
+export function checkDefenseClaims(
+  text: string,
+  fen: string,
+  // Round 3 (Q4, trace-180): squares where a legal recapture exists
+  // geometrically (capturedSquareDefended) but the engine's own line shows
+  // it does NOT actually hold (ThreatFacts.recaptureHolds === false) --
+  // motifs.ts's own new producer, threaded through by the caller (never
+  // re-derived here). The geometric truth this checker computes stays
+  // exactly as it was; this only stops "g4 is defended, but you can't
+  // safely take back there" / "g4 isn't safe to recapture on" -- an
+  // HONEST, more precise claim than the geometric checker alone can see --
+  // from being flagged as a contradiction of "g4 is defended". Additive:
+  // omitted (every pre-round-3 caller) means every square is adjudicated
+  // exactly as before.
+  unsafeRecaptureSquares: Iterable<string> = []
+): string[] {
   const chess = new Chess(fen);
   const sq = (s: string) => s.toLowerCase() as Parameters<typeof chess.get>[0];
   const colorAt = (s: string) => chess.get(sq(s))?.color ?? null;
+  const unsafeRecapture = new Set([...unsafeRecaptureSquares].map((s) => s.toLowerCase()));
   const violations: string[] = [];
 
   for (const m of text.matchAll(guardClaimRe())) {
@@ -120,6 +136,11 @@ export function checkDefenseClaims(text: string, fen: string): string[] {
     // this can't double-negate it.
     if (SAFETY_NEGATION_RE.test(between)) claimsDefended = !claimsDefended;
     const truth = chess.attackers(sq(b), colorB).length > 0;
+    // Round 3 (Q4, trace-180): a claim that b is NOT safe/defended, on a
+    // square the recapture-viability fact says legitimately doesn't hold up
+    // even though it's geometrically defended, is a MORE PRECISE truth, not
+    // a contradiction -- skip it rather than flag an honest claim.
+    if (claimsDefended === false && truth === true && unsafeRecapture.has(b)) continue;
     if (claimsDefended !== truth) {
       violations.push(`defense-claim: ${b} is ${truth ? "defended" : "undefended"}`);
     }

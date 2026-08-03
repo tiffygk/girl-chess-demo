@@ -99,7 +99,14 @@ export function validateNarration(
   // pawn on d5 isn't defended, so you'd just be handing it over for free"
   // when e4 demonstrably defends d5. chess.js-only, no engine call --
   // narrate() must never touch the evaluator queue.
-  violations.push(...checkDefenseClaims(text, facts.currentFen));
+  // Round 3 (Q4, trace-180): thread the recapture-viability fact through --
+  // a legal-but-unsafe recapture square is exempted from the defense-claim
+  // checker's geometric-only truth, see checkDefenseClaims's own comment.
+  const unsafeRecaptureSquares =
+    facts.threat?.capturedSquareDefended && facts.threat.recaptureHolds === false && facts.threat.capturesSquare
+      ? [facts.threat.capturesSquare]
+      : [];
+  violations.push(...checkDefenseClaims(text, facts.currentFen, unsafeRecaptureSquares));
 
   if (violations.length > 0) return { ok: false, violations };
   return { ok: true };
