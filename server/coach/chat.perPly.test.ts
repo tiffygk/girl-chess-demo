@@ -642,6 +642,7 @@ describe("factsForModel — the hint shelf renders as its own model-facing secti
           evalMate: 3,
           trade: false,
           escalated: false,
+          verified: true, // a real, player-initiated deep hint
         },
       }
     );
@@ -669,7 +670,7 @@ describe("factsForModel — the hint shelf renders as its own model-facing secti
       undefined, undefined, undefined, undefined,
       {
         fen: START_FEN,
-        facts: { bestUci: "g1f3", pv: ["g1f3"], evalCp: 234, evalMate: null, trade: false, escalated: false },
+        facts: { bestUci: "g1f3", pv: ["g1f3"], evalCp: 234, evalMate: null, trade: false, escalated: false, verified: true },
       }
     );
     let capturedPrompt = "";
@@ -682,6 +683,87 @@ describe("factsForModel — the hint shelf renders as its own model-facing secti
     await chat("why is that the move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
 
     expect(capturedPrompt).not.toContain("234");
+  });
+
+  // Round 3 whole-branch review (2026-08-03), Important finding 1: the shelf
+  // is populated by TWO different producers with very different confidence
+  // -- computeHint's deep, verified, player-initiated search, and
+  // computePositionView's fast (500ms, single-PV, no verification retry)
+  // bounded read that fires on every live chat message with no matching
+  // prior hint (the COMMON case). Before this fix, hintFindingsForModel
+  // labeled both "verified... deep multipv search, trust this over your own
+  // reasoning" regardless of which producer filled the shelf -- exactly
+  // backwards for the common fast-path case. The `verified` provenance flag
+  // (HintFacts/HintFindings) now drives the wording: only a real deep hint
+  // may claim "verified"/"trust over your own reasoning"; the fast path
+  // must say something honest instead and must never imply its bestSan is
+  // verified-best.
+  it("an UNVERIFIED shelf entry (fast position-view path) is never labeled verified or told to be trusted over the model's own reasoning", async () => {
+    const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      {
+        fen: START_FEN,
+        facts: {
+          bestUci: "g1f3",
+          pv: ["g1f3"],
+          evalCp: null,
+          evalMate: 3,
+          trade: false,
+          escalated: false,
+          verified: false, // computePositionView's fast, unverified read
+        },
+      }
+    );
+    expect(facts.hintFindings?.bestSan).toBe("Nf3"); // fixture sanity
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "there's something forcing here for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why is that the move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).not.toMatch(/verified/i);
+    expect(capturedPrompt).not.toMatch(/trust this over your own reasoning/i);
+    // The engine fact itself must still reach the model -- just honestly framed.
+    expect(capturedPrompt).toMatch(/Nf3/);
+  });
+
+  it("a VERIFIED shelf entry (deep hint path) keeps the verified/trust-over-your-own-reasoning framing", async () => {
+    const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      {
+        fen: START_FEN,
+        facts: {
+          bestUci: "g1f3",
+          pv: ["g1f3"],
+          evalCp: null,
+          evalMate: 3,
+          trade: false,
+          escalated: false,
+          verified: true,
+        },
+      }
+    );
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "there's something forcing here for you.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why is that the move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toMatch(/verified/i);
+    expect(capturedPrompt).toMatch(/trust this over your own reasoning/i);
   });
 });
 

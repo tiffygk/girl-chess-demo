@@ -504,7 +504,14 @@ describe("GameManager", () => {
   // ever populated lastHint). chat() must now populate a fast, unverified
   // engine view of the CURRENT live position on demand so the shelf isn't
   // empty for the coach's own most common "why" question (trace-185).
-  it("chat gets an engine view of the current position even with no prior hint (trace-185)", async () => {
+  //
+  // Whole-branch review correction (2026-08-03, Important finding 1): this
+  // test used to assert the prompt claimed "verified line for this
+  // position" for exactly this fast, explicitly-unverified path -- the
+  // overclaim finding 1 identified. computePositionView's own docstring
+  // forbids presenting its result as a verified hint; the assertions below
+  // now match that contract instead of the bug.
+  it("chat gets an engine view of the current position even with no prior hint (trace-185) -- and it is honestly labeled unverified, not 'verified'", async () => {
     const { gameId } = await gm.newGame(sessionId, 1100);
     // No computeHint call -- she just asks "why was this recommended".
     let capturedPrompt = "";
@@ -521,10 +528,42 @@ describe("GameManager", () => {
     const result = await gm.chat(gameId, { message: "why was that recommended?", context: { mode: "live" } });
     expect(result.ok).toBe(true);
     expect(capturedPrompt).toContain('"hintFindings"');
-    expect(capturedPrompt).toMatch(/hint engine.*verified line for this position/i);
+    // The fast position-view path must NOT claim to be a verified deep
+    // line, and must not tell the model to trust it over its own reasoning.
+    expect(capturedPrompt).not.toMatch(/verified/i);
+    expect(capturedPrompt).not.toMatch(/trust this over your own reasoning/i);
     const live = (gm as any).games.get(gameId);
     expect(live.lastHint).toBeDefined();
     expect(live.lastHint.facts.pv.length).toBeGreaterThan(0);
+    expect(live.lastHint.facts.verified).toBe(false);
+  }, 40000);
+
+  // Companion to the trace-185 fix above: a REAL player-initiated deep hint
+  // (computeHint) for the exact live fen is the one case that legitimately
+  // earns the "verified... trust this over your own reasoning" framing --
+  // the fix must not have swept the honest case away along with the
+  // dishonest one.
+  it("chat keeps the verified/trust-over-your-own-reasoning framing when a real deep hint matches the live position", async () => {
+    const { gameId } = await gm.newGame(sessionId, 1100);
+    const hintResult = await gm.computeHint(gameId);
+    expect(hintResult.ok).toBe(true);
+    let capturedPrompt = "";
+    gm.setCoachBackendForTesting({
+      name: "fake-deep-hint",
+      async available() {
+        return true;
+      },
+      async generate(prompt: string) {
+        capturedPrompt = prompt;
+        return "that keeps your development on track.";
+      },
+    });
+    const result = await gm.chat(gameId, { message: "why was that recommended?", context: { mode: "live" } });
+    expect(result.ok).toBe(true);
+    expect(capturedPrompt).toMatch(/verified/i);
+    expect(capturedPrompt).toMatch(/trust this over your own reasoning/i);
+    const live = (gm as any).games.get(gameId);
+    expect(live.lastHint.facts.verified).toBe(true);
   }, 40000);
 
   // Increment 3a Wave 2: narrate(). Uses setCoachBackendForTesting to inject

@@ -21,6 +21,10 @@ import type { CoachBackend } from "./backends/types";
 import { getPersona, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
+import { checkPlacementClaims } from "./placementClaims";
+import { checkMateClaims } from "./mateClaims";
+import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
+import { isOffTopic, mentionedPlies, type ChatIntent } from "./intent";
 
 // Round 3 (Q4, trace-180): the recapture-viability exemption checkDefenseClaims
 // takes -- shared by both validateChat's board route and validateChatGeneral,
@@ -29,15 +33,14 @@ import { checkDefenseClaims } from "./defenseClaims";
 // recapture exists (capturedSquareDefended) AND the engine's own line says
 // it doesn't actually hold (recaptureHolds === false); anything else leaves
 // the geometric checker's normal behavior untouched.
+// Whole-branch review (2026-08-03), Minor finding 3: moved below the import
+// block -- it previously sat between two import statements, splitting the
+// block (legal, since imports hoist, but reads oddly).
 function unsafeRecaptureSquaresFrom(threat: ChatContext["threat"]): string[] {
   return threat?.capturedSquareDefended && threat.recaptureHolds === false && threat.capturesSquare
     ? [threat.capturesSquare]
     : [];
 }
-import { checkPlacementClaims } from "./placementClaims";
-import { checkMateClaims } from "./mateClaims";
-import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
-import { isOffTopic, mentionedPlies, type ChatIntent } from "./intent";
 
 // F16 (this-game grounding chat): a second, independent narration surface
 // alongside narrate() in ./index.ts. Same shape (persona prompt + fact JSON
@@ -222,6 +225,14 @@ export interface HintFindings {
   trade: boolean;
   escalated: boolean;
   recommendationSan?: string; // recommendation.san when present
+  // Whole-branch review (2026-08-03, Important finding 1): PROVENANCE,
+  // threaded straight through from HintFacts.verified (see that field's own
+  // comment). true only for a real deep hint (computeHint); false for the
+  // fast, unverified position view (computePositionView) that fills the
+  // shelf on ordinary live chat with no matching prior hint -- the common
+  // case. hintFindingsForModel below is the one place this drives wording:
+  // only true may claim "verified"/"trust over your own reasoning".
+  verified: boolean;
 }
 
 export interface ChatFactList {
@@ -477,6 +488,10 @@ export function assembleChatFactList(
       evalMate: number | null;
       trade: boolean;
       escalated: boolean;
+      // Whole-branch review (2026-08-03, Important finding 1): required,
+      // never defaulted -- see HintFindings.verified's own comment. Both
+      // real producers (computeHint, computePositionView) always set this.
+      verified: boolean;
       recommendation?: { san: string };
     };
   }
@@ -650,6 +665,7 @@ export function assembleChatFactList(
         pvSans,
         trade: hc.facts.trade,
         escalated: hc.facts.escalated,
+        verified: hc.facts.verified,
         recommendationSan: hc.facts.recommendation?.san,
       };
       sans.add(bestSan);
@@ -1184,14 +1200,37 @@ function pendingMoveForModel(pendingMove: ChatContext["pendingMove"]) {
 // ban already exempts that exact shape (see voiceRules.test.ts's "mate in
 // 3" pin). Returns undefined when there is no shelf entry, so the "fact
 // list (json)" section omits the key entirely rather than emit a null.
+// Whole-branch review (2026-08-03, Important finding 1): this used to
+// unconditionally stamp EVERY shelf entry "verified... deep multipv search,
+// trust this over your own reasoning" -- but the shelf has two producers of
+// very different confidence (see HintFindings.verified's own comment), and
+// in live chat the fast, explicitly-unverified computePositionView is the
+// COMMON case (a real deep hint is player-initiated and rare). Wording now
+// branches on that provenance flag: only a real deep hint earns "verified"/
+// "trust over your own reasoning"; the fast path is framed as a quick,
+// unverified engine look to weigh, never as verified-best -- its bestSan is
+// still handed over (the fact itself is real and worth having), just never
+// narrated with a confidence the search never earned.
 function hintFindingsForModel(hintFindings: ChatFactList["hintFindings"]) {
   if (!hintFindings) return undefined;
   const h = hintFindings;
-  const score = h.evalMate !== null
-    ? `verified forced mate in ${Math.abs(h.evalMate)}`
-    : "a verified best line (no mate)";
+  // Note: the fast-path wording below must not contain the substring
+  // "verified" at all (not even inside a word like "unverified") -- the
+  // whole point is to never let the model read this shelf entry as
+  // verified-anything. "quick"/"unconfirmed" carry the honest framing
+  // instead. chat.perPly.test.ts's own /verified/i check pins this.
+  const note = h.verified
+    ? "the hint engine's verified line for this position (deep multipv search, trust this over your own reasoning)"
+    : "a quick engine look at this position (single line, ~0.5s search, not deeply checked) -- weigh it, don't just defer to it";
+  const score = h.verified
+    ? h.evalMate !== null
+      ? `verified forced mate in ${Math.abs(h.evalMate)}`
+      : "a verified best line (no mate)"
+    : h.evalMate !== null
+      ? `an unconfirmed quick read: mate in ${Math.abs(h.evalMate)}`
+      : "an unconfirmed quick read (no mate)";
   return {
-    note: "the hint engine's verified line for this position (deep multipv search, trust this over your own reasoning)",
+    note,
     bestSan: h.bestSan,
     ...(h.trade ? { trade: "a trade, but the strongest move here" } : {}),
     score,

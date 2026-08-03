@@ -61,6 +61,15 @@ export interface HintFacts extends MoveFacts {
    *  signed -- the fact that made trace-190's Ng5 a forced-mate hint. null
    *  when the score is a centipawn eval. */
   evalMate: number | null;
+  /** Whole-branch review (2026-08-03, Important finding 1): PROVENANCE --
+   *  true only for computeHint's deep, multipv, verification-backed search;
+   *  false for computePositionView's fast, single-PV, unverified bounded
+   *  read. The two producers share this return shape and both land on
+   *  live.lastHint (manager.ts), so a consumer (chat.ts's
+   *  hintFindingsForModel) has no other way to tell a real hint from a
+   *  quick position glance -- this flag is that fact, always present so no
+   *  consumer can silently default to the wrong (more trusting) framing. */
+  verified: boolean;
 }
 
 /** Score from the perspective of the side to move in the searched position. */
@@ -199,6 +208,7 @@ export async function computeHint(fen: string, evaluator: Evaluator): Promise<Hi
     trade,
     evalCp: chosen.cp,
     evalMate: chosen.mate,
+    verified: true,
   };
 }
 
@@ -234,5 +244,6 @@ export async function computePositionView(
     trade: false,
     evalCp: ev.cp,
     evalMate: ev.mate,
+    verified: false,
   };
 }
