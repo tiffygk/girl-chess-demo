@@ -401,6 +401,20 @@ app.get("/api/game/:id/turning-lines", (req, res) => {
   }
 });
 
+// Opponent-move-analysis plan (2026-08-03), Wave A: additive -- exposes the
+// persisted Stockfish best-move/pv for EVERY highlighted ply, EITHER side
+// (see manager.ts's getHighlightLines / server/annotator/highlightLines.ts).
+// Sync (reads only, same as /turning-lines above), same try/catch envelope
+// as every other route. Its own route, not folded into /turning-lines or
+// /summary -- neither of those response shapes changes.
+app.get("/api/game/:id/highlight-lines", (req, res) => {
+  try {
+    res.json(gm.getHighlightLines(Number(req.params.id)));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 // Increment 3c: GET /api/games — the "past games" / saved-games menu list.
 // Finished games only, newest first, capped at 30 inside listGames/
 // listFinishedGames. Sync, same try/catch envelope as every other route.

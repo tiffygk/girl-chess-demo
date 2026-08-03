@@ -18,6 +18,11 @@ import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
 // this.evaluator or the shared queue, same "engine math only" boundary as
 // judgeMove's classify.ts/adjudicate.ts calls.
 import { computeTurningPoints, TP_ALGO_VERSION, type TurningPoint } from "../annotator/turningPoints";
+// Opponent-move-analysis plan (2026-08-03), Wave A: getHighlightLines below
+// reuses pvLine (this class's own private replay helper) + getGameMoves
+// (imported above), and delegates the seed/quality-tier math to this pure
+// module -- see buildHighlightLines's own header for the seedPly contract.
+import { buildHighlightLines, type HighlightLine, type HighlightMoveRow } from "../annotator/highlightLines";
 import { classifyMoves } from "../annotator/classifications";
 // Increment 3a Wave 2: the coach's async narrate surface. Deliberately kept
 // out of judgeMove above — see that method's own comment and
@@ -583,6 +588,38 @@ export class GameManager {
       return { ok: true, lines };
     } catch (err) {
       console.warn("[girl-chess] getTurningLines failed:", (err as Error).message);
+      return { ok: false, lines: [] };
+    }
+  }
+
+  // Opponent-move-analysis plan (2026-08-03), Wave A: GET
+  // /api/game/:id/highlight-lines. Serves per-HIGHLIGHTED-ply engine facts
+  // for EITHER side, seeded at p-1 universally -- the seam getTurningLines
+  // deliberately cannot provide (see highlightLines.ts's own header). Reads
+  // only (mirrors getTurningLines' never-writes rule): getGameMoves is the
+  // same pure SELECT accessor getTurningLines/getSummary already use, and
+  // this method never calls insertTurningPoints or any other write. `side`
+  // is derived ONCE here, at this data-load remap -- the same
+  // getSummary/conversion.ts precedent buildHighlightLines' own header
+  // documents -- and threaded through as a required field rather than
+  // re-derived anywhere downstream.
+  getHighlightLines(gameId: number): { ok: boolean; lines: HighlightLine[] } {
+    try {
+      const rows: HighlightMoveRow[] = getGameMoves(gameId).map((r: any) => ({
+        ply: r.ply,
+        san: r.san,
+        uci: r.uci ?? null,
+        evalCp: r.eval_cp ?? null,
+        evalMate: r.eval_mate ?? null,
+        bestMove: r.best_move ?? null,
+        pv: r.pv ?? null,
+        highlighted: r.highlighted === 1,
+        side: (r.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
+      }));
+      const lines = buildHighlightLines(rows, (fen, ev) => this.pvLine(fen, ev));
+      return { ok: true, lines };
+    } catch (err) {
+      console.warn("[girl-chess] getHighlightLines failed:", (err as Error).message);
       return { ok: false, lines: [] };
     }
   }
