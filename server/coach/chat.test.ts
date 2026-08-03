@@ -239,6 +239,29 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(facts.perPlyAnalysis?.[1].gap).toBe("decisively better");
     });
 
+    // Whole-branch review (2026-08-03, Important finding 2): the mate
+    // override in gapWord forced "decisively better" whenever a mate
+    // appeared on either side of the pair, and gap was attached to the
+    // output regardless of whether the played move actually deviated from
+    // bestSan. Converting a mate correctly (prior mate:5 for her, current
+    // mate:-4 signed for the opponent she just moved against -> honest
+    // deltaCp is tiny/negative, "no real gap") on a ply where she played the
+    // engine's own best move (bestSan === san, no deviation at all) wrongly
+    // came out "decisively better" -- inventing a decisive miss on a move
+    // she played BEST. Gap must only ever describe a real deviation.
+    it("a well-played mate-converting move (bestSan === san) gets no gap at all, never a false 'decisively better'", () => {
+      const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
+      const perPly = [
+        { ply: 1, san: "e4", evalCp: null, evalMate: 5, bestSan: null, pvSans: [] },
+        // She played the engine's own best move -- bestSan === san, not a
+        // deviation -- while still converting the mate (mate:-4, signed for
+        // the opponent to move next).
+        { ply: 2, san: "e5", evalCp: null, evalMate: -4, bestSan: "e5", pvSans: ["e5"] },
+      ];
+      const facts = assembleChatFactList(gameMoves, {}, [], perPly);
+      expect(facts.perPlyAnalysis?.[1].gap).toBeUndefined();
+    });
+
     it("a ply with no eval captured on either side of the pair leaves gap undefined, never a guessed number", () => {
       const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
       const perPly = [

@@ -568,7 +568,19 @@ export function assembleChatFactList(
   const perPlyAnalysis = perPly?.map((p, i) => ({
     ...p,
     phase: phases.phaseAt(p.ply),
-    gap: i > 0 ? gapWordForPly(perPly[i - 1], p) : undefined,
+    // Whole-branch review (2026-08-03, Important finding 2): gap (and its
+    // mate-override inside gapWord) must only ever describe a real
+    // DEVIATION -- a ply where she played something other than the engine's
+    // own best move. Previously this was computed for every ply with a
+    // prior eval, with no deviation check at all, so a ply where she played
+    // bestSan itself (including converting a mate correctly) could still
+    // read "decisively better" purely because a mate appeared on either
+    // side of the pair -- inventing a decisive miss on a move she played
+    // BEST. p.bestSan === null means "no best move ever computed for this
+    // ply" (never a deviation, nothing to compare against either).
+    gap: i > 0 && p.bestSan !== null && p.bestSan !== p.san
+      ? gapWordForPly(perPly[i - 1], p)
+      : undefined,
   }));
 
   const { fen: currentFen, toMove, occupancy, legalSans, contested } = derivePositionFacts(chess);
