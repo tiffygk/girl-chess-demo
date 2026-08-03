@@ -213,3 +213,58 @@ describe("isRecordRequest (Round 2, item 8): the 'make a note' family", () => {
     expect(isRecordRequest("was my knight move okay?")).toBe(false);
   });
 });
+
+// Router-fix round (2026-08-03): tier-2 abstract-theory markers
+// (ABSTRACT_THEORY_RE), gated on !hasBoardSignal. Positives are the 5
+// owner-verbatim general-theory questions that mis-routed to board under
+// tier-1 alone (gt-01/02/06/08/09); negatives prove the gate holds in every
+// direction the check-widening bug class attacks from.
+describe("classifyIntent tier-2 abstract-theory markers (router-fix round, 2026-08-03)", () => {
+  const GT_FORMERLY_MISROUTED: string[] = [
+    "what's another opening that would work well from a setup like mine?",
+    "besides just developing pieces, what should i actually be trying to do in the opening?",
+    "what's the idea behind parking a knight on an outpost?",
+    "what are the key principles for a king-and-pawn endgame?",
+    "what does it mean to play for the initiative instead of just reacting?",
+  ];
+  for (const message of GT_FORMERLY_MISROUTED) {
+    it(`routes owner-verbatim "${message}" to general`, () => {
+      expect(classifyIntent(message, ctx())).toBe("general");
+    });
+  }
+
+  it("a tier-2 phrase alongside a positive board signal stays board (the widening gate)", () => {
+    expect(classifyIntent("what's the idea behind that move", ctx())).toBe("board"); // demonstrative
+    expect(classifyIntent("what's the principle behind this position", ctx())).toBe("board"); // demonstrative
+    expect(classifyIntent("what does it mean to play Nf3 here", ctx())).toBe("board"); // SAN + here
+    expect(classifyIntent("by opening principles, was my opening okay", ctx())).toBe("board"); // my-phase
+  });
+
+  it("the live deictic/possessive 'idea behind this|it|my...' stays board (lookahead)", () => {
+    expect(classifyIntent("what's the idea behind this", ctx())).toBe("board");
+    expect(classifyIntent("what is the idea behind it", ctx())).toBe("board");
+    // open-10, a real frozen board-live fixture that carries NO board
+    // signal -- the planning-time sweep's one genuine collision. Also
+    // asserted arm-derived in routing.test.ts; duplicated here so the unit
+    // file alone falsifies the lookahead.
+    expect(classifyIntent("what is the idea behind my opponent's setup?", ctx())).toBe("board");
+  });
+
+  it("hasFocus/hasPendingMove force board over any tier-2 marker, same as tier-1", () => {
+    expect(classifyIntent("what does it mean to play for the initiative", ctx({ hasFocus: true }))).toBe("board");
+    expect(
+      classifyIntent("what are the key principles for a king-and-pawn endgame?", ctx({ hasPendingMove: true }))
+    ).toBe("board");
+  });
+
+  it("a phase-less goal question stays board (ambiguity resolves to board, unchanged)", () => {
+    expect(classifyIntent("what should i be trying to do", ctx())).toBe("board");
+    expect(classifyIntent("what should i be trying to do here", ctx())).toBe("board");
+  });
+
+  it("the F1 repro set is untouched by tier 2 (no marker, no signal, still board)", () => {
+    for (const m of ["is this ok", "should i take it", "yes", "ok", "what should i do here"]) {
+      expect(classifyIntent(m, ctx())).toBe("board");
+    }
+  });
+});
