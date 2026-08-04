@@ -464,6 +464,17 @@ describe("classifyMove — decided-position conversion (Task K2)", () => {
     expect(verdict.mateAfter).toBeNull(); // the reading is gone -> typed as null, not folded into a 99098 delta
     expect(verdict.tier).toBe("warning"); // fires via the typed lost-mate condition
     expect(verdict.conversionCopy).toBe("still winning, but the forced mate is gone for now.");
+    // Game-169 minors investigation (2026-08-03, item 1): this is the one
+    // place downstream of the MATE_SCORE_CP fold that is NOT gated on the
+    // typed mateBefore/mateAfter fields -- claimsBetterMove reads raw
+    // Math.abs(deltaCp) directly (classify.ts), so a lost mate-in-5 folds to
+    // a ~99900-ish deltaCp here and clears BETTER_CLAIM_MIN_CP by a huge
+    // margin. That answer is correct (a mate-in-5 is about as concrete a
+    // "better move existed" as this codebase can name) -- guarding it so a
+    // future change to the fold (or to claimsBetterMove's gate) can't
+    // silently flip this specific, real-game-169-shaped case to false.
+    expect(verdict.deltaCp).toBeGreaterThan(BETTER_CLAIM_MIN_CP * 100); // sanity: still the huge folded artifact, not a real cp reading
+    expect(verdict.claimsBetterMove).toBe(true);
   });
 });
 
