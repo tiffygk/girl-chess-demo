@@ -2548,7 +2548,11 @@ export function GamePage() {
               resolves — see handleMoveWithPostJudge. */}
           {!pending && postVerdict && (
             <div className="judge-indicator post-judge" role="status" aria-live="polite">
-              {postVerdict.tier === "silent" && <span className="judge-check">✓</span>}
+              {/* game-169 minors fix: the checkmark renders unconditionally
+                  across tiers here, mirroring guardian mode's unconditional
+                  "judged ✓" above -- it used to be gated on tier==="silent",
+                  which withheld it from nudge/warning verdicts. */}
+              <span className="judge-check">✓</span>
               {postVerdict.tier === "nudge" && (
                 <span className="judge-badge judge-badge-nudge">hm, you sure?</span>
               )}
