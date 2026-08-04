@@ -5,7 +5,7 @@ import os from "os";
 import path from "path";
 import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { CoachBackend, CoachUsage } from "./types";
+import type { CoachBackend, CoachUsage, ThinkingPref } from "./types";
 
 // Warm-coach-backend round (2026-07-21). Per decision-no-warm-reserve.md
 // (Opus controller, amending the brief's Task 2): measured startup()/
@@ -167,8 +167,27 @@ function coachThinkingMode(): "disabled" | "low" | undefined {
   return raw === "disabled" || raw === "low" ? raw : undefined;
 }
 
-function buildOptions(abortController: AbortController, stablePrefix?: string) {
-  const thinkingMode = coachThinkingMode();
+// OD-3b (coach thinking-config round, 2026-08-03): resolves the per-call
+// thinkingPref (types.ts) against the env knob above. Precedence: an
+// EXPLICIT thinkingPref always wins over GC_COACH_THINKING for that one
+// call -- 'low'/'disabled' map straight through, and 'default' forces the
+// unbounded baseline (undefined -- no thinking/effort key) EVEN IF the env
+// says 'disabled' or 'low', because that is exactly the shape chat.ts's
+// regen escalation needs (the rescue attempt must always get full
+// thinking, not whatever the fast attempt-0 path was configured to use).
+// Only when thinkingPref itself is omitted (not passed at all -- distinct
+// from passing 'default') does this fall back to the env knob, which is
+// what keeps every pre-this-round call site (that never passes a 5th/6th
+// arg at all) byte-identical to before.
+function resolveThinkingMode(thinkingPref?: ThinkingPref): "disabled" | "low" | undefined {
+  if (thinkingPref === "disabled") return "disabled";
+  if (thinkingPref === "low") return "low";
+  if (thinkingPref === "default") return undefined;
+  return coachThinkingMode();
+}
+
+function buildOptions(abortController: AbortController, stablePrefix?: string, thinkingPref?: ThinkingPref) {
+  const thinkingMode = resolveThinkingMode(thinkingPref);
   return {
     model: AGENT_SDK_MODEL,
     maxTurns: 1,
@@ -267,12 +286,13 @@ async function runQuery(
   prompt: string,
   abortController: AbortController,
   stablePrefix?: string,
-  onUsage?: (usage: CoachUsage) => void
+  onUsage?: (usage: CoachUsage) => void,
+  thinkingPref?: ThinkingPref
 ): Promise<string> {
   let result = "";
   const stream = query({
     prompt: splitStablePrefix(prompt, stablePrefix),
-    options: buildOptions(abortController, stablePrefix),
+    options: buildOptions(abortController, stablePrefix, thinkingPref),
   }) as AsyncGenerator<SDKMessage, void>;
   for await (const message of stream) {
     if (message.type === "result") {
@@ -312,12 +332,13 @@ async function runQueryStream(
   abortController: AbortController,
   onDelta: (text: string) => void,
   stablePrefix?: string,
-  onUsage?: (usage: CoachUsage) => void
+  onUsage?: (usage: CoachUsage) => void,
+  thinkingPref?: ThinkingPref
 ): Promise<string> {
   let result = "";
   const stream = query({
     prompt: splitStablePrefix(prompt, stablePrefix),
-    options: { ...buildOptions(abortController, stablePrefix), includePartialMessages: true },
+    options: { ...buildOptions(abortController, stablePrefix, thinkingPref), includePartialMessages: true },
   }) as AsyncGenerator<SDKMessage, void>;
   for await (const message of stream) {
     if (message.type === "stream_event") {
@@ -364,7 +385,7 @@ export const agentSdkBackend: CoachBackend = {
       clearTimeout(timer);
     }
   },
-  async generate(prompt, timeoutMs, stablePrefix, onUsage) {
+  async generate(prompt, timeoutMs, stablePrefix, onUsage, thinkingPref) {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -374,7 +395,7 @@ export const agentSdkBackend: CoachBackend = {
       }, timeoutMs);
     });
     try {
-      return await Promise.race([runQuery(prompt, controller, stablePrefix, onUsage), timeout]);
+      return await Promise.race([runQuery(prompt, controller, stablePrefix, onUsage, thinkingPref), timeout]);
     } finally {
       clearTimeout(timer);
     }
@@ -383,7 +404,7 @@ export const agentSdkBackend: CoachBackend = {
   // above (same reject message shape -- "timed out" -- so chat.ts's
   // isTimeoutError classification is unchanged for the streaming path too),
   // delegating only to runQueryStream instead of runQuery.
-  async generateStream(prompt, timeoutMs, onDelta, stablePrefix, onUsage) {
+  async generateStream(prompt, timeoutMs, onDelta, stablePrefix, onUsage, thinkingPref) {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -393,7 +414,10 @@ export const agentSdkBackend: CoachBackend = {
       }, timeoutMs);
     });
     try {
-      return await Promise.race([runQueryStream(prompt, controller, onDelta, stablePrefix, onUsage), timeout]);
+      return await Promise.race([
+        runQueryStream(prompt, controller, onDelta, stablePrefix, onUsage, thinkingPref),
+        timeout,
+      ]);
     } finally {
       clearTimeout(timer);
     }
