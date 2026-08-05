@@ -63,6 +63,31 @@ describe("buildArrowsForPly -- highlighted ply routes through reviewArrowsForMov
     expect(made && "secondary" in made).toBe(false);
   });
 
+  it("a highlighted HER ply (odd): made(played/cyan, primary) + best + mallow's reply(secondary), the odd-parity mirror of the mallow test above", () => {
+    // Arrow follow-ups M-a (2026-08-05): pins the odd-ply synthesis path --
+    // ply 5 (Bb5, f1->b5) is HER move; mallow's actual reply is ply 6 (a6,
+    // a7->a6), resolved through the gameSans channel (reviewArrowsForMove's
+    // odd-parity reply arm), never fb.
+    const herLine = highlightLine({
+      ply: 5,
+      side: "her",
+      san: "Bb5",
+      bestFromTo: { from: "d2", to: "d4" }, // a hypothetical alternative, distinct from the made move
+    });
+    const arrows = buildArrowsForPly(undefined, 5, sans, [herLine]);
+
+    const made = arrows.find((a) => a.from === "f1" && a.to === "b5");
+    const best = arrows.find((a) => a.from === "d2" && a.to === "d4");
+    const reply = arrows.find((a) => a.from === "a7" && a.to === "a6");
+
+    expect(made).toEqual({ from: "f1", to: "b5", color: "played" });
+    expect(best).toEqual({ from: "d2", to: "d4", color: "best" });
+    expect(reply).toEqual({ from: "a7", to: "a6", color: "mallow", secondary: true });
+    // the made arrow is PRIMARY -- no secondary flag at all.
+    expect(made && "secondary" in made).toBe(false);
+    expect(best && "secondary" in best).toBe(false);
+  });
+
   it("a highlighted ply that is NOT a turning point (no TurningLine at all): still made+best+reply, synthesized from the HighlightLine + activeReviewMoves", () => {
     const arrows = buildArrowsForPly(undefined, 4, sans, [highlightLine()]);
 
