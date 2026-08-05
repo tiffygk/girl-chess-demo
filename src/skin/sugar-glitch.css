@@ -1117,6 +1117,14 @@
 .gc-app .board-arrows .arrow-mallow-best line,
 .gc-app .board-arrows .arrow-mallow-best polygon { stroke: #C22B7E; fill: #C22B7E; }
 .gc-app .board-arrows .arrow-mallow-best line { stroke-dasharray: 2.7 1.9; }
+/* "secondary" — arrow redesign Task 4 (2026-08-04): the OTHER actor's actual
+   reply in the three-arrow set (reviewArrowsForMove). A modifier on the
+   actor-colour classes above, never a colour of its own — opacity alone
+   carries the emphasis drop, so the subject (made move) and the engine best
+   stay full-strength and the reply reads as context. 0.55: still clearly a
+   solid it-happened arrow over both square tints, but visibly beneath the
+   primaries. No new hex. */
+.gc-app .board-arrows .arrow-secondary { opacity: 0.55; }
 
 /* check ring — sits under the piece sprite (.pieces layer paints over .squares) */
 .gc-app .sq.check-ring {
