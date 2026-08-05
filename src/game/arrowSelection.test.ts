@@ -66,8 +66,9 @@ describe("buildArrowsForPly -- highlighted ply routes through reviewArrowsForMov
   it("a highlighted HER ply (odd): made(played/cyan, primary) + best + mallow's reply(secondary), the odd-parity mirror of the mallow test above", () => {
     // Arrow follow-ups M-a (2026-08-05): pins the odd-ply synthesis path --
     // ply 5 (Bb5, f1->b5) is HER move; mallow's actual reply is ply 6 (a6,
-    // a7->a6), resolved through the gameSans channel (reviewArrowsForMove's
-    // odd-parity reply arm), never fb.
+    // a7->a6). This pins the odd/even colour-parity switch (her = played
+    // made, mallow reply); both reply channels resolve to the same endpoint
+    // here, so it does not distinguish the gameSans vs fb arm.
     const herLine = highlightLine({
       ply: 5,
       side: "her",
