@@ -188,7 +188,7 @@ interface BoardProps {
    * reuses the existing square-name-class pass on `.sq` (below) with new
    * `.tp-played`/`.tp-best`/`.tp-threat` classes, same render-only contract.
    * Arrow follow-ups (2026-08-05): secondary mirrors ReviewHighlight's own
-   * flag (arrowsToHighlights, reviewArrows.ts) — set on both endpoint washes
+   * flag (arrowsToHighlights, reviewArrows.ts) -- set on both endpoint washes
    * of a secondary reply arrow, rendered here as a tp-secondary modifier
    * class (wash dimmed to the arrow's own 0.55, sugar-glitch.css).
    */
