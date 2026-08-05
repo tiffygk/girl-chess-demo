@@ -736,6 +736,11 @@ export interface TurningLine {
   playedFromTo?: { from: string; to: string };
   bestSan?: string;
   bestFromTo?: { from: string; to: string };
+  // Turning-card arrow extension plan (2026-08-05), Task 1: the engine's
+  // best move for whoever was actually to move AT this ply -- distinct
+  // from bestFromTo (her best reply) on an opponent (even) ply. See
+  // server/game/manager.ts's TurningLine comment for the full derivation.
+  moverBestFromTo?: { from: string; to: string };
   pvSans: string[];
   threat?: { from: string; to: string };
 }
