@@ -67,6 +67,11 @@ export interface ReviewArrow {
   from: string;
   to: string;
   color: ArrowColor;
+  // Postgame arrow redesign, Task 1 (2026-08-04): set on the OTHER actor's
+  // actual reply in reviewArrowsForMove's three-arrow set -- Task 4 (visual
+  // wave) renders this at reduced weight. Never set on the made move or the
+  // best/found arrow (those are always the subject, PRIMARY).
+  secondary?: boolean;
 }
 
 export interface ReviewHighlight {
@@ -148,6 +153,65 @@ export function turningLineArrows(
       mallowReply && mallowReply.from === line.threat.from && mallowReply.to === line.threat.to;
     if (!coincides) arrows.push({ ...line.threat, color: "mallow-best" });
   }
+  return arrows;
+}
+
+// Postgame arrow redesign, Task 1 (2026-08-04). Conservative-scope override
+// (owner-approved 2026-08-04): the plan's Task 1 originally called for
+// deleting turningLineArrows/turningLineReplayArrows's single-arrow replay
+// path once callers moved over. That deletion is explicitly OUT of scope
+// here -- this function is purely ADDITIVE, both functions above are
+// untouched, and Task 2 (a separate task) is what rewires callers.
+//
+// The unified three-arrow model: the move made (mover's own colour --
+// "mallow" for an even ply, "played" for an odd ply -- PRIMARY, the
+// subject), the mover's best (green "best" dashed, or deduped to a single
+// solid "found" when the made move and the best coincide -- same
+// coincident-arrows-z-fight discipline turningLineArrows already uses), and
+// the OTHER actor's actual reply (the other actor's colour, SECONDARY --
+// this file only sets the flag, Board.tsx/Task 4 render the reduced
+// weight). "best" is always the engine best FOR THE MOVER, supplied by the
+// caller as `moverBest` (Task 2 sources it from TurningLine.bestFromTo or,
+// for a non-turning-point highlight, HighlightLine.bestFromTo) rather than
+// re-derived here.
+//
+// Reply resolution mirrors turningLineArrows' own odd/even split: on an odd
+// (her) ply, mallow's reply lives at ply+1 and is resolved by replaying
+// gameSans (playedArrowForPly) -- there is no fb for that direction. On an
+// even (mallow's) ply, her reply is fb.playedFromTo, already computed
+// upstream by followedBest() -- never re-derived here. Either way, a reply
+// that cannot resolve (no gameSans, replay ran out, no fb) draws nothing --
+// never a guess.
+export function reviewArrowsForMove(
+  line: TurningLine,
+  opts: { fb?: FollowedBest; gameSans?: SummaryMove[]; moverBest?: { from: string; to: string } } = {}
+): ReviewArrow[] {
+  const { fb, gameSans, moverBest } = opts;
+  const isOpponentPly = line.ply % 2 === 0;
+  const madeColor: ArrowColor = isOpponentPly ? "mallow" : "played";
+  const arrows: ReviewArrow[] = [];
+
+  const made = line.playedFromTo;
+  const madeIsBest =
+    !!made && !!moverBest && made.from === moverBest.from && made.to === moverBest.to;
+
+  if (made && madeIsBest) {
+    // Coincident made/best: one honest solid arrow, never a duplicate.
+    arrows.push({ ...made, color: "found" });
+  } else {
+    if (made) arrows.push({ ...made, color: madeColor });
+    if (moverBest) arrows.push({ ...moverBest, color: "best" });
+  }
+
+  // The OTHER actor's actual reply -- see the header split above.
+  const reply = isOpponentPly
+    ? fb?.playedFromTo
+    : gameSans
+      ? playedArrowForPly(gameSans, line.ply + 1)
+      : undefined;
+  const replyColor: ArrowColor = isOpponentPly ? "played" : "mallow";
+  if (reply) arrows.push({ ...reply, color: replyColor, secondary: true });
+
   return arrows;
 }
 
