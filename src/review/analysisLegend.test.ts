@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { LEGEND_ROWS, LEGEND_SOLID_ROWS, LEGEND_DASHED_ROWS } from "./analysisLegend";
+import { LEGEND_ROWS, LEGEND_SOLID_ROWS, LEGEND_DASHED_ROWS, mallowBestLabel } from "./analysisLegend";
 import type { ArrowColor } from "../game/reviewArrows";
 import { computeShowAllowedRow } from "./DebriefPage";
 import { buildArrowsForPly } from "../game/arrowSelection";
@@ -96,6 +96,24 @@ describe("analysisLegend.ts row model (D1 cipher rail)", () => {
       // stay anchored to her move, which is exactly what it says.
       "mallow-best": "what your move allowed",
     });
+  });
+});
+
+// Voice-consistent four-arrow model (owner ruling, 2026-08-05): mallow-best
+// now fills two different slots (see reviewArrows.ts's reviewArrowsForMove
+// header) -- the label must track which one sourced the arrow.
+describe("mallowBestLabel (parity-aware, 2026-08-05)", () => {
+  it("reads 'what your move allowed' when sourced from threat (odd card -- mallow is the OTHER actor)", () => {
+    expect(mallowBestLabel("threat")).toBe("what your move allowed");
+  });
+
+  it("reads \"mallow's recommended move\" when sourced from mallow's own best (even card -- mallow is the SUBJECT)", () => {
+    expect(mallowBestLabel("moverBest")).toBe("mallow's recommended move");
+  });
+
+  it("LEGEND_DASHED_ROWS's static mallow-best row still carries the threat-sourced label as its default", () => {
+    const row = LEGEND_DASHED_ROWS.find((r) => r.kind === "mallow-best");
+    expect(row?.label).toBe(mallowBestLabel("threat"));
   });
 });
 
@@ -272,24 +290,27 @@ describe("computeShowAllowedRow card-scope fix (union-review finding 1, feedback
     expect(computeShowAllowedRow(lines, gameSans50, 5, arrowsAt5)).toBe(true);
   });
 
-  // Fix-round-1 (2026-08-05), FIX 1 -- the required test: the OLD
-  // (turningLineArrows-recomputing) body showed this row for game 169 ply 9
-  // even though the board it renders now (a non-highlighted "ask" ply,
-  // reviewArrowsForMove) draws no mallow-best arrow at all. `activeArrows`
-  // here is exactly what buildArrowsForPly produces for that ply under
-  // "ask" -- the actual, default interaction a turning-point card uses --
-  // proving the legend now agrees with the real board instead of a stale
-  // second computation.
-  it("game 169 ply 9 (documented real-game regression): a card viewed via 'ask' never shows the row, even though its line carries a real, non-coincident threat", () => {
+  // Fix-round-1 (2026-08-05), FIX 1 originally pinned that game 169 ply 9
+  // never showed the row via "ask", because the OLD reviewArrowsForMove
+  // never read line.threat under any intent -- an incidental consequence of
+  // the three-arrow model, not a deliberate design choice. The
+  // voice-consistent four-arrow model (same day, later in the round, R2)
+  // deliberately REVERSES this: mallow-best is now the OTHER actor's best
+  // on an odd card, sourced from line.threat, and "ask" is exactly the
+  // interaction that channel serves. `activeArrows` is still read directly
+  // off the real production function (never recomputed by hand) -- the
+  // legend-agrees-with-the-board discipline this test protects is intact,
+  // only the fact it observes about "ask" has legitimately changed.
+  it("game 169 ply 9: a card viewed via 'ask' now shows the row too, once mallow-best sources from a real, non-coincident threat (R2, 2026-08-05)", () => {
     const line: TurningLine = {
       ply: 9,
       pvSans: [],
       bestFromTo: { from: "d2", to: "d4" },
-      threat: { from: "e7", to: "e5" }, // a real, non-coincident threat -- would draw mallow-best under "replay"
+      threat: { from: "e7", to: "e5" }, // a real, non-coincident threat
     };
     const activeArrows = buildArrowsForPly(line, 9, gameSans14, [], "ask");
-    expect(activeArrows.some((a) => a.color === "mallow-best")).toBe(false);
-    expect(computeShowAllowedRow([line], gameSans14, 9, activeArrows)).toBe(false);
+    expect(activeArrows.some((a) => a.color === "mallow-best")).toBe(true);
+    expect(computeShowAllowedRow([line], gameSans14, 9, activeArrows)).toBe(true);
   });
 
   it("guard against 'always hide': a card viewed via 'replay' whose threat genuinely doesn't coincide with mallow's reply DOES show the row, because the arrow really is on the board", () => {
@@ -395,18 +416,21 @@ describe("AnalysisLegendRail copy hygiene: no em-dash in user-facing text (union
   });
 });
 
-// Postgame arrow redesign, Task 3 (2026-08-04): reviewArrowsForMove (Task 1,
-// reviewArrows.ts) is the new unified three-arrow producer used by every
-// turning-point card AND both highlighter drawers (Task 2). It emits exactly
-// four ArrowColor values -- "mallow"/"played" for the made move (mover's own
-// colour), "best" (dashed recommendation) or "found" (solid dedup when
-// made==best) -- and reuses the actor colours for the reply, so no new kind.
-// This pins that every one of those four already has a legend row, rather
-// than relying on the pre-existing "every DRAWABLE ArrowColor" test above
-// (over the whole ArrowColor union, including turningLineArrows-only kinds)
-// to happen to cover them too.
-describe("legend covers every colour reviewArrowsForMove (Task 1) can emit", () => {
-  const reviewArrowsForMoveColors: ArrowColor[] = ["played", "mallow", "best", "found"];
+// Postgame arrow redesign, Task 3 (2026-08-04), widened for the
+// voice-consistent four-arrow model (2026-08-05): reviewArrowsForMove
+// (reviewArrows.ts) is the unified arrow producer used by every
+// turning-point card AND both highlighter drawers. Per the Invariant rule
+// (CLAUDE.md) -- a check narrower than what it claims to cover is the
+// recurring bug class -- this list must track every colour the function can
+// ACTUALLY emit, not just what it emitted before this round: "mallow-best"
+// joined the set once the OTHER-actor's-best channel (R2) started sourcing
+// mallow's own alternative / the persisted threat. This pins that every one
+// of those five already has a legend row, rather than relying on the
+// pre-existing "every DRAWABLE ArrowColor" test above (over the whole
+// ArrowColor union, including turningLineArrows-only kinds) to happen to
+// cover them too.
+describe("legend covers every colour reviewArrowsForMove can emit", () => {
+  const reviewArrowsForMoveColors: ArrowColor[] = ["played", "mallow", "best", "found", "mallow-best"];
 
   it.each(reviewArrowsForMoveColors)("has a legend row for '%s'", (kind) => {
     const row = LEGEND_ROWS.find((r) => r.kind === kind);

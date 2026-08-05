@@ -67,9 +67,28 @@ export const LEGEND_SOLID_ROWS: LegendRow[] = [
 // and asked for the label to say that. Note this is NOT "what the recommended
 // move protects against" -- nothing in the codebase derives that, and the two
 // only usually coincide. The label must stay true to the refutation.
+// Voice-consistent four-arrow model (owner ruling, 2026-08-05): mallow-best
+// now fills TWO different slots depending on which card it's drawn on (see
+// reviewArrows.ts's own header for the full R1/R2 story), and only one of
+// them is "what your move allowed":
+//   - odd card (mallow is the OTHER actor): sourced from line.threat, the
+//     refutation of the move SHE played -- the owner-ruled label above stays
+//     exactly correct here.
+//   - even card (mallow is the SUBJECT): sourced from mallow's own
+//     alternative (moverBestFromTo) -- "what your move allowed" is simply
+//     FALSE here, the arrow has nothing to do with her move at all.
+// A function (not a second LegendRow) so LEGEND_ROWS keeps its one-row-
+// per-kind shape and every existing "covers every ArrowColor" assertion
+// keeps passing unchanged -- the row itself keeps the threat-sourced label
+// as its default (the label she has always seen; the even-card wiring is a
+// render concern for the consumer that knows which card is on screen).
+export function mallowBestLabel(source: "threat" | "moverBest"): string {
+  return source === "threat" ? "what your move allowed" : "mallow's recommended move";
+}
+
 export const LEGEND_DASHED_ROWS: LegendRow[] = [
   { kind: "best", label: "recommended move", style: "dashed", color: GREEN },
-  { kind: "mallow-best", label: "what your move allowed", style: "dashed", color: ROSE },
+  { kind: "mallow-best", label: mallowBestLabel("threat"), style: "dashed", color: ROSE },
 ];
 
 // All five, solid cluster first -- the order the rail actually renders in.

@@ -187,16 +187,64 @@ export function turningLineArrows(
 // upstream by followedBest() -- never re-derived here. Either way, a reply
 // that cannot resolve (no gameSans, replay ran out, no fb) draws nothing --
 // never a guess.
+// Voice-consistent four-arrow model (owner rulings R1/R2, 2026-08-05):
+// review found the three-arrow model above lost HER OWN best reply on an
+// even (mallow) card entirely, and coloured the mover's best "best" no
+// matter who the mover was -- 50 of 80 real turning points are even plies,
+// so this was the majority surface. Two verbatim owner rulings drive the
+// fix:
+//   R1 "I should still clearly show when I found the best move."
+//   R2 "if I didn't play the best punish, I do want to see what the right
+//      reply would have been because remember that's the green dotted
+//      arrow."
+// R2 collides head-on with the plain three-arrow model: green dashed meant
+// HER best before the turning-card extension redefined it as the MOVER's
+// best (moverBest, above). Owner's resolution, for cards AND drawers
+// ("let's do cards and drawers"): every card carries up to FOUR arrows, two
+// per actor -- what they did, and what they should have done -- on the same
+// closed SOLID=happened/DASHED=didn't axis, both sides of the board:
+//
+//   slot              | her                  | mallow
+//   ------------------|----------------------|------------------------
+//   played            | "played" cyan solid  | "mallow" rose solid
+//   should've played  | "best" green dashed  | "mallow-best" rose dashed
+//   played == best    | "found" (dedup)      | plain "mallow" (F-1, dedup)
+//
+// The SUBJECT (whoever moved at line.ply) renders PRIMARY, unchanged from
+// the three-arrow model. The OTHER actor's arrows are BOTH secondary now,
+// not just the reply -- including a matched-best "found" (R1: she still
+// gets the unmistakable "you found it" arrow on an even card, just at
+// reduced weight, since mallow's inaccuracy stays the card's subject). The
+// actual render of `secondary` on `found`/`best` is Task 5 (Board.tsx/CSS);
+// this file only emits the flag.
+//
+// Sourcing the new "other actor's best" channel: her best is ALWAYS
+// line.bestFromTo, whichever slot she fills -- manager.ts's getTurningLines
+// seeds bestFromTo from the position where SHE is to move, so it is her own
+// best when she's the mover (odd ply, matching opts.moverBest there) and
+// her best REPLY when mallow is the mover (even ply) -- exactly the value
+// R2 asks to see again. Mallow's best is opts.moverBest (the existing,
+// unchanged subject-only channel -- line.moverBestFromTo for a real
+// TurningLine, HighlightLine.bestFromTo for a highlighted ply) when mallow
+// is the SUBJECT, or line.threat (the persisted refutation of the move SHE
+// played) when mallow is the OTHER actor. An arrow whose source is missing
+// draws NOTHING -- never guessed, never substituted from a sibling field.
 export function reviewArrowsForMove(
   line: TurningLine,
   opts: { fb?: FollowedBest; gameSans?: SummaryMove[]; moverBest?: { from: string; to: string } } = {}
 ): ReviewArrow[] {
   const { fb, gameSans, moverBest } = opts;
-  const isOpponentPly = line.ply % 2 === 0;
-  const madeColor: ArrowColor = isOpponentPly ? "mallow" : "played";
+  const isOpponentPly = line.ply % 2 === 0; // subject = mallow (even) or her (odd)
   const arrows: ReviewArrow[] = [];
 
+  // ---- SUBJECT half (primary). Sourcing is unchanged (opts.moverBest, the
+  // pre-existing channel both call sites already thread correctly) -- what
+  // changes is the "should've played" colour, which now splits by actor
+  // instead of always reading "best" (the exact collision R2's ruling
+  // resolves: a mallow-subject alternative is HER voice's colour no longer).
   const made = line.playedFromTo;
+  const madeColor: ArrowColor = isOpponentPly ? "mallow" : "played";
+  const subjectBestColor: ArrowColor = isOpponentPly ? "mallow-best" : "best";
   const madeIsBest =
     !!made && !!moverBest && made.from === moverBest.from && made.to === moverBest.to;
 
@@ -210,17 +258,37 @@ export function reviewArrowsForMove(
     arrows.push({ ...made, color: isOpponentPly ? "mallow" : "found" });
   } else {
     if (made) arrows.push({ ...made, color: madeColor });
-    if (moverBest) arrows.push({ ...moverBest, color: "best" });
+    if (moverBest) arrows.push({ ...moverBest, color: subjectBestColor });
   }
 
-  // The OTHER actor's actual reply -- see the header split above.
+  // ---- OTHER half (secondary). Reply-resolution is byte-unchanged from
+  // before this round; otherBest is the new R2 channel. ----
   const reply = isOpponentPly
     ? fb?.playedFromTo
     : gameSans
       ? playedArrowForPly(gameSans, line.ply + 1)
       : undefined;
   const replyColor: ArrowColor = isOpponentPly ? "played" : "mallow";
-  if (reply) arrows.push({ ...reply, color: replyColor, secondary: true });
+  const otherBestColor: ArrowColor = isOpponentPly ? "best" : "mallow-best";
+  // Her best (line.bestFromTo) when she's the OTHER actor (even card); the
+  // persisted refutation (line.threat) when mallow is the OTHER actor (odd
+  // card) -- see this function's own header for why bestFromTo always means
+  // "her best" regardless of parity.
+  const otherBest = isOpponentPly ? line.bestFromTo : line.threat;
+  const replyIsBest =
+    !!reply && !!otherBest && reply.from === otherBest.from && reply.to === otherBest.to;
+
+  if (reply && replyIsBest) {
+    // R1: she still gets the unmistakable "found" arrow, at reduced weight,
+    // even when it's the OTHER actor's slot (her reply matched her best on
+    // an even card). F-1 still applies on mallow's side of this same dedup:
+    // a mallow reply matching mallow's own best stays plain "mallow", never
+    // borrows the halo.
+    arrows.push({ ...reply, color: isOpponentPly ? "found" : "mallow", secondary: true });
+  } else {
+    if (reply) arrows.push({ ...reply, color: replyColor, secondary: true });
+    if (otherBest) arrows.push({ ...otherBest, color: otherBestColor, secondary: true });
+  }
 
   return arrows;
 }
