@@ -177,7 +177,12 @@ interface BoardProps {
   // RECOMMENDED move, dashed #C22B7E, never the solid alarm "threat". The
   // style axis is now uniform: solid = it happened (played/found/mallow/
   // threat), dashed = it didn't (best/mallow-best). CSS owns the strokes.
-  arrows?: { from: string; to: string; color: "played" | "best" | "threat" | "found" | "mallow" | "mallow-best" }[];
+  // Postgame arrow redesign, Task 4 (2026-08-04): `secondary` mirrors
+  // ReviewArrow.secondary (reviewArrows.ts) -- set on the OTHER actor's
+  // actual reply in the three-arrow set, rendered here as an
+  // `arrow-secondary` modifier class (reduced opacity, sugar-glitch.css).
+  // Never set on the made move or the best/found arrow.
+  arrows?: { from: string; to: string; color: "played" | "best" | "threat" | "found" | "mallow" | "mallow-best"; secondary?: boolean }[];
   /**
    * Increment 3.91 (Task 1): companion square wash for the arrows above —
    * reuses the existing square-name-class pass on `.sq` (below) with new
@@ -1039,7 +1044,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               {arrows.map((arrow, i) => {
                 const g = arrowGeometry(arrow.from, arrow.to);
                 return (
-                  <g key={`${arrow.from}-${arrow.to}-${arrow.color}-${i}`} className={`arrow arrow-${arrow.color}`}>
+                  <g key={`${arrow.from}-${arrow.to}-${arrow.color}-${i}`} className={`arrow arrow-${arrow.color}${arrow.secondary ? " arrow-secondary" : ""}`}>
                     {arrow.color === "found" && (
                       // Coach truth-speed round (visual wave, 2026-07-27):
                       // "found" = she played exactly the recommended move.
