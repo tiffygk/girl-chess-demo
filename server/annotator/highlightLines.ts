@@ -34,6 +34,13 @@ export interface HighlightLine {
   san: string;
   bestSan?: string; // engine best FOR THE MOVER, from row p-1's best_move
   bestFromTo?: { from: string; to: string };
+  // Task 5 (cards-and-drawers arrow parity, 2026-08-05): the OTHER actor's
+  // best -- whoever replies at ply p+1 faces fenAfter(p), so this is row p's
+  // OWN best_move (attachEval(p) persists the eval of the position AFTER p,
+  // same offset rule bestFromTo/moverBestFromTo already rest on -- see
+  // buildHighlightLines below). Optional, omitted when row p's best_move is
+  // missing or unparseable from that fen -- never guessed.
+  replyBestFromTo?: { from: string; to: string };
   pvSans: string[]; // engine's line from the position before p (row p-1's pv)
   matchedBest: boolean | null; // uci(p) === best_move(p-1); null when no read
   quality: "best" | "solid" | "fine" | "slip" | "unknown"; // server-computed, one place
@@ -178,6 +185,19 @@ export function buildHighlightLines(rows: HighlightMoveRow[], pvLine: PvLineFn):
 
       const facts = computeHighlightFacts(r, seedRow);
 
+      // Task 5: reply-best, seeded at fenAfter(p) (p moves replayed, not
+      // p-1) using row p's OWN best_move/pv -- `r` already IS row p, no
+      // lookup needed. Unlike bestFromTo's seedPly guard, p is never < 1 for
+      // a highlighted row, so no boundary check applies here; a missing or
+      // unparseable best_move just yields bestFromTo undefined from pvLine
+      // (same "no read, no guess" discipline as the p-1 seed above).
+      const replySeed = new Chess();
+      for (let i = 0; i < p && i < sans.length; i++) replySeed.move(sans[i]);
+      const { bestFromTo: replyBestFromTo } = pvLine(replySeed.fen(), {
+        bestMove: r.bestMove,
+        pv: r.pv,
+      });
+
       const line: HighlightLine = {
         ply: p,
         side: r.side,
@@ -191,6 +211,7 @@ export function buildHighlightLines(rows: HighlightMoveRow[], pvLine: PvLineFn):
       };
       if (bestSan) line.bestSan = bestSan;
       if (bestFromTo) line.bestFromTo = bestFromTo;
+      if (replyBestFromTo) line.replyBestFromTo = replyBestFromTo;
       return line;
     });
 }

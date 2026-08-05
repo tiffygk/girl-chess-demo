@@ -768,6 +768,12 @@ export interface HighlightLine {
   san: string;
   bestSan?: string;
   bestFromTo?: { from: string; to: string };
+  // Task 5 (cards-and-drawers arrow parity, 2026-08-05): mirrors
+  // server/annotator/highlightLines.ts's HighlightLine.replyBestFromTo --
+  // the OTHER actor's-best (whoever replies at ply+1's engine best), seeded
+  // at row `ply` itself (fenAfter(ply)), distinct from bestFromTo's p-1
+  // seed. See that file's comment for the offset rationale.
+  replyBestFromTo?: { from: string; to: string };
   pvSans: string[];
   matchedBest: boolean | null;
   quality: "best" | "solid" | "fine" | "slip" | "unknown";

@@ -118,6 +118,54 @@ describe("buildArrowsForPly -- highlighted ply routes through reviewArrowsForMov
     const viaReplay = buildArrowsForPly(line, 4, sans, [highlightLine()], "replay");
     expect(viaReplay).toEqual(viaCard);
   });
+
+  // Task 5 (cards-and-drawers arrow parity, 2026-08-05): the OTHER actor's-
+  // best channel, previously silent for every highlighted (drawer) ply
+  // because the synthetic TurningLine built above carries no bestFromTo/
+  // threat of its own -- now sourced from HighlightLine.replyBestFromTo,
+  // routed through the parity split reviewArrowsForMove's own "OTHER half"
+  // reads (line.bestFromTo on an even card, line.threat on an odd card).
+  it("a highlighted MALLOW ply (even) now yields FOUR arrows: made+mallow-best (primary) and her reply+her best-reply (secondary) -- the green dashed arrow equals replyBestFromTo", () => {
+    const line = highlightLine({ replyBestFromTo: { from: "b1", to: "c3" } });
+    const arrows = buildArrowsForPly(undefined, 4, sans, [line]);
+
+    const made = arrows.find((a) => a.from === "b8" && a.to === "c6");
+    const mallowBest = arrows.find((a) => a.from === "g8" && a.to === "f6");
+    const reply = arrows.find((a) => a.from === "f1" && a.to === "b5");
+    const herBestReply = arrows.find((a) => a.from === "b1" && a.to === "c3");
+
+    expect(arrows).toHaveLength(4);
+    expect(made).toEqual({ from: "b8", to: "c6", color: "mallow" });
+    expect(mallowBest).toEqual({ from: "g8", to: "f6", color: "mallow-best" });
+    expect(reply).toEqual({ from: "f1", to: "b5", color: "played", secondary: true });
+    // The new channel: green dashed "best", secondary, endpoints ==
+    // replyBestFromTo -- her best reply to mallow's Nc6.
+    expect(herBestReply).toEqual({ from: "b1", to: "c3", color: "best", secondary: true });
+  });
+
+  it("a highlighted HER ply (odd) now yields FOUR arrows: made+best (primary) and mallow's reply+mallow's best-reply (secondary, rose dashed)", () => {
+    const herLine = highlightLine({
+      ply: 5,
+      side: "her",
+      san: "Bb5",
+      bestFromTo: { from: "d2", to: "d4" },
+      replyBestFromTo: { from: "g7", to: "g6" },
+    });
+    const arrows = buildArrowsForPly(undefined, 5, sans, [herLine]);
+
+    const made = arrows.find((a) => a.from === "f1" && a.to === "b5");
+    const best = arrows.find((a) => a.from === "d2" && a.to === "d4");
+    const reply = arrows.find((a) => a.from === "a7" && a.to === "a6");
+    const mallowBestReply = arrows.find((a) => a.from === "g7" && a.to === "g6");
+
+    expect(arrows).toHaveLength(4);
+    expect(made).toEqual({ from: "f1", to: "b5", color: "played" });
+    expect(best).toEqual({ from: "d2", to: "d4", color: "best" });
+    expect(reply).toEqual({ from: "a7", to: "a6", color: "mallow", secondary: true });
+    // The new channel: rose dashed "mallow-best", secondary, endpoints ==
+    // replyBestFromTo -- mallow's best reply to her Bb5.
+    expect(mallowBestReply).toEqual({ from: "g7", to: "g6", color: "mallow-best", secondary: true });
+  });
 });
 
 describe("buildArrowsForPly -- non-highlighted TurningLine ply routes through reviewArrowsForMove (Turning-Card Arrow Extension, 2026-08-05)", () => {
