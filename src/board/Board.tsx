@@ -187,8 +187,12 @@ interface BoardProps {
    * Increment 3.91 (Task 1): companion square wash for the arrows above —
    * reuses the existing square-name-class pass on `.sq` (below) with new
    * `.tp-played`/`.tp-best`/`.tp-threat` classes, same render-only contract.
+   * Arrow follow-ups (2026-08-05): secondary mirrors ReviewHighlight's own
+   * flag (arrowsToHighlights, reviewArrows.ts) — set on both endpoint washes
+   * of a secondary reply arrow, rendered here as a tp-secondary modifier
+   * class (wash dimmed to the arrow's own 0.55, sugar-glitch.css).
    */
-  highlightSquares?: { square: string; kind: "played" | "best" | "threat" | "found" | "mallow" | "mallow-best" }[];
+  highlightSquares?: { square: string; kind: "played" | "best" | "threat" | "found" | "mallow" | "mallow-best"; secondary?: boolean }[];
 }
 
 // ambient decorative jitter squares, same indices as the demo — staggered
@@ -913,13 +917,13 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               // Increment 3.91 (Task 1): debrief square wash for the
               // played/best/threat arrows — render-only, same square-name
               // comparison pattern as every other overlay in this pass.
-              const tpHighlight = highlightSquares?.find((h) => h.square === square)?.kind;
+              const tpHighlight = highlightSquares?.find((h) => h.square === square);
               const classes = [
                 "sq",
                 light ? "light" : "dark",
                 corruptMap.has(idx) ? "corrupt" : "",
                 isLastMove ? "last-move" : "",
-                tpHighlight ? `tp-${tpHighlight}` : "",
+                tpHighlight ? `tp-${tpHighlight.kind}${tpHighlight.secondary ? " tp-secondary" : ""}` : "",
                 square === effectiveSelected ? "target-hint" : "",
                 legalTargets.capture.has(square) ? "hint-capture" : "",
                 legalTargets.normal.has(square) ? "hint" : "",
