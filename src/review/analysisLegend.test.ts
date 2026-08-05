@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { LEGEND_ROWS, LEGEND_SOLID_ROWS, LEGEND_DASHED_ROWS } from "./analysisLegend";
 import type { ArrowColor } from "../game/reviewArrows";
 import { computeShowAllowedRow } from "./DebriefPage";
+import { buildArrowsForPly } from "../game/arrowSelection";
 import type { TurningLine, SummaryMove } from "../game/api";
 // Vite's `?raw` import (typed by the `vite/client` ambient types this
 // project's tsconfig.app.json already includes) rather than node:fs -- src/
@@ -125,9 +126,13 @@ describe("analysis-legend render gating: analysis/review only, never live play",
   // gameSans/rewindPly so it can ask the real arrow producer card-scoped;
   // the call site widened to match (see computeShowAllowedRow's own tests
   // below for the discriminating behavior this call site now carries).
+  // Fix-round-1 (2026-08-05), FIX 1: widened again to `activeArrows` (the
+  // board's actual rendered arrows, read directly -- no recomputation) and
+  // `highlightLines` (needed by the landing-state branch's own
+  // buildArrowsForPly call) -- see computeShowAllowedRow's own header.
   it("AnalysisLegend is rendered from within DebriefPage.tsx, its only mount site", () => {
     expect(debriefPageSrc).toMatch(
-      /<AnalysisLegend showAllowedRow=\{computeShowAllowedRow\(turningLines, gameSans, rewindPly\)\}\s*\/>/
+      /<AnalysisLegend[\s\S]*?showAllowedRow=\{computeShowAllowedRow\(\s*turningLines,\s*gameSans,\s*rewindPly,\s*activeArrows \?\? \[\],\s*highlightLines \?\? \[\]\s*\)\}[\s\S]*?\/>/
     );
   });
 });
@@ -251,11 +256,47 @@ describe("computeShowAllowedRow card-scope fix (union-review finding 1, feedback
   });
 
   it("card-scoped: hides the row on the specific card whose line is suppressed, shows it on a different card whose line isn't (RED against a game-scoped-only implementation, which would say true on both since the game has a drawable line)", () => {
+    // Fix-round-1 (2026-08-05), FIX 1: the card-scoped branch now reads
+    // `activeArrows` directly (the board's actual rendered arrows) instead
+    // of recomputing from `lines`/`gameSans` alone -- so this test builds
+    // each card's `activeArrows` the same way GamePage's handleRewind
+    // actually would (buildArrowsForPly with "replay" intent, the only
+    // intent that can still draw a mallow-best arrow), then asserts the
+    // legend agrees with what that real call produced.
     const drawsLine: TurningLine = { ply: 5, pvSans: [], threat: { from: "e7", to: "e5" } };
     const suppressedLine: TurningLine = { ply: 49, pvSans: [], threat: { from: "g8", to: "f6" } };
     const lines = [drawsLine, suppressedLine];
-    expect(computeShowAllowedRow(lines, gameSans50, 49)).toBe(false);
-    expect(computeShowAllowedRow(lines, gameSans50, 5)).toBe(true);
+    const arrowsAt49 = buildArrowsForPly(suppressedLine, 49, gameSans50, [], "replay");
+    const arrowsAt5 = buildArrowsForPly(drawsLine, 5, gameSans50, [], "replay");
+    expect(computeShowAllowedRow(lines, gameSans50, 49, arrowsAt49)).toBe(false);
+    expect(computeShowAllowedRow(lines, gameSans50, 5, arrowsAt5)).toBe(true);
+  });
+
+  // Fix-round-1 (2026-08-05), FIX 1 -- the required test: the OLD
+  // (turningLineArrows-recomputing) body showed this row for game 169 ply 9
+  // even though the board it renders now (a non-highlighted "ask" ply,
+  // reviewArrowsForMove) draws no mallow-best arrow at all. `activeArrows`
+  // here is exactly what buildArrowsForPly produces for that ply under
+  // "ask" -- the actual, default interaction a turning-point card uses --
+  // proving the legend now agrees with the real board instead of a stale
+  // second computation.
+  it("game 169 ply 9 (documented real-game regression): a card viewed via 'ask' never shows the row, even though its line carries a real, non-coincident threat", () => {
+    const line: TurningLine = {
+      ply: 9,
+      pvSans: [],
+      bestFromTo: { from: "d2", to: "d4" },
+      threat: { from: "e7", to: "e5" }, // a real, non-coincident threat -- would draw mallow-best under "replay"
+    };
+    const activeArrows = buildArrowsForPly(line, 9, gameSans14, [], "ask");
+    expect(activeArrows.some((a) => a.color === "mallow-best")).toBe(false);
+    expect(computeShowAllowedRow([line], gameSans14, 9, activeArrows)).toBe(false);
+  });
+
+  it("guard against 'always hide': a card viewed via 'replay' whose threat genuinely doesn't coincide with mallow's reply DOES show the row, because the arrow really is on the board", () => {
+    const line: TurningLine = { ply: 13, pvSans: [], threat: { from: "e7", to: "e5" } };
+    const activeArrows = buildArrowsForPly(line, 13, gameSans14, [], "replay");
+    expect(activeArrows.some((a) => a.color === "mallow-best")).toBe(true);
+    expect(computeShowAllowedRow([line], gameSans14, 13, activeArrows)).toBe(true);
   });
 
   it("a rewindPly naming a ply with no TurningLine (MoveList jump to a non-turning-point ply) hides the row and never throws", () => {

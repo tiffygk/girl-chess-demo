@@ -11,6 +11,7 @@
 // ply+1 reply for real.
 import { describe, it, expect } from "vitest";
 import { buildArrowsForPly } from "./arrowSelection";
+import { turningLineReplayArrows } from "./reviewArrows";
 import type { TurningLine, HighlightLine, SummaryMove } from "./api";
 
 // 1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 -- ply4 (Nc6, b8->c6) is mallow's (black's)
@@ -171,18 +172,36 @@ describe("buildArrowsForPly -- non-highlighted TurningLine ply routes through re
     expect(best && "secondary" in best).toBe(false);
   });
 
-  it("'ask' vs 'replay' intent makes no difference for a TurningLine-bearing ply -- both route through reviewArrowsForMove alike", () => {
+  it("'replay' intent on an OPPONENT (even) turning ply restores owner ruling F4 (2026-08-03): the sole magenta inaccuracy arrow, byte-identical to turningLineReplayArrows -- NOT the new three-arrow model", () => {
+    // Fix-round-1 (2026-08-05), FIX 2: an earlier draft of this task made
+    // `intent` inert for a TurningLine-bearing ply, which silently reverted
+    // F4 (game 169: replay must show ONLY her Bh6 inaccuracy, never the
+    // punish/best arrows the owner explicitly rejected as "three arrows
+    // competing for the subject"). This pins that "replay" is genuinely
+    // different from "ask" again for the exact opponent-ply shape the
+    // reviewer reproduced the regression on.
+    const game169Sans: SummaryMove[] = [
+      ...Array.from({ length: 16 }, (_, i) => ({ ply: i + 1, san: i % 2 === 0 ? "a3" : "a6" })),
+      { ply: 17, san: "Bg2" },
+      { ply: 18, san: "Bh6" },
+    ];
     const line: TurningLine = {
-      ply: 4,
-      playedFromTo: { from: "b8", to: "c6" },
-      bestFromTo: { from: "b1", to: "c3" },
-      moverBestFromTo: { from: "g8", to: "f6" },
-      bestSan: "Bb5",
-      pvSans: ["Bb5"],
+      ply: 18,
+      playedFromTo: { from: "f8", to: "h6" },
+      bestFromTo: { from: "c3", to: "d5" },
+      moverBestFromTo: { from: "d7", to: "b6" }, // mallow's own best -- present, but replay must suppress it
+      pvSans: [],
     };
-    const viaAsk = buildArrowsForPly(line, 4, sans, [], "ask");
-    const viaReplay = buildArrowsForPly(line, 4, sans, [], "replay");
-    expect(viaReplay).toEqual(viaAsk);
+    const viaReplay = buildArrowsForPly(line, 18, game169Sans, [], "replay");
+    expect(viaReplay).toEqual(turningLineReplayArrows(line, undefined, game169Sans));
+    expect(viaReplay).toEqual([{ from: "f8", to: "h6", color: "mallow" }]);
+
+    // "ask" on the exact same line produces the new three-arrow set instead
+    // -- proves intent genuinely branches again, not just that replay alone
+    // happens to look old.
+    const viaAsk = buildArrowsForPly(line, 18, game169Sans, [], "ask");
+    expect(viaAsk).not.toEqual(viaReplay);
+    expect(viaAsk).toContainEqual({ from: "d7", to: "b6", color: "best" });
   });
 
   it("moverBestFromTo absent (older/unparseable rows): no arrow is drawn as 'best' at all -- the reply-best is never substituted in", () => {
@@ -200,6 +219,28 @@ describe("buildArrowsForPly -- non-highlighted TurningLine ply routes through re
     expect(arrows.some((a) => a.from === "b1" && a.to === "c3")).toBe(false);
     expect(arrows).toContainEqual({ from: "b8", to: "c6", color: "mallow" });
     expect(arrows).toContainEqual({ from: "f1", to: "b5", color: "played", secondary: true });
+  });
+
+  it("FIX 3 (fix-round-1, 2026-08-05): a TurningLine whose made move AND reply both fail to resolve still draws the raw played arrow -- the safety net restored after an earlier draft dropped it for this branch", () => {
+    // ply 5 (her move) with NO playedFromTo on the line and a gameSans
+    // array truncated right at ply 5 -- her reply (mallow's ply 6) can
+    // never resolve, and the line carries no moverBestFromTo either, so
+    // reviewArrowsForMove's own arrow set comes back empty. The old
+    // (pre-2026-08-04) code unshifted a played arrow in exactly this shape;
+    // an earlier draft of this round's Task 2 silently dropped it for the
+    // TurningLine-bearing branch (0/80 real plies hit it, which is why
+    // nothing caught the loss).
+    const truncatedSans = sans.slice(0, 5); // 1.e4 e5 2.Nf3 Nc6 3.Bb5 -- stops at her Bb5
+    const line: TurningLine = { ply: 5, pvSans: [] };
+    const arrows = buildArrowsForPly(line, 5, truncatedSans, [], "ask");
+    expect(arrows).toEqual([{ from: "f1", to: "b5", color: "played" }]);
+  });
+
+  it("FIX 3 applies under 'replay' intent too -- same safety net, same fixture", () => {
+    const truncatedSans = sans.slice(0, 5);
+    const line: TurningLine = { ply: 5, pvSans: [] };
+    const arrows = buildArrowsForPly(line, 5, truncatedSans, [], "replay");
+    expect(arrows).toEqual([{ from: "f1", to: "b5", color: "played" }]);
   });
 
   it("no HighlightLine at all matching this ply: an empty highlightLines list changes nothing", () => {

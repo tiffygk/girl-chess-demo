@@ -1573,6 +1573,16 @@ export function GamePage() {
   // that file's own header for the full rationale). This is a thin wrapper
   // over it so every existing call site (handleRewind,
   // handleAskAboutTurningPoint, handleAskAboutPly) is unchanged.
+  //
+  // Turning-Card Arrow Extension (2026-08-05, fix-round-1): the
+  // conservative scope above is now narrower than "no HighlightLine ->
+  // always the F4 paragraph's framing." A non-highlighted ply that DOES
+  // carry a TurningLine now also routes through reviewArrowsForMove, but
+  // ONLY for `intent === "ask"` -- `intent === "replay"` still keeps the F4
+  // paragraph's sole-inaccuracy framing exactly as ruled. So `intent` is
+  // live again for this call site's third argument (handleRewind passes
+  // "replay", the other two callers take the "ask" default) -- see
+  // arrowSelection.ts's own header for the full current routing table.
   const buildArrowsForPly = useCallback(
     (line: TurningLine | undefined, ply: number, intent: ArrowIntent = "ask"): ReviewArrow[] =>
       buildArrowsForPlyPure(line, ply, activeReviewMoves ?? undefined, highlightLines, intent),
@@ -2654,6 +2664,7 @@ export function GamePage() {
                 classifications={liveSummary.classifications}
                 turningLines={turningLines}
                 highlightLines={highlightLines}
+                activeArrows={reviewArrows}
                 gameSans={liveSummary.moves}
                 totalPlies={liveSummary.moves.length}
                 result={gameOver.result}
@@ -2679,6 +2690,7 @@ export function GamePage() {
           classifications={reviewGame.summary.classifications}
           turningLines={turningLines}
           highlightLines={highlightLines}
+          activeArrows={reviewArrows}
           gameSans={reviewGame.summary.moves}
           totalPlies={reviewGame.summary.moves.length}
           result={reviewGame.result}
