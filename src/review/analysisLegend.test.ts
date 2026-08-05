@@ -353,3 +353,22 @@ describe("AnalysisLegendRail copy hygiene: no em-dash in user-facing text (union
     expect(railBodyBlocks[0][0]).toMatch(/flex-direction:\s*column/);
   });
 });
+
+// Postgame arrow redesign, Task 3 (2026-08-04): reviewArrowsForMove (Task 1,
+// reviewArrows.ts) is the new unified three-arrow producer used by every
+// turning-point card AND both highlighter drawers (Task 2). It emits exactly
+// four ArrowColor values -- "mallow"/"played" for the made move (mover's own
+// colour), "best" (dashed recommendation) or "found" (solid dedup when
+// made==best) -- and reuses the actor colours for the reply, so no new kind.
+// This pins that every one of those four already has a legend row, rather
+// than relying on the pre-existing "every DRAWABLE ArrowColor" test above
+// (over the whole ArrowColor union, including turningLineArrows-only kinds)
+// to happen to cover them too.
+describe("legend covers every colour reviewArrowsForMove (Task 1) can emit", () => {
+  const reviewArrowsForMoveColors: ArrowColor[] = ["played", "mallow", "best", "found"];
+
+  it.each(reviewArrowsForMoveColors)("has a legend row for '%s'", (kind) => {
+    const row = LEGEND_ROWS.find((r) => r.kind === kind);
+    expect(row).toBeDefined();
+  });
+});
