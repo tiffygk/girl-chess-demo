@@ -39,8 +39,8 @@ import {
   pendingMoveContext,
   resolvePlyFocus,
 } from "./chatFocus";
-import { turningLineArrows, turningLineReplayArrows, arrowsToHighlights, type ArrowColor } from "./reviewArrows";
-import { followedBest, playedArrowForPly } from "../review/followedBest";
+import { arrowsToHighlights, type ArrowColor, type ReviewArrow } from "./reviewArrows";
+import { buildArrowsForPly as buildArrowsForPlyPure } from "./arrowSelection";
 import { describeMove, type MoveRender } from "./describeMove";
 import { pushLiveMove, setHighlight, pairWindow, liveMovesFromSummary, type LiveMove } from "./liveMoves";
 import { HighlightPocket } from "./HighlightPocket";
@@ -398,7 +398,7 @@ export function GamePage() {
   // carries HER turning points, so a mallow-ply "ask about this" has nothing
   // to ground itself in without this.
   const [highlightLines, setHighlightLines] = useState<HighlightLine[]>([]);
-  const [reviewArrows, setReviewArrows] = useState<{ from: string; to: string; color: ArrowColor }[]>([]);
+  const [reviewArrows, setReviewArrows] = useState<ReviewArrow[]>([]);
   const [reviewHighlights, setReviewHighlights] = useState<{ square: string; kind: ArrowColor }[]>([]);
   // Increment 3.91 (Task 6): "try the line" — a debrief turning-point card's
   // sandbox against mallow. null = not exploring (the debrief is static, the
@@ -1563,40 +1563,20 @@ export function GamePage() {
   // OPPONENT-ply line focuses the inaccuracy itself as the sole magenta
   // arrow and is byte-identical to the context framing for everything else —
   // see that function's header and reviewArrows.test.ts's regression pins.
+  //
+  // Postgame arrow redesign, Task 2 (2026-08-04, conservative-scope
+  // override owner-approved same date): the branch on whether a
+  // HighlightLine exists for `ply` -- and therefore whether this ply routes
+  // through the new reviewArrowsForMove three-arrow model instead of the
+  // paragraph above's pre-existing framing -- now lives in arrowSelection.ts
+  // (extracted so it's unit-testable without a GamePage render harness; see
+  // that file's own header for the full rationale). This is a thin wrapper
+  // over it so every existing call site (handleRewind,
+  // handleAskAboutTurningPoint, handleAskAboutPly) is unchanged.
   const buildArrowsForPly = useCallback(
-    (
-      line: TurningLine | undefined,
-      ply: number,
-      intent: "ask" | "replay" = "ask"
-    ): { from: string; to: string; color: ArrowColor }[] => {
-      if (!activeReviewMoves) return [];
-      const fb = followedBest(line, activeReviewMoves);
-      // activeReviewMoves rides along so a her-ply card can draw mallow's
-      // ACTUAL reply (ply + 1) — owner replay report 2026-07-27/28: her
-      // recommended, mallow's recommended, and her actual move all rendered,
-      // but mallow's actual never did, so the only arrow on mallow's half of
-      // the board depicted a move that never happened.
-      const arrows = line
-        ? intent === "replay"
-          ? turningLineReplayArrows(line, fb, activeReviewMoves)
-          : turningLineArrows(line, fb, activeReviewMoves)
-        : [];
-      // Review fix (Wave F, 2026-07-27, finding 7): "mallow" added to the
-      // guard alongside "played"/"found". An opponent-ply line with no `fb`
-      // (e.g. mallow's slip was the game's last move -- no reply exists to
-      // resolve followedBest from) still has its own move rendered as
-      // "mallow" by turningLineArrows, unconditionally. Without this,
-      // the fallback below would fire anyway and unshift a SECOND, "played"
-      // (cyan) arrow on the exact same endpoints turningLineArrows already
-      // drew "mallow" (magenta) -- a double-drawn arrow this guard exists
-      // specifically to prevent.
-      if (!arrows.some((a) => a.color === "played" || a.color === "found" || a.color === "mallow")) {
-        const played = playedArrowForPly(activeReviewMoves, ply);
-        if (played) arrows.unshift({ ...played, color: "played" });
-      }
-      return arrows;
-    },
-    [activeReviewMoves]
+    (line: TurningLine | undefined, ply: number, intent: "ask" | "replay" = "ask"): ReviewArrow[] =>
+      buildArrowsForPlyPure(line, ply, activeReviewMoves ?? undefined, highlightLines, intent),
+    [activeReviewMoves, highlightLines]
   );
 
   // Increment 3.9, Task 3: coach chat's per-message context. Review mode is
