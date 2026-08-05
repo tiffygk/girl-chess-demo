@@ -5,6 +5,71 @@ needle-in-a-haystack problem (it had grown to ~230 dense lines / ~56KB / ~14k to
 every session). `CLAUDE.md` keeps a one-line pointer into this file per entry; nothing below is
 abridged from the original. Newest first, matching `CLAUDE.md`'s own convention.
 
+## Opponent-move analysis, coach routing + thinking, replay & arrow redesign (2026-08-03..05)
+
+Merged to main across `33d0d2d` (router), `61f71dd` (opponent analysis), `3d4c1f2` (replay F4),
+`b2a445d` (thinking-low), `e98842f` (checkmark), `c7b086e` (game-169 minors), `a03681c` (arrow
+redesign), `708ba66` (arrow follow-ups). `npm run gate` green at every merge; owner db grew 170->171
+games across her own live play, integrity ok on every run.
+
+**Baseline unbreak — main was silently RED (a deferred gate).** `tsc -b` broke because the `numbers`
+coach-eval arm was added to `type Arm` without updating two exhaustive `Record<Arm,string>` records
+(`tools/coach-eval/decide.ts`/`render.ts`, fixed `1faca29`); and em-dashes were leaking into REAL coach
+chat output with no normalizer anywhere in `server/coach/` — `server/coach/textNormalize.ts` (new)
+`normalizeEmDash` now wraps every chat-output seam in `chat.ts`, with 4 historical `advice_traces`
+allowlisted in the replay-check (`c84c071`). Standing lesson (memory `deferred-gate-leaves-main-red`):
+re-gate main at pickup; the gate runs `tsc -b`, not `tsc -p tsconfig.json`.
+
+**Coach general-theory router fix** (`33d0d2d`). `server/coach/intent.ts` `classifyIntent` gained a
+tier-2 `ABSTRACT_THEORY_RE` gated on `!hasBoardSignal`, so abstract/theory questions ("what's the plan
+here") route to the `general` answer path instead of being forced through board analysis (the
+regen/timeout failures — game-169's ply-22 thumbs-down was exactly this). A final-review finding
+tightened the bare `principles?` alternative to explicit abstract frames (`3f89ea2`); `tools/route-diff.ts`
+(new, readonly) audited old-vs-new routing over the real `chat_messages` and showed 0 board->general flips.
+
+**Opponent-move analysis** (`61f71dd`; plan `2 build/Girl Chess — Opponent-Move Analysis Plan
+(2026-08-03).md`). Three waves: (A) `server/annotator/highlightLines.ts` (new) + read-only
+`GET /api/game/:id/highlight-lines` (`manager.getHighlightLines`) serving a per-highlighted-ply
+`HighlightLine` facts contract — seed at `p-1` (the mover's own position), `quality`/`matchedBest`/
+`decided` computed once server-side from the stored evals, `side` derived once at load, never re-parsed
+from `ply % 2`; (B) a MAGENTA "mallow's moves you highlighted" debrief drawer
+(`src/review/MallowHighlightedSection.tsx` + `mallowHighlightedMoves.ts`) mounted below the cyan one, the
+D0 fix stopping a highlighted mallow ply from leaking into the cyan ledger, and the OD-D kicker rename to
+"your moves you highlighted"; (C) side-aware coach chat (`chat.ts` `focusedMomentSection` +
+`checkOpponentQualityClaims`, a 0ms corrective suffix that never triggers a regen) + a `personas/coach.md`
+opponent fragment + `GamePage.handleAskAboutPly` third branch for a mallow/unclassified ply. Honesty is
+enforced two ways: a matched-best mallow move can never render as a slip chip in the drawer, nor survive a
+"mistake" claim in chat.
+
+**thinking-low, OD-3b** (`b2a445d`). `server/coach/chat.ts` now passes an explicit
+`thinkingForIntent(intent)` (= `low`) at attempt-0, escalating to `default` (adaptive) only on a
+regen/timeout retry — for ALL coach chat INCLUDING postgame review, with NO `mode` gate (the D27
+invariant a review once tried to invent away). Backed by the OD-3b 3-arm eval (low dominates disabled on
+quality in every difficulty bucket; default is 2.3x slower without being better on tactical questions).
+Side note (memory `thinking-eval-lever-inert-for-chat`): this pins the chat pref, so `GC_COACH_THINKING`
+is now inert for the `chat()` path — a future thinking eval must vary `thinkingForIntent`, not the env var.
+
+**Replay F4, checkmark, game-169 minors.** An opponent-inaccuracy turning-point card's replay frames the
+inaccuracy, not the punish (`3d4c1f2`, owner-ruled — later folded into the arrow redesign below). The
+coach-only/confirm-off judge indicator renders the "judged ✓" on the nudge/warning tiers, not only silent
+(`e98842f`). A guard test pins `claimsBetterMove` against the `MATE_SCORE_CP` fold (`c7b086e`; the
+`delta_cp=99819` game-169 sighting was a non-bug — the fold is discarded/correct on every consuming path).
+
+**Postgame arrow redesign** (`a03681c`, follow-ups `708ba66`; spec + plan in `2 build/Girl Chess —
+Postgame Arrow Redesign (2026-08-04/05)`). Every HIGHLIGHTED move (turning-point cards + both drawers)
+now shows three arrows: the move MADE (mover colour, PRIMARY — her cyan `played` / mallow magenta), the
+mover's BEST (green `best` dashed, or `found` solid when made==best), and the other player's actual REPLY
+(the other colour, `secondary`, dimmed via `.arrow-secondary{opacity:0.55}` on both the arrow AND its two
+square washes). `src/game/reviewArrows.ts` `reviewArrowsForMove` is the pure model (adds `ReviewArrow.
+secondary`; the made==best dedup emits `found` for HER but a plain `mallow` magenta arrow for a
+matched-best MALLOW move, keeping the palette law that mallow is never cyan/green); `src/game/
+arrowSelection.ts` (new, pure + tested) branches on whether a `HighlightLine` exists — highlighted plies
+get the new model, non-highlighted turning-point cards keep the OLD behaviour byte-for-byte (a
+CONSERVATIVE scope; the "extend to non-highlighted turning cards" version needs a backend mover's-best
+and is DEFERRED to owner greenlight). `Board.tsx`/`sugar-glitch.css` render the secondary emphasis
+(fold-protected, verified at 480px). Supersedes the F4 single-arrow replay for highlighted moves. Full
+build trail: `6 handoffs/AUTONOMOUS LOG — Arrow Redesign (2026-08-04).md`.
+
 ## Game 160 RCA phase A (2026-07-30, merged `dc43a52`)
 
 Additive surfaces — **the analysis stops going quiet once a game is decided**: `server/annotator/conversion.ts` (new) `detectConversion(rows, gameSans?)` classifies `missed-mate` (`MISSED_MATE_DEPTH` 5), `mate-slip` (`MATE_SLIP_MIN` 2), `lost-mate` and `free-material` from PERSISTED evals — pure chess.js arithmetic, no engine call, no model call, nothing persisted by the detector itself. **`MoveEvalRow.side` is a REQUIRED `"her" | "mallow"` field derived once at load and the module never re-derives from `row.ply % 2`**; its header states that a row whose `side` disagrees with its own ply gets `side`'s answer ON PURPOSE. That is the structural answer to the parity class after six instances — but note instance SEVEN arrived anyway, at the site that CHOOSES the anchor ply rather than reads it, so audit anchor-selection separately (fixed by copying `turningPoints.ts`'s existing `unconverted` anchor precedent, ~line 795). `server/annotator/classify.ts`'s `mateForMover` branch no longer short-circuits to silent: it routes through `conversionForMove` and emits `Verdict.conversionCopy` ("still winning, but that gives back your knight for nothing"), with a new `DECIDED_BAND_CP` 300. Two details that are load-bearing and easy to undo by accident: `decided` reads the SEED (before-move) eval, never the after-move eval, because the point is catching a move that THROWS the win away; and `decided` is DIRECTIONAL, since an early `Math.abs` version would have fired "still winning" at cp -600. `TP_ALGO_VERSION` 6 -> 7 emits a `conversion` turning point (one per game, `MIN_CONVERSION_RUN_PLIES` 6, suppressed on a ply collision with a missed-win point) and heals her whole corpus on summary read. `src/review/numberWords.ts` (new) is the shared spelled-number module that exists so `debriefLesson.ts` / `highlightedMoves.ts` / `debriefInvariants.ts` need not import from `debriefBullets.ts`; `turningPointNote.ts` keeps its own local copy under its documented parallel-safety contract. `tools/db-backup.ts` (new) backs up WAL-safely and REFUSES a restore whose move count is lower than live; `tools/gate.ts` gained `checkInPlay`, failing the gate before Stockfish spawns if she has an unfinished game with a move in the last 30 minutes. `GameManager.shutdown()` exists because `UciEngine`'s constructor spawns synchronously and one test file leaked 21 Stockfish processes per run.
