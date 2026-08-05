@@ -42,7 +42,13 @@ function highlightLine(overrides: Partial<HighlightLine> = {}): HighlightLine {
 }
 
 describe("buildArrowsForPly -- highlighted ply routes through reviewArrowsForMove", () => {
-  it("a highlighted MALLOW ply that IS a turning point: made(mallow)+best+reply(secondary), moverBest from the HighlightLine (not the TurningLine)", () => {
+  it("a highlighted MALLOW ply that IS a turning point: made(mallow)+mallow-best+reply(secondary), moverBest from the HighlightLine (not the TurningLine)", () => {
+    // Voice-consistent four-arrow model (2026-08-05, R2): mallow's own
+    // alternative is coloured "mallow-best" now, not the green "best" HER
+    // voice owns. The synthetic TurningLine buildArrowsForPly builds for a
+    // highlighted ply carries no bestFromTo/threat of its own, so the new
+    // OTHER-actor's-best channel stays silent here (missing source draws
+    // nothing) -- this fixture doesn't yet exercise that channel.
     const line: TurningLine = {
       ply: 4,
       playedFromTo: { from: "b8", to: "c6" },
@@ -56,7 +62,7 @@ describe("buildArrowsForPly -- highlighted ply routes through reviewArrowsForMov
     const reply = arrows.find((a) => a.from === "f1" && a.to === "b5");
 
     expect(made).toEqual({ from: "b8", to: "c6", color: "mallow" });
-    expect(best).toEqual({ from: "g8", to: "f6", color: "best" });
+    expect(best).toEqual({ from: "g8", to: "f6", color: "mallow-best" });
     expect(reply).toEqual({ from: "f1", to: "b5", color: "played", secondary: true });
     // the TurningLine's own bestFromTo (d7-d6) never appears -- HighlightLine wins.
     expect(arrows.some((a) => a.from === "d7" && a.to === "d6")).toBe(false);
@@ -89,11 +95,11 @@ describe("buildArrowsForPly -- highlighted ply routes through reviewArrowsForMov
     expect(best && "secondary" in best).toBe(false);
   });
 
-  it("a highlighted ply that is NOT a turning point (no TurningLine at all): still made+best+reply, synthesized from the HighlightLine + activeReviewMoves", () => {
+  it("a highlighted ply that is NOT a turning point (no TurningLine at all): still made+mallow-best+reply, synthesized from the HighlightLine + activeReviewMoves", () => {
     const arrows = buildArrowsForPly(undefined, 4, sans, [highlightLine()]);
 
     expect(arrows).toContainEqual({ from: "b8", to: "c6", color: "mallow" });
-    expect(arrows).toContainEqual({ from: "g8", to: "f6", color: "best" });
+    expect(arrows).toContainEqual({ from: "g8", to: "f6", color: "mallow-best" });
     expect(arrows).toContainEqual({ from: "f1", to: "b5", color: "played", secondary: true });
   });
 
@@ -115,35 +121,46 @@ describe("buildArrowsForPly -- highlighted ply routes through reviewArrowsForMov
 });
 
 describe("buildArrowsForPly -- non-highlighted TurningLine ply routes through reviewArrowsForMove (Turning-Card Arrow Extension, 2026-08-05)", () => {
-  it("non-highlighted OPPONENT (mallow, even) turning ply: made(mallow) + best(= moverBestFromTo, green) + her reply(played, secondary) -- reply-best (bestFromTo) never appears as best", () => {
+  it("non-highlighted OPPONENT (mallow, even) turning ply: made(mallow) + mallow-best(= moverBestFromTo) + her reply(played, secondary) + her best reply(= bestFromTo, secondary) -- moverBestFromTo never wears green, bestFromTo never wears rose", () => {
     // Same 1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 fixture as the highlighted-ply
     // describe block above. Ply 4 is Nc6 (mallow's move, b8->c6); ply 5 is
     // her actual reply Bb5 (f1->b5).
     //
     // moverBestFromTo (g8->f6, mallow's own alternative e.g. Nf6) is
-    // DELIBERATELY DIFFERENT from bestFromTo (b1->c3, the OLD model's
-    // "her best reply" field) -- per the brief, a fixture where these
-    // coincide would pass with the bug still present and prove nothing.
+    // DELIBERATELY DIFFERENT from bestFromTo (b1->c3) -- per the brief, a
+    // fixture where these coincide would pass with a colour-swap bug still
+    // present and prove nothing.
+    //
+    // Voice-consistent four-arrow model (2026-08-05, R2): under the OLD
+    // three-arrow model bestFromTo ("her best reply") was suppressed
+    // entirely on this ask path -- that was the bug R2's ruling exists to
+    // fix. It now legitimately surfaces as the OTHER actor's (her) best
+    // reply, green "best", secondary weight -- exactly what she asked to
+    // see back. What must still never happen is moverBestFromTo leaking
+    // into HER colour, or bestFromTo leaking into mallow's SUBJECT slot.
     const line: TurningLine = {
       ply: 4,
       playedFromTo: { from: "b8", to: "c6" },
-      bestFromTo: { from: "b1", to: "c3" }, // the old reply-best -- must NOT surface as "best"
-      moverBestFromTo: { from: "g8", to: "f6" }, // mallow's own best -- MUST surface as "best"
+      bestFromTo: { from: "b1", to: "c3" }, // her best reply -- now a real secondary "best" arrow
+      moverBestFromTo: { from: "g8", to: "f6" }, // mallow's own best -- MUST surface as "mallow-best"
       bestSan: "Bb5", // truthy so followedBest() can resolve fb.playedFromTo for the reply arrow
       pvSans: ["Bb5"],
     };
     const arrows = buildArrowsForPly(line, 4, sans, [], "ask");
 
     const made = arrows.find((a) => a.from === "b8" && a.to === "c6");
-    const best = arrows.find((a) => a.from === "g8" && a.to === "f6");
+    const mallowBest = arrows.find((a) => a.from === "g8" && a.to === "f6");
     const reply = arrows.find((a) => a.from === "f1" && a.to === "b5");
+    const herBestReply = arrows.find((a) => a.from === "b1" && a.to === "c3");
 
     expect(made).toEqual({ from: "b8", to: "c6", color: "mallow" });
-    expect(best).toEqual({ from: "g8", to: "f6", color: "best" });
+    expect(mallowBest).toEqual({ from: "g8", to: "f6", color: "mallow-best" });
     expect(reply).toEqual({ from: "f1", to: "b5", color: "played", secondary: true });
-    // Load-bearing: the best arrow's endpoints equal moverBestFromTo and are
-    // NOT bestFromTo -- the reply-best must never appear at all.
-    expect(arrows.some((a) => a.from === "b1" && a.to === "c3")).toBe(false);
+    expect(herBestReply).toEqual({ from: "b1", to: "c3", color: "best", secondary: true });
+    // Load-bearing: moverBestFromTo never wears "best" (her colour), and
+    // bestFromTo never wears "mallow-best" (mallow's colour).
+    expect(arrows.some((a) => a.from === "g8" && a.to === "f6" && a.color === "best")).toBe(false);
+    expect(arrows.some((a) => a.from === "b1" && a.to === "c3" && a.color === "mallow-best")).toBe(false);
     expect(made && "secondary" in made).toBe(false);
   });
 
@@ -196,27 +213,35 @@ describe("buildArrowsForPly -- non-highlighted TurningLine ply routes through re
     expect(viaReplay).toEqual(turningLineReplayArrows(line, undefined, game169Sans));
     expect(viaReplay).toEqual([{ from: "f8", to: "h6", color: "mallow" }]);
 
-    // "ask" on the exact same line produces the new three-arrow set instead
+    // "ask" on the exact same line produces the new four-arrow set instead
     // -- proves intent genuinely branches again, not just that replay alone
-    // happens to look old.
+    // happens to look old. Colour is "mallow-best" (2026-08-05, R2) -- mallow
+    // is the SUBJECT on this even ply, so her own alternative is no longer
+    // coloured "best" (HER voice).
     const viaAsk = buildArrowsForPly(line, 18, game169Sans, [], "ask");
     expect(viaAsk).not.toEqual(viaReplay);
-    expect(viaAsk).toContainEqual({ from: "d7", to: "b6", color: "best" });
+    expect(viaAsk).toContainEqual({ from: "d7", to: "b6", color: "mallow-best" });
   });
 
-  it("moverBestFromTo absent (older/unparseable rows): no arrow is drawn as 'best' at all -- the reply-best is never substituted in", () => {
+  it("moverBestFromTo absent (older/unparseable rows): no 'mallow-best' is drawn at all -- but bestFromTo (her own best reply) still legitimately surfaces as 'best', never substituted into mallow's slot", () => {
+    // Voice-consistent four-arrow model (2026-08-05, R2): bestFromTo is now
+    // a real channel in its own right (the OTHER actor's -- her -- best
+    // reply), so it legitimately renders here as a secondary "best" arrow.
+    // What this test still pins is the ORIGINAL guard: with moverBestFromTo
+    // missing, mallow's SUBJECT slot draws nothing -- bestFromTo must never
+    // be substituted in as a stand-in "mallow-best".
     const line: TurningLine = {
       ply: 4,
       playedFromTo: { from: "b8", to: "c6" },
-      bestFromTo: { from: "b1", to: "c3" }, // the old reply-best -- present, but must not surface as "best"
+      bestFromTo: { from: "b1", to: "c3" }, // her own best reply -- now a real secondary "best" arrow
       // moverBestFromTo intentionally omitted
       bestSan: "Bb5",
       pvSans: ["Bb5"],
     };
     const arrows = buildArrowsForPly(line, 4, sans, [], "ask");
 
-    expect(arrows.some((a) => a.color === "best")).toBe(false);
-    expect(arrows.some((a) => a.from === "b1" && a.to === "c3")).toBe(false);
+    expect(arrows.some((a) => a.color === "mallow-best")).toBe(false);
+    expect(arrows).toContainEqual({ from: "b1", to: "c3", color: "best", secondary: true });
     expect(arrows).toContainEqual({ from: "b8", to: "c6", color: "mallow" });
     expect(arrows).toContainEqual({ from: "f1", to: "b5", color: "played", secondary: true });
   });

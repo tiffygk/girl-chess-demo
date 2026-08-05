@@ -356,10 +356,15 @@ describe("arrowsToHighlights", () => {
 // exercised by every test in this file: Task 2 rewires callers onto this
 // function, this task only adds it.
 describe("reviewArrowsForMove", () => {
-  it("opponent-ply (mallow's move): made(mallow, primary) + best(green, primary) + her reply(played, secondary)", () => {
+  it("opponent-ply (mallow's move): made(mallow, primary) + mallow-best(rose dashed, primary) + her reply(played, secondary)", () => {
     // game-169 Bh6 shape: mallow's inaccuracy at an even ply, her actual
     // reply resolved via fb (as followedBest() would compute upstream --
     // this function trusts fb.playedFromTo rather than re-deriving it).
+    // Voice-consistent four-arrow model (2026-08-05, R2): mallow's own
+    // alternative is now coloured "mallow-best", not the green "best" HER
+    // voice owns -- the exact colour collision the owner's ruling resolves.
+    // No line.bestFromTo is set here, so the new OTHER-actor's-best channel
+    // stays silent (missing source draws nothing).
     const l = line({ ply: 18, playedFromTo: { from: "f8", to: "h6" } }); // mallow's Bh6
     const moverBest = { from: "c3", to: "d5" }; // mallow's best there instead
     const herReply = fb({ playerPly: 19, playedFromTo: { from: "g8", to: "f6" }, followed: false });
@@ -370,7 +375,7 @@ describe("reviewArrowsForMove", () => {
     const reply = arrows.find((a) => a.from === "g8" && a.to === "f6");
 
     expect(made).toEqual({ from: "f8", to: "h6", color: "mallow" });
-    expect(best).toEqual({ from: "c3", to: "d5", color: "best" });
+    expect(best).toEqual({ from: "c3", to: "d5", color: "mallow-best" });
     expect(reply).toEqual({ from: "g8", to: "f6", color: "played", secondary: true });
     // the made arrow is PRIMARY -- no secondary flag at all.
     expect(made && "secondary" in made).toBe(false);
@@ -422,12 +427,152 @@ describe("reviewArrowsForMove", () => {
   it("a reply that cannot resolve draws nothing -- no guess, made+best still render", () => {
     const l = line({ ply: 18, playedFromTo: { from: "f8", to: "h6" } });
     const moverBest = { from: "c3", to: "d5" };
-    // no fb, no gameSans -- nothing to resolve mallow's/her reply from.
+    // no fb, no gameSans -- nothing to resolve mallow's/her reply from, and
+    // no line.bestFromTo -- nothing to resolve the OTHER actor's best from.
     const arrows = reviewArrowsForMove(l, { moverBest });
 
     expect(arrows).toContainEqual({ from: "f8", to: "h6", color: "mallow" });
-    expect(arrows).toContainEqual({ from: "c3", to: "d5", color: "best" });
+    expect(arrows).toContainEqual({ from: "c3", to: "d5", color: "mallow-best" });
     expect(arrows.some((a) => a.secondary)).toBe(false);
     expect(arrows).toHaveLength(2);
+  });
+});
+
+// Voice-consistent four-arrow model (owner rulings R1/R2, 2026-08-05): the
+// eight required cases from the plan's brief -- see reviewArrows.ts's own
+// header on reviewArrowsForMove for the full model and sourcing rules.
+describe("reviewArrowsForMove -- voice-consistent four-arrow model (R1/R2, 2026-08-05)", () => {
+  it("EVEN card, she did NOT play her best reply: four arrows -- mallow(primary) + mallow-best(primary, from moverBestFromTo) + her reply played(secondary) + her best 'best'(secondary, from bestFromTo) [R2]", () => {
+    const l = line({
+      ply: 18,
+      playedFromTo: { from: "f8", to: "h6" }, // mallow's actual move
+      bestFromTo: { from: "d8", to: "h4" }, // R2: HER best reply -- the green dashed arrow she asked to see back
+      moverBestFromTo: { from: "c3", to: "d5" }, // mallow's own alternative -- distinct from her best reply
+    });
+    const herReply = fb({ playerPly: 19, playedFromTo: { from: "g8", to: "f6" }, followed: false }); // her actual (not best) reply
+    const arrows = reviewArrowsForMove(l, { fb: herReply, moverBest: l.moverBestFromTo });
+
+    const made = arrows.find((a) => a.from === "f8" && a.to === "h6");
+    const mallowBest = arrows.find((a) => a.from === "c3" && a.to === "d5");
+    const herActualReply = arrows.find((a) => a.from === "g8" && a.to === "f6");
+    const herBestReply = arrows.find((a) => a.from === "d8" && a.to === "h4");
+
+    expect(made).toEqual({ from: "f8", to: "h6", color: "mallow" });
+    expect(mallowBest).toEqual({ from: "c3", to: "d5", color: "mallow-best" });
+    expect(herActualReply).toEqual({ from: "g8", to: "f6", color: "played", secondary: true });
+    // R2, load-bearing: the green dashed arrow's endpoints equal bestFromTo.
+    expect(herBestReply).toEqual({ from: "d8", to: "h4", color: "best", secondary: true });
+    expect(arrows).toHaveLength(4);
+    expect(made && "secondary" in made).toBe(false);
+    expect(mallowBest && "secondary" in mallowBest).toBe(false);
+  });
+
+  it("EVEN card, she DID play her best reply: three arrows -- mallow + mallow-best + ONE 'found'(secondary) [R1]", () => {
+    const l = line({
+      ply: 18,
+      playedFromTo: { from: "f8", to: "h6" },
+      bestFromTo: { from: "d8", to: "h4" }, // her best reply
+      moverBestFromTo: { from: "c3", to: "d5" },
+    });
+    const herReply = fb({ playerPly: 19, playedFromTo: { from: "d8", to: "h4" }, followed: true }); // matches her best exactly
+    const arrows = reviewArrowsForMove(l, { fb: herReply, moverBest: l.moverBestFromTo });
+
+    expect(arrows).toContainEqual({ from: "f8", to: "h6", color: "mallow" });
+    expect(arrows).toContainEqual({ from: "c3", to: "d5", color: "mallow-best" });
+    const found = arrows.find((a) => a.color === "found");
+    // R1: she still gets the unmistakable "found" arrow, just at reduced
+    // (secondary) weight -- mallow's inaccuracy stays the card's subject.
+    expect(found).toEqual({ from: "d8", to: "h4", color: "found", secondary: true });
+    expect(arrows.some((a) => a.from === "d8" && a.to === "h4" && a.color === "played")).toBe(false);
+    expect(arrows.some((a) => a.from === "d8" && a.to === "h4" && a.color === "best")).toBe(false);
+    expect(arrows).toHaveLength(3);
+  });
+
+  it("EVEN card, mallow's played move === mallow's best: mallow's two arrows dedup to ONE plain 'mallow' arrow, never 'found' [F-1]", () => {
+    const l = line({
+      ply: 18,
+      playedFromTo: { from: "c3", to: "d5" },
+      moverBestFromTo: { from: "c3", to: "d5" }, // same endpoints as played -- mallow found her own best
+      bestFromTo: { from: "d8", to: "h4" }, // her best reply, unrelated to mallow's dedup
+    });
+    const herReply = fb({ playerPly: 19, playedFromTo: { from: "g8", to: "f6" }, followed: false });
+    const arrows = reviewArrowsForMove(l, { fb: herReply, moverBest: l.moverBestFromTo });
+
+    const subjectArrows = arrows.filter((a) => !a.secondary);
+    expect(subjectArrows).toEqual([{ from: "c3", to: "d5", color: "mallow" }]);
+    expect(arrows.some((a) => a.color === "found")).toBe(false);
+    // the OTHER actor's (her) reply/best are untouched by mallow's own dedup.
+    expect(arrows).toContainEqual({ from: "g8", to: "f6", color: "played", secondary: true });
+    expect(arrows).toContainEqual({ from: "d8", to: "h4", color: "best", secondary: true });
+  });
+
+  it("ODD card, she did NOT play her best: played/best primary for her + mallow's actual reply + mallow-best(secondary, from threat)", () => {
+    const sans = [
+      { ply: 1, san: "e4" },
+      { ply: 2, san: "e5" },
+      { ply: 3, san: "g4" },
+      { ply: 4, san: "d5" },
+    ];
+    const l = line({
+      ply: 3,
+      playedFromTo: { from: "g2", to: "g4" }, // her move
+      moverBestFromTo: { from: "d2", to: "d4" }, // her own best (subject)
+      threat: { from: "d8", to: "h4" }, // mallow's best (OTHER actor, odd card) -- the persisted refutation
+    });
+    const arrows = reviewArrowsForMove(l, { gameSans: sans, moverBest: l.moverBestFromTo });
+
+    expect(arrows).toContainEqual({ from: "g2", to: "g4", color: "played" });
+    expect(arrows).toContainEqual({ from: "d2", to: "d4", color: "best" });
+    expect(arrows).toContainEqual({ from: "d7", to: "d5", color: "mallow", secondary: true }); // mallow's actual reply
+    expect(arrows).toContainEqual({ from: "d8", to: "h4", color: "mallow-best", secondary: true });
+    expect(arrows).toHaveLength(4);
+  });
+
+  it("ODD card, she DID play her best: her arrows dedup to a single 'found' at PRIMARY weight (no secondary)", () => {
+    const sans = [
+      { ply: 1, san: "e4" },
+      { ply: 2, san: "e5" },
+      { ply: 3, san: "d4" },
+      { ply: 4, san: "d5" },
+    ];
+    const l = line({
+      ply: 3,
+      playedFromTo: { from: "d2", to: "d4" },
+      moverBestFromTo: { from: "d2", to: "d4" }, // matches played
+      threat: { from: "d8", to: "h4" },
+    });
+    const arrows = reviewArrowsForMove(l, { gameSans: sans, moverBest: l.moverBestFromTo });
+
+    const subjectArrows = arrows.filter((a) => !a.secondary);
+    expect(subjectArrows).toEqual([{ from: "d2", to: "d4", color: "found" }]);
+    // the OTHER actor (mallow)'s reply/best are untouched by her own dedup.
+    expect(arrows).toContainEqual({ from: "d7", to: "d5", color: "mallow", secondary: true });
+    expect(arrows).toContainEqual({ from: "d8", to: "h4", color: "mallow-best", secondary: true });
+    expect(arrows).toHaveLength(3);
+  });
+
+  it("missing sources (no threat, no bestFromTo, no moverBestFromTo): those arrows are simply absent, never guessed, never a crash -- EVEN card", () => {
+    const l = line({ ply: 18, playedFromTo: { from: "f8", to: "h6" } }); // no bestFromTo/moverBestFromTo/threat
+    const herReply = fb({ playerPly: 19, playedFromTo: { from: "g8", to: "f6" }, followed: false });
+    const arrows = reviewArrowsForMove(l, { fb: herReply }); // no moverBest passed either
+    expect(arrows).toEqual([
+      { from: "f8", to: "h6", color: "mallow" },
+      { from: "g8", to: "f6", color: "played", secondary: true },
+    ]);
+  });
+
+  it("missing sources: same, ODD card (no threat to source mallow's best from)", () => {
+    const sans = [
+      { ply: 1, san: "e4" },
+      { ply: 2, san: "e5" },
+      { ply: 3, san: "g4" },
+      { ply: 4, san: "d5" },
+    ];
+    const l = line({ ply: 3, playedFromTo: { from: "g2", to: "g4" } }); // no moverBestFromTo/threat
+    const arrows = reviewArrowsForMove(l, { gameSans: sans }); // no moverBest passed either
+    expect(arrows).toEqual([
+      { from: "g2", to: "g4", color: "played" },
+      { from: "d7", to: "d5", color: "mallow", secondary: true },
+    ]);
   });
 });

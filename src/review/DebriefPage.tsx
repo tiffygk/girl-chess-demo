@@ -388,23 +388,26 @@ function DebriefBulletList({
 // SECOND, independently-computed arrow list (the CLAUDE.md "Invariant rule"
 // bug class): this function used to call turningLineArrows directly, which
 // is no longer what the board renders for a non-highlighted "ask" ply (that
-// now goes through reviewArrowsForMove, which never emits "mallow-best" at
-// all -- see arrowSelection.ts's header). Two branches, deliberately
-// answered two DIFFERENT ways now, because they are answering two
-// different questions:
+// now goes through reviewArrowsForMove -- see arrowSelection.ts's header).
+// Two branches, deliberately answered two DIFFERENT ways now, because they
+// are answering two different questions:
 //   - a card is selected (rewindPly != null): "is the row's arrow ACTUALLY
 //     on the board right now." Answered by reading `activeArrows` --
 //     literally the same array Board.tsx is rendering (GamePage's
 //     `reviewArrows` state, passed straight through as a prop) -- zero
 //     recomputation, so this can never drift from the board again no matter
 //     how the arrow model changes further. Whichever intent produced the
-//     current board (ask or replay) is irrelevant here on purpose: a
-//     mallow-best arrow is structurally unreachable via "ask" now (nothing
-//     in reviewArrowsForMove ever sets that colour), so this naturally
-//     resolves to false whenever "ask" produced what's on screen, and true
-//     only for a "replay" on a her-ply line whose threat doesn't coincide
-//     with mallow's actual reply -- the one path left that can still draw
-//     it (turningLineReplayArrows' her-ply arm; see arrowSelection.ts).
+//     current board (ask or replay) is irrelevant here on purpose: this
+//     simply reads whatever colours reviewArrowsForMove/turningLineArrows
+//     actually emitted for that intent.
+//     Voice-consistent four-arrow model (2026-08-05, R2, same round, later):
+//     "mallow-best" is no longer unreachable via "ask" -- it is now the
+//     OTHER actor's best on an odd card, sourced from line.threat, and
+//     "ask" is exactly the interaction that channel serves (see
+//     reviewArrows.ts's reviewArrowsForMove header). This function's own
+//     logic needed no change for that -- it already just reads
+//     `activeArrows`, whatever they are -- only the comment above was ever
+//     wrong to assert unreachability as a permanent property.
 //   - nothing selected (rewindPly == null, the landing state): "would
 //     REPLAYING any line in this game ever draw the row's arrow" -- the
 //     game-scoped preview that fixes game 151 (no card selected on first
