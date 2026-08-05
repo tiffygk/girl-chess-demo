@@ -1,17 +1,23 @@
-## ACTIVE WORK -- start here (updated 2026-08-03, trimmed for length — full history in `docs/changelog.md`)
+## ACTIVE WORK -- start here (updated 2026-08-05, trimmed for length — full history in `docs/changelog.md`)
 
-**Read `6 handoffs/HANDOFF — Round 3 continuation (2026-08-03).md` FIRST** — it is written to be acted
-on directly and is the current pickup point: current state, the key decisions (OD-3b thinking =
-attempt-0 `low` for ALL coach chat including postgame review, router fix approved and mid-build), the
-open queue, and full relaunch briefs for the 3 in-flight agents as of 2026-08-03 (game investigation
-into the owner's newest real game's 3 reported bugs; the opponent-move-analysis plan; the router build
-in `wt-router`/`round/2026-08-03-router`, which has uncommitted progress on disk that must not be
-discarded). Round-3's overnight work (merge, W1 fact shelf, W2 trust floor, W5 opponent-highlight
-badge, game-167 import, the OD-3b eval) is DONE and merged/committed on `main`; two branches
-(`round/2026-08-03-thinking-low`, `round/2026-08-03-router`) are built/building and HELD for owner
-ship. The prior 2026-08-02 continuation handoff is superseded — its content is folded into the new one
-where still relevant. Owner is playing real games throughout on `npm run dev` (real db,
-http://localhost:5173/api :3001) — check for that before any gate run or CPU-heavy work.
+**Everything through 2026-08-05 is SHIPPED to `main` and gate-green (tip `708ba66`).** The round-3
+continuation queue and the day's work are all merged: the coach general-theory router fix; the
+opponent-move analysis feature (magenta "mallow's moves you highlighted" drawer + engine-grounded
+opponent chat); OD-3b thinking-low (attempt-0 `low` for ALL coach chat incl. review, no mode gate); the
+replay-frames-the-inaccuracy fix; the coach-only/confirm-off checkmark fix; and the postgame ARROW
+REDESIGN (every HIGHLIGHTED move shows made + best + reply, subject-primary, reply dimmed to 0.55) plus
+its four follow-ups. Baseline note: main had been silently RED (deferred gate) on `tsc -b` (numbers arm)
+and em-dashes in coach output — both fixed early. Read `docs/changelog.md`'s top entry (2026-08-03..05)
+for the file-level map, and `6 handoffs/AUTONOMOUS LOG — Arrow Redesign (2026-08-04).md` for the arrow
+build trail. The 2026-08-03 round-3 continuation handoff is now historical (its queue is drained).
+
+**ONE item HELD for owner greenlight (not started, conservative):** extending the three-arrow model to
+NON-highlighted turning-point cards — it needs the turning-line producer to carry the MOVER's best for
+opponent (even) plies (from `moves.best_move`), which changes every game's debrief, so it awaits the
+owner's OK. Detail in the autonomous log's "HELD FOR OWNER GREENLIGHT" section.
+
+Owner plays real games throughout on `npm run dev` (real db, http://localhost:5173 / api :3001) — check
+for that (and the in-play guard) before any `npm run gate` or CPU-heavy work.
 
 **If the owner says only "start again" or "continue", this is where you pick up.**
 
