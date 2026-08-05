@@ -1,6 +1,8 @@
 ## ACTIVE WORK -- start here (updated 2026-08-05, trimmed for length — full history in `docs/changelog.md`)
 
-**Everything through 2026-08-05 is SHIPPED to `main` and gate-green (tip `708ba66`).** The round-3
+**Read `6 handoffs/HANDOFF — Next model (2026-08-05).md` FIRST** (written for a fresh context — current
+state, the play answer, and the one greenlit build). **Everything through 2026-08-05 is SHIPPED to `main`
+and gate-green (code tip `708ba66`, docs `73fbc78`).** The round-3
 continuation queue and the day's work are all merged: the coach general-theory router fix; the
 opponent-move analysis feature (magenta "mallow's moves you highlighted" drawer + engine-grounded
 opponent chat); OD-3b thinking-low (attempt-0 `low` for ALL coach chat incl. review, no mode gate); the
@@ -11,10 +13,12 @@ and em-dashes in coach output — both fixed early. Read `docs/changelog.md`'s t
 for the file-level map, and `6 handoffs/AUTONOMOUS LOG — Arrow Redesign (2026-08-04).md` for the arrow
 build trail. The 2026-08-03 round-3 continuation handoff is now historical (its queue is drained).
 
-**ONE item HELD for owner greenlight (not started, conservative):** extending the three-arrow model to
-NON-highlighted turning-point cards — it needs the turning-line producer to carry the MOVER's best for
-opponent (even) plies (from `moves.best_move`), which changes every game's debrief, so it awaits the
-owner's OK. Detail in the autonomous log's "HELD FOR OWNER GREENLIGHT" section.
+**ONE pending build (owner GREENLIT 2026-08-05):** extend the three-arrow model to NON-highlighted
+turning-point cards. Plan (task-by-task, TDD): `2 build/Girl Chess — Turning-Card Arrow Extension Plan
+(2026-08-05).md` — `getTurningLines` carries the mover's own `moves.best_move` as `moverBestFromTo`, then
+`arrowSelection.ts` routes non-highlighted cards through the same `reviewArrowsForMove`. Run via
+`/build-round` + subagent-driven-development; HOLD the merge for the owner's eye — it changes every
+game's debrief.
 
 Owner plays real games throughout on `npm run dev` (real db, http://localhost:5173 / api :3001) — check
 for that (and the in-play guard) before any `npm run gate` or CPU-heavy work.
