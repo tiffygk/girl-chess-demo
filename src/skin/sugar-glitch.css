@@ -1053,6 +1053,26 @@
    the arrow carries the happened/hypothetical style, the wash only echoes
    the actor's colour. */
 .gc-app .sq.tp-mallow-best { box-shadow: inset 0 0 0 2px rgba(194,43,126,.3); }
+/* Arrow follow-ups (2026-08-05): a SECONDARY reply arrow dims to 0.55
+   (.arrow-secondary below) but its two square washes stayed full strength.
+   The wash moves onto an ::after layer -- the same box-shadow values as its
+   primary twin above, verbatim -- dimmed to the arrow's own 0.55. Never
+   opacity on .sq itself: that would dim the tile (and anything on it) with
+   the wash. .sq is already position:relative; later overlays (.check-ring
+   et al) keep winning the cascade exactly as they do over tp-played/
+   tp-mallow today. Only the reply colours can ever be secondary (played on
+   a mallow card, mallow on a her card) -- see reviewArrowsForMove. */
+.gc-app .sq.tp-secondary { box-shadow: none; }
+.gc-app .sq.tp-secondary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.55;
+}
+.gc-app .sq.tp-played.tp-secondary::after { box-shadow: inset 0 0 0 3px rgba(35,229,255,.55), inset 0 0 10px rgba(35,229,255,.3); }
+.gc-app .sq.tp-mallow.tp-secondary::after { box-shadow: inset 0 0 0 2px rgba(194,43,126,.55), inset 0 0 8px rgba(194,43,126,.25); }
 
 .gc-app .board-arrows {
   position: absolute;

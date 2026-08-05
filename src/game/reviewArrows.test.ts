@@ -328,6 +328,23 @@ describe("arrowsToHighlights", () => {
     ];
     expect(arrowsToHighlights(arrows)).toHaveLength(4);
   });
+
+  it("a SECONDARY arrow's two square washes carry the secondary flag; a primary arrow's never do (square-wash follow-up)", () => {
+    // Arrow follow-ups (2026-08-05): the reply arrow dims to 0.55
+    // (.arrow-secondary) but its from/to square washes stayed full
+    // strength -- the flag must ride the highlights so Board.tsx can dim
+    // the wash to match.
+    const arrows = [
+      { from: "f8", to: "h6", color: "mallow" as const },
+      { from: "c3", to: "d5", color: "played" as const, secondary: true },
+    ];
+    expect(arrowsToHighlights(arrows)).toEqual([
+      { square: "f8", kind: "mallow" },
+      { square: "h6", kind: "mallow" },
+      { square: "c3", kind: "played", secondary: true },
+      { square: "d5", kind: "played", secondary: true },
+    ]);
+  });
 });
 
 // Postgame arrow redesign, Task 1 (2026-08-04, conservative-scope override
@@ -378,13 +395,27 @@ describe("reviewArrowsForMove", () => {
     expect(arrows).toContainEqual({ from: "d7", to: "d5", color: "mallow", secondary: true });
   });
 
-  it("made move === best move: dedups to ONE primary 'found' arrow, no duplicate, no secondary", () => {
+  it("HER made move === best move (odd ply): dedups to ONE primary 'found' arrow, no duplicate, no secondary", () => {
     const l = line({ ply: 9, playedFromTo: { from: "d1", to: "f3" } });
     const moverBest = { from: "d1", to: "f3" }; // same endpoints as made
     const arrows = reviewArrowsForMove(l, { moverBest });
 
     expect(arrows.filter((a) => ["found", "played", "mallow", "best"].includes(a.color))).toHaveLength(1);
     expect(arrows[0]).toEqual({ from: "d1", to: "f3", color: "found" });
+    expect("secondary" in arrows[0]).toBe(false);
+  });
+
+  it("MALLOW made move === best move (even ply): ONE plain 'mallow' arrow -- never 'found', whose cyan halo is HER voice (F-1 palette law)", () => {
+    // Arrow follow-ups F-1 (2026-08-05): "found" renders a CYAN halo
+    // (analysisLegend.ts / .arrow-found), and cyan is the player's voice --
+    // a mallow matched-best move keeps her own magenta; "the computer's
+    // pick" is conveyed by the drawer chip, not the arrow.
+    const l = line({ ply: 4, playedFromTo: { from: "b8", to: "c6" } }); // mallow's Nc6
+    const moverBest = { from: "b8", to: "c6" }; // same endpoints as made
+    const arrows = reviewArrowsForMove(l, { moverBest });
+
+    expect(arrows).toEqual([{ from: "b8", to: "c6", color: "mallow" }]);
+    expect(arrows.some((a) => a.color === "found" || a.color === "best")).toBe(false);
     expect("secondary" in arrows[0]).toBe(false);
   });
 

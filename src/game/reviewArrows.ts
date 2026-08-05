@@ -77,6 +77,11 @@ export interface ReviewArrow {
 export interface ReviewHighlight {
   square: string;
   kind: ArrowColor;
+  // Arrow follow-ups (2026-08-05): mirrors ReviewArrow.secondary -- set on
+  // both endpoint washes of a secondary (reply) arrow so Board.tsx can dim
+  // the wash to the same 0.55 the arrow itself gets. Never set for a
+  // primary arrow's washes.
+  secondary?: boolean;
 }
 
 // `fb` is optional so a caller with no gameSans (nothing to replay
@@ -197,7 +202,12 @@ export function reviewArrowsForMove(
 
   if (made && madeIsBest) {
     // Coincident made/best: one honest solid arrow, never a duplicate.
-    arrows.push({ ...made, color: "found" });
+    // F-1 (arrow follow-ups, 2026-08-05): "found" is HER voice only -- its
+    // render carries a cyan halo (analysisLegend.ts / .arrow-found), and
+    // cyan is the player's colour. A MALLOW (even-ply) matched-best keeps
+    // her own plain magenta arrow; "the computer's pick" is conveyed by the
+    // drawer chip, never by borrowing her opponent's halo.
+    arrows.push({ ...made, color: isOpponentPly ? "mallow" : "found" });
   } else {
     if (made) arrows.push({ ...made, color: madeColor });
     if (moverBest) arrows.push({ ...moverBest, color: "best" });
@@ -254,8 +264,12 @@ export function turningLineReplayArrows(
 export function arrowsToHighlights(arrows: ReviewArrow[]): ReviewHighlight[] {
   const highlights: ReviewHighlight[] = [];
   for (const a of arrows) {
-    highlights.push({ square: a.from, kind: a.color });
-    highlights.push({ square: a.to, kind: a.color });
+    // The flag is only ever PRESENT on a secondary arrow's washes (never
+    // `secondary: undefined` on a primary's) so exact-equality pins and
+    // JSON round-trips stay byte-stable.
+    const flag = a.secondary ? { secondary: true as const } : undefined;
+    highlights.push({ square: a.from, kind: a.color, ...flag });
+    highlights.push({ square: a.to, kind: a.color, ...flag });
   }
   return highlights;
 }
