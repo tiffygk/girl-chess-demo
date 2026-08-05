@@ -86,9 +86,26 @@ export function buildArrowsForPly(
   if (highlightLine) {
     const made = playedArrowForPly(activeReviewMoves, ply);
     const reply = playedArrowForPly(activeReviewMoves, ply + 1);
-    // Minimal TurningLine-shaped input: only `.ply` (the parity switch) and
-    // `.playedFromTo` (the made move) are ever read by reviewArrowsForMove.
-    const syntheticLine: TurningLine = { ply, pvSans: [], playedFromTo: made };
+    // Minimal TurningLine-shaped input: `.ply` (the parity switch),
+    // `.playedFromTo` (the made move), and now (Task 5) the OTHER actor's-
+    // best channel reviewArrowsForMove's "OTHER half" reads -- `line.
+    // bestFromTo` on an even (mallow) card, `line.threat` on an odd (her)
+    // card (see reviewArrowsForMove's own header for why bestFromTo always
+    // means "her best" regardless of parity). Sourced from HighlightLine.
+    // replyBestFromTo, the one new field this task adds; omitted when it's
+    // undefined so the channel stays silent exactly as before, never a
+    // guess.
+    const isOpponentPly = ply % 2 === 0;
+    const otherBest = highlightLine.replyBestFromTo;
+    const syntheticLine: TurningLine = {
+      ply,
+      pvSans: [],
+      playedFromTo: made,
+      // Key omitted entirely (not set to undefined) when otherBest is
+      // absent -- matches the rest of this file's "missing source draws
+      // nothing" discipline rather than an explicit-undefined field.
+      ...(otherBest ? (isOpponentPly ? { bestFromTo: otherBest } : { threat: otherBest }) : {}),
+    };
     // Threaded into both of reviewArrowsForMove's reply channels -- see this
     // file's header. `fb` only carries the one field reviewArrowsForMove
     // reads off it (`playedFromTo`); the rest are placeholders never
