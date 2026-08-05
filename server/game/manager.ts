@@ -88,11 +88,21 @@ export const COACH_NOTE_ACK = "noted, and it's saved for good. i'll have it next
 // replay loop in getTurningLines below) — never by parsing SAN/UCI text as
 // truth. Optional fields are omitted (not fabricated as empty/zero values)
 // when the underlying data isn't available for that ply.
+// Turning-card arrow extension plan (2026-08-05), Task 1: moverBestFromTo is
+// the engine's best move for whoever was actually TO MOVE at t.ply itself --
+// distinct from bestFromTo, which (for an even/mallow ply) is her best
+// REPLY, not mallow's own alternative. Sourced from moves.best_move at row
+// (t.ply - 1): attachEval(ply) persists the eval of fenAfter(ply), so row
+// (t.ply - 1)'s best_move is the eval of fenBefore(t.ply) -- exactly the
+// decision t.ply's mover faced. See getTurningLines' own comment for the
+// full derivation. Optional, same omit-don't-fabricate rule as every other
+// field here.
 export interface TurningLine {
   ply: number;
   playedFromTo?: { from: string; to: string };
   bestSan?: string;
   bestFromTo?: { from: string; to: string };
+  moverBestFromTo?: { from: string; to: string };
   pvSans: string[];
   threat?: { from: string; to: string };
 }
@@ -528,6 +538,11 @@ export class GameManager {
       const turningPoints = getTurningPoints(gameId) as { ply: number; san: string }[];
       const rows = getGameMoves(gameId);
       const sans = rows.map((r: any) => r.san as string);
+      // moverBestFromTo lookup: rows is already a full per-ply scan (SELECT
+      // * FROM moves), so row (t.ply - 1)'s best_move is available here
+      // with no additional query -- see the TurningLine interface comment
+      // for why (t.ply - 1) is the right row.
+      const rowByPly = new Map(rows.map((r: any) => [r.ply as number, r]));
       // The line the player should see is the best line at the nearest
       // position where the PLAYER (always white) is on move. Player moves
       // on odd plies, mallow on even plies, so the player-to-move "seed"
@@ -577,10 +592,25 @@ export class GameManager {
 
         const threat = this.threatForPly(verdicts, t.ply, t.san);
 
+        // Mover's own best: row (t.ply - 1)'s best_move, resolved from
+        // fenBefore (already computed above -- fenBefore IS fenAfter(t.ply
+        // - 1), the exact position that row's best_move was evaluated
+        // against) via the same pvLine UCI-replay this file already uses
+        // for bestFromTo. best_move alone, deliberately never that row's
+        // pv -- reading only what the field name promises. A ply-1 turning
+        // point has no (t.ply - 1) row and degrades gracefully (pvLine's
+        // own undefined-ev branch), same as bestFromTo's seedPly < 1 case.
+        const moverRow = rowByPly.get(t.ply - 1);
+        const { bestFromTo: moverBestFromTo } = this.pvLine(
+          fenBefore,
+          moverRow ? { bestMove: moverRow.best_move ?? null, pv: null } : undefined
+        );
+
         const line: TurningLine = { ply: t.ply, pvSans };
         if (playedFromTo) line.playedFromTo = playedFromTo;
         if (bestSan) line.bestSan = bestSan;
         if (bestFromTo) line.bestFromTo = bestFromTo;
+        if (moverBestFromTo) line.moverBestFromTo = moverBestFromTo;
         if (threat) line.threat = threat;
         return line;
       });

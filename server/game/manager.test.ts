@@ -1446,6 +1446,128 @@ describe("GameManager", () => {
     expect(getTurningPointsAllVersions(g).length).toBe(before);
   });
 
+  // Turning-card arrow extension plan (2026-08-05), Task 1: moverBestFromTo.
+  // getTurningLines' existing bestFromTo is seeded at seedPly = t.ply -
+  // (t.ply % 2) -- for an EVEN (mallow) turning ply that's t.ply itself,
+  // whose attached eval is of fenAfter(t.ply): her best REPLY, not mallow's
+  // own alternative to the move mallow actually played. moverBestFromTo
+  // fixes that by always reading the row at (t.ply - 1) -- attachEval(ply)
+  // persists the eval of fenAfter(ply), so row (t.ply - 1)'s best_move is
+  // the eval of fenAfter(t.ply - 1) = fenBefore(t.ply): the engine's
+  // suggestion for whoever was actually to move AT t.ply, her or mallow's.
+  // For an ODD (her) turning ply this is the SAME row bestFromTo already
+  // reads (seedPly = t.ply - 1 there too), so the two coincide by
+  // construction -- only the even case can differ, which is exactly the
+  // bug this task exists to fix.
+  it("getTurningLines: moverBestFromTo on an EVEN (mallow) turning ply is mallow's own best, distinct from bestFromTo (her reply-best)", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    // fenAfter(ply 1) = after 1.e4, black to move. Engine's suggestion for
+    // BLACK here (d7d5) is mallow's own best alternative at ply 2 -- mallow
+    // instead plays e5 below, so this and bestFromTo (below) must differ.
+    attachEval(g, 1, { cp: 20, mate: null, bestMove: "d7d5", pv: ["d7d5", "c2c4"] });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    // fenAfter(ply 2) = after 1.e4 e5, white to move. This is what the
+    // EXISTING bestFromTo reads for an even turning ply (seedPly = t.ply):
+    // her best REPLY, not mallow's alternative.
+    attachEval(g, 2, { cp: 25, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
+    finishGame(g, "1-0");
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 2, san: "e5", label: "opponent choice", deltaP: 0.1, lowConfidence: false, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    const result = gm.getTurningLines(g);
+    expect(result.ok).toBe(true);
+    const line = result.lines[0];
+    expect(line.ply).toBe(2);
+
+    // Existing behaviour unchanged: bestFromTo is still her reply-best.
+    expect(line.bestFromTo).toEqual({ from: "g1", to: "f3" });
+
+    // New field: mallow's own best at the ply she actually moved, sourced
+    // from row (ply-1)'s best_move (d7d5), independently verified by
+    // replaying 1.e4 on a fresh chess.js and resolving via moveEndpoints.
+    const check = new Chess();
+    check.move("e4");
+    expect(moveEndpoints(check.fen(), "d5")).toEqual({ from: "d7", to: "d5" });
+    expect(line.moverBestFromTo).toEqual({ from: "d7", to: "d5" });
+
+    // The point of this test: the two fields answer different questions
+    // and must not coincide.
+    expect(line.moverBestFromTo).not.toEqual(line.bestFromTo);
+  });
+
+  it("getTurningLines: moverBestFromTo on an ODD (her) turning ply equals her own stored best_move endpoints", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    attachEval(g, 1, { cp: 20, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    // fenAfter(ply 2) = after 1.e4 e5, white to move -- her own decision
+    // point at ply 3. Engine's suggestion here (Nf3) is her own best; she
+    // instead plays d4 below.
+    attachEval(g, 2, { cp: 25, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
+    recordMove({ gameId: g, ply: 3, san: "d4", uci: "d2d4", fenAfter: "fen3", timeSpentMs: 0 });
+    finishGame(g, "1-0");
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 3, san: "d4", label: "her choice", deltaP: 0.1, lowConfidence: false, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    const result = gm.getTurningLines(g);
+    expect(result.ok).toBe(true);
+    const line = result.lines[0];
+    expect(line.ply).toBe(3);
+    expect(line.moverBestFromTo).toEqual({ from: "g1", to: "f3" });
+  });
+
+  it("getTurningLines: moverBestFromTo is omitted (not crashed, not partial) when best_move at ply-1 is missing or unparseable, and every other field is untouched", () => {
+    // Case A: missing -- no attachEval call at all for ply 1, so best_move
+    // stays NULL at that row (the same shape as an eval that hadn't
+    // landed yet at persist time).
+    const gMissing = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: gMissing, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: gMissing, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    attachEval(gMissing, 2, { cp: 25, mate: null, bestMove: "g1f3", pv: ["g1f3"] });
+    finishGame(gMissing, "1-0");
+    insertTurningPoints(
+      gMissing,
+      [{ rank: 1, ply: 2, san: "e5", label: "opponent choice", deltaP: 0.1, lowConfidence: false, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    const missingResult = gm.getTurningLines(gMissing);
+    const missingLine = missingResult.lines[0];
+    expect(missingLine.moverBestFromTo).toBeUndefined();
+    // Nothing else on the line changes: bestFromTo/pvSans/playedFromTo are
+    // exactly what they were before this field existed.
+    expect(missingLine.bestFromTo).toEqual({ from: "g1", to: "f3" });
+    expect(missingLine.pvSans).toEqual(["Nf3"]);
+    expect(missingLine.playedFromTo).toEqual({ from: "e7", to: "e5" });
+
+    // Case B: unparseable -- best_move is well-formed UCI text but illegal
+    // from fenBefore(t.ply) (e2e4 is white's already-played move; it is not
+    // a legal move for black, who is to move in this fen).
+    const gBad = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: gBad, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    attachEval(gBad, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
+    recordMove({ gameId: gBad, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    attachEval(gBad, 2, { cp: 25, mate: null, bestMove: "g1f3", pv: ["g1f3"] });
+    finishGame(gBad, "1-0");
+    insertTurningPoints(
+      gBad,
+      [{ rank: 1, ply: 2, san: "e5", label: "opponent choice", deltaP: 0.1, lowConfidence: false, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    expect(() => gm.getTurningLines(gBad)).not.toThrow();
+    const badLine = gm.getTurningLines(gBad).lines[0];
+    expect(badLine.moverBestFromTo).toBeUndefined();
+    expect(badLine.bestFromTo).toEqual({ from: "g1", to: "f3" });
+  });
+
   // Opponent-move-analysis plan (2026-08-03), Wave A: getHighlightLines --
   // the real GameManager integration (real pvLine, real getGameMoves), one
   // level up from highlightLines.test.ts's pure-function unit coverage.
