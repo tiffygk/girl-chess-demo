@@ -40,7 +40,7 @@ import {
   resolvePlyFocus,
 } from "./chatFocus";
 import { arrowsToHighlights, type ArrowColor, type ReviewArrow } from "./reviewArrows";
-import { buildArrowsForPly as buildArrowsForPlyPure } from "./arrowSelection";
+import { buildArrowsForPly as buildArrowsForPlyPure, type ArrowIntent } from "./arrowSelection";
 import { describeMove, type MoveRender } from "./describeMove";
 import { pushLiveMove, setHighlight, pairWindow, liveMovesFromSummary, type LiveMove } from "./liveMoves";
 import { HighlightPocket } from "./HighlightPocket";
@@ -1574,7 +1574,7 @@ export function GamePage() {
   // over it so every existing call site (handleRewind,
   // handleAskAboutTurningPoint, handleAskAboutPly) is unchanged.
   const buildArrowsForPly = useCallback(
-    (line: TurningLine | undefined, ply: number, intent: "ask" | "replay" = "ask"): ReviewArrow[] =>
+    (line: TurningLine | undefined, ply: number, intent: ArrowIntent = "ask"): ReviewArrow[] =>
       buildArrowsForPlyPure(line, ply, activeReviewMoves ?? undefined, highlightLines, intent),
     [activeReviewMoves, highlightLines]
   );
