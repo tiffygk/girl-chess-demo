@@ -68,9 +68,10 @@ export interface ReviewArrow {
   to: string;
   color: ArrowColor;
   // Postgame arrow redesign, Task 1 (2026-08-04): set on the OTHER actor's
-  // actual reply in reviewArrowsForMove's three-arrow set -- Task 4 (visual
-  // wave) renders this at reduced weight. Never set on the made move or the
-  // best/found arrow (those are always the subject, PRIMARY).
+  // arrows -- Board.tsx renders this at reduced weight. Task 6 update
+  // (2026-08-05, R1/R2): under the four-arrow model the OTHER actor's
+  // "found"/"best" carry this flag too (this comment used to say they never
+  // would); the SUBJECT's own arrows are still never flagged.
   secondary?: boolean;
 }
 

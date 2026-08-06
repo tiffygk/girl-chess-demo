@@ -179,9 +179,15 @@ interface BoardProps {
   // threat), dashed = it didn't (best/mallow-best). CSS owns the strokes.
   // Postgame arrow redesign, Task 4 (2026-08-04): `secondary` mirrors
   // ReviewArrow.secondary (reviewArrows.ts) -- set on the OTHER actor's
-  // actual reply in the three-arrow set, rendered here as an
-  // `arrow-secondary` modifier class (reduced opacity, sugar-glitch.css).
-  // Never set on the made move or the best/found arrow.
+  // arrows, rendered here as an `arrow-secondary` modifier class (reduced
+  // opacity, sugar-glitch.css).
+  // Task 6 (2026-08-05, owner rulings R1/R2): the four-arrow model gives
+  // the OTHER actor BOTH of its arrows at secondary weight, so `secondary`
+  // can now land on "found" and "best" too (this comment used to say it
+  // never would). Those two get a gentler treatment than the flat 0.55 --
+  // slimmer strokes + a 0.75 fade (CSS) and a scaled-down head (the `slim`
+  // conditional in the arrow map below), so a found arrow still reads as
+  // praise, never as a disabled state.
   arrows?: { from: string; to: string; color: "played" | "best" | "threat" | "found" | "mallow" | "mallow-best"; secondary?: boolean }[];
   /**
    * Increment 3.91 (Task 1): companion square wash for the arrows above —
@@ -189,8 +195,9 @@ interface BoardProps {
    * `.tp-played`/`.tp-best`/`.tp-threat` classes, same render-only contract.
    * Arrow follow-ups (2026-08-05): secondary mirrors ReviewHighlight's own
    * flag (arrowsToHighlights, reviewArrows.ts) -- set on both endpoint washes
-   * of a secondary reply arrow, rendered here as a tp-secondary modifier
-   * class (wash dimmed to the arrow's own 0.55, sugar-glitch.css).
+   * of a secondary arrow, rendered here as a tp-secondary modifier class
+   * (wash dimmed to its arrow's own register -- 0.55, or 0.75 for the
+   * gentler found/best treatment; sugar-glitch.css).
    */
   highlightSquares?: { square: string; kind: "played" | "best" | "threat" | "found" | "mallow" | "mallow-best"; secondary?: boolean }[];
 }
@@ -221,7 +228,11 @@ const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"];
 // double up on top of the line, and the head is a small filled triangle
 // pointing along the shaft's direction — no SVG markers, so nothing here
 // depends on element ids that could collide across multiple boards.
-function arrowGeometry(from: string, to: string) {
+// Task 6 (2026-08-05): `headScale` shrinks the arrowhead for the slimmed
+// secondary found/best render -- CSS stroke-width can thin the shaft but
+// cannot shrink a filled polygon, so the head's slimming has to happen in
+// geometry. 1 (the default) is byte-identical to the pre-Task-6 head.
+function arrowGeometry(from: string, to: string, headScale = 1) {
   const a = squareCenter(from);
   const b = squareCenter(to);
   const dx = b.xPct - a.xPct;
@@ -229,8 +240,8 @@ function arrowGeometry(from: string, to: string) {
   const len = Math.hypot(dx, dy) || 1;
   const ux = dx / len;
   const uy = dy / len;
-  const headLen = 3.4;
-  const headWidth = 2.1;
+  const headLen = 3.4 * headScale;
+  const headWidth = 2.1 * headScale;
   const shaftEndX = b.xPct - ux * headLen;
   const shaftEndY = b.yPct - uy * headLen;
   const perpX = -uy;
@@ -1046,7 +1057,15 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               aria-hidden="true"
             >
               {arrows.map((arrow, i) => {
-                const g = arrowGeometry(arrow.from, arrow.to);
+                // Task 6 (2026-08-05, R1/R2): a secondary found/best slims
+                // rather than just fading -- the head scales to 0.78 here
+                // (matching the CSS's slimmed strokes) because a filled
+                // polygon can't be thinned by stroke-width. Plain secondary
+                // replies (played/mallow/mallow-best) keep full geometry
+                // and the flat 0.55 fade, byte-unchanged from Task 4.
+                const slim =
+                  arrow.secondary && (arrow.color === "found" || arrow.color === "best");
+                const g = arrowGeometry(arrow.from, arrow.to, slim ? 0.78 : 1);
                 return (
                   <g key={`${arrow.from}-${arrow.to}-${arrow.color}-${i}`} className={`arrow arrow-${arrow.color}${arrow.secondary ? " arrow-secondary" : ""}`}>
                     {arrow.color === "found" && (

@@ -1073,6 +1073,25 @@
 }
 .gc-app .sq.tp-played.tp-secondary::after { box-shadow: inset 0 0 0 3px rgba(35,229,255,.55), inset 0 0 10px rgba(35,229,255,.3); }
 .gc-app .sq.tp-mallow.tp-secondary::after { box-shadow: inset 0 0 0 2px rgba(194,43,126,.55), inset 0 0 8px rgba(194,43,126,.25); }
+/* Task 6 (2026-08-05, R1/R2): the four-arrow model can mark found/best/
+   mallow-best secondary too (the OTHER actor's pair on either card parity).
+   tp-secondary zeroes the base shadow, so a kind with no ::after rule here
+   washed NOTHING at all -- these three close that gap, each the primary's
+   own box-shadow verbatim. found/best override the generic 0.55 to ride at
+   their arrow's gentler 0.75 register (see .arrow-found.arrow-secondary
+   below); mallow-best keeps the generic 0.55 like its arrow. */
+.gc-app .sq.tp-found.tp-secondary::after {
+  box-shadow:
+    inset 0 0 0 2px rgba(35,229,255,.65),
+    inset 0 0 0 5px rgba(76,175,140,.75),
+    inset 0 0 12px rgba(76,175,140,.3);
+  opacity: 0.75;
+}
+.gc-app .sq.tp-best.tp-secondary::after {
+  box-shadow: inset 0 0 0 3px rgba(76,175,140,.7), inset 0 0 10px rgba(76,175,140,.35);
+  opacity: 0.75;
+}
+.gc-app .sq.tp-mallow-best.tp-secondary::after { box-shadow: inset 0 0 0 2px rgba(194,43,126,.3); }
 
 .gc-app .board-arrows {
   position: absolute;
@@ -1145,6 +1164,26 @@
    solid it-happened arrow over both square tints, but visibly beneath the
    primaries. No new hex. */
 .gc-app .board-arrows .arrow-secondary { opacity: 0.55; }
+/* Task 6 (2026-08-05, owner rulings R1/R2): the four-arrow model can now put
+   `secondary` on "found" and "best" -- the OTHER actor's own best, e.g. her
+   perfect punish on a mallow card (R1: "I should still clearly show when I
+   found the best move"). The flat 0.55 fails exactly there: it grays the
+   green body AND the cyan halo together, and a muddied two-layer celebration
+   reads "washed out / disabled", not "correct, but not the subject here."
+   Chosen render (direction D of the round's mock): the hierarchy drop is
+   split across two gentle instruments -- slimmer strokes (body 1.6 -> 1.1,
+   halo 3.2 -> 2.3, head scaled 0.78 in Board.tsx's geometry) plus a MILDER
+   0.75 fade (above the 0.55 plain-reply register, beneath the 0.9 primary)
+   -- so neither goes far enough to destroy the signal. Full saturation was
+   rejected too (mock direction B): a full-strength cyan halo is this board's
+   highest-contrast hue and re-invites the game-169 misread of her own arrow
+   as the card's subject. Reduced weight = lower in the hierarchy, never
+   less true. Same colours, no new hex. */
+.gc-app .board-arrows .arrow-found.arrow-secondary,
+.gc-app .board-arrows .arrow-best.arrow-secondary { opacity: 0.75; }
+.gc-app .board-arrows .arrow-found.arrow-secondary line,
+.gc-app .board-arrows .arrow-best.arrow-secondary line { stroke-width: 1.1; }
+.gc-app .board-arrows .arrow-found.arrow-secondary line.halo { stroke-width: 2.3; }
 
 /* check ring — sits under the piece sprite (.pieces layer paints over .squares) */
 .gc-app .sq.check-ring {
