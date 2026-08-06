@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { LEGEND_ROWS, LEGEND_SOLID_ROWS, LEGEND_DASHED_ROWS, mallowBestLabel } from "./analysisLegend";
+import { LEGEND_ROWS, LEGEND_SOLID_ROWS, LEGEND_DASHED_ROWS } from "./analysisLegend";
 import type { ArrowColor } from "../game/reviewArrows";
 import { computeShowAllowedRow } from "./DebriefPage";
 import { buildArrowsForPly } from "../game/arrowSelection";
@@ -88,32 +88,19 @@ describe("analysisLegend.ts row model (D1 cipher rail)", () => {
       // recommended move at that moment. noun phrase, parallel to "your move"
       // / "mallow's move"; "you should've" scolds.
       best: "recommended move",
-      // Owner ruling 2026-07-28. This arrow is threatForPly -- the refutation
-      // of the move SHE PLAYED (manager.ts:520), i.e. how mallow could have
-      // punished it. "mallow should've" named whose move it was; she reads
-      // the arrow for what it means to HER. It is NOT "what the recommended
-      // move protects against" (nothing derives that), so the label has to
-      // stay anchored to her move, which is exactly what it says.
-      "mallow-best": "what your move allowed",
+      // Owner ruling 2026-08-05 (single-string label fix, replacing the
+      // 2026-07-28 "what your move allowed" ruling): the rail is ONE global
+      // legend for the whole debrief, not card-scoped, so a parity-aware
+      // label ("what your move allowed" for a threat-sourced arrow vs
+      // "mallow's recommended move" for her own alternative) is incoherent --
+      // it can't be simultaneously true for every card on screen. The rose
+      // dashed arrow always means "mallow's best move in that position" in
+      // both meanings (the punisher of her move, or mallow's own
+      // alternative), so one label covers both truthfully. Parallels the
+      // green dashed row's "recommended move": green dashed = the engine's
+      // pick for her, rose dashed = the engine's pick for mallow.
+      "mallow-best": "mallow's recommended move",
     });
-  });
-});
-
-// Voice-consistent four-arrow model (owner ruling, 2026-08-05): mallow-best
-// now fills two different slots (see reviewArrows.ts's reviewArrowsForMove
-// header) -- the label must track which one sourced the arrow.
-describe("mallowBestLabel (parity-aware, 2026-08-05)", () => {
-  it("reads 'what your move allowed' when sourced from threat (odd card -- mallow is the OTHER actor)", () => {
-    expect(mallowBestLabel("threat")).toBe("what your move allowed");
-  });
-
-  it("reads \"mallow's recommended move\" when sourced from mallow's own best (even card -- mallow is the SUBJECT)", () => {
-    expect(mallowBestLabel("moverBest")).toBe("mallow's recommended move");
-  });
-
-  it("LEGEND_DASHED_ROWS's static mallow-best row still carries the threat-sourced label as its default", () => {
-    const row = LEGEND_DASHED_ROWS.find((r) => r.kind === "mallow-best");
-    expect(row?.label).toBe(mallowBestLabel("threat"));
   });
 });
 
