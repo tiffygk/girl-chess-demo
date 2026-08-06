@@ -87,3 +87,65 @@ describe("board renders ReviewHighlight.secondary as the tp-secondary square-was
     expect(bare![1]).not.toContain("opacity");
   });
 });
+
+// Task 6 (2026-08-05, owner rulings R1/R2): the four-arrow model puts
+// `secondary` on the OTHER actor's found/best arrows -- two combinations that
+// had never rendered (Board.tsx's own comment used to say they never would).
+// A uniform 0.55 fade on `found` mutes the green body AND the cyan halo
+// together, which can read as "washed out / disabled" instead of "correct,
+// but not the subject here" (R1: "I should still clearly show when I found
+// the best move"). The chosen treatment (direction D of the round's mock,
+// mock-task6.html): the hierarchy drop is carried by TWO gentle instruments
+// -- slimmer strokes plus a MILDER fade (0.75, above the 0.55 plain-reply
+// register, below the 0.9 primary) -- so neither has to go far enough to
+// destroy the signal. Reduced weight means lower in the hierarchy, never
+// less true.
+describe("secondary found/best render slim + mild-fade, never the disabled register (Task 6, R1/R2)", () => {
+  it("sugar-glitch.css fades .arrow-found/.arrow-best secondaries to 0.7-0.8 -- milder than the 0.55 plain reply, beneath the 0.9 primary", () => {
+    const rule = skinSrc.match(
+      /\.arrow-found\.arrow-secondary,[^{]*\.arrow-best\.arrow-secondary\s*\{[^}]*opacity:\s*(0\.\d+)/
+    );
+    expect(rule).not.toBeNull();
+    const opacity = Number(rule![1]);
+    expect(opacity).toBeGreaterThanOrEqual(0.7);
+    expect(opacity).toBeLessThanOrEqual(0.8);
+  });
+
+  it("sugar-glitch.css slims the secondary found/best strokes beneath the primary widths (body < 1.6, halo < 3.2)", () => {
+    const body = skinSrc.match(
+      /\.arrow-found\.arrow-secondary line,[^{]*\.arrow-best\.arrow-secondary line\s*\{[^}]*stroke-width:\s*([\d.]+)/
+    );
+    expect(body).not.toBeNull();
+    expect(Number(body![1])).toBeLessThan(1.6);
+    const halo = skinSrc.match(/\.arrow-found\.arrow-secondary line\.halo\s*\{[^}]*stroke-width:\s*([\d.]+)/);
+    expect(halo).not.toBeNull();
+    expect(Number(halo![1])).toBeLessThan(3.2);
+  });
+
+  it("Board.tsx scales the arrowhead geometry down for secondary found/best only (CSS stroke-width cannot slim a filled polygon)", () => {
+    // Same whole-expression pin discipline as the className tests above.
+    expect(boardSrc).toContain(
+      'arrow.secondary && (arrow.color === "found" || arrow.color === "best")'
+    );
+    expect(boardSrc).toContain("arrowGeometry(arrow.from, arrow.to, slim ? 0.78 : 1)");
+  });
+
+  it("every secondary-capable wash kind has a ::after box-shadow rule -- tp-secondary zeroes the base shadow, so a missing rule renders NO wash at all", () => {
+    // The gap this pins shut: before Task 6 only tp-played/tp-mallow had
+    // secondary wash rules; a found/best/mallow-best secondary endpoint
+    // washed NOTHING (box-shadow: none with an empty ::after).
+    for (const kind of ["played", "mallow", "found", "best", "mallow-best"]) {
+      const rule = skinSrc.match(new RegExp(`\\.sq\\.tp-${kind}\\.tp-secondary::after\\s*\\{([^}]*)\\}`));
+      expect(rule, `missing .sq.tp-${kind}.tp-secondary::after`).not.toBeNull();
+      expect(rule![1], `.sq.tp-${kind}.tp-secondary::after has no box-shadow`).toContain("box-shadow");
+    }
+  });
+
+  it("the found/best secondary washes ride at their arrow's own 0.75 register, not the generic 0.55", () => {
+    for (const kind of ["found", "best"]) {
+      const rule = skinSrc.match(new RegExp(`\\.sq\\.tp-${kind}\\.tp-secondary::after\\s*\\{([^}]*)\\}`));
+      expect(rule).not.toBeNull();
+      expect(rule![1]).toMatch(/opacity:\s*0\.75/);
+    }
+  });
+});
