@@ -5,17 +5,29 @@
 // file. GamePage.tsx's buildArrowsForPly is now a thin useCallback wrapper
 // that closes over React state and delegates here.
 //
-// Turning-Card Arrow Extension (owner-greenlit 2026-08-05): the 2026-08-04
-// conservative-scope override below is LIFTED for the TurningLine case, but
-// ONLY for `intent === "ask"`. A non-highlighted turning-point ply asked
-// about (the default -- handleAskAboutTurningPoint/handleAskAboutPly) now
-// ALSO routes through reviewArrowsForMove, the same three-arrow model (made
-// + best + secondary reply) the highlighted branch already used -- sourcing
-// the mover's own best from TurningLine.moverBestFromTo (Task 1, api.ts/
-// manager.ts), never from `bestFromTo` (which on an opponent/even ply is HER
-// best REPLY, not mallow's own alternative -- the exact bug this round
-// exists to kill: "overall analysis" cards were showing the reply-best
-// labelled "best", contradicting what the highlighted drawers already show).
+// Turning-Card Arrow Extension (owner-greenlit 2026-08-05, widened by the
+// final fix wave the same day): the 2026-08-04 conservative-scope override
+// below is LIFTED for the TurningLine case. This is the voice-consistent
+// FOUR-arrow model: each card has a subject actor (whoever moved on
+// `line.ply`) and an other actor, and each actor gets up to two arrows --
+// what they played (SOLID) and what they should have played (DASHED) -- in
+// their own colour voice, subject primary and other actor secondary. Dedup
+// rule (owner ruling F-1): when an actor played their own best, the played
+// arrow reads `found` for her or plain `mallow` for mallow rather than also
+// drawing a redundant dashed twin.
+//
+// Routing: `intent === "ask"` routes a non-highlighted turning-point ply
+// (the default -- handleAskAboutTurningPoint/handleAskAboutPly) through
+// reviewArrowsForMove for BOTH parities, sourcing the mover's own best from
+// TurningLine.moverBestFromTo (Task 1, api.ts/manager.ts), never from
+// `bestFromTo` (which on an opponent/even ply is HER best REPLY, not
+// mallow's own alternative -- the exact bug this round exists to kill:
+// "overall analysis" cards were showing the reply-best labelled "best",
+// contradicting what the highlighted drawers already show). `intent ===
+// "replay"` routes through that SAME reviewArrowsForMove path too, but ONLY
+// on an ODD (her) ply -- see the two paragraphs below for why the even/odd
+// split exists and must never be "simplified" into routing both parities
+// alike.
 //
 // `intent === "replay"` on an EVEN (opponent) ply is UNCHANGED and MUST stay
 // unchanged: it keeps routing through turningLineReplayArrows, preserving
