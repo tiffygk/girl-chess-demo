@@ -237,6 +237,28 @@ describe("buildArrowsForPly -- non-highlighted TurningLine ply routes through re
     expect(best && "secondary" in best).toBe(false);
   });
 
+  it("'replay' intent on an ODD (her) non-highlighted turning ply now matches 'ask' exactly -- restoring the f24531c invariant this round broke (item 1 fix, 2026-08-05)", () => {
+    // At base f24531c, "ask" and "replay" were byte-identical for odd plies
+    // (both delegated to turningLineArrows). This round's Task 2 routed
+    // "ask" through reviewArrowsForMove (secondary flags on mallow's two
+    // arrows) while leaving "replay" on the old turningLineReplayArrows path
+    // (no secondary flags at all) -- a real regression: pressing replay then
+    // ask on the same her-ply card visibly changed arrow weight on an
+    // unchanged board. Fix: route odd-ply replay through reviewArrowsForMove
+    // too, same as ask -- F4 (2026-08-03, pinned in the very next test) only
+    // ever governed the EVEN arm.
+    const line: TurningLine = {
+      ply: 5,
+      playedFromTo: { from: "f1", to: "b5" },
+      moverBestFromTo: { from: "d2", to: "d4" },
+      pvSans: [],
+    };
+    const viaAsk = buildArrowsForPly(line, 5, sans, [], "ask");
+    const viaReplay = buildArrowsForPly(line, 5, sans, [], "replay");
+    expect(viaReplay).toEqual(viaAsk);
+    expect(viaReplay).toContainEqual({ from: "a7", to: "a6", color: "mallow", secondary: true });
+  });
+
   it("'replay' intent on an OPPONENT (even) turning ply restores owner ruling F4 (2026-08-03): the sole magenta inaccuracy arrow, byte-identical to turningLineReplayArrows -- NOT the new three-arrow model", () => {
     // Fix-round-1 (2026-08-05), FIX 2: an earlier draft of this task made
     // `intent` inert for a TurningLine-bearing ply, which silently reverted

@@ -17,12 +17,12 @@
 // exists to kill: "overall analysis" cards were showing the reply-best
 // labelled "best", contradicting what the highlighted drawers already show).
 //
-// `intent === "replay"` (handleRewind only) is UNCHANGED and MUST stay
+// `intent === "replay"` on an EVEN (opponent) ply is UNCHANGED and MUST stay
 // unchanged: it keeps routing through turningLineReplayArrows, preserving
 // owner ruling F4 (2026-08-03, game 169, verified in
 // .superpowers/sdd/rounds/2026-08-03-round3/FINDINGS-autonomous-2026-08-03.md:54-81)
 // that an opponent-inaccuracy REPLAY draws the sole magenta inaccuracy arrow
-// (`line.playedFromTo`) -- never the three-arrow set, which the owner
+// (`line.playedFromTo`) -- never the four-arrow set, which the owner
 // explicitly rejected as "three arrows competing for the subject" when she
 // read the punish arrow as the card's subject instead of the inaccuracy
 // itself. A fix-round-1 (2026-08-05) finding caught an earlier draft of this
@@ -30,6 +30,19 @@
 // which silently reverted F4; do not repeat that. This also means
 // turningLineReplayArrows is a LIVE production path again (not dead code) --
 // see arrowSelection.test.ts's pinned replay test.
+//
+// `intent === "replay"` on an ODD (her) ply is DELIBERATELY THE SAME PATH AS
+// "ask" (final fix wave, 2026-08-05, item 1): F4 was ruled on the opponent-
+// inaccuracy arm only, but the fix wave that added the four-arrow model
+// (Task 4/R1/R2) accidentally left odd-ply "replay" on the pre-existing
+// turningLineReplayArrows->turningLineArrows path (no secondary flags),
+// while odd-ply "ask" moved to reviewArrowsForMove (secondary flags on
+// mallow's two arrows). At base f24531c the two intents were byte-identical
+// for odd plies -- this was a real regression: opening a her-ply turning
+// card, pressing replay, then ask, changed arrow weight on an unchanged
+// board. Restored below by routing "replay" through reviewArrowsForMove too
+// whenever the ply is odd, so ask and replay call the identical function
+// with identical arguments and cannot drift again.
 //
 // The ONLY path left fully unconditional (both branches, plain fallback) is
 // the played-arrow safety net at the bottom: whichever framing ran, if it
@@ -121,20 +134,23 @@ export function buildArrowsForPly(
   }
 
   // Non-highlighted ply: "replay" (handleRewind only) keeps the F4
-  // sole-inaccuracy framing via turningLineReplayArrows, byte-identically to
-  // before this round -- owner ruling, see this file's header, never route
-  // this arm through reviewArrowsForMove. "ask" (the default) routes a
-  // TurningLine-bearing ply through the new three-arrow model instead,
-  // moverBest sourced from TurningLine.moverBestFromTo (Task 1) rather than
-  // bestFromTo. When moverBestFromTo is absent (older/unparseable rows),
-  // reviewArrowsForMove already handles an undefined moverBest sanely -- no
-  // "best" arrow is drawn at all (made + reply only); it is never
+  // sole-inaccuracy framing via turningLineReplayArrows ONLY on an EVEN
+  // (opponent) ply, byte-identically to before this round -- owner ruling,
+  // see this file's header, never route that arm through reviewArrowsForMove.
+  // On an ODD (her) ply, "replay" now routes through reviewArrowsForMove
+  // exactly like "ask" (item 1 fix, 2026-08-05, see this file's header) --
+  // F4 never governed the odd arm, so there is nothing to preserve there.
+  // moverBest is sourced from TurningLine.moverBestFromTo (Task 1) rather
+  // than bestFromTo. When moverBestFromTo is absent (older/unparseable
+  // rows), reviewArrowsForMove already handles an undefined moverBest sanely
+  // -- no "best" arrow is drawn at all (made + reply only); it is never
   // substituted with bestFromTo (the reply-best), which would silently
   // reintroduce the exact bug this round exists to kill. No TurningLine at
   // all (either intent): nothing to route, arrows starts empty.
   const fb = followedBest(line, activeReviewMoves);
+  const isOpponentPly = ply % 2 === 0;
   const arrows = line
-    ? intent === "replay"
+    ? intent === "replay" && isOpponentPly
       ? turningLineReplayArrows(line, fb, activeReviewMoves)
       : reviewArrowsForMove(line, {
           fb,
