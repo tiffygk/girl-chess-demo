@@ -13,14 +13,28 @@ and em-dashes in coach output — both fixed early. Read `docs/changelog.md`'s t
 for the file-level map, and `6 handoffs/AUTONOMOUS LOG — Arrow Redesign (2026-08-04).md` for the arrow
 build trail. The 2026-08-03 round-3 continuation handoff is now historical (its queue is drained).
 
-**ONE branch complete and gate-green, merge HELD for the owner's eye (2026-08-05):** the
-voice-consistent four-arrow model, extending arrows to non-highlighted turning-point cards AND both
-drawers. Branch `round/2026-08-05-turning-arrows`, worktree `wt-turnarrow`, tip `6c86e91` plus a final
-fix wave (odd-ply ask/replay parity, F1). Plan: `2 build/Girl Chess — Voice-Consistent Four-Arrow Model
-(2026-08-05).md` (supersedes the earlier Turning-Card Arrow Extension plan once the owner expanded
-scope mid-round). Ledger + whole-branch review: `.superpowers/sdd/rounds/2026-08-05-turning-arrows/`.
-This changes every game's debrief, not just highlighted moves — do NOT FF-merge without owner approval;
-next step is showing her the before/after and getting the go-ahead.
+**MERGED to main 2026-08-05 (owner approved), tip `57aa168`:** the voice-consistent four-arrow model,
+on non-highlighted turning-point cards AND both drawers. Each card has a subject actor (whoever moved)
+and an other actor; each gets up to two arrows, played (SOLID) and should-have-played (DASHED), in
+their own colour voice, subject primary and other actor secondary, deduping to `found` (her) or plain
+`mallow` (F-1). Plan: `2 build/Girl Chess — Voice-Consistent Four-Arrow Model (2026-08-05).md`
+(supersedes the earlier Turning-Card Arrow Extension plan, which the owner expanded mid-round). Ledger,
+reviews, and before/after shots: `.superpowers/sdd/rounds/2026-08-05-turning-arrows/`. Handoff:
+`6 handoffs/HANDOFF — Four-Arrow Model, merge held (2026-08-05).md`.
+
+Two owner-reversible judgement calls shipped with it, both awaiting her verdict in play: a new **0.75
+opacity register** for secondary `found`/`best` (the other actor's PLAYED arrow stays 0.55, so the
+celebration stays legible), and the legend relabel to **"mallow's recommended move"**, superseding the
+2026-07-28 "what your move allowed" — that label was true only while the arrow meant the refutation
+alone, and the arrow widened this round. Open visual question: on a four-arrow card her long green
+dashed punish line pulls the eye second, ahead of mallow's short dashed alternative.
+
+Two facts worth not re-deriving. **The offset:** `attachEval(ply)` persists the eval of the position
+AFTER `ply`, so the MOVER's best at ply P is row `P-1` (`moverBestFromTo`) and the REPLIER's is row `P`
+(`replyBestFromTo`). Proven twice independently (80/80 turning points; two agents' fields agreeing on
+game 169 ply 18). **The bug class:** this round's two worst defects were both found by LOOKING at a
+render, never by a test — a legend promising an arrow nothing drew, and a parity-aware label that was
+defined, unit-tested, and never wired to production. Green suites do not prove wiring.
 
 Owner plays real games throughout on `npm run dev` (real db, http://localhost:5173 / api :3001) — check
 for that (and the in-play guard) before any `npm run gate` or CPU-heavy work.
