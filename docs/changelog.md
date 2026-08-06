@@ -5,6 +5,85 @@ needle-in-a-haystack problem (it had grown to ~230 dense lines / ~56KB / ~14k to
 every session). `CLAUDE.md` keeps a one-line pointer into this file per entry; nothing below is
 abridged from the original. Newest first, matching `CLAUDE.md`'s own convention.
 
+## Voice-consistent four-arrow model, turning-card arrow extension (2026-08-05, branch held for merge)
+
+Branch `round/2026-08-05-turning-arrows`, worktree `wt-turnarrow`, tip `adf900f..6c86e91` plus a final
+fix wave (odd-ply ask/replay parity, below). `npm run gate` (`tsx tools/gate.ts`, unpiped) green
+throughout. **MERGE IS HELD for the owner's eye** — this changes every game's debrief, not just
+highlighted moves — and has NOT reached `main`; plan `2 build/Girl Chess — Voice-Consistent Four-Arrow
+Model (2026-08-05).md`, superseding the earlier `2 build/Girl Chess — Turning-Card Arrow Extension Plan
+(2026-08-05).md` once the owner expanded scope mid-round. Full trail: `.superpowers/sdd/rounds/
+2026-08-05-turning-arrows/` (progress ledger + whole-branch review).
+
+**The two new best-move fields, and why their row offset differs** (`server/game/manager.ts:604`,
+`server/annotator/highlightLines.ts`). `TurningLine.moverBestFromTo` (Task 1, `adf900f`) sources row
+`t.ply - 1`'s `best_move` — the mover at ply `t` faces `fenBefore(t)`, which IS `fenAfter(t-1)`, so row
+`t-1` is the position the engine evaluated for that mover. `HighlightLine.replyBestFromTo` (Task 5,
+`b8a32e1`) instead sources row `p` itself — the replier at ply `p+1` faces `fenAfter(p)`, and
+`attachEval(ply)` persists the eval of the position AFTER `ply`, so row `p`'s own `best_move` is already
+the replier's position. One offset rule (`best_move(X)` = engine's pick for the move played at ply
+`X+1`, standing in `highlightLines.ts`'s own `matchedBest` comment since before this round), applied one
+ply apart for two different questions. Falsified corpus-wide by the whole-branch review: 80/80 real
+turning points resolve legally at row `ply-1`, and `best_move` equals `pv[0]` in 2071/2071 rows carrying
+both, so the two paths converge on identical endpoints wherever a ply is both a turning point and
+highlighted.
+
+**Non-highlighted turning cards now route through `reviewArrowsForMove`** (Task 2, `2b403de`,
+`src/game/arrowSelection.ts`) — previously only HIGHLIGHTED plies got the arrow model; an
+"overall analysis" turning card fell back to the old `turningLineArrows`, which could label her best
+REPLY (`bestFromTo`) as mallow's own alternative. `moverBest` is now sourced from
+`TurningLine.moverBestFromTo`, never from `bestFromTo`, closing that mislabel.
+
+**Voice-consistent four-arrow model, cards AND drawers** (owner rulings R1/R2, 2026-08-05; Task 4
+`7eae3b2`, Task 5 `b8a32e1`, `src/game/reviewArrows.ts` `reviewArrowsForMove`). Every card now has a
+SUBJECT actor (whoever moved at `line.ply`) and an OTHER actor; each gets up to two arrows, PLAYED
+(solid) and SHOULD-HAVE-PLAYED (dashed), in their own colour voice — subject primary, other actor
+secondary. Dedup when played equals best: `found` (cyan halo) for HER, a plain `mallow` magenta for
+mallow, on both the subject and the OTHER-actor slot (F-1: "found" stays her voice only, even at
+secondary weight — R1, "I should still clearly show when I found the best move"). R2 ("if I didn't play
+the best punish, I want to see what the right reply would have been... the green dotted arrow") is what
+required the OTHER-actor's-best channel to exist at all: her best reply (`bestFromTo`) on an even card,
+mallow's best reply (`line.threat` for a synthesized highlighted card, or the persisted refutation) on an
+odd card. Task 5 threads the same model into the drawers via the new `replyBestFromTo` field so
+"cards and drawers" (owner's verbatim scope-expansion approval) is actually true, not half-true.
+
+**New 0.75 opacity register for secondary found/best, plus a latent bug fixed alongside it** (Task 6,
+`a5c7634`, `src/board/Board.tsx`, `src/skin/sugar-glitch.css`). A flat 0.55 (the existing secondary
+weight for played/mallow-best) grayed the two-tone `found` celebration into a disabled read, so the
+other actor's PLAYED arrow stays 0.55 while their BEST/FOUND sits at a gentler 0.75 (body 1.6→1.1,
+found-halo 3.2→2.3, head ×0.78) — a deliberate exception to the flat secondary rule, judged by eye on
+the real render. Found alongside it: `.sq.tp-found/.tp-best/.tp-mallow-best` secondary square washes
+previously rendered NOTHING (`.tp-secondary` zeroes the base shadow with no matching `::after` rule for
+those three kinds) — fixed in the same commit, 5 new source-pin tests. Fold verified by eye at 480px.
+Component library updated: vault `3 visual/component-library.html` §14.
+
+**Legend row relabeled to "mallow's recommended move"** (`6c86e91`, `src/review/analysisLegend.ts`),
+superseding the 2026-07-28 "what your move allowed" ruling. The old label named a causal relationship
+(mallow's refutation of HER move) that was true when `mallow-best` had exactly one source; this round
+widened that arrow to also mean mallow's own alternative when mallow is the card's subject, so the old
+label went false on every even-card mallow turning point. Caught by the controller LOOKING at the
+render, not by any test: a parity-aware label (`mallowBestLabel(source)`) had been written and unit
+tested, but the single production call site hardcoded the "threat" branch, so the rail always read the
+old, now-false label — proof the function worked, nothing proved it was wired. One truthful string
+replaces it, reversible by the owner.
+
+**Legend now reads the actually-rendered arrow list instead of recomputing its own** (fix-round-1,
+`57c4d6e`, `src/review/DebriefPage.tsx` `computeShowAllowedRow`). The card-selected branch reads
+`activeArrows` — literally the same array `Board.tsx` renders — so the legend's "recommended move" row
+can never again promise an arrow the board doesn't draw; the landing-state branch (no card selected)
+calls `buildArrowsForPly` directly rather than reimplementing its coincidence-suppression logic by hand.
+
+**Final fix wave, odd-ply ask/replay parity restored** (`src/game/arrowSelection.ts`). Whole-branch
+review finding F1: on a HER (odd-ply) non-highlighted turning card, "ask about this" and "replay" had
+started rendering the same four arrows at DIFFERENT emphasis — ask routed through the new
+`reviewArrowsForMove` (secondary flags on mallow's two arrows), replay stayed on the old
+`turningLineReplayArrows`→`turningLineArrows` path (no secondary flags), so pressing replay then ask on
+an unchanged board visibly changed arrow weight. At base `f24531c` the two intents were byte-identical
+for odd plies. Fixed by routing odd-ply `"replay"` through `reviewArrowsForMove` too, so ask and replay
+call the identical function with identical arguments. Owner ruling F4 (2026-08-03, the sole rose
+inaccuracy arrow on an opponent-inaccuracy replay) governs the EVEN arm only and is untouched — pinned
+by the pre-existing test at `arrowSelection.test.ts` plus a new one for the odd-ply restoration.
+
 ## Opponent-move analysis, coach routing + thinking, replay & arrow redesign (2026-08-03..05)
 
 Merged to main across `33d0d2d` (router), `61f71dd` (opponent analysis), `3d4c1f2` (replay F4),

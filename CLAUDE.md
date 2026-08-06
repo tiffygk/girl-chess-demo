@@ -13,12 +13,14 @@ and em-dashes in coach output — both fixed early. Read `docs/changelog.md`'s t
 for the file-level map, and `6 handoffs/AUTONOMOUS LOG — Arrow Redesign (2026-08-04).md` for the arrow
 build trail. The 2026-08-03 round-3 continuation handoff is now historical (its queue is drained).
 
-**ONE pending build (owner GREENLIT 2026-08-05):** extend the three-arrow model to NON-highlighted
-turning-point cards. Plan (task-by-task, TDD): `2 build/Girl Chess — Turning-Card Arrow Extension Plan
-(2026-08-05).md` — `getTurningLines` carries the mover's own `moves.best_move` as `moverBestFromTo`, then
-`arrowSelection.ts` routes non-highlighted cards through the same `reviewArrowsForMove`. Run via
-`/build-round` + subagent-driven-development; HOLD the merge for the owner's eye — it changes every
-game's debrief.
+**ONE branch complete and gate-green, merge HELD for the owner's eye (2026-08-05):** the
+voice-consistent four-arrow model, extending arrows to non-highlighted turning-point cards AND both
+drawers. Branch `round/2026-08-05-turning-arrows`, worktree `wt-turnarrow`, tip `6c86e91` plus a final
+fix wave (odd-ply ask/replay parity, F1). Plan: `2 build/Girl Chess — Voice-Consistent Four-Arrow Model
+(2026-08-05).md` (supersedes the earlier Turning-Card Arrow Extension plan once the owner expanded
+scope mid-round). Ledger + whole-branch review: `.superpowers/sdd/rounds/2026-08-05-turning-arrows/`.
+This changes every game's debrief, not just highlighted moves — do NOT FF-merge without owner approval;
+next step is showing her the before/after and getting the go-ahead.
 
 Owner plays real games throughout on `npm run dev` (real db, http://localhost:5173 / api :3001) — check
 for that (and the in-play guard) before any `npm run gate` or CPU-heavy work.
