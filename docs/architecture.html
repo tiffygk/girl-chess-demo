@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Girl Chess — Architecture</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2430; --ink2:#54606e; --muted:#8a95a3;
+    --line:#e4e8ee; --line2:#eef1f5;
+    --shadow:0 1px 3px rgba(20,30,45,.08),0 1px 2px rgba(20,30,45,.04);
+    --accent:#0f4c81;
+    --s1:#0072b2; --s2:#e69f00; --s3:#009e73;
+    --det:#0072b2; --nondet:#d55e00;
+    --radius:12px;
+  }
+  :root[data-theme="dark"]{
+    --bg:#12161c; --panel:#1a2029; --ink:#e9edf2; --ink2:#aeb9c6; --muted:#7f8b99;
+    --line:#2a323d; --line2:#232b35; --shadow:0 1px 3px rgba(0,0,0,.4);
+    --accent:#5aa0dd;
+    --s1:#3a8fd0; --s2:#b8830f; --s3:#189b79;
+    --det:#3a8fd0; --nondet:#e07a45;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#12161c; --panel:#1a2029; --ink:#e9edf2; --ink2:#aeb9c6; --muted:#7f8b99;
+      --line:#2a323d; --line2:#232b35; --shadow:0 1px 3px rgba(0,0,0,.4);
+      --accent:#5aa0dd;
+      --s1:#3a8fd0; --s2:#b8830f; --s3:#189b79;
+      --det:#3a8fd0; --nondet:#e07a45;
+    }
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.55;font-size:15px;
+    padding:24px 18px 64px;transition:background .2s,color .2s}
+  .wrap{max-width:1120px;margin:0 auto}
+  header.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:23px;font-weight:700;letter-spacing:-.01em}
+  .sub{color:var(--ink2);font-size:14px;margin-top:4px;max-width:74ch}
+  .themebtn{border:1px solid var(--line);background:var(--panel);color:var(--ink2);
+    border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;white-space:nowrap}
+  .themebtn:hover{color:var(--ink);border-color:var(--muted)}
+  .thesis{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);
+    border-radius:var(--radius);padding:16px 20px;margin:16px 0 22px;box-shadow:var(--shadow)}
+  .thesis .lead{font-size:16.5px;font-weight:650}
+  .thesis .body{color:var(--ink2);font-size:14.5px;margin-top:6px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px;margin-bottom:24px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:15px 17px;box-shadow:var(--shadow)}
+  .kpi .l{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+  .kpi .v{font-size:26px;font-weight:750;margin:5px 0 2px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .kpi .d{font-size:12.5px;color:var(--ink2)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px 24px 20px;box-shadow:var(--shadow);margin-bottom:20px}
+  .panel .num{font-size:11.5px;font-weight:700;color:var(--accent);letter-spacing:.05em}
+  .panel h2{font-size:18px;font-weight:700;margin:3px 0 8px;letter-spacing:-.01em}
+  .panel p{font-size:14.5px;color:var(--ink2);margin-bottom:10px}
+  .panel p:last-child{margin-bottom:0}
+  .panel p strong,.panel li strong{color:var(--ink);font-weight:650}
+  .panel code{background:var(--line2);padding:1px 5px;border-radius:4px;font-size:12.5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .chartbox{width:100%;overflow-x:auto;margin:6px 0 4px}
+  svg{display:block;max-width:100%;height:auto;font-family:inherit}
+  svg text{fill:var(--ink2)}
+  .axislbl{font-size:11.5px;fill:var(--muted)}
+  .vallbl{font-size:12px;font-weight:650;fill:var(--ink)}
+  .caxis{stroke:var(--line);stroke-width:1}
+  .grid{stroke:var(--line2);stroke-width:1}
+  .legend{display:flex;flex-wrap:wrap;gap:12px 18px;margin:10px 2px 4px;font-size:13px;color:var(--ink2)}
+  .legend .it{display:flex;align-items:center;gap:7px}
+  .sw{width:13px;height:13px;border-radius:3px;flex:none}
+  .concl{margin-top:14px;background:var(--line2);border-radius:10px;padding:13px 16px;
+    display:flex;gap:11px;align-items:flex-start}
+  .concl .tag{font-size:10.5px;font-weight:800;color:#fff;background:var(--accent);border-radius:5px;
+    padding:3px 7px;letter-spacing:.04em;flex:none;margin-top:2px}
+  .concl p{font-size:14px;color:var(--ink);margin:0}
+  .quote{border-left:3px solid var(--s2);padding:10px 14px;background:var(--line2);
+    border-radius:0 8px 8px 0;margin:12px 0}
+  .quote p{font-size:14px;font-style:italic;color:var(--ink);margin:0}
+  .quote .m{font-size:11.5px;color:var(--muted);margin-top:6px;font-style:normal}
+  table.dt{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:10px}
+  table.dt th,table.dt td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.dt th{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700}
+  table.dt td.n{text-align:right;font-variant-numeric:tabular-nums}
+  table.dt code{font-size:12px}
+  .tbtn{margin-top:12px;border:1px solid var(--line);background:transparent;color:var(--ink2);
+    border-radius:7px;padding:5px 11px;font-size:12.5px;cursor:pointer}
+  .tbtn:hover{border-color:var(--muted);color:var(--ink)}
+  .hid{display:none}
+  .factgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:12px 0 4px}
+  @media (max-width:900px){.factgrid{grid-template-columns:repeat(2,1fr)}}
+  @media (max-width:600px){.factgrid{grid-template-columns:1fr}}
+  .fcard{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--bg)}
+  .fcard.ui{border-color:var(--s2);border-width:1.5px}
+  .fcard h3{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:7px}
+  .fcard.ui h3{color:var(--s2)}
+  .fcard ul{list-style:none;font-size:13px;color:var(--ink2)}
+  .fcard li{padding:2.5px 0}
+  .fcard li code{font-size:12px;color:var(--ink)}
+  .foot{font-size:12px;color:var(--muted);margin-top:12px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media (max-width:820px){.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div>
+    <h1>Girl Chess — architecture</h1>
+    <div class="sub">A personal chess tutor. One nondeterministic component; everything else is arithmetic over stored facts.</div>
+  </div>
+  <button class="themebtn" id="tbtn">Dark</button>
+</header>
+
+<div class="thesis">
+  <div class="lead">The model never computes chess. It only puts already-computed facts into words.</div>
+  <div class="body">Every wrong answer this coach ever gave was a fact we already had and had not handed over. Not one of them was fixed by a bigger model.</div>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="l">Application code</div><div class="v">34,869</div><div class="d">lines of TypeScript</div></div>
+  <div class="kpi"><div class="l">Tests</div><div class="v">1,931</div><div class="d">cases, 30,662 lines</div></div>
+  <div class="kpi"><div class="l">Nondeterministic parts</div><div class="v">1</div><div class="d">of the whole system</div></div>
+  <div class="kpi"><div class="l">Cost to run</div><div class="v">$0</div><div class="d">on an existing subscription</div></div>
+</div>
+
+<!-- ============ 1 ============ -->
+<div class="panel">
+  <div class="num">01</div>
+  <h2>The determinism boundary</h2>
+  <p>One nondeterministic component in the entire system. Everything else is arithmetic over stored facts. <strong>chess.js</strong> decides legality. <strong>Stockfish</strong> decides truth: centipawns, mate, best move, principal variation. <strong>Maia</strong> decides what a human of a given rating would actually play. <strong>The annotator</strong> decides what mattered: verdict tiers, turning points, conversion failures, game phase. <strong>Claude</strong> only puts it into words.</p>
+
+  <div class="chartbox">
+  <svg viewBox="0 0 940 400" role="img" aria-label="Architecture diagram. Five deterministic layers on the left, one nondeterministic component on the right, separated by a boundary. A typed fact list crosses to the right; phrases only come back.">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,1 L9,5 L0,9 z" fill="var(--det)"/>
+      </marker>
+      <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,1 L9,5 L0,9 z" fill="var(--nondet)"/>
+      </marker>
+    </defs>
+
+    <text x="0" y="14" class="axislbl" style="font-weight:700;letter-spacing:.05em">DETERMINISTIC — arithmetic over stored facts</text>
+    <text x="663" y="14" class="axislbl" style="font-weight:700;letter-spacing:.05em">NONDETERMINISTIC</text>
+
+    <!-- layers -->
+    <g>
+      <rect x="0" y="28" width="600" height="52" rx="7" fill="var(--line2)" stroke="var(--line)"/>
+      <text x="16" y="50" class="vallbl" style="font-size:13.5px">P1 · React board</text>
+      <text x="16" y="68" class="axislbl">click to move, animation, replay · <tspan style="font-family:ui-monospace,Menlo,monospace">src/board</tspan></text>
+
+      <rect x="0" y="88" width="600" height="52" rx="7" fill="var(--line2)" stroke="var(--line)"/>
+      <text x="16" y="110" class="vallbl" style="font-size:13.5px">Rules · chess.js</text>
+      <text x="16" y="128" class="axislbl">legality, SAN, FEN, attack and defend maps · runs on client AND server</text>
+
+      <rect x="0" y="148" width="600" height="60" rx="7" fill="var(--line2)" stroke="var(--line)"/>
+      <text x="16" y="170" class="vallbl" style="font-size:13.5px">P2 · Engines, over UCI</text>
+      <text x="16" y="188" class="axislbl">Stockfish: cp, mate, best, pv (350ms judge / 1500ms hint)</text>
+      <text x="16" y="203" class="axislbl">Maia = mallow: one node, temperature 1.0</text>
+
+      <rect x="0" y="216" width="600" height="60" rx="7" fill="var(--line2)" stroke="var(--line)"/>
+      <text x="16" y="238" class="vallbl" style="font-size:13.5px">P3 · Annotator</text>
+      <text x="16" y="256" class="axislbl">verdict tiers, turning points, conversion, game phase</text>
+      <text x="16" y="271" class="axislbl">zero model calls, verified by grep</text>
+
+      <rect x="0" y="284" width="600" height="52" rx="7" fill="var(--line2)" stroke="var(--line)"/>
+      <text x="16" y="306" class="vallbl" style="font-size:13.5px">PS · Store</text>
+      <text x="16" y="324" class="axislbl">SQLite: games, moves, evals, traces, turning points</text>
+    </g>
+
+    <!-- boundary -->
+    <line x1="640" y1="24" x2="640" y2="380" stroke="var(--nondet)" stroke-width="2" stroke-dasharray="7 5"/>
+
+    <!-- claude -->
+    <rect x="676" y="128" width="264" height="128" rx="9" fill="var(--panel)" stroke="var(--nondet)" stroke-width="2"/>
+    <text x="694" y="156" class="vallbl" style="font-size:14px;fill:var(--nondet)">P4 · cookie</text>
+    <text x="694" y="178" class="axislbl">Claude, via the Agent SDK</text>
+    <text x="694" y="197" class="axislbl">the ONLY component that can</text>
+    <text x="694" y="212" class="axislbl">invent a sentence</text>
+    <text x="694" y="236" class="axislbl">7 validators · 1 regen · template</text>
+
+    <!-- crossing arrows -->
+    <path d="M604 254 H676" stroke="var(--det)" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+    <rect x="592" y="228" width="96" height="16" rx="3" fill="var(--panel)"/>
+    <text x="640" y="240" class="axislbl" text-anchor="middle" style="fill:var(--det);font-weight:650">typed fact list</text>
+
+    <path d="M808 260 V312 H604" stroke="var(--nondet)" stroke-width="2" fill="none" marker-end="url(#ar2)"/>
+    <rect x="648" y="318" width="164" height="16" rx="3" fill="var(--panel)"/>
+    <text x="652" y="330" class="axislbl" style="fill:var(--nondet);font-weight:650">phrases only, never facts</text>
+
+    <text x="0" y="366" class="axislbl">P2 feeds P3 feeds PS. The model reads a fact list and writes back prose. It never writes a fact.</text>
+  </svg>
+  </div>
+
+  <div class="concl"><span class="tag">SO</span><p>A false statement in a debrief is our own template contradicting our own data, never a hallucination. I verified that by searching <code>server/annotator/</code> and <code>src/review/</code> for any model call. Zero. Different failure class, different fix.</p></div>
+</div>
+
+<!-- ============ 2 ============ -->
+<div class="panel">
+  <div class="num">02</div>
+  <h2>What crosses the boundary</h2>
+  <p>A typed fact list, not a game history. The model is handed answers, not asked to derive them. Two assembly paths, and both deliberately skip the live evaluator so the coach can never contend with the judge's Stockfish queue.</p>
+
+  <div class="factgrid">
+    <div class="fcard"><h3>Position</h3><ul>
+      <li><code>currentFen</code> the live board</li>
+      <li><code>toMove</code> whose turn it is</li>
+      <li><code>occupancy</code> every piece, every square</li>
+      <li><code>legalSans</code> every legal move</li>
+      <li><code>contested</code> attackers and defenders</li>
+    </ul></div>
+    <div class="fcard"><h3>Move</h3><ul>
+      <li><code>gameSans</code> every move played</li>
+      <li><code>allowedSans</code> what may be named</li>
+    </ul></div>
+    <div class="fcard"><h3>Engine</h3><ul>
+      <li><code>perPlyAnalysis</code> eval, best, line, phase</li>
+      <li><code>hintFindings</code> the verified shelf</li>
+      <li><code>read</code> the eval, as words</li>
+      <li><code>gap</code> played versus best, in words</li>
+    </ul></div>
+    <div class="fcard ui"><h3>UI state — what she is looking at</h3><ul>
+      <li><code>pendingMove</code> the piece she picked up</li>
+      <li><code>hintFocus</code> the open hint, verbatim</li>
+      <li><code>turningPointFocus</code> the card she clicked</li>
+      <li><code>highlightedPlies</code> moves she flagged</li>
+    </ul></div>
+    <div class="fcard"><h3>Turning points</h3><ul>
+      <li><code>turningPoints</code> ply, move, label</li>
+      <li><code>focusPosition</code> the board as it was then</li>
+    </ul></div>
+    <div class="fcard"><h3>History</h3><ul>
+      <li><code>status</code> live or finished</li>
+      <li><code>outcome</code> result, winner, how</li>
+      <li><code>standingNotes</code> cross-game memory</li>
+    </ul></div>
+  </div>
+
+  <p>The direction matters. Facts go in, phrases come back. <strong>The model never writes a fact back into the store.</strong></p>
+  <p>Two details that surprise people. Raw evaluations never reach the model as numbers; they are bucketed into words first, because a coach that says "plus 144" to a beginner is useless. And the pending move is <strong>distrusted</strong>: the client claims it, the server replays it on a probe, and drops it if it is illegal.</p>
+</div>
+
+<!-- ============ 3 ============ -->
+<div class="panel">
+  <div class="num">03</div>
+  <h2>Facts we added after being wrong</h2>
+  <p>The fact list grew every time the coach got something wrong. Every entry below is a fact the code already held and had not handed over.</p>
+
+  <div class="chartbox">
+  <svg viewBox="0 0 940 240" role="img" aria-label="Timeline of facts added to the model's context after specific failures, July 17 to August 3 2026.">
+    <line x1="40" y1="196" x2="908" y2="196" class="caxis"/>
+    <g class="axislbl">
+      <text x="40" y="220">Jul 17</text><text x="212" y="220">Jul 21</text><text x="384" y="220">Jul 22</text>
+      <text x="556" y="220">Jul 28</text><text x="728" y="220">Aug 2</text><text x="880" y="220">Aug 3</text>
+    </g>
+    <g stroke="var(--line2)" stroke-width="1">
+      <line x1="40" y1="118" x2="40" y2="196"/><line x1="212" y1="118" x2="212" y2="196"/>
+      <line x1="384" y1="118" x2="384" y2="196"/><line x1="556" y1="118" x2="556" y2="196"/>
+      <line x1="728" y1="118" x2="728" y2="196"/><line x1="880" y1="118" x2="880" y2="196"/>
+    </g>
+
+    <g>
+      <circle cx="40" cy="196" r="5.5" fill="var(--s1)"/>
+      <text x="24" y="163" class="vallbl" style="font-size:11.5px">hints get</text>
+      <text x="24" y="176" class="vallbl" style="font-size:11.5px">own search</text>
+
+      <circle cx="212" cy="196" r="5.5" fill="var(--s1)"/>
+      <text x="182" y="163" class="vallbl" style="font-size:11.5px">whose turn</text>
+      <text x="182" y="176" class="vallbl" style="font-size:11.5px">it is</text>
+
+      <circle cx="384" cy="196" r="7" fill="var(--s2)"/>
+      <text x="330" y="150" class="vallbl" style="font-size:11.5px">defenders · occupancy</text>
+      <text x="330" y="163" class="vallbl" style="font-size:11.5px">pending move · the fen</text>
+      <text x="330" y="176" class="vallbl" style="font-size:11.5px">per-ply · eval in words</text>
+      <text x="330" y="132" class="axislbl" style="font-size:11px">six facts in one week</text>
+
+      <circle cx="556" cy="196" r="5.5" fill="var(--s1)"/>
+      <text x="524" y="176" class="vallbl" style="font-size:11.5px">side on every ply</text>
+      <text x="524" y="163" class="vallbl" style="font-size:11.5px">forward lines</text>
+      <text x="524" y="150" class="vallbl" style="font-size:11.5px">flagged moves</text>
+
+      <circle cx="728" cy="196" r="7" fill="var(--s3)"/>
+      <text x="690" y="176" class="vallbl" style="font-size:11.5px">the fact shelf</text>
+      <text x="690" y="163" class="vallbl" style="font-size:11.5px">recapture holds</text>
+      <text x="690" y="150" class="vallbl" style="font-size:11.5px">gap in words</text>
+
+      <circle cx="880" cy="196" r="5.5" fill="var(--s1)"/>
+      <text x="838" y="163" class="vallbl" style="font-size:11.5px">provenance</text>
+      <text x="838" y="176" class="vallbl" style="font-size:11.5px">on the shelf</text>
+    </g>
+    <text x="40" y="104" class="axislbl">Each marker is a fact added to the model's context because of one specific thing it got wrong.</text>
+  </svg>
+  </div>
+
+  <button class="tbtn" onclick="var t=document.getElementById('t1');t.classList.toggle('hid');this.textContent=t.classList.contains('hid')?'Show the three worst':'Hide'">Show the three worst</button>
+  <table class="dt hid" id="t1">
+    <thead><tr><th>Date</th><th>What it said</th><th>Missing fact</th></tr></thead>
+    <tbody>
+      <tr><td>Jul 21</td><td>Described my own pending move as mallow's, and told me I'd win my own queen for free.</td><td>Whose turn it is</td></tr>
+      <tr><td>Jul 22</td><td>Said my pawn on e4 did not guard f5. It does. That exact trade happened a few moves later.</td><td>The attacked-and-defended map</td></tr>
+      <tr><td>Jul 22</td><td>7.5% of its statements about where pieces sat were false. Nothing checked them.</td><td>Occupancy, and a checker</td></tr>
+    </tbody>
+  </table>
+
+  <div class="concl"><span class="tag">SO</span><p>None of this needed a bigger model. It needed the facts we already had. When we finally fixed the fact gap, placement errors went 7.5% to zero and explanation latency went 13-15s to about 4s -- and both numbers moved for the small model and the large one at the same time.</p></div>
+</div>
+
+<!-- ============ 4 ============ -->
+<div class="panel" id="divergence">
+  <div class="num">04</div>
+  <h2>Two surfaces, one brain</h2>
+  <p>The worst bug here was plumbing, not the model. Two surfaces search the same position. <strong>The judge</strong> runs a 350ms evaluation on every move I consider, and that is what holds the sub-two-second verdict. <strong>The hint</strong> runs a 1500ms multi-line search plus a 500ms verification pass, escalating to 3000ms. Rare, and I have to ask for it.</p>
+
+  <table class="dt">
+    <thead><tr><th>Time</th><th>Game 167, move 19, 2026-08-02 — every row from the database</th></tr></thead>
+    <tbody>
+      <tr><td class="n">11:18</td><td>The hint engine found a forced mate, verified it, and showed it to me on screen.</td></tr>
+      <tr><td class="n">11:21</td><td>I asked the coach about it. It timed out and served a canned template.</td></tr>
+      <tr><td class="n">11:22</td><td>I asked again. It replied: <em>"no mate line for this position in the facts i've got."</em></td></tr>
+    </tbody>
+  </table>
+
+  <div class="quote">
+    <p>"The hint said that there's a forced mate that's available if I move my knight to G5. When I tried to ask the coach about it, the coach couldn't figure it out and gave a timed-out answer. Now, even after feeding it to the coach and telling it to check the chess facts from stockfish, the coach is claiming that the chess brain has not found a forced mate, but I know that it has."</p>
+    <div class="m">my playtest note, 2026-08-02</div>
+  </div>
+
+  <p>The cause? The hint computed the mate, used the score to pick which piece to point at, then <strong>threw it away at the return</strong>. The mate distance was never carried. The coach's facts had ten categories and zero mentions of mate. The mate checker's set of true mate distances was empty, so nothing even blocked a mate claim. The model correctly refused to invent one.</p>
+
+  <div class="concl"><span class="tag">SO</span><p>The coach and the hint did not share a brain. Two searches, two answers, one of them thrown away. The fix publishes the hint's verified findings to a keyed shelf, folded into the coach's facts only on an exact position match. What I actually asked for: <em>"pass it to the coach as its own shortlist, so it doesn't need to go through every move on the chess facts."</em></p></div>
+</div>
+
+<!-- ============ 5 ============ -->
+<div class="panel" id="routing">
+  <div class="num">05</div>
+  <h2>Routing: this board, or chess in general</h2>
+  <p>Before any model call, code decides: this position, or chess in general? A board question gets everything. A general question gets a fact list of four items and no position at all.</p>
+
+  <p>It began as a thumbs-down: <em>"will only answer about moves i already did, not general chess questions for strategy next game."</em> The refusal was coming from a line in the prompt, not from any check. So the decision moved into code, before the call. Deterministic, and that was my explicit choice, because <strong>model self-routing was the failure I had already hit.</strong></p>
+
+  <p>Three regex tiers, zero model calls. If I am pointing at something on screen, it is a board question, unconditionally. Otherwise a general-phrase test. Otherwise an abstract-theory test that fires only when there is no board signal at all. Ambiguity resolves to board.</p>
+
+  <p>The first version had it backwards. It routed to board only when it detected a board signal. <strong>38 of 65 real board questions carry no detectable signal</strong> — "is this ok", "should i take it", a bare "yes" — and all of them fell through to the general route, which has no position on it. Exactly the trust failure the round existed to fix. So board became the unconditional default.</p>
+
+  <div class="concl"><span class="tag">SHIP GATE</span><p>A read-only tool replayed the old and the new routing over 102 of my real messages from the database, before merge. Zero questions flipped from board to general.</p></div>
+</div>
+
+<!-- ============ 6 ============ -->
+<div class="panel">
+  <div class="num">06</div>
+  <h2>What the model is not allowed to say</h2>
+  <p>Seven checks. Six run before any reply renders, and any one of them fails the reply.</p>
+  <table class="dt">
+    <thead><tr><th>Check</th><th>Catches</th><th>Grounded against</th></tr></thead>
+    <tbody>
+      <tr><td>SAN membership</td><td>a move that was never played, is not legal, and is not in context</td><td><code>allowedSans</code></td></tr>
+      <tr><td>Placement</td><td>"your rook is on d4" when it is not</td><td><code>occupancy</code></td></tr>
+      <tr><td>Defense</td><td>"hanging" or "guards" against the real position</td><td>chess.js attackers</td></tr>
+      <tr><td>Side attribution</td><td>my pending move credited to mallow</td><td><code>toMove</code></td></tr>
+      <tr><td>Mate distance</td><td>"mate in 3" against the stored reading</td><td><code>evalMate</code>, the shelf</td></tr>
+      <tr><td>Voice</td><td>raw notation, the word "engine", any signed number</td><td>prose shape</td></tr>
+      <tr><td>Opponent quality</td><td>calling mallow's move a blunder when it matched the engine's own top choice</td><td><code>matchedBest</code></td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:12px">A violation triggers one corrective regeneration. A second failure falls back to a persona-file template. Never a string that failed its own check, never a thrown error, never a blocked game.</p>
+  <div class="concl"><span class="tag">ECONOMICS</span><p>The prose checks cost 0.013ms and 0.070ms. A regeneration is a second full model call, roughly +20 seconds, at a rate of 7.7%. <strong>So adding a validator is free, and cutting the regeneration rate is the only lever worth pulling.</strong> That is why the seventh check is a deterministic 0ms correction instead of a seventh regen trigger.</p></div>
+</div>
+
+<!-- ============ 7 ============ -->
+<div class="panel">
+  <div class="num">07</div>
+  <h2>How we set thinking and effort</h2>
+  <p>Two independent controls, not one parameter. <code>thinking: {type:"disabled"}</code> turns adaptive thinking off. A separate top-level <code>effort: "low"</code> caps it while leaving it on. Three arms, 119 fixed questions, three repetitions each, 357 samples per arm.</p>
+
+  <div class="legend">
+    <div class="it"><span class="sw" style="background:var(--s1)"></span>default (unbounded)</div>
+    <div class="it"><span class="sw" style="background:var(--s2)"></span>low — shipped</div>
+    <div class="it"><span class="sw" style="background:var(--s3)"></span>disabled</div>
+  </div>
+
+  <div class="two">
+    <div class="chartbox">
+    <svg viewBox="0 0 460 260" role="img" aria-label="Latency by arm. Default 14.5 seconds median and 47.4 at p90; low 6.2 and 11.8; disabled 5.6 and 10.5.">
+      <text x="0" y="14" class="axislbl" style="font-weight:650">Latency, seconds</text>
+      <g class="grid">
+        <line x1="44" y1="200" x2="450" y2="200"/><line x1="44" y1="160" x2="450" y2="160"/>
+        <line x1="44" y1="120" x2="450" y2="120"/><line x1="44" y1="80" x2="450" y2="80"/><line x1="44" y1="40" x2="450" y2="40"/>
+      </g>
+      <g class="axislbl">
+        <text x="16" y="204">0</text><text x="10" y="164">12.5</text><text x="16" y="124">25</text>
+        <text x="10" y="84">37.5</text><text x="16" y="44">50</text>
+      </g>
+      <line x1="44" y1="200" x2="450" y2="200" class="caxis"/>
+      <!-- p50 group -->
+      <g>
+        <rect x="72"  y="153.6" width="30" height="46.4" rx="4" fill="var(--s1)"/>
+        <rect x="106" y="180.4" width="30" height="19.6" rx="4" fill="var(--s2)"/>
+        <rect x="140" y="182.2" width="30" height="17.8" rx="4" fill="var(--s3)"/>
+        <text x="87"  y="148" class="vallbl" text-anchor="middle">14.5</text>
+        <text x="121" y="175" class="vallbl" text-anchor="middle">6.2</text>
+        <text x="155" y="177" class="vallbl" text-anchor="middle">5.6</text>
+        <text x="121" y="220" class="axislbl" text-anchor="middle">median</text>
+      </g>
+      <!-- p90 group -->
+      <g>
+        <rect x="268" y="48.3"  width="30" height="151.7" rx="4" fill="var(--s1)"/>
+        <rect x="302" y="162.2" width="30" height="37.8" rx="4" fill="var(--s2)"/>
+        <rect x="336" y="166.4" width="30" height="33.6" rx="4" fill="var(--s3)"/>
+        <text x="283" y="42"  class="vallbl" text-anchor="middle">47.4</text>
+        <text x="317" y="157" class="vallbl" text-anchor="middle">11.8</text>
+        <text x="351" y="161" class="vallbl" text-anchor="middle">10.5</text>
+        <text x="317" y="220" class="axislbl" text-anchor="middle">p90</text>
+      </g>
+    </svg>
+    </div>
+
+    <div class="chartbox">
+    <svg viewBox="0 0 460 260" role="img" aria-label="Template fallback rate by difficulty. On the hardest bucket, tactical and mate questions, default is 18.7 percent, low is 13.3 percent, disabled is 22.7 percent.">
+      <text x="0" y="14" class="axislbl" style="font-weight:650">Fell back to a canned reply, % — by question difficulty</text>
+      <g class="grid">
+        <line x1="44" y1="200" x2="450" y2="200"/><line x1="44" y1="168" x2="450" y2="168"/>
+        <line x1="44" y1="136" x2="450" y2="136"/><line x1="44" y1="104" x2="450" y2="104"/>
+        <line x1="44" y1="72" x2="450" y2="72"/><line x1="44" y1="40" x2="450" y2="40"/>
+      </g>
+      <g class="axislbl">
+        <text x="22" y="204">0</text><text x="22" y="172">5</text><text x="16" y="140">10</text>
+        <text x="16" y="108">15</text><text x="16" y="76">20</text><text x="16" y="44">25</text>
+      </g>
+      <line x1="44" y1="200" x2="450" y2="200" class="caxis"/>
+      <g>
+        <rect x="64"  y="200"   width="24" height="0"    rx="4" fill="var(--s1)"/>
+        <rect x="91"  y="184.6" width="24" height="15.4" rx="4" fill="var(--s2)"/>
+        <rect x="118" y="139.2" width="24" height="60.8" rx="4" fill="var(--s3)"/>
+        <text x="76"  y="194" class="vallbl" text-anchor="middle" style="font-size:11px">0</text>
+        <text x="103" y="179" class="vallbl" text-anchor="middle" style="font-size:11px">2.4</text>
+        <text x="130" y="134" class="vallbl" text-anchor="middle" style="font-size:11px">9.5</text>
+        <text x="103" y="220" class="axislbl" text-anchor="middle">direct fact</text>
+      </g>
+      <g>
+        <rect x="196" y="175.7" width="24" height="24.3" rx="4" fill="var(--s1)"/>
+        <rect x="223" y="154.6" width="24" height="45.4" rx="4" fill="var(--s2)"/>
+        <rect x="250" y="152"   width="24" height="48"   rx="4" fill="var(--s3)"/>
+        <text x="208" y="170" class="vallbl" text-anchor="middle" style="font-size:11px">3.8</text>
+        <text x="235" y="149" class="vallbl" text-anchor="middle" style="font-size:11px">7.1</text>
+        <text x="262" y="146" class="vallbl" text-anchor="middle" style="font-size:11px">7.5</text>
+        <text x="235" y="220" class="axislbl" text-anchor="middle">needs a line</text>
+      </g>
+      <g>
+        <rect x="328" y="80.3"  width="24" height="119.7" rx="4" fill="var(--s1)"/>
+        <rect x="355" y="114.9" width="24" height="85.1"  rx="4" fill="var(--s2)"/>
+        <rect x="382" y="54.7"  width="24" height="145.3" rx="4" fill="var(--s3)"/>
+        <text x="340" y="74"  class="vallbl" text-anchor="middle" style="font-size:11px">18.7</text>
+        <text x="367" y="109" class="vallbl" text-anchor="middle" style="font-size:11px">13.3</text>
+        <text x="394" y="49"  class="vallbl" text-anchor="middle" style="font-size:11px">22.7</text>
+        <text x="367" y="220" class="axislbl" text-anchor="middle">tactical / mate</text>
+      </g>
+      <text x="367" y="236" class="axislbl" text-anchor="middle" style="fill:var(--s2);font-weight:650">low wins where it counts</text>
+    </svg>
+    </div>
+  </div>
+
+  <p style="margin-top:8px">So why <code>low</code>? Difficulty, not the average. On the hardest bucket it beats both. It beats <code>disabled</code> in every bucket at a speed cost inside the noise, and beats <code>default</code> on tactical questions while running 2.3x faster on a fifth of the tokens. A blinded human read of 26 questions, columns randomized and the key held separately, gave the bounded arms 18 of 25 non-tie picks.</p>
+
+  <div class="concl"><span class="tag">NOTE</span><p>The plan going in said apply this to live chat only. The branch review called the missing gate a bug. <strong>The eval overturned both,</strong> and it shipped everywhere including postgame review, where <code>low</code> scored 21% fallback against default's 29%.</p></div>
+</div>
+
+<!-- ============ 8 ============ -->
+<div class="panel">
+  <div class="num">08</div>
+  <h2>Finding that root cause took four passes</h2>
+  <p>Twelve days, four investigations. The first three each found a real cause, shipped a real fix, watched the median improve, and filed the rest under model variance.</p>
+  <table class="dt">
+    <thead><tr><th>Pass</th><th>Diagnosis</th><th>Right?</th></tr></thead>
+    <tbody>
+      <tr><td>Jul 21</td><td>Process startup, not thinking time</td><td>Real, and the fix was real</td></tr>
+      <tr><td>Jul 27</td><td>Budgets are too tight</td><td>A mitigation, not a diagnosis</td></tr>
+      <tr><td>Aug 1</td><td>Stale served code, starved retry cap, prompt size</td><td>Two real. The third was a confound</td></tr>
+      <tr><td>Aug 2</td><td>Unbounded adaptive thinking, 1,500-4,500 invisible tokens</td><td>Named, reproduced, toggled</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:12px">Anatomy of one 20.3-second call: 1.3s to the first message, then thinking from 1.7s to 17.7s spending 1,430 tokens, then 2.4 seconds of actual writing.</p>
+  <p>It hid because thinking streams with empty text by default. No log, no trace, no stream ever showed a thinking token. The two tells were arithmetic and both sat in every call since July 22: time-to-first-token of 1.3-3.7 seconds against 45-second waits, and billed output tokens far exceeding the visible answer.</p>
+  <div class="concl"><span class="tag">LESSON</span><p>A fix that measurably helps is the most dangerous stopping point. It validates the pass without validating the diagnosis.</p></div>
+</div>
+
+<!-- ============ 9 ============ -->
+<div class="panel">
+  <div class="num">09</div>
+  <h2>Two engines, because truth and human-likeness are different jobs</h2>
+  <p>Stockfish evaluates. Maia opposes, playing like a human of a given rating. A game instead of a wall.</p>
+  <p>Two details cost real debugging. Maia runs at <code>Temperature = 1.0</code>; at the engine default of 0 it always plays its single most likely move, which makes it play <strong>stronger</strong> than its rating band, because real 1100-rated players sample the mistakes too. And we send <code>ucinewgame</code> before every query, because the sampling randomness is not reseeded per move. A warmed instance once returned the same move 40 times out of 40.</p>
+  <p>Search budgets split on purpose. The judge gets 350ms, run twice, which is what holds the sub-two-second verdict. A hint gets 1500ms plus a 500ms verification pass, because hints served from the judge's shallow eval failed playtest.</p>
+</div>
+
+<!-- ============ 10 ============ -->
+<div class="panel">
+  <div class="num">10</div>
+  <h2>The seam that made the coach swappable</h2>
+  <p><code>CoachBackend</code> is an interface with four members, one optional. It was designed before there was a performance problem to solve.</p>
+  <p>Then telemetry showed the first backend losing 13 of 14 live nudges to its own 15-second budget, because most of a 9-second call was the program starting up, not writing. The fix was a second implementation of the same interface. Nothing downstream changed. Narration went 9s to 3.6s, chat 9-13s to 7s.</p>
+  <p>Every growth since has been an additive optional parameter, so the other three backends needed zero edits each time.</p>
+</div>
+
+<!-- ============ 11 ============ -->
+<div class="panel">
+  <div class="num">11</div>
+  <h2>The database</h2>
+  <p>SQLite. One file, ten tables, no ORM. 181 games, 2,604 moves, integrity verified by counting rather than by hashing a file.</p>
+  <table class="dt">
+    <thead><tr><th>Table</th><th class="n">Rows</th><th>What it records</th></tr></thead>
+    <tbody>
+      <tr><td><code>sessions</code></td><td class="n">813</td><td>one per sitting</td></tr>
+      <tr><td><code>games</code></td><td class="n">181</td><td>opponent, result</td></tr>
+      <tr><td><code>moves</code></td><td class="n">2,604</td><td>both sides, with the engine's eval attached</td></tr>
+      <tr><td><code>verdicts</code></td><td class="n">3,274</td><td>every judged move, including retracted ones</td></tr>
+      <tr><td><code>advice_traces</code></td><td class="n">245</td><td>every coach call, prompt and output</td></tr>
+      <tr><td><code>turning_points</code></td><td class="n">117</td><td>what actually swung each game</td></tr>
+      <tr><td><code>chat_messages</code></td><td class="n">214</td><td>my questions, and only validated replies</td></tr>
+      <tr><td><code>game_events</code></td><td class="n">1,179</td><td>hints and overrides</td></tr>
+      <tr><td><code>mode_timers</code></td><td class="n">225</td><td>screen time</td></tr>
+      <tr><td><code>coach_notes</code></td><td class="n">2</td><td>the only cross-game memory</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:12px">Three things surprise people. <strong>Verdicts outnumber moves</strong>, because every move I considered and retracted was judged and recorded too. <strong>Chat stores only validated coach replies</strong>, so the gap between my 115 messages and cookie's 99 is literally the count of answers that failed a check and got pulled. And <strong>there is no migration folder and no version number</strong>: the code carries a declared list of every column each table should have, diffs it against the live database at startup, and adds what is missing.</p>
+</div>
+
+<p class="foot">Girl Chess. Built 0-to-1 by directing Claude Code. Counts verified read-only against the live database, 2026-08-18.</p>
+
+</div>
+<script>
+(function(){
+  var b=document.getElementById('tbtn');
+  function cur(){var a=document.documentElement.getAttribute('data-theme');
+    if(a)return a;return window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';}
+  function paint(){b.textContent=cur()==='dark'?'Light':'Dark';}
+  b.addEventListener('click',function(){
+    var n=cur()==='dark'?'light':'dark';
+    document.documentElement.setAttribute('data-theme',n);paint();});
+  paint();
+})();
+</script>
+</body>
+</html>
