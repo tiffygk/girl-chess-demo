@@ -109,7 +109,7 @@
 <header class="top">
   <div>
     <h1>Girl Chess — architecture</h1>
-    <div class="sub">A personal chess tutor. One nondeterministic component; everything else is arithmetic over stored facts.</div>
+    <div class="sub">A personal chess tutor I built for myself. I play an engine opponent called mallow; a coach called cookie explains my games afterwards. One nondeterministic component in the whole system; everything else is arithmetic over stored facts.</div>
   </div>
   <button class="themebtn" id="tbtn">Dark</button>
 </header>
@@ -120,8 +120,8 @@
 </div>
 
 <div class="kpis">
-  <div class="kpi"><div class="l">Application code</div><div class="v">34,869</div><div class="d">lines of TypeScript</div></div>
-  <div class="kpi"><div class="l">Tests</div><div class="v">1,931</div><div class="d">cases, 30,662 lines</div></div>
+  <div class="kpi"><div class="l">False piece placements</div><div class="v">0%</div><div class="d">was 7.5%, same models</div></div>
+  <div class="kpi"><div class="l">Tests</div><div class="v">1,931</div><div class="d">30,662 test lines against 34,869 app</div></div>
   <div class="kpi"><div class="l">Nondeterministic parts</div><div class="v">1</div><div class="d">of the whole system</div></div>
   <div class="kpi"><div class="l">Cost to run</div><div class="v">$0</div><div class="d">on an existing subscription</div></div>
 </div>
@@ -130,7 +130,7 @@
 <div class="panel">
   <div class="num">01</div>
   <h2>The determinism boundary</h2>
-  <p>One nondeterministic component in the entire system. Everything else is arithmetic over stored facts. <strong>chess.js</strong> decides legality. <strong>Stockfish</strong> decides truth: centipawns, mate, best move, principal variation. <strong>Maia</strong> decides what a human of a given rating would actually play. <strong>The annotator</strong> decides what mattered: verdict tiers, turning points, conversion failures, game phase. <strong>Claude</strong> only puts it into words.</p>
+  <p>One nondeterministic component in the entire system. Everything else is arithmetic over stored facts. <strong>chess.js</strong> decides legality. <strong>Stockfish</strong> decides truth: how much better a position is, whether a forced mate exists, and the best line. <strong>Maia</strong> decides what a human of a given rating would actually play. <strong>The annotator</strong> decides what mattered: verdict tiers, turning points, conversion failures, game phase. <strong>Claude</strong> only puts it into words.</p>
 
   <div class="chartbox">
   <svg viewBox="0 0 940 400" role="img" aria-label="Architecture diagram. Five deterministic layers on the left, one nondeterministic component on the right, separated by a boundary. A typed fact list crosses to the right; phrases only come back.">
@@ -143,7 +143,7 @@
       </marker>
     </defs>
 
-    <text x="0" y="14" class="axislbl" style="font-weight:700;letter-spacing:.05em">DETERMINISTIC — arithmetic over stored facts</text>
+    <text x="0" y="14" class="axislbl" style="font-weight:700;letter-spacing:.05em">DETERMINISTIC -- arithmetic over stored facts</text>
     <text x="663" y="14" class="axislbl" style="font-weight:700;letter-spacing:.05em">NONDETERMINISTIC</text>
 
     <!-- layers -->
@@ -195,14 +195,14 @@
   </svg>
   </div>
 
-  <div class="concl"><span class="tag">SO</span><p>A false statement in a debrief is our own template contradicting our own data, never a hallucination. I verified that by searching <code>server/annotator/</code> and <code>src/review/</code> for any model call. Zero. Different failure class, different fix.</p></div>
+  <div class="concl"><span class="tag">SO</span><p>A false line in a debrief is our own template contradicting our own data. <code>server/annotator/</code> and <code>src/review/</code> make zero model calls, so nothing there can hallucinate. I verified that by grep. Where the model does write, seven checks catch it before you see it.</p></div>
 </div>
 
 <!-- ============ 2 ============ -->
 <div class="panel">
   <div class="num">02</div>
   <h2>What crosses the boundary</h2>
-  <p>A typed fact list, not a game history. The model is handed answers, not asked to derive them. Two assembly paths, and both deliberately skip the live evaluator so the coach can never contend with the judge's Stockfish queue.</p>
+  <p>A typed fact list, not a game history. It is handed the answers. Two assembly paths, and both deliberately skip the live evaluator so the coach can never contend with the judge's Stockfish queue.</p>
 
   <div class="factgrid">
     <div class="fcard"><h3>Position</h3><ul>
@@ -222,11 +222,11 @@
       <li><code>read</code> the eval, as words</li>
       <li><code>gap</code> played versus best, in words</li>
     </ul></div>
-    <div class="fcard ui"><h3>UI state — what she is looking at</h3><ul>
-      <li><code>pendingMove</code> the piece she picked up</li>
+    <div class="fcard ui"><h3>UI state -- what I am looking at</h3><ul>
+      <li><code>pendingMove</code> the piece I picked up</li>
       <li><code>hintFocus</code> the open hint, verbatim</li>
-      <li><code>turningPointFocus</code> the card she clicked</li>
-      <li><code>highlightedPlies</code> moves she flagged</li>
+      <li><code>turningPointFocus</code> the card I clicked</li>
+      <li><code>highlightedPlies</code> moves I flagged</li>
     </ul></div>
     <div class="fcard"><h3>Turning points</h3><ul>
       <li><code>turningPoints</code> ply, move, label</li>
@@ -240,7 +240,7 @@
   </div>
 
   <p>The direction matters. Facts go in, phrases come back. <strong>The model never writes a fact back into the store.</strong></p>
-  <p>Two details that surprise people. Raw evaluations never reach the model as numbers; they are bucketed into words first, because a coach that says "plus 144" to a beginner is useless. And the pending move is <strong>distrusted</strong>: the client claims it, the server replays it on a probe, and drops it if it is illegal.</p>
+  <p>Two consequences. Raw evaluations never reach the model as numbers; they are bucketed into words first, because a coach that says "plus 144" to a beginner is useless. And the pending move is <strong>distrusted</strong>: the client claims it, the server replays it on a probe, and drops it if it is illegal.</p>
 </div>
 
 <!-- ============ 3 ============ -->
@@ -305,7 +305,7 @@
     </tbody>
   </table>
 
-  <div class="concl"><span class="tag">SO</span><p>None of this needed a bigger model. It needed the facts we already had. When we finally fixed the fact gap, placement errors went 7.5% to zero and explanation latency went 13-15s to about 4s -- and both numbers moved for the small model and the large one at the same time.</p></div>
+  <div class="concl"><span class="tag">SO</span><p>None of this needed a bigger model. It needed the facts we already had. When we fixed the fact gap, placement errors went 7.5% to zero and explanation latency went 13-15s to about 4s. Both numbers moved for the small model and the large one at the same time.</p></div>
 </div>
 
 <!-- ============ 4 ============ -->
@@ -315,7 +315,7 @@
   <p>The worst bug here was plumbing, not the model. Two surfaces search the same position. <strong>The judge</strong> runs a 350ms evaluation on every move I consider, and that is what holds the sub-two-second verdict. <strong>The hint</strong> runs a 1500ms multi-line search plus a 500ms verification pass, escalating to 3000ms. Rare, and I have to ask for it.</p>
 
   <table class="dt">
-    <thead><tr><th>Time</th><th>Game 167, move 19, 2026-08-02 — every row from the database</th></tr></thead>
+    <thead><tr><th>Time</th><th>Game 167, move 19, 2026-08-02 -- every row from the database</th></tr></thead>
     <tbody>
       <tr><td class="n">11:18</td><td>The hint engine found a forced mate, verified it, and showed it to me on screen.</td></tr>
       <tr><td class="n">11:21</td><td>I asked the coach about it. It timed out and served a canned template.</td></tr>
@@ -343,7 +343,7 @@
 
   <p>Three regex tiers, zero model calls. If I am pointing at something on screen, it is a board question, unconditionally. Otherwise a general-phrase test. Otherwise an abstract-theory test that fires only when there is no board signal at all. Ambiguity resolves to board.</p>
 
-  <p>The first version had it backwards. It routed to board only when it detected a board signal. <strong>38 of 65 real board questions carry no detectable signal</strong> — "is this ok", "should i take it", a bare "yes" — and all of them fell through to the general route, which has no position on it. Exactly the trust failure the round existed to fix. So board became the unconditional default.</p>
+  <p>The first version had it backwards. It routed to board only when it detected a board signal. <strong>38 of 65 real board questions carry no detectable signal.</strong> "is this ok". "should i take it". A bare "yes". All of them fell through to the general route, which has no position on it. Exactly the trust failure the round existed to fix. So board became the unconditional default.</p>
 
   <div class="concl"><span class="tag">SHIP GATE</span><p>A read-only tool replayed the old and the new routing over 102 of my real messages from the database, before merge. Zero questions flipped from board to general.</p></div>
 </div>
@@ -365,7 +365,7 @@
       <tr><td>Opponent quality</td><td>calling mallow's move a blunder when it matched the engine's own top choice</td><td><code>matchedBest</code></td></tr>
     </tbody>
   </table>
-  <p style="margin-top:12px">A violation triggers one corrective regeneration. A second failure falls back to a persona-file template. Never a string that failed its own check, never a thrown error, never a blocked game.</p>
+  <p style="margin-top:12px">A violation triggers one corrective regeneration. A second failure falls back to a persona-file template. Never a string that failed its own check, and never a blocked game.</p>
   <div class="concl"><span class="tag">ECONOMICS</span><p>The prose checks cost 0.013ms and 0.070ms. A regeneration is a second full model call, roughly +20 seconds, at a rate of 7.7%. <strong>So adding a validator is free, and cutting the regeneration rate is the only lever worth pulling.</strong> That is why the seventh check is a deterministic 0ms correction instead of a seventh regen trigger.</p></div>
 </div>
 
@@ -377,7 +377,7 @@
 
   <div class="legend">
     <div class="it"><span class="sw" style="background:var(--s1)"></span>default (unbounded)</div>
-    <div class="it"><span class="sw" style="background:var(--s2)"></span>low — shipped</div>
+    <div class="it"><span class="sw" style="background:var(--s2)"></span>low -- shipped</div>
     <div class="it"><span class="sw" style="background:var(--s3)"></span>disabled</div>
   </div>
 
@@ -419,7 +419,7 @@
 
     <div class="chartbox">
     <svg viewBox="0 0 460 260" role="img" aria-label="Template fallback rate by difficulty. On the hardest bucket, tactical and mate questions, default is 18.7 percent, low is 13.3 percent, disabled is 22.7 percent.">
-      <text x="0" y="14" class="axislbl" style="font-weight:650">Fell back to a canned reply, % — by question difficulty</text>
+      <text x="0" y="14" class="axislbl" style="font-weight:650">Fell back to a canned reply, % -- by question difficulty</text>
       <g class="grid">
         <line x1="44" y1="200" x2="450" y2="200"/><line x1="44" y1="168" x2="450" y2="168"/>
         <line x1="44" y1="136" x2="450" y2="136"/><line x1="44" y1="104" x2="450" y2="104"/>
@@ -481,7 +481,7 @@
       <tr><td>Aug 2</td><td>Unbounded adaptive thinking, 1,500-4,500 invisible tokens</td><td>Named, reproduced, toggled</td></tr>
     </tbody>
   </table>
-  <p style="margin-top:12px">Anatomy of one 20.3-second call: 1.3s to the first message, then thinking from 1.7s to 17.7s spending 1,430 tokens, then 2.4 seconds of actual writing.</p>
+  <p style="margin-top:12px">Anatomy of one call at the low end of that range, 20.3 seconds: 1.3s to the first message, then thinking from 1.7s to 17.7s spending 1,430 tokens, then 2.4 seconds of actual writing. The slow ones ran past 50.</p>
   <p>It hid because thinking streams with empty text by default. No log, no trace, no stream ever showed a thinking token. The two tells were arithmetic and both sat in every call since July 22: time-to-first-token of 1.3-3.7 seconds against 45-second waits, and billed output tokens far exceeding the visible answer.</p>
   <div class="concl"><span class="tag">LESSON</span><p>A fix that measurably helps is the most dangerous stopping point. It validates the pass without validating the diagnosis.</p></div>
 </div>
@@ -491,24 +491,24 @@
   <div class="num">09</div>
   <h2>Two engines, because truth and human-likeness are different jobs</h2>
   <p>Stockfish evaluates. Maia opposes, playing like a human of a given rating. A game instead of a wall.</p>
-  <p>Two details cost real debugging. Maia runs at <code>Temperature = 1.0</code>; at the engine default of 0 it always plays its single most likely move, which makes it play <strong>stronger</strong> than its rating band, because real 1100-rated players sample the mistakes too. And we send <code>ucinewgame</code> before every query, because the sampling randomness is not reseeded per move. A warmed instance once returned the same move 40 times out of 40.</p>
+  <p>Two details cost real debugging. Maia runs at <code>Temperature = 1.0</code>. At the engine default of 0 it always plays its single most likely move, which makes it play <strong>stronger</strong> than its rating band. Real 1100-rated players sample the mistakes too. And we send <code>ucinewgame</code> before every query, because the sampling randomness is not reseeded per move. A warmed instance once returned the same move 40 times out of 40.</p>
   <p>Search budgets split on purpose. The judge gets 350ms, run twice, which is what holds the sub-two-second verdict. A hint gets 1500ms plus a 500ms verification pass, because hints served from the judge's shallow eval failed playtest.</p>
 </div>
 
 <!-- ============ 10 ============ -->
 <div class="panel">
   <div class="num">10</div>
-  <h2>The seam that made the coach swappable</h2>
+  <h2>The interface that made the coach swappable</h2>
   <p><code>CoachBackend</code> is an interface with four members, one optional. It was designed before there was a performance problem to solve.</p>
-  <p>Then telemetry showed the first backend losing 13 of 14 live nudges to its own 15-second budget, because most of a 9-second call was the program starting up, not writing. The fix was a second implementation of the same interface. Nothing downstream changed. Narration went 9s to 3.6s, chat 9-13s to 7s.</p>
+  <p>Then telemetry showed 13 of 14 live nudges missing their own 15-second budget. That budget had to cover process startup, and startup ate most of every call. The fix was a second implementation of the same interface. Nothing downstream changed. Narration went 9s to 3.6s, chat 9-13s to 7s.</p>
   <p>Every growth since has been an additive optional parameter, so the other three backends needed zero edits each time.</p>
 </div>
 
 <!-- ============ 11 ============ -->
 <div class="panel">
   <div class="num">11</div>
-  <h2>The database</h2>
-  <p>SQLite. One file, ten tables, no ORM. 181 games, 2,604 moves, integrity verified by counting rather than by hashing a file.</p>
+  <h2>One SQLite file, ten tables, no ORM</h2>
+  <p>181 games, 2,604 moves, integrity verified by counting rows.</p>
   <table class="dt">
     <thead><tr><th>Table</th><th class="n">Rows</th><th>What it records</th></tr></thead>
     <tbody>
@@ -524,7 +524,7 @@
       <tr><td><code>coach_notes</code></td><td class="n">2</td><td>the only cross-game memory</td></tr>
     </tbody>
   </table>
-  <p style="margin-top:12px">Three things surprise people. <strong>Verdicts outnumber moves</strong>, because every move I considered and retracted was judged and recorded too. <strong>Chat stores only validated coach replies</strong>, so the gap between my 115 messages and cookie's 99 is literally the count of answers that failed a check and got pulled. And <strong>there is no migration folder and no version number</strong>: the code carries a declared list of every column each table should have, diffs it against the live database at startup, and adds what is missing.</p>
+  <p style="margin-top:12px"><strong>Verdicts outnumber moves</strong>, because every move I considered and retracted was judged and recorded too. <strong>Chat stores only validated coach replies</strong>, so the gap between my 115 messages and cookie's 99 is literally the count of answers that failed a check and got pulled. And <strong>there is no migration folder and no version number</strong>. The code carries a declared list of every column each table should have. At startup it diffs that against the live database and adds what is missing.</p>
 </div>
 
 <p class="foot">Girl Chess. Built 0-to-1 by directing Claude Code. Counts verified read-only against the live database, 2026-08-18.</p>
