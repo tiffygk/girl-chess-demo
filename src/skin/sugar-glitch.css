@@ -417,6 +417,14 @@
 .gc-app .hint-copy {
   font-size: 11.5px; font-weight: 700; color: #6952C4;
 }
+/* K6: the decided-position reason (classify.ts's conversionCopy) beside the
+   nudge badge -- the same .hint-copy whisper register, pre-filling the copy
+   slot at press 0 (the ladder owns the slot from the first press; see
+   conversionReasonAtBadge in hintFlow.ts). Only adds the badge's own 8px
+   lead so pill + sentence read as one cluster. No new hue, no new anatomy.
+   An isolated additive selector: does not touch .postgame/.status-line/
+   .action-slot/.coach-hint-band or any other protected fold element. */
+.gc-app .conversion-reason { margin-left: var(--space-2); }
 .gc-app button.hint-affordance {
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 11.5px;
   padding: 3px 12px; border: none; border-radius: 999px; cursor: pointer;

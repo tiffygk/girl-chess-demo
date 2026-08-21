@@ -10,6 +10,7 @@ import {
   maxPress,
   selectRung,
   rungCopy,
+  conversionReasonAtBadge,
   type HintFacts,
   type HintCopyCtx,
   type HintBranch,
@@ -446,6 +447,32 @@ describe("conversion override outranks the right-P2 ladder", () => {
     expect(copy).toContain("bishop");
     expect(copy).toContain("c1");
     expect(copy).not.toContain("winning");
+  });
+});
+
+// ---- K6: the badge-side conversion reason (press-0 copy slot) ------------
+// The decided-position reason renders beside the "hm, you sure?" badge at
+// the moment she is deciding. Slot-ownership rule: the ladder owns the copy
+// slot from its first press (right-P2 re-tells this same string verbatim,
+// wrong-P2 leads with it -- see the override tests above), so the badge-side
+// reason yields the moment the ladder is engaged and the same sentence is
+// never on screen twice.
+
+describe("conversionReasonAtBadge: the reason beside the nudge badge", () => {
+  const reason = "still winning, but the forced mate is gone for now.";
+  it("nudge + conversionCopy + idle ladder: renders the server copy verbatim", () => {
+    expect(conversionReasonAtBadge("nudge", reason, false)).toBe(reason);
+  });
+  it("nudge without conversionCopy: nothing extra, badge unchanged", () => {
+    expect(conversionReasonAtBadge("nudge", undefined, false)).toBeNull();
+  });
+  it("non-nudge tiers: unchanged, even with copy on the wire (M4 lost-mate warning)", () => {
+    expect(conversionReasonAtBadge("warning", reason, false)).toBeNull();
+    expect(conversionReasonAtBadge("silent", reason, false)).toBeNull();
+    expect(conversionReasonAtBadge(undefined, reason, false)).toBeNull();
+  });
+  it("ladder engaged: the ladder owns the copy slot, the badge-side reason yields", () => {
+    expect(conversionReasonAtBadge("nudge", reason, true)).toBeNull();
   });
 });
 
