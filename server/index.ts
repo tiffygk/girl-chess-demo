@@ -2,6 +2,8 @@ import express from "express";
 import { openDb, createSession, addModeMinutes, rateAdviceTrace, getRatedTraces, listCoachNotes, deleteCoachNote } from "./store/db";
 import { GameManager } from "./game/manager";
 import { servedCommit } from "./version";
+import { assertWeightsPresent } from "./engines/weightsCheck";
+import { ENGINE_PATHS } from "./engines/paths";
 
 export const app = express();
 app.use(express.json());
@@ -25,6 +27,13 @@ app.post("/api/session", (_req, res) => res.json({ sessionId: createSession() })
 // is what stops that being silent. 1900 is maia's real published ceiling.
 // Keep in sync with OPPONENT_ELOS in src/game/GamePage.tsx.
 export const ALLOWED_ELOS = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900];
+
+// Fail at boot, not at the first 1900 game, and never by silently handing her
+// a stockfish opponent under a maia label. Skipped under test, where the
+// suite runs with no weights directory and never spawns a real engine.
+if (process.env.NODE_ENV !== "test") {
+  assertWeightsPresent(ALLOWED_ELOS, ENGINE_PATHS.maiaWeights);
+}
 
 export function snapElo(raw: unknown): number {
   const n = Number(raw);
