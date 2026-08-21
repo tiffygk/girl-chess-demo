@@ -26,6 +26,8 @@ import { followedBest } from "./followedBest";
 // debriefBullets.ts before this fix, and numberWords.ts is the shared,
 // dependency-free module that exists so it doesn't need to gain one.
 import { numberWord } from "./numberWords";
+// N1 (owner report 2026-08-21): the shared "what actually happened" module.
+import { mateOutcomeFor, type MateOutcomeFacts } from "./mateOutcome";
 
 export type Verdict = "done well" | "could be better";
 // "missed-win" added 2026-07-28 after the visual gate caught a missed mate in
@@ -92,7 +94,7 @@ const DONE_WELL_NOTE = "nothing here was a mistake. trust the instinct that made
 // One line per severity tier, owner ruling 2026-07-28 -- the not-an-error
 // wording must not imply fault (measured: ~97% of her real moves carry no
 // classification at all).
-const SEVERITY_LINE: Record<Severity, (best: string, mateIn?: number) => string> = {
+const SEVERITY_LINE: Record<Severity, (best: string, mateIn?: number, outcome?: MateOutcomeFacts) => string> = {
   "not-an-error": (best) => `you just didn't pick the best move here. ${best} was the stronger move, and this cost you nothing.`,
   // Never "cost you nothing" -- a forced mate walked past is the most
   // expensive thing on this list, even when the eval barely moves because the
@@ -106,10 +108,16 @@ const SEVERITY_LINE: Record<Severity, (best: string, mateIn?: number) => string>
   // only for a caller that omits it (never true in practice -- see
   // severityFor's matching turning point, which always carries mateIn
   // whenever severity is "missed-win").
-  "missed-win": (best, mateIn) => {
+  "missed-win": (best, mateIn, outcome) => {
     const n = mateIn ?? 1;
     const distance = numberWord(n);
     const startsMate = n === 1 ? `${best} was mate on the spot` : `${best} started a forced mate in ${distance}`;
+    // N1 (2026-08-21): "the game went on without it" is a claim about what
+    // followed, so it must be checked against what followed. On faster/matched
+    // it is simply false.
+    if (outcome && (outcome.outcome === "faster" || outcome.outcome === "matched")) {
+      return `${startsMate} here, whatever mallow played. what you did was not forced, but it still ended in mate in ${numberWord(outcome.actual)}.`;
+    }
     return `you had checkmate in ${distance} here. ${startsMate}, and the game went on without it.`;
   },
   inaccuracy: (best) => `this was an inaccuracy. ${best} would have held more of your edge.`,
@@ -156,6 +164,11 @@ export function buildHighlightedRows(input: BuildHighlightedRowsInput): Highligh
     // existed, so the honest default is "done well" (see file header).
     const severity = severityFor(ply, classifications, turningPoints);
     const missedWinMateIn = severity === "missed-win" ? missedWinMateInAt(ply, turningPoints) : undefined;
+    // N1 (owner report 2026-08-21): "the game went on without it" is only
+    // ever true when the real move list bears it out -- see mateOutcome.ts.
+    const mwTp = turningPoints.find((t) => t.kind === "missed-win" && t.ply === ply);
+    const lastPly = gameSans.length > 0 ? gameSans[gameSans.length - 1].ply : 0;
+    const outcome = mwTp?.mateIn != null ? mateOutcomeFor(ply, mwTp.mateIn, lastPly, gameSans) : undefined;
     // A missed forced mate is never "done well", whatever followedBest can or
     // cannot prove. Without this, a missed-win ply that happens to carry no
     // TurningLine would fall through to DONE_WELL_NOTE and congratulate her
@@ -167,7 +180,7 @@ export function buildHighlightedRows(input: BuildHighlightedRowsInput): Highligh
     let note: string;
     if (verdict === "could be better" && fb?.bestSan) {
       const best = describedOrRaw(fb.bestSan, seedFenForLine(line, gameSans));
-      note = SEVERITY_LINE[severity](best, missedWinMateIn);
+      note = SEVERITY_LINE[severity](best, missedWinMateIn, outcome);
     } else if (severity === "missed-win") {
       // Missed win with no line on record: still say what happened, just
       // without naming a move we cannot prove.
