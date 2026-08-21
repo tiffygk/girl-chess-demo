@@ -518,6 +518,33 @@ export function rungCopy(branch: HintBranch, press: number, ctx: HintCopyCtx): s
   return null;
 }
 
+// ---- K6: the badge-side conversion reason ------------------------------
+
+/**
+ * K6 (conversion-copy round): the decided-position reason (classify.ts's
+ * conversionCopy, owner voice, rendered verbatim) shows NEXT TO the
+ * "hm, you sure?" nudge badge, so she sees WHY at the moment she is
+ * deciding -- not only two hint presses later. Slot-ownership rule, not a
+ * duplication check: the copy slot beside the badge belongs to this reason
+ * only while the hint ladder is idle (press 0). From the first press the
+ * ladder owns the slot -- its own rungs re-tell the conversion story where
+ * it matters (right-P2 renders this same string verbatim, wrong-P2 leads
+ * with it; see rungCopy above), so the same sentence is never on screen
+ * twice and the cluster never shows two competing sentences. Nudge-tier
+ * only: the lost-mate WARNING also carries conversionCopy on the wire (the
+ * M4 fix in classify.ts) but its badge copy is deliberately out of this
+ * wave's scope (brief K6), and silent renders no badge at all.
+ */
+export function conversionReasonAtBadge(
+  tier: string | undefined,
+  conversionCopy: string | undefined,
+  ladderEngaged: boolean
+): string | null {
+  if (tier !== "nudge" || !conversionCopy) return null;
+  if (ladderEngaged) return null;
+  return conversionCopy;
+}
+
 // ---- board-highlight + legality helpers (unchanged) --------------------
 
 /** Full-reveal board highlight (right-P3 / wrong-P4): splits a UCI move into

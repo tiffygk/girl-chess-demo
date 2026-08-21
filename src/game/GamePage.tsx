@@ -62,6 +62,7 @@ import {
   decideBranch,
   maxPress,
   rungCopy,
+  conversionReasonAtBadge,
   hintRevealSquares,
   threatRevealSquares,
   hintIsLegal,
@@ -2229,6 +2230,22 @@ export function GamePage() {
   const renderedHintCopy =
     hintPress > 0 && hintBranch && hintCtx ? rungCopy(hintBranch, hintPress, hintCtx) : null;
 
+  // K6 (conversion-copy round): the decided-position reason beside the
+  // "hm, you sure?" nudge badge -- press 0 only; from the first press the
+  // ladder owns the copy slot (right-P2 renders this same string verbatim,
+  // wrong-P2 leads with it). The post-judge site has no ladder at all, so
+  // it is never engaged there.
+  const liveConversionReason = conversionReasonAtBadge(
+    verdict?.tier,
+    verdict?.conversionCopy,
+    hintPress > 0
+  );
+  const postConversionReason = conversionReasonAtBadge(
+    postVerdict?.tier,
+    postVerdict?.conversionCopy,
+    false
+  );
+
   // Increment 3.95, Task 7: the hint ladder's own "ask about this" -- opens
   // the always-mounted CoachChat scoped to the hint text the player is
   // actually looking at. A no-op before any rung has rendered anything
@@ -2488,6 +2505,12 @@ export function GamePage() {
                   {verdict?.tier === "nudge" && (
                     <span className="judge-badge judge-badge-nudge">hm, you sure?</span>
                   )}
+                  {/* K6: the reason the nudge fired, rendered verbatim in the
+                      same .hint-copy register the ladder uses -- pre-filling
+                      the copy slot at press 0 (see conversionReasonAtBadge). */}
+                  {liveConversionReason && (
+                    <span className="hint-copy conversion-reason">{liveConversionReason}</span>
+                  )}
                   {verdict?.tier === "warning" && (
                     <span className="judge-badge judge-badge-warning">careful. this one hurts.</span>
                   )}
@@ -2547,6 +2570,12 @@ export function GamePage() {
               <span className="judge-check">✓</span>
               {postVerdict.tier === "nudge" && (
                 <span className="judge-badge judge-badge-nudge">hm, you sure?</span>
+              )}
+              {/* K6: same reason at the coach-only/confirm-off badge -- this
+                  mode has no hint ladder, so without it the reason would
+                  never reach her here at all. */}
+              {postConversionReason && (
+                <span className="hint-copy conversion-reason">{postConversionReason}</span>
               )}
               {postVerdict.tier === "warning" && (
                 <span className="judge-badge judge-badge-warning">careful. this one hurts.</span>
