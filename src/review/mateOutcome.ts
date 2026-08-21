@@ -42,7 +42,11 @@ export function mateOutcomeFor(
   if (!gameSans || gameSans.length === 0) return undefined;
 
   const lastSan = gameSans[gameSans.length - 1].san;
-  if (!lastSan.includes("#")) {
+  // MEDIUM-4 (Opus review, N1 fix wave): "#" alone doesn't say WHOSE
+  // checkmate it was. Odd plies are hers, even are mallow's (repo-wide
+  // convention) -- a game she LOST by checkmate also ends on a "#", and
+  // without this check it read as her win (game 162, Qg2# at ply 72).
+  if (!lastSan.includes("#") || totalPlies % 2 === 0) {
     return { outcome: "unresolved", actual: 0, predicted: mateIn };
   }
 
