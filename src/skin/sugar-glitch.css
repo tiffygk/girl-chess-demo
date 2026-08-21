@@ -403,6 +403,11 @@
   font-size: 11.5px;
   font-weight: 700;
   vertical-align: middle;
+  /* K6: the conversion reason beside the badge can crowd the line; without
+     this the pill broke INSIDE itself ("hm, you / sure?") -- seen by eye at
+     1280 and 420px. A pill never wraps internally; the sentence does the
+     wrapping. Widest badge copy is ~110px, safe at every supported width. */
+  white-space: nowrap;
 }
 .gc-app .judge-badge-nudge { background: #E7DFFF; color: #6952C4; }
 .gc-app .judge-badge-warning { background: #FFD6EC; color: #C22B7E; }
