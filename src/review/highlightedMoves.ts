@@ -116,7 +116,7 @@ const SEVERITY_LINE: Record<Severity, (best: string, mateIn?: number, outcome?: 
     // followed, so it must be checked against what followed. On faster/matched
     // it is simply false.
     if (outcome && (outcome.outcome === "faster" || outcome.outcome === "matched")) {
-      return `${startsMate} here, whatever mallow played. what you did was not forced, but it still ended in mate in ${numberWord(outcome.actual)}.`;
+      return `${startsMate} here, whatever mallow played. what you did still ended in mate in ${numberWord(outcome.actual)}.`;
     }
     return `you had checkmate in ${distance} here. ${startsMate}, and the game went on without it.`;
   },
