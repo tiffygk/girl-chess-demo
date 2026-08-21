@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll, vi } from "vitest";
 import request from "supertest";
 import { Chess } from "chess.js";
-import { app, ready, gm } from "./index";
+import { app, ready, gm, snapElo } from "./index";
 import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages, getAdviceTraces, insertAdviceTrace, getAllTableCounts, createSession as dbCreateSession, createGame as dbCreateGame, insertCoachNote } from "./store/db";
 import { CHAT_MAX_LEN } from "./coach/chat";
 
@@ -368,6 +368,23 @@ describe("api", () => {
     const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1500 });
     expect(g.body.elo).toBe(1500);
   }, 60000);
+
+  describe("snapElo (n2, elo ceiling raised to 1900)", () => {
+    it("passes 1900 through instead of snapping it down to 1500", () => {
+      expect(snapElo(1900)).toBe(1900);
+    });
+
+    it("passes every new upper band through untouched", () => {
+      expect(snapElo(1600)).toBe(1600);
+      expect(snapElo(1700)).toBe(1700);
+      expect(snapElo(1800)).toBe(1800);
+    });
+
+    it("still snaps a genuinely out-of-range value to the nearest real band", () => {
+      expect(snapElo(2400)).toBe(1900);
+      expect(snapElo(900)).toBe(1100);
+    });
+  });
 
   // Increment 3b: GET /api/game/:id/summary — turning points + move
   // classifications, persisted at game end via manager.ts's

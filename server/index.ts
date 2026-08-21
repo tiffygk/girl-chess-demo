@@ -18,10 +18,13 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, commit: servedCommit(
 
 app.post("/api/session", (_req, res) => res.json({ sessionId: createSession() }));
 
-// Only these weights files exist in weights/; any other value makes lc0 fail
-// to load and silently swaps in the strength-limited stockfish fallback
-// (which floors at 1320 — the opposite of what a low-elo request wants).
-export const ALLOWED_ELOS = [1100, 1200, 1300, 1400, 1500];
+// Every band here MUST have a weights file in weights/; a missing one makes
+// lc0 fail to load and silently swaps in the strength-limited stockfish
+// fallback (which floors at 1320, the opposite of what a low-elo request
+// wants, and far too strong for a high one). assertWeightsPresent at startup
+// is what stops that being silent. 1900 is maia's real published ceiling.
+// Keep in sync with OPPONENT_ELOS in src/game/GamePage.tsx.
+export const ALLOWED_ELOS = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900];
 
 export function snapElo(raw: unknown): number {
   const n = Number(raw);
