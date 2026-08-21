@@ -207,31 +207,39 @@ function TurningPointCard({
   // same flat-tint card family as a negative-labeled swing/backfill card,
   // just a different reason.
   const isEpisode = point.kind === "episode";
-  // N1 (owner report 2026-08-21), owner rule on file: a card labelled
-  // "missed mate" carrying copy that says the move was good enough (framing
-  // B's faster/matched branch) is a mixed signal, so the negative tint drops
-  // on that one label when the real move list proves she finished as fast
-  // or faster than the forced line. Gated on mateOutcomeFor -- the same
-  // predicate every N1 copy surface reads -- never re-derived here (the
-  // standing "a legend or key must be gated on the real producer" rule).
-  // totalPlies isn't a prop on this card; gameSans carries the ply on every
-  // entry, so it's the last entry's ply, same trick turningPointNote.ts's
-  // own N1 fix already uses.
+  // N1 (owner report 2026-08-21), owner rule on file: a card carrying copy
+  // that says the move was good enough (framing B's faster/matched branch)
+  // is a mixed signal, so the negative tint drops when the real move list
+  // proves she finished as fast or faster than the forced line. Gated on
+  // mateOutcomeFor -- the same predicate every N1 copy surface reads --
+  // never re-derived here (the standing "a legend or key must be gated on
+  // the real producer" rule). totalPlies isn't a prop on this card;
+  // gameSans carries the ply on every entry, so it's the last entry's ply,
+  // same trick turningPointNote.ts's own N1 fix already uses.
+  //
+  // LOW-8 (N1 fix wave): the design's ruling is OUTCOME-scoped, not
+  // label-scoped -- "missed mate" and "conversion" both carry the same
+  // mateIn/ply shape and assert the identical class of fact (a win given
+  // back), so both get the same faster/matched-drops-the-tint treatment.
+  // Real case: game 181 ply 39, label "conversion", outcome faster (nine
+  // predicted, two actual) kept the pink alarm tint while its own bullet
+  // credited her.
   const totalPliesForOutcome = gameSans && gameSans.length > 0 ? gameSans[gameSans.length - 1].ply : 0;
-  const missedMateOutcome =
-    point.label === "missed mate" && point.mateIn != null
+  const mateOutcomeLabels = new Set(["missed mate", "conversion"]);
+  const mateOutcomeForCard =
+    mateOutcomeLabels.has(point.label) && point.mateIn != null
       ? mateOutcomeFor(point.ply, point.mateIn, totalPliesForOutcome, gameSans)
       : undefined;
   // HIGH-2 (N1 fix wave): mateOutcomeFor measures only the anchor ply. A
   // missedCount > 1 means a second, unmeasured occurrence exists (real
   // games 175/178) -- dropping the tint on the anchor's faster/matched
   // outcome alone would hide it, so the tint stays negative.
-  const missedMateHasUnmeasuredRepeat = (point.missedCount ?? 1) > 1;
-  const missedMateIsHonestlyPositive =
-    !!missedMateOutcome &&
-    (missedMateOutcome.outcome === "faster" || missedMateOutcome.outcome === "matched") &&
-    !missedMateHasUnmeasuredRepeat;
-  const negative = (NEGATIVE_CARD_LABELS.has(point.label) && !missedMateIsHonestlyPositive) || isEpisode;
+  const mateOutcomeHasUnmeasuredRepeat = (point.missedCount ?? 1) > 1;
+  const mateOutcomeIsHonestlyPositive =
+    !!mateOutcomeForCard &&
+    (mateOutcomeForCard.outcome === "faster" || mateOutcomeForCard.outcome === "matched") &&
+    !mateOutcomeHasUnmeasuredRepeat;
+  const negative = (NEGATIVE_CARD_LABELS.has(point.label) && !mateOutcomeIsHonestlyPositive) || isEpisode;
   const startMove = moveNumberForPly(point.ply);
   const endMove = point.plyEnd != null ? moveNumberForPly(point.plyEnd) : startMove;
   const note = active ? buildTurningPointNote(point, classification, line, gameSans) : null;
