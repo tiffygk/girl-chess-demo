@@ -330,7 +330,7 @@ export function missedWinText(
     const because = outcome.enablingReplySan
       ? ` after mallow answered ${describedOrRaw(outcome.enablingReplySan, tp.ply + 1, gameSans)}`
       : "";
-    return `move ${n}: your ${startsMate} here, whatever mallow played. what you did was not forced, but it still ended in mate in ${actualWord}${because}.${repeat}`;
+    return `move ${n}: your ${startsMate} here, whatever mallow played. what you did still ended in mate in ${actualWord}${because}.${repeat}`;
   }
 
   const lastSan = gameSans[gameSans.length - 1].san;

@@ -647,6 +647,10 @@ describe("missed-win note", () => {
     expect(note.couldImprove).toContain("mate in two");
     expect(note.couldImprove).not.toMatch(/instead\.$/);
     expect(note.couldImprove).toContain("king to c4");
+    // HIGH-1 (Opus review, N1 fix wave): "was not forced" is unprovable from
+    // the client's inputs (no eval data reaches this renderer) and false on
+    // real games where the mate survived her move (174, 178). Never assert it.
+    expect(note.couldImprove).not.toMatch(/was not forced/);
   });
 });
 

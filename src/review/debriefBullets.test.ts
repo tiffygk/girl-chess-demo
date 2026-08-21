@@ -1765,6 +1765,9 @@ describe("missedWinText outcome honesty (N1, owner report 2026-08-21)", () => {
     );
     expect(out).not.toMatch(/took \d+ more move/);
     expect(out).not.toMatch(/later without it/);
+    // HIGH-1 (Opus review, N1 fix wave): unprovable from the client's inputs
+    // and false on real games (174, 178) where the mate survived her move.
+    expect(out).not.toMatch(/was not forced/);
   });
 
   it("names the best move, its guarantee, the real distance, and the reply", () => {

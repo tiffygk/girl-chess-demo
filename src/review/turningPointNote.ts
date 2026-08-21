@@ -299,7 +299,7 @@ function buildCouldImprove(
         outcome.enablingReplySan && enablingFen
           ? ` after mallow answered ${describedOrRaw(outcome.enablingReplySan, enablingFen)}`
           : "";
-      return `your ${endsIt} here, whatever mallow played. ${played} was not forced, but it still ended in mate in ${numberWord(outcome.actual)}${because}.${repeat}`;
+      return `your ${endsIt} here, whatever mallow played. what you did still ended in mate in ${numberWord(outcome.actual)}${because}.${repeat}`;
     }
     return best
       ? `you had checkmate in ${distance} here. your ${endsIt}. you played ${played} instead.${repeat}`

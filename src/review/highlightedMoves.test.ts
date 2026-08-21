@@ -197,5 +197,9 @@ describe("buildHighlightedRows", () => {
     const row = rows.find((r) => r.ply === 89)!;
     expect(row.note).not.toContain("the game went on without it");
     expect(row.note).toContain("mate in two");
+    // HIGH-1 (Opus review, N1 fix wave): unprovable from the client's inputs
+    // (no eval data reaches this renderer) and false on real games (174, 178)
+    // where the mate survived her move.
+    expect(row.note).not.toMatch(/was not forced/);
   });
 });
