@@ -69,6 +69,19 @@ export function moveNumberForPly(ply: number): number {
   return Math.ceil(ply / 2);
 }
 
+// DEAD FOR RENDERING as of 2026-08-21, and audited that way deliberately.
+// Zero non-test callers: the past-games drawer tag is a DIFFERENT value,
+// computed server-side as the rank-1 turning point's label (server/store/
+// db.ts:560). Only this file's moveNumberForPly export is live.
+//
+// Its missed-win branch below still carries the pre-N1 claim ("you had
+// checkmate in N on move M and played past it"), which the N1 round proved
+// false on 6 of her 10 real efficiency flags. It was left unfixed rather
+// than half-fixed, because it takes no move list and therefore cannot check
+// what actually happened.
+//
+// DO NOT WIRE THIS UP without first routing its missed-win branch through
+// mateOutcome.ts, the way debriefBullets.ts and turningPointNote.ts do.
 export function debriefLesson(turningPoints: TurningPoint[], result: GameResult): string {
   // Missed-win round (2026-07-28): a game where a forced mate slipped must
   // never headline with a move-3 inaccuracy (the owner's game-149 report).
