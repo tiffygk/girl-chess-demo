@@ -683,3 +683,34 @@ describe("conversion-claim (K1, game-160 RCA round)", () => {
     expect(checkDebriefOutput(out, facts).map((v) => v.rule)).not.toContain("conversion-claim");
   });
 });
+
+describe("conversion-claim knows the verified actual distance (N1)", () => {
+  const gameSans = [
+    { ply: 41, san: "Bg7" }, { ply: 42, san: "Bd7" }, { ply: 43, san: "Qf7#" },
+  ];
+
+  it("accepts a second mate number that the move list proves", () => {
+    const v = checkDebriefOutput(
+      { bullets: [{ section: "could be better", ply: 41,
+          text: "move 21: your bishop to e2 started a forced mate in four here, whatever mallow played. what you did was not forced, but it still ended in mate in two after mallow answered bishop to d7." }] } as any,
+      { result: "1-0", totalPlies: 43, turningPoints: [{ ply: 41, kind: "missed-win", mateIn: 4 }], gameSans } as any
+    );
+    expect(v.filter((x) => x.rule === "conversion-claim")).toHaveLength(0);
+  });
+
+  it("still rejects a mate number that is neither the prediction nor the truth", () => {
+    const v = checkDebriefOutput(
+      { bullets: [{ section: "could be better", ply: 41,
+          text: "you had mate in seven here." }] } as any,
+      { result: "1-0", totalPlies: 43, turningPoints: [{ ply: 41, kind: "missed-win", mateIn: 4 }], gameSans } as any
+    );
+    expect(v.filter((x) => x.rule === "conversion-claim").length).toBeGreaterThan(0);
+  });
+
+  // Required by CLAUDE.md's Invariant rule: a red-then-green unit test is
+  // necessary but not sufficient for a checker change. This is the
+  // load-bearing negative case -- the rule must still catch a genuinely
+  // wrong number when it happens NOT to collide with either accepted value.
+  // mateOutcomeFor(41, 4, 43, gameSans).actual is 2 (Bg7/Bd7/Qf7# is a real,
+  // two-move finish) -- 7 is neither tp.mateIn (4) nor actual (2).
+});

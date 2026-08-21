@@ -839,20 +839,40 @@ function buildWatchNextTime(
       : undefined;
   const missedWinIsReproachable =
     !missedWinOutcome || missedWinOutcome.outcome === "slower" || missedWinOutcome.outcome === "unresolved";
-  if (missedWin && missedWinIsReproachable) {
-    const count = missedWin.missedCount ?? 1;
-    const opener =
-      count > 1
-        ? `you had checkmate on the board ${count} times and played past it.`
-        : `you had checkmate on the board and played past it.`;
+  if (missedWin) {
     const missedWinPhase = phases.phaseAt(missedWin.ply);
-    bullets.push({
-      section: "watch next time",
-      text: `${opener} when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move.`,
-      phase: missedWinPhase,
-      category: endgameOrConversion(missedWinPhase),
-      ply: missedWin.ply,
-    });
+    if (missedWinIsReproachable) {
+      const count = missedWin.missedCount ?? 1;
+      const opener =
+        count > 1
+          ? `you had checkmate on the board ${count} times and played past it.`
+          : `you had checkmate on the board and played past it.`;
+      bullets.push({
+        section: "watch next time",
+        text: `${opener} when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move.`,
+        phase: missedWinPhase,
+        category: endgameOrConversion(missedWinPhase),
+        ply: missedWin.ply,
+      });
+    } else {
+      // N1 fix wave (2026-08-21 pickup): full suppression left this section
+      // with nothing to say on a game whose ONLY negative-shaped fact was a
+      // missed-win point that turned out faster/matched -- buildWatchNextTime
+      // then fell through to its own generic "no repeat pattern showed up
+      // this game" fallback below, which is a reassurance phrase and trips
+      // debriefInvariants' reassurance-vs-detector rule (a never-miss
+      // detector genuinely did fire in turningPoints, regardless of how the
+      // game turned out). Caught by tools/replay-check.ts on real games 174/
+      // 175/184 during this same round. An honest, non-reassurance, non-
+      // reproachful sentence closes the gap without contradicting the data.
+      bullets.push({
+        section: "watch next time",
+        text: "you had a forced mate lined up here and finished inside it. keep hunting the fastest mate every time you are winning big.",
+        phase: missedWinPhase,
+        category: endgameOrConversion(missedWinPhase),
+        ply: missedWin.ply,
+      });
+    }
   }
 
   // Game-160 RCA round, Task K1 (2026-07-31): the technique half of the

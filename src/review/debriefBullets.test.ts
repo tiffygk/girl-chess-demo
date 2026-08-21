@@ -1812,6 +1812,41 @@ describe("conversion bullets outcome honesty (N1)", () => {
   });
 });
 
+// N1 fix wave (2026-08-21 pickup, caught by tools/replay-check.ts on real
+// games 174/175/184): fully suppressing the missed-win watch-next bullet on
+// a faster/matched outcome left buildWatchNextTime with nothing else to
+// say on a game whose only negative-shaped fact was that missed-win point,
+// so it fell through to its own generic "no repeat pattern showed up this
+// game" fallback -- a reassurance phrase, which trips debriefInvariants'
+// reassurance-vs-detector rule the moment a never-miss detector (missed-win
+// IS one) fired at all, regardless of how the game actually turned out.
+describe("missed-win watch-next stays honest without falling into reassurance copy (N1)", () => {
+  it("a faster-than-predicted missed-win still gets a non-reproachful, non-reassurance watch-next bullet", () => {
+    // label "missed mate" (production's real label for this kind, not tp()'s
+    // default "blunder") so byPly's HER_NEG_LABELS lookup doesn't also pick
+    // this point up as an ordinary mistake -- that would paper over the real
+    // bug by giving buildWatchNextTime something else to say regardless.
+    const missedWin184 = tp({ ply: 89, kind: "missed-win", mateIn: 4, san: "Be7", label: "missed mate" });
+    const bullets = debriefBullets({
+      turningPoints: [missedWin184],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [{ ply: 89, pvSans: [], bestSan: "Be7" }],
+    });
+    const watchNext = bullets.find((b) => b.section === "watch next time")!;
+    expect(watchNext).toBeDefined();
+    expect(watchNext.text).not.toMatch(/no clear mistakes|no repeat pattern/);
+    expect(watchNext.text).not.toMatch(/played past it/);
+    const violations = checkDebriefOutput(
+      { bullets },
+      { result: "1-0", totalPlies: 91, gameSans: GAME150_SANS, turningPoints: [missedWin184] }
+    );
+    expect(violations.map((v) => v.rule)).not.toContain("reassurance-vs-detector");
+  });
+});
+
 // visual gate (phase A, game 160 rca round): the gate drove the real app
 // against the owner's real games and caught "it took 1 moves" on game 145
 // (count of exactly 1 -- every other observed game had count >= 2, which is
