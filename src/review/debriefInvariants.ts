@@ -31,6 +31,8 @@ import { affordancesForBullet, type DebriefBullet, type ChessCategory } from "./
 import { NUMBER_WORDS } from "./numberWords";
 import { phasesForGame, type GamePhase } from "./gamePhases";
 import { followedBest } from "./followedBest";
+// N1 (owner report 2026-08-21): the shared "what actually happened" module.
+import { mateOutcomeFor } from "./mateOutcome";
 
 export interface DebriefFacts {
   result: string | null;
@@ -141,6 +143,15 @@ function parseMateClaimNumbers(text: string): number[] {
     if (n != null) out.push(n);
   }
   return out;
+}
+
+// N1 (2026-08-21): the last ply in the move list, mateOutcomeFor's own
+// totalPlies input. facts.gameSans is typed non-optional on DebriefFacts,
+// but every conversion-claim test fixture in this file passes gameSans: []
+// (fine -- an empty list means mateOutcomeFor returns undefined and this
+// rule degrades to its pre-N1 behaviour, see the comment at its call site).
+function lastPlyOf(gameSans: SummaryMove[] | undefined): number {
+  return gameSans && gameSans.length > 0 ? gameSans[gameSans.length - 1].ply : 0;
 }
 
 // Residual hole found by the reviewer's own falsification pass (2026-07-31,
@@ -530,13 +541,32 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
       });
       return;
     }
+    // N1 (2026-08-21). Framing B emits TWO provable numbers in one sentence:
+    // the stored forced-mate prediction, and the distance the game actually
+    // ran. Both are facts; only the first used to be accepted. The actual is
+    // recomputed here from facts.gameSans rather than trusted from the text.
+    //
+    // FALSE-POSITIVE AUDIT (required by this rule's own history -- the last
+    // widening swept in opportunity.ts's honest "leads to mate in N" and
+    // false-flagged 13 real games). Newly accepted: exactly one additional
+    // integer per ply, equal to mateOutcomeFor().actual, and only when a
+    // same-ply turning point with a mateIn already exists. Nothing else moves
+    // into scope: a claim with no backing turning point still violates above,
+    // and a number that is neither value still violates below.
+    const actual =
+      tp.mateIn != null
+        ? mateOutcomeFor(tp.ply, tp.mateIn, lastPlyOf(facts.gameSans), facts.gameSans)?.actual
+        : undefined;
     for (const n of claims) {
-      if (n !== tp.mateIn) {
+      if (n !== tp.mateIn && n !== actual) {
         violations.push({
           kind: "contradiction",
           rule: "conversion-claim",
           where,
-          message: `text asserts mate in ${n} but the same-ply turning point's mateIn is ${tp.mateIn}`,
+          message:
+            actual != null
+              ? `text asserts mate in ${n} but the same-ply turning point's mateIn is ${tp.mateIn} and the game actually ran ${actual}`
+              : `text asserts mate in ${n} but the same-ply turning point's mateIn is ${tp.mateIn}`,
         });
       }
     }
