@@ -378,7 +378,13 @@ export function conversionCouldBeBetterText(
 // The technique tip half of the same fact -- what to actually DO about a
 // mate that keeps getting slower, the owner's stated learning goal made
 // procedural (same discipline as missedWinText's watch-next sibling).
-function conversionWatchNextText(
+// MEDIUM-6 (N1 fix wave): exported so debriefBullets.test.ts can pin this
+// surface's exact copy directly, the same way its could-be-better sibling
+// (conversionCouldBeBetterText) already is -- the reviewer found this
+// branch shipped with zero coverage (replacing its condition with `false`
+// left the whole suite green while real games 181/179 silently reverted to
+// the old reproachful copy).
+export function conversionWatchNextText(
   tp: TurningPoint,
   totalPlies: number,
   gameSans: SummaryMove[] | undefined

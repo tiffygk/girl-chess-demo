@@ -12,7 +12,7 @@
 // guess.
 
 import { describe, it, expect } from "vitest";
-import { debriefBullets, affordancesForBullet, missedWinText, conversionCouldBeBetterText } from "./debriefBullets";
+import { debriefBullets, affordancesForBullet, missedWinText, conversionCouldBeBetterText, conversionWatchNextText } from "./debriefBullets";
 import { checkDebriefOutput } from "./debriefInvariants";
 import { phasesForGame } from "./gamePhases";
 import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from "../game/api";
@@ -1860,6 +1860,39 @@ describe("conversion bullets outcome honesty (N1)", () => {
       tp({ ply: 81, plyEnd: 104, kind: "conversion", mateIn: 2 }), 104, g177
     );
     expect(out).toMatch(/to close it out/);
+  });
+});
+
+// MEDIUM-6 (Opus review, N1 fix wave). conversionWatchNextText shipped with
+// zero coverage: the reviewer replaced its faster/matched branch condition
+// with `false` and 17 files / 355 tests still passed, while real games 181
+// and 179 silently reverted to the old reproachful copy ("it took 1 move to
+// land a mate you already had lined up. recount the fastest mate every move
+// instead of playing the first check you see."). Pins the exact replacement
+// sentence on both real shapes so that mutation is caught here.
+describe("conversionWatchNextText outcome honesty (N1, MEDIUM-6 coverage)", () => {
+  const g181 = [{ ply: 39, san: "Be4+" }, { ply: 40, san: "Kc6" }, { ply: 41, san: "Qd5#" }];
+
+  it("credits a faster-than-predicted conversion with the non-reproachful technique tip", () => {
+    const out = conversionWatchNextText(
+      tp({ ply: 39, plyEnd: 41, kind: "conversion", mateIn: 9 }), 41, g181
+    );
+    expect(out).toBe(
+      "moves 20 to 21: you had a forced mate lined up here and you finished inside it. keep recounting the fastest mate every move."
+    );
+    expect(out).not.toMatch(/it took \d+ .*to land a mate/);
+    expect(out).not.toMatch(/recount the fastest mate every move instead of playing the first check you see/);
+  });
+
+  it("keeps the reproachful technique tip when the conversion genuinely dragged", () => {
+    // Game 177: ply 81 Rxb6, mateIn 2, ran to ply 104 without a mate.
+    const g177 = [{ ply: 81, san: "Rxb6" }, { ply: 104, san: "Kd4" }];
+    const out = conversionWatchNextText(
+      tp({ ply: 81, plyEnd: 104, kind: "conversion", mateIn: 2 }), 104, g177
+    );
+    expect(out).toMatch(/it took \d+ .*to land a mate you already had lined up/);
+    expect(out).toMatch(/recount the fastest mate every move instead of playing the first check you see/);
+    expect(out).not.toMatch(/finished inside it/);
   });
 });
 
