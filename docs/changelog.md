@@ -5,6 +5,73 @@ needle-in-a-haystack problem (it had grown to ~230 dense lines / ~56KB / ~14k to
 every session). `CLAUDE.md` keeps a one-line pointer into this file per entry; nothing below is
 abridged from the original. Newest first, matching `CLAUDE.md`'s own convention.
 
+## Honest efficiency claims, elo to 1900, conversion reason at the badge (2026-08-21, merged)
+
+Three waves in the owner's order, all merged to `main`: N2 `374b43e..a64bc43`, N1 `a64bc43..0b3ce9b`,
+K6 `0b3ce9b..7867fc7` (22 commits). Plan and design in `2 build/`; full trail plus the before/after
+corpus dumps in `.superpowers/sdd/rounds/2026-08-21-honest-efficiency/` (`conclusion.md` is the
+summary, mirrored to the vault as a Round Conclusion). **Accepted on a BASELINE DELTA, never on
+`GATE: PASS`** — main was already red at pickup on a pre-existing `ply-collision` (game 180, "swing"
+and "episode" share ply 22, game played 2026-08-14, a detection artifact left out of a copy round).
+Every wave's gate was diffed against `gate-baseline-main-374b43e.log` and came back identical, with
+`debrief-output violations: 0` throughout.
+
+**N1, the owner's report.** Her complaint: the debrief told her she was slow when the game proves she
+was not. Six of ten efficiency flags were false. New pure `src/review/mateOutcome.ts` derives
+`faster | matched | slower | unresolved` plus the real distance from the stored move list; seven
+claim-making surfaces route through it and none re-derives the arithmetic. Renderer-only:
+`TP_ALGO_VERSION` stays 7, no schema change, no migration, no detector change, so every past game
+renders correctly the next time its debrief opens. Game 184 went from *"the win took 1 more move to
+land"* to *"your bishop to e2 started a forced mate in four here, whatever mallow played. what you did
+still ended in mate in two after mallow answered bishop to d7."*
+
+**Shipped result is FOUR reworded, six unchanged — not the design's predicted six and four.** Games 175
+and 178 carry `missedCount = 2`, and `mateOutcomeFor` only ever measures the anchor ply. On game 175 her
+`moves` rows show ply 40 `eval_mate = 1` (mate in ONE, best `f7g7`), ply 41 `Nxg7` losing it, and the
+mate not landing until ply 49. Crediting that game would have hidden a real miss, so credit is gated on
+`missedCount <= 1`. **Follow-up: measure every occurrence, not just the anchor.**
+
+**The Opus review returned FAIL and was right; three HIGH findings, each re-verified by the controller
+against the real db before any fix.** (1) The round's own flagship clause `what you did was not forced`
+is FALSE where the mate survived her move — game 174 ply 59 `eval_mate` `2 → -2`, game 178 ply 53
+`5 → -5`, versus game 184's genuine `4 → NULL`; the renderer has no eval data and cannot prove it, so
+the clause was deleted. (2) The anchor-only measurement above. (3) **The widened `conversion-claim`
+invariant regressed the very checker meant to catch this bug class**: accepting `actual` on *every*
+outcome let game 179 ply 15 (`mateIn 6`, `actual 20`) accept "mate in 20" and unresolved game 177 accept
+"mate in zero" — under mutation the pre-N1 rule flags 18 violations across 12 real games where the
+widened rule flagged 0. Now accepted only on `faster`/`matched`. Note the risk ran OPPOSITE to this
+rule's history: the 2026-07-31 widening false-flagged 13 real games, whereas this one was strictly
+permissive and failed as a false NEGATIVE. Also fixed: `mateOutcomeFor` had no side check, so a game she
+LOST by checkmate read as her win (ply-parity class, sixth sighting); a surface with zero coverage
+(neutering it left 355 tests passing); and the highlight row emitted a mate number no invariant could
+see. **A seventh instance of "the check is narrower than what it claims"** was caught by the controller
+*after* the fix wave: the `missedCount` gate reached bullets, card and tint but not
+`highlightedMoves.ts`, so game 178's single debrief said both "the win took 3 more moves to land" and
+"what you did still ended in mate in four".
+
+**N2, elo to 1900.** `weights/` gained maia 1600-1900; `ALLOWED_ELOS` and `OPPONENT_ELOS` widened to
+nine bands; new `server/engines/weightsCheck.ts` asserts at boot that every allowed band has a readable
+file, so a missing band fails loudly instead of silently becoming strength-limited stockfish recorded as
+`fallback-1900`. **The download must happen in the MAIN checkout, never a worktree** — `findRepoRoot`
+(`server/engines/paths.ts:26-38`) takes the first ancestor with both `package.json` and `weights/`, so a
+worktree-local `weights/` shadows main's and the boot assertion then fails on main right after merge.
+`maia.ts:35-38` warns a corrupt weights file still answers the UCI handshake and only fails on a real
+search, so verification drove the real `MaiaOpponent` at every new band (`fallback=false`, real moves)
+plus an end-to-end `POST /api/game` against a scratch db returning `opponent=maia-1900`.
+
+**K6, the conversion reason.** `classify.ts`'s `conversionCopy` has been computed, typed and persisted
+since July while the badge showed only a bare "hm, you sure?". Now rendered verbatim beside the badge at
+both sites (live and post-judge) in `.hint-copy`'s lavender whisper register, gated to `tier === "nudge"`
+and to hint-press 0 — from the first press the ladder owns the copy slot, since `hintFlow.ts:495` already
+re-tells the string at P2, so it is never on screen twice. `sugar-glitch.css` gained two additive rules
+(`.conversion-reason` margin, `white-space: nowrap` on `.judge-badge`, which was breaking *inside* itself);
+the protected narrow-window fold was verified by eye at 420px, live and postgame, and the component
+library was updated per the standing rule. **Note the design doc and plan were wrong here**: they claimed
+`conversionCopy` had "zero references across every `.tsx` file" and said to skip the wave if JSX appeared,
+but `GamePage.tsx` already fed it to `hintFlow`. `src/game/api.ts:163-174` documents the badge as this
+exact K6 handoff. **Follow-up: the warning-tier (lost-mate) `conversionCopy` is real and still unrendered
+at the badge** — the most severe conversion failure still shows only the generic warning.
+
 ## Voice-consistent four-arrow model, turning-card arrow extension (2026-08-05, branch held for merge)
 
 Branch `round/2026-08-05-turning-arrows`, worktree `wt-turnarrow`, tip `adf900f..6c86e91` plus a final
