@@ -168,7 +168,14 @@ export function buildHighlightedRows(input: BuildHighlightedRowsInput): Highligh
     // ever true when the real move list bears it out -- see mateOutcome.ts.
     const mwTp = turningPoints.find((t) => t.kind === "missed-win" && t.ply === ply);
     const lastPly = gameSans.length > 0 ? gameSans[gameSans.length - 1].ply : 0;
-    const outcome = mwTp?.mateIn != null ? mateOutcomeFor(ply, mwTp.mateIn, lastPly, gameSans) : undefined;
+    const rawOutcome = mwTp?.mateIn != null ? mateOutcomeFor(ply, mwTp.mateIn, lastPly, gameSans) : undefined;
+    // HIGH-2 (N1 fix wave), same gate as debriefBullets.ts/turningPointNote.ts/
+    // DebriefPage.tsx: mateOutcomeFor only ever measures the anchor ply.
+    // missedCount > 1 means a second, unmeasured occurrence exists by
+    // construction (real games 175/178) -- crediting on the anchor alone
+    // would hide it, so this surface withholds the credit branch too.
+    const mateOutcomeHasUnmeasuredRepeat = (mwTp?.missedCount ?? 1) > 1;
+    const outcome = mateOutcomeHasUnmeasuredRepeat ? undefined : rawOutcome;
     // A missed forced mate is never "done well", whatever followedBest can or
     // cannot prove. Without this, a missed-win ply that happens to carry no
     // TurningLine would fall through to DONE_WELL_NOTE and congratulate her
