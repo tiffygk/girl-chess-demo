@@ -707,6 +707,45 @@ describe("conversion-claim knows the verified actual distance (N1)", () => {
     expect(v.filter((x) => x.rule === "conversion-claim").length).toBeGreaterThan(0);
   });
 
+  // HIGH-3 (Opus review, N1 fix wave). The rule as shipped computes `actual`
+  // for EVERY outcome, not just faster/matched -- so it also accepts the
+  // real distance on a "slower" point (mate in 20 on game 179's genuinely-
+  // slower ply 15) and accepts "actual: 0" ("mate in zero") on an
+  // "unresolved" point (game 177 ply 39). Neither should ever be an
+  // accepted mate-claim number: nothing in this round's copy emits either
+  // one, so accepting them is pure loosening of the check meant to catch
+  // exactly this bug class.
+  //
+  // slowerSans: she had mate in one at ply 3 (Qh5) but the real mate lands
+  // three of her moves later at ply 7 (Qxf7#) -- moveNumberForPly(7) -
+  // moveNumberForPly(3) + 1 = 3, so mateOutcomeFor returns
+  // { outcome: "slower", actual: 3 }.
+  const slowerSans = [
+    { ply: 1, san: "e4" }, { ply: 2, san: "e5" }, { ply: 3, san: "Qh5" }, { ply: 4, san: "Nc6" },
+    { ply: 5, san: "Bc4" }, { ply: 6, san: "Nf6" }, { ply: 7, san: "Qxf7#" },
+  ];
+
+  it("does not accept the verified 'slower' distance as a mate claim -- only mateIn is claimable there", () => {
+    const v = checkDebriefOutput(
+      { bullets: [{ section: "could be better", ply: 3, text: "you had mate in three here." }] } as any,
+      { result: "1-0", totalPlies: 7, turningPoints: [{ ply: 3, kind: "missed-win", mateIn: 1 }], gameSans: slowerSans } as any
+    );
+    expect(v.filter((x) => x.rule === "conversion-claim").length).toBeGreaterThan(0);
+  });
+
+  // unresolvedSans: no "#" on the last move at all -- mateOutcomeFor
+  // degrades to { outcome: "unresolved", actual: 0 }. "mate in zero" must
+  // never be an accepted claim.
+  const unresolvedSans = [{ ply: 81, san: "Rxb6" }, { ply: 104, san: "Kd4" }];
+
+  it("does not accept the verified 'unresolved' actual (0) as a mate claim -- 'mate in zero' stays rejected", () => {
+    const v = checkDebriefOutput(
+      { bullets: [{ section: "could be better", ply: 81, text: "you had mate in zero here." }] } as any,
+      { result: "1-0", totalPlies: 104, turningPoints: [{ ply: 81, kind: "conversion", mateIn: 2 }], gameSans: unresolvedSans } as any
+    );
+    expect(v.filter((x) => x.rule === "conversion-claim").length).toBeGreaterThan(0);
+  });
+
   // Required by CLAUDE.md's Invariant rule: a red-then-green unit test is
   // necessary but not sufficient for a checker change. This is the
   // load-bearing negative case -- the rule must still catch a genuinely

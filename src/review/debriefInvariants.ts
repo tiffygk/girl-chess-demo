@@ -553,9 +553,20 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
     // same-ply turning point with a mateIn already exists. Nothing else moves
     // into scope: a claim with no backing turning point still violates above,
     // and a number that is neither value still violates below.
-    const actual =
+    // HIGH-3 (Opus review, N1 fix wave): nothing this round's copy emits
+    // ever claims `actual` on a "slower" or "unresolved" outcome -- those
+    // branches keep the pre-N1 reproachful/plain copy, which asserts only
+    // tp.mateIn. Accepting `actual` there regardless was pure loosening:
+    // proven by mutation to accept "mate in 20" (game 179, genuinely slower)
+    // and "mate in zero" (game 177, unresolved actual: 0) as legitimate
+    // claims. Gate on the outcome, not just its presence.
+    const outcomeFacts =
       tp.mateIn != null
-        ? mateOutcomeFor(tp.ply, tp.mateIn, lastPlyOf(facts.gameSans), facts.gameSans)?.actual
+        ? mateOutcomeFor(tp.ply, tp.mateIn, lastPlyOf(facts.gameSans), facts.gameSans)
+        : undefined;
+    const actual =
+      outcomeFacts && (outcomeFacts.outcome === "faster" || outcomeFacts.outcome === "matched")
+        ? outcomeFacts.actual
         : undefined;
     for (const n of claims) {
       if (n !== tp.mateIn && n !== actual) {
