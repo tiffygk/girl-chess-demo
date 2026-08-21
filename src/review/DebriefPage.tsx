@@ -39,6 +39,8 @@ import { clickDelete, disarmArmed, type ArmState } from "./deleteArm";
 import { localDateFromStartedAt } from "./localDate";
 import { moveNumberForPly } from "./debriefLesson";
 import { debriefBullets, affordancesForBullet, type DebriefBullet } from "./debriefBullets";
+// N1 (owner report 2026-08-21): the shared "what actually happened" module.
+import { mateOutcomeFor } from "./mateOutcome";
 // Increment 3.91 (Task 4): the four-part note, rendered under a turning-
 // point card once its own "replay" has been clicked (see `active` below).
 // Pure/deterministic module — see turningPointNote.ts's header for why it
@@ -205,7 +207,24 @@ function TurningPointCard({
   // same flat-tint card family as a negative-labeled swing/backfill card,
   // just a different reason.
   const isEpisode = point.kind === "episode";
-  const negative = NEGATIVE_CARD_LABELS.has(point.label) || isEpisode;
+  // N1 (owner report 2026-08-21), owner rule on file: a card labelled
+  // "missed mate" carrying copy that says the move was good enough (framing
+  // B's faster/matched branch) is a mixed signal, so the negative tint drops
+  // on that one label when the real move list proves she finished as fast
+  // or faster than the forced line. Gated on mateOutcomeFor -- the same
+  // predicate every N1 copy surface reads -- never re-derived here (the
+  // standing "a legend or key must be gated on the real producer" rule).
+  // totalPlies isn't a prop on this card; gameSans carries the ply on every
+  // entry, so it's the last entry's ply, same trick turningPointNote.ts's
+  // own N1 fix already uses.
+  const totalPliesForOutcome = gameSans && gameSans.length > 0 ? gameSans[gameSans.length - 1].ply : 0;
+  const missedMateOutcome =
+    point.label === "missed mate" && point.mateIn != null
+      ? mateOutcomeFor(point.ply, point.mateIn, totalPliesForOutcome, gameSans)
+      : undefined;
+  const missedMateIsHonestlyPositive =
+    !!missedMateOutcome && (missedMateOutcome.outcome === "faster" || missedMateOutcome.outcome === "matched");
+  const negative = (NEGATIVE_CARD_LABELS.has(point.label) && !missedMateIsHonestlyPositive) || isEpisode;
   const startMove = moveNumberForPly(point.ply);
   const endMove = point.plyEnd != null ? moveNumberForPly(point.plyEnd) : startMove;
   const note = active ? buildTurningPointNote(point, classification, line, gameSans) : null;

@@ -364,6 +364,83 @@ describe("DebriefPage: the conversion card gets the negative tint (union review 
   });
 });
 
+// N1 (owner report 2026-08-21). A card labelled "missed mate" (already in
+// NEGATIVE_CARD_LABELS) sitting in the pink alarm tint while its own copy
+// says the move was good enough is a mixed signal -- owner rule on file,
+// static visual/calibration questions get decided here and made reversible.
+// Gated on mateOutcomeFor, not a re-derivation ("a legend or key must be
+// gated on the real producer" -- CLAUDE.md's Invariant rule history).
+describe("DebriefPage: a missed-mate card that finished faster loses the negative tint (N1)", () => {
+  // Same real, fully-replayable GAME150_SANS tail every other N1 commit this
+  // round reuses (ply 89 Be7 her, ply 90 Kc4 mallow, ply 91 Qc6# her mate) --
+  // TurningPointCard's own title calls fenAtPly/describeSanMove on the FULL
+  // game regardless of active state, so a truncated fragment throws.
+  const GAME150_SANS: SummaryMove[] = [
+    "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+    "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+    "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+    "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+","Kg6","Nh8+","Kh7",
+    "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
+    "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
+    "Qh6+","Kd5","Be7","Kc4","Qc6#",
+  ].map((san, i) => ({ ply: i + 1, san }));
+
+  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?">/g;
+
+  function negativeClassOnCardContaining(html: string, needle: string): boolean {
+    const cardsSection = html.slice(html.indexOf('class="debrief-cards"'));
+    const idx = cardsSection.indexOf(needle);
+    expect(idx).toBeGreaterThan(-1);
+    const re = new RegExp(CARD_OPEN_TAG_RE.source, "g");
+    let match: RegExpExecArray | null;
+    let last: RegExpExecArray | null = null;
+    while ((match = re.exec(cardsSection)) && match.index < idx) {
+      last = match;
+    }
+    expect(last).not.toBeNull();
+    return !!last![1];
+  }
+
+  it("does not tint a missed-mate card negative when she finished faster", () => {
+    const fasterMissedWin: TurningPoint = {
+      rank: 3, ply: 89, san: "Be7", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win", mateIn: 4,
+    };
+    const html = renderToStaticMarkup(
+      <DebriefPage
+        {...baseProps({
+          turningPoints: [fasterMissedWin],
+          gameSans: GAME150_SANS,
+          totalPlies: 91,
+          turningLines: [{ ply: 89, pvSans: [], bestSan: "Be7" }],
+        })}
+      />
+    );
+    expect(negativeClassOnCardContaining(html, "· missed mate<")).toBe(false);
+  });
+
+  // Discriminating case: the SAME label, on a game that genuinely dragged
+  // (slower outcome), must still keep the tint -- the fix cannot pass by
+  // dropping the negative class unconditionally.
+  it("still tints a missed-mate card negative when the game really did drag on", () => {
+    const slowerMissedWin: TurningPoint = {
+      rank: 3, ply: 15, san: "O-O", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win", mateIn: 6,
+    };
+    const html = renderToStaticMarkup(
+      <DebriefPage
+        {...baseProps({
+          turningPoints: [slowerMissedWin],
+          gameSans: GAME150_SANS,
+          totalPlies: 91,
+          turningLines: [{ ply: 15, pvSans: [], bestSan: "O-O" }],
+        })}
+      />
+    );
+    expect(negativeClassOnCardContaining(html, "· missed mate<")).toBe(true);
+  });
+});
+
 // Wave 3.5, item 2 (owner ask, 2026-08-01): PastGamesDrawer's row
 // restructure -- nested buttons are invalid HTML, so a row is now a plain
 // div wrapping two SIBLING buttons (the select button carrying the old
