@@ -79,6 +79,12 @@ import { validateChat, type ChatFactList } from "../server/coach/chat";
 import { checkDebriefOutput, type DebriefFacts, type DebriefOutput } from "../src/review/debriefInvariants";
 import { debriefBullets } from "../src/review/debriefBullets";
 import { buildTurningPointNote } from "../src/review/turningPointNote";
+// MEDIUM-7 (N1 fix wave): the study-ledger row surface (highlightedMoves.ts)
+// derives its own mate number and was invisible to debrief-output's checks
+// -- assembled here exactly like the app does (real highlighted plies off
+// moves.highlighted, real turningLines/turningPoints/classifications) so
+// checkDebriefOutput sees the same text she does.
+import { buildHighlightedRows } from "../src/review/highlightedMoves";
 import type { TurningLine, SummaryMove } from "../src/game/api";
 import { resolveRealDbPath, copyScratchDb, reconstructPvLine } from "./truth-check";
 
@@ -470,6 +476,7 @@ async function main() {
       eval_mate: number | null;
       best_move: string | null;
       classification: string | null;
+      highlighted: number | null;
     }[];
     if (movesRows.length === 0) {
       skippedZeroMoveCount++;
@@ -555,6 +562,22 @@ async function main() {
       return { ply: tp.ply, ...buildTurningPointNote(tp, cls, line, gameSans) };
     });
 
+    // MEDIUM-7 (N1 fix wave): same highlightedPlies derivation
+    // DebriefPage.tsx uses (gameSans[i].highlighted), sourced here straight
+    // off the persisted moves.highlighted column since this file's own
+    // gameSans is built without that field.
+    const highlightedPlies = movesRows.filter((r) => r.highlighted === 1).map((r) => r.ply);
+    const rows: NonNullable<DebriefOutput["rows"]> =
+      highlightedPlies.length > 0
+        ? buildHighlightedRows({
+            highlightedPlies,
+            gameSans,
+            turningLines,
+            classifications,
+            turningPoints: tps,
+          }).map((r) => ({ ply: r.ply, note: r.note }))
+        : [];
+
     const facts: DebriefFacts = {
       result: result || null,
       turningPoints: tps as unknown as DebriefFacts["turningPoints"],
@@ -562,7 +585,7 @@ async function main() {
       turningLines,
       totalPlies,
     };
-    const violations = checkDebriefOutput({ bullets, notes }, facts);
+    const violations = checkDebriefOutput({ bullets, notes, rows }, facts);
     if (violations.length > 0) {
       debriefViolationsByGame.set(gameId, violations.map((v) => `${v.rule} (${v.where}): ${v.message}`));
       // F1: per-(game, rule), not per-game -- a rule this game id is not

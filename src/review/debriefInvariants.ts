@@ -57,6 +57,13 @@ export interface DebriefOutput {
     whatMayHaveHappened?: string;
     opportunity?: string;
   }[];
+  // MEDIUM-7 (N1 fix wave): highlightedMoves.ts's study-ledger row (surface
+  // #7) derives its own mate number (SEVERITY_LINE's missed-win branch) and
+  // it landed outside every check -- a mutation to that row's credit number
+  // left `debrief-output violations: 0` while the byte-identical mutation
+  // in a bullet or note was caught. Optional so every existing caller
+  // (neither replay-check's prior wiring nor any test) has to change.
+  rows?: { ply: number; note: string }[];
 }
 
 export interface DebriefViolation {
@@ -296,6 +303,13 @@ function noteWhere(ply: number): string {
   return `note:${ply}`;
 }
 
+// MEDIUM-7 (N1 fix wave): a distinct tag from noteWhere so a violation
+// message can say "row" rather than misdescribing a study-ledger row as a
+// note. plyForWhere below decodes it the same direct way as note:<ply>.
+function rowWhere(ply: number): string {
+  return `row:${ply}`;
+}
+
 // ADDENDUM 2 fix (union review, 2026-07-31): conversion-claim needs the
 // PLY a text unit is about (to look up its backing turning point), but
 // outputTextUnits only carries the `where` string, not a numeric ply --
@@ -308,6 +322,9 @@ function noteWhere(ply: number): string {
 function plyForWhere(where: string, bullets: DebriefBullet[]): number | undefined {
   const noteMatch = /^note:(\d+)$/.exec(where);
   if (noteMatch) return parseInt(noteMatch[1], 10);
+  // MEDIUM-7 (N1 fix wave): rows encode the ply directly, same as notes.
+  const rowMatch = /^row:(\d+)$/.exec(where);
+  if (rowMatch) return parseInt(rowMatch[1], 10);
   const bulletMatch = /^bullet:.*:(\d+)$/.exec(where);
   if (bulletMatch) return bullets[parseInt(bulletMatch[1], 10)]?.ply;
   return undefined;
@@ -335,6 +352,13 @@ function outputTextUnits(output: DebriefOutput): TextUnit[] {
     for (const field of [note.didWell, note.couldImprove, note.nextTime, note.whatMayHaveHappened, note.opportunity]) {
       if (field) units.push({ text: field, where });
     }
+  }
+  // MEDIUM-7 (N1 fix wave): highlightedMoves.ts's study-ledger row derives
+  // its own mate number and was invisible to every rule below -- folded in
+  // exactly like a note so it gets the SAME checks, not a sixth hand-written
+  // one.
+  for (const row of output.rows ?? []) {
+    if (row.note) units.push({ text: row.note, where: rowWhere(row.ply) });
   }
   return units;
 }
