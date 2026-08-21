@@ -325,7 +325,11 @@ export function missedWinText(
   // is blind to the latter, and dodging our own check by wording is how a
   // surface goes unpoliced. See the conversion-claim rule, which learned this
   // number in the same round.
-  if (outcome && (outcome.outcome === "faster" || outcome.outcome === "matched")) {
+  // HIGH-2 (N1 fix wave): mateOutcomeFor measures only the anchor ply.
+  // count > 1 means a second, unmeasured occurrence exists by construction
+  // (real games 175, 178) -- crediting her on the anchor alone would be an
+  // unproven claim, so the honest reproachful fallback below applies instead.
+  if (outcome && (outcome.outcome === "faster" || outcome.outcome === "matched") && count <= 1) {
     const actualWord = numberWord(outcome.actual);
     const because = outcome.enablingReplySan
       ? ` after mallow answered ${describedOrRaw(outcome.enablingReplySan, tp.ply + 1, gameSans)}`
@@ -837,8 +841,16 @@ function buildWatchNextTime(
     missedWin?.mateIn != null
       ? mateOutcomeFor(missedWin.ply, missedWin.mateIn, totalPlies, gameSans)
       : undefined;
+  // HIGH-2 (N1 fix wave): a missedCount > 1 means a second, unmeasured
+  // occurrence exists (mateOutcomeFor only ever measures the anchor ply) --
+  // real games 175/178 both had a faster/matched anchor AND a genuine
+  // second miss, so crediting on the anchor alone would hide it.
+  const missedWinHasUnmeasuredRepeat = (missedWin?.missedCount ?? 1) > 1;
   const missedWinIsReproachable =
-    !missedWinOutcome || missedWinOutcome.outcome === "slower" || missedWinOutcome.outcome === "unresolved";
+    !missedWinOutcome ||
+    missedWinOutcome.outcome === "slower" ||
+    missedWinOutcome.outcome === "unresolved" ||
+    missedWinHasUnmeasuredRepeat;
   if (missedWin) {
     const missedWinPhase = phases.phaseAt(missedWin.ply);
     if (missedWinIsReproachable) {

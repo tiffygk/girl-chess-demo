@@ -286,7 +286,11 @@ function buildCouldImprove(
     // threaded through buildTurningPointNote's signature.
     const totalPlies = gameSans && gameSans.length > 0 ? gameSans[gameSans.length - 1].ply : 0;
     const outcome = best ? mateOutcomeFor(tp.ply, mateIn, totalPlies, gameSans) : undefined;
-    if (outcome && (outcome.outcome === "faster" || outcome.outcome === "matched")) {
+    // HIGH-2 (N1 fix wave): mateOutcomeFor measures only the anchor ply.
+    // count > 1 means a second, unmeasured occurrence exists by construction
+    // (real games 175, 178) -- crediting on the anchor alone would be an
+    // unproven claim, so the honest "you played X instead" fallback applies.
+    if (outcome && (outcome.outcome === "faster" || outcome.outcome === "matched") && count <= 1) {
       // Note: describedOrRaw in this file takes a fen, not a ply -- the
       // enabling reply is played at tp.ply + 1, one ply AFTER seedFen (the
       // position BEFORE tp.ply's own move), so seedFen is the wrong fen to

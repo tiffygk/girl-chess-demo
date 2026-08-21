@@ -1789,6 +1789,21 @@ describe("missedWinText outcome honesty (N1, owner report 2026-08-21)", () => {
     );
     expect(out).toMatch(/took 38 more moves to land/);
   });
+
+  // HIGH-2 (Opus review, N1 fix wave): mateOutcomeFor measures only the
+  // anchor ply. When missedCount > 1 a second, unmeasured miss exists by
+  // construction (games 175 and 178, real data) -- crediting her on the
+  // anchor alone is an unproven claim and hides the real miss. Same ply/
+  // mateIn/fixture as the "faster" test above (outcome is proven faster
+  // there), missedCount raised to 2 to isolate the gate.
+  it("does not credit her when a second, unmeasured miss exists (missedCount > 1)", () => {
+    const out = missedWinText(
+      tp({ ply: 89, kind: "missed-win", mateIn: 4, missedCount: 2 }), 91, GAME150_SANS, lines89
+    );
+    expect(out).not.toMatch(/still ended in mate/);
+    expect(out).toMatch(/you had checkmate in four/);
+    expect(out).toMatch(/this happened 2 times this game/);
+  });
 });
 
 describe("conversion bullets outcome honesty (N1)", () => {
@@ -1847,6 +1862,28 @@ describe("missed-win watch-next stays honest without falling into reassurance co
       { result: "1-0", totalPlies: 91, gameSans: GAME150_SANS, turningPoints: [missedWin184] }
     );
     expect(violations.map((v) => v.rule)).not.toContain("reassurance-vs-detector");
+  });
+
+  // HIGH-2 (Opus review, N1 fix wave): games 175/178 real shape --
+  // missedCount 2 on a faster/matched anchor ply means a second occurrence
+  // was never measured. The watch-next bullet must stay reproachful, not
+  // congratulate her for a game where she also missed a mate in one.
+  it("a faster-than-predicted missed-win with a second, unmeasured miss keeps the reproachful watch-next bullet", () => {
+    const missedWin175 = tp({
+      ply: 89, kind: "missed-win", mateIn: 4, san: "Be7", label: "missed mate", missedCount: 2,
+    });
+    const bullets = debriefBullets({
+      turningPoints: [missedWin175],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 91,
+      gameSans: GAME150_SANS,
+      turningLines: [{ ply: 89, pvSans: [], bestSan: "Be7" }],
+    });
+    const watchNext = bullets.find((b) => b.section === "watch next time")!;
+    expect(watchNext.text).toMatch(/played past it/);
+    expect(watchNext.text).toContain("2 times");
+    expect(watchNext.text).not.toMatch(/finished inside it/);
   });
 });
 
