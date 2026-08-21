@@ -652,6 +652,23 @@ describe("missed-win note", () => {
     // real games where the mate survived her move (174, 178). Never assert it.
     expect(note.couldImprove).not.toMatch(/was not forced/);
   });
+
+  // HIGH-2 (Opus review, N1 fix wave): mateOutcomeFor measures only the
+  // anchor ply. When missedCount > 1 a second, unmeasured miss exists by
+  // construction (games 175/178, real data) -- crediting her on the anchor
+  // alone is an unproven claim. Same ply/mateIn/fixture as the faster test
+  // above, missedCount raised to 2 to isolate the gate.
+  it("does not credit her when a second, unmeasured miss exists (missedCount > 1)", () => {
+    const repeatTp = tp({
+      rank: 3, ply: 89, san: "Be7", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 2,
+    });
+    const line = { ply: 89, bestSan: "Be7", pvSans: [] };
+    const note = buildTurningPointNote(repeatTp, undefined, line, GAME150_SANS);
+    expect(note.couldImprove).not.toContain("still ended in mate");
+    expect(note.couldImprove).toMatch(/instead/);
+    expect(note.couldImprove).toContain("this happened 2 times this game");
+  });
 });
 
 // Truth round (2026-07-29), Task 3: the game-151 owner ruling

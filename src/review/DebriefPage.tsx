@@ -222,8 +222,15 @@ function TurningPointCard({
     point.label === "missed mate" && point.mateIn != null
       ? mateOutcomeFor(point.ply, point.mateIn, totalPliesForOutcome, gameSans)
       : undefined;
+  // HIGH-2 (N1 fix wave): mateOutcomeFor measures only the anchor ply. A
+  // missedCount > 1 means a second, unmeasured occurrence exists (real
+  // games 175/178) -- dropping the tint on the anchor's faster/matched
+  // outcome alone would hide it, so the tint stays negative.
+  const missedMateHasUnmeasuredRepeat = (point.missedCount ?? 1) > 1;
   const missedMateIsHonestlyPositive =
-    !!missedMateOutcome && (missedMateOutcome.outcome === "faster" || missedMateOutcome.outcome === "matched");
+    !!missedMateOutcome &&
+    (missedMateOutcome.outcome === "faster" || missedMateOutcome.outcome === "matched") &&
+    !missedMateHasUnmeasuredRepeat;
   const negative = (NEGATIVE_CARD_LABELS.has(point.label) && !missedMateIsHonestlyPositive) || isEpisode;
   const startMove = moveNumberForPly(point.ply);
   const endMove = point.plyEnd != null ? moveNumberForPly(point.plyEnd) : startMove;

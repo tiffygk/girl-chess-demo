@@ -439,6 +439,28 @@ describe("DebriefPage: a missed-mate card that finished faster loses the negativ
     );
     expect(negativeClassOnCardContaining(html, "· missed mate<")).toBe(true);
   });
+
+  // HIGH-2 (Opus review, N1 fix wave): mateOutcomeFor only measures the
+  // anchor ply. Same faster ply/mateIn as the first test above, but
+  // missedCount 2 means a second, unmeasured miss exists (games 175/178,
+  // real data) -- dropping the tint here hides a real repeat miss.
+  it("keeps the negative tint on a faster-finishing missed-mate card when a second, unmeasured miss exists", () => {
+    const fasterMissedWinRepeat: TurningPoint = {
+      rank: 3, ply: 89, san: "Be7", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win", mateIn: 4, missedCount: 2,
+    };
+    const html = renderToStaticMarkup(
+      <DebriefPage
+        {...baseProps({
+          turningPoints: [fasterMissedWinRepeat],
+          gameSans: GAME150_SANS,
+          totalPlies: 91,
+          turningLines: [{ ply: 89, pvSans: [], bestSan: "Be7" }],
+        })}
+      />
+    );
+    expect(negativeClassOnCardContaining(html, "· missed mate<")).toBe(true);
+  });
 });
 
 // Wave 3.5, item 2 (owner ask, 2026-08-01): PastGamesDrawer's row
