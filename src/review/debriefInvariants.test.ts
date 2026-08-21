@@ -753,3 +753,38 @@ describe("conversion-claim knows the verified actual distance (N1)", () => {
   // mateOutcomeFor(41, 4, 43, gameSans).actual is 2 (Bg7/Bd7/Qf7# is a real,
   // two-move finish) -- 7 is neither tp.mateIn (4) nor actual (2).
 });
+
+// MEDIUM-7 (Opus review, N1 fix wave). DebriefOutput carried bullets and
+// notes only -- highlightedMoves.ts's own derived mate number (surface #7,
+// the study-ledger row's note) landed outside every check. Proven by
+// mutation in the review: bumping the row's credit number by +3 left
+// `debrief-output violations: 0` while the byte-identical mutation in
+// bullets/notes gave 4 violations each. Adds an optional `rows` slot so
+// this surface's text is folded into outputTextUnits like every other one.
+// Real shape: game 174 ply 59 (b8=Q), a real highlighted-move overlap with
+// a missed-win turning point (mateIn 2) -- verified against her actual db.
+describe("DebriefOutput.rows are checked like every other text surface (MEDIUM-7)", () => {
+  const gameSans = [
+    { ply: 41, san: "Bg7" }, { ply: 42, san: "Bd7" }, { ply: 43, san: "Qf7#" },
+  ];
+  const facts = {
+    result: "1-0", totalPlies: 43,
+    turningPoints: [{ ply: 41, kind: "missed-win", mateIn: 4 }], gameSans,
+  } as any;
+
+  it("backs a row's mate claim against the same-ply turning point, same as a bullet or note", () => {
+    const v = checkDebriefOutput(
+      { bullets: [], rows: [{ ply: 41, note: "you had mate in seven here." }] } as any,
+      facts
+    );
+    expect(v.filter((x) => x.rule === "conversion-claim").length).toBeGreaterThan(0);
+  });
+
+  it("accepts a row's mate claim that matches the verified actual, same as a bullet or note", () => {
+    const v = checkDebriefOutput(
+      { bullets: [], rows: [{ ply: 41, note: "you had mate in two here." }] } as any,
+      facts
+    );
+    expect(v.filter((x) => x.rule === "conversion-claim")).toHaveLength(0);
+  });
+});
