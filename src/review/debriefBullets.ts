@@ -370,7 +370,7 @@ export function conversionCouldBeBetterText(
   const outcome =
     tp.mateIn != null ? mateOutcomeFor(tp.ply, tp.mateIn, totalPlies, gameSans) : undefined;
   if (outcome && (outcome.outcome === "faster" || outcome.outcome === "matched")) {
-    return `move ${startMove}: the shortest forced mate you held here was mate in ${shortest}. you closed it out in ${numberWord(outcome.actual)} instead.`;
+    return `move ${startMove}: the shortest forced mate you held here was mate in ${shortest}, and you closed it out in ${numberWord(outcome.actual)}.`;
   }
   return `move ${startMove}: the shortest mate you held here was mate in ${shortest}, but it took ${length} more ${pluralizeWord(length, "move")} to close it out.`;
 }

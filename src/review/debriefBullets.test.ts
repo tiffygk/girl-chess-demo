@@ -1838,6 +1838,21 @@ describe("conversion bullets outcome honesty (N1)", () => {
     expect(out).not.toMatch(/more moves? to close it out/);
   });
 
+  // MEDIUM-5 (Opus review, N1 fix wave). "instead" contrasts two numbers
+  // even when they're identical (game 179, mate in two vs closed out in
+  // two) or reproaches a BETTER result (game 181, nine vs two). Nothing here
+  // is factually false, but the word implies a substitution for something
+  // else. Drop it; the two numbers stand on their own.
+  it("does not use 'instead' to contrast the predicted and actual mate counts", () => {
+    const out = conversionCouldBeBetterText(
+      tp({ ply: 39, plyEnd: 41, kind: "conversion", mateIn: 9 }), 41, g181
+    );
+    expect(out).not.toMatch(/instead/);
+    expect(out).toBe(
+      "move 20: the shortest forced mate you held here was mate in nine, and you closed it out in two."
+    );
+  });
+
   it("keeps the real complaint when the conversion genuinely dragged", () => {
     // Game 177: ply 81 Rxb6, mateIn 2, ran to ply 104 without a mate.
     const g177 = [{ ply: 81, san: "Rxb6" }, { ply: 104, san: "Kd4" }];
