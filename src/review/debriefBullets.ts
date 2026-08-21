@@ -17,6 +17,9 @@
 
 import type { TurningPoint, MoveClassification, SummaryMove, TurningLine } from "../game/api";
 import { moveNumberForPly } from "./debriefLesson";
+// N1 (owner report 2026-08-21): the shared "what actually happened" module.
+// See mateOutcome.ts's header for the full defect this closes.
+import { mateOutcomeFor } from "./mateOutcome";
 // Coach truth-speed round (2026-07-27): the single source of truth for "did
 // she actually play the recommended move" — see followedBest.ts's header.
 import { followedBest } from "./followedBest";
@@ -277,7 +280,7 @@ function couldBeBetterText(
 // plain language (describedOrRaw over the persisted best line), quantifies
 // the cost in moves, and counts the repeats. Every clause is a literal
 // fact off the TurningPoint/TurningLine/gameSans passed in.
-function missedWinText(
+export function missedWinText(
   tp: TurningPoint,
   totalPlies: number,
   gameSans: SummaryMove[] | undefined,
@@ -306,17 +309,35 @@ function missedWinText(
   if (!best || !gameSans || gameSans.length === 0) {
     return `move ${n}: you had checkmate in ${distance} and played past it.${repeat}`;
   }
-  const lastSan = gameSans[gameSans.length - 1].san;
-  const extra = moveNumberForPly(totalPlies) - n;
-  const cost = lastSan.includes("#")
-    ? `, and the win took ${extra} more ${pluralizeWord(extra, "move")} to land.`
-    : `, but the game ended ${extra} ${pluralizeWord(extra, "move")} later without it.`;
   // "was mate on the spot" is only ever true for mate-in-one -- for a
   // deeper miss the best move STARTS a forced mate, it isn't the mate
   // itself (game 160's real bug: mateIn 4 rendered "was mate on the spot",
   // false -- she had four moves of work left, not zero).
   const startsMate =
     mateIn === 1 ? `${best} was mate on the spot` : `${best} started a forced mate in ${distance}`;
+
+  const outcome = mateOutcomeFor(tp.ply, mateIn, totalPlies, gameSans);
+  // N1 (owner report 2026-08-21), framing B. The negative clause is emitted
+  // ONLY on a measured "slower". On faster/matched we state the forcing fact
+  // (which is what is actually provable and what she wanted kept) and then
+  // credit the real result. Deliberately worded "mate in {n}" and NOT "mated
+  // in {n}": debriefInvariants' MATE_CLAIM_NUMBER_RE matches the former and
+  // is blind to the latter, and dodging our own check by wording is how a
+  // surface goes unpoliced. See the conversion-claim rule, which learned this
+  // number in the same round.
+  if (outcome && (outcome.outcome === "faster" || outcome.outcome === "matched")) {
+    const actualWord = numberWord(outcome.actual);
+    const because = outcome.enablingReplySan
+      ? ` after mallow answered ${describedOrRaw(outcome.enablingReplySan, tp.ply + 1, gameSans)}`
+      : "";
+    return `move ${n}: your ${startsMate} here, whatever mallow played. what you did was not forced, but it still ended in mate in ${actualWord}${because}.${repeat}`;
+  }
+
+  const lastSan = gameSans[gameSans.length - 1].san;
+  const extra = moveNumberForPly(totalPlies) - n;
+  const cost = lastSan.includes("#")
+    ? `, and the win took ${extra} more ${pluralizeWord(extra, "move")} to land.`
+    : `, but the game ended ${extra} ${pluralizeWord(extra, "move")} later without it.`;
   return `move ${n}: you had checkmate in ${distance}. your ${startsMate}${cost}${repeat}`;
 }
 
@@ -325,7 +346,7 @@ function missedWinText(
 // long closing it out actually took. Every clause is a literal fact off
 // the TurningPoint (ply/plyEnd = the run's start/end, mateIn = the run's
 // shortest held mate, conversion.ts's ConversionEpisode.bestMissed).
-function conversionCouldBeBetterText(tp: TurningPoint): string {
+export function conversionCouldBeBetterText(tp: TurningPoint): string {
   const startMove = moveNumberForPly(tp.ply);
   const endMove = moveNumberForPly(tp.plyEnd ?? tp.ply);
   const length = Math.max(endMove - startMove, 0);

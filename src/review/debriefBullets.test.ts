@@ -12,7 +12,7 @@
 // guess.
 
 import { describe, it, expect } from "vitest";
-import { debriefBullets, affordancesForBullet } from "./debriefBullets";
+import { debriefBullets, affordancesForBullet, missedWinText, conversionCouldBeBetterText } from "./debriefBullets";
 import { checkDebriefOutput } from "./debriefInvariants";
 import { phasesForGame } from "./gamePhases";
 import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from "../game/api";
@@ -1741,6 +1741,50 @@ describe("conversion bullets (K1, game-160 RCA round)", () => {
     const texts = bullets.map((b) => b.text).join(" | ");
     expect(texts).not.toContain("no clear mistakes to flag here");
     expect(texts).not.toContain("no repeat pattern showed up");
+  });
+});
+
+// N1 (owner report 2026-08-21). The plan's own fixtures for this block used
+// a truncated move list starting mid-game (ply 41 on), but fenAtPly/
+// describedOrRaw always replay from the start position over array INDICES
+// (Rewind.tsx's fenAtPly), so a fragment starting at ply 41 throws "Invalid
+// move" the instant missedWinText tries to describe a SAN -- a red for the
+// WRONG reason (a broken fixture, not the assertion). Reused GAME150_SANS
+// (this file's own real, fully-replayable 91-ply fixture, already defined
+// above) instead: its own tail -- ply 89 Be7 (her), ply 90 Kc4 (mallow), ply
+// 91 Qc6# (her mate) -- is naturally the same shape as game 184's report
+// (one intervening opponent move between the flagged ply and the delivered
+// mate), so the SAME real, legal game covers both the faster and slower
+// cases below.
+describe("missedWinText outcome honesty (N1, owner report 2026-08-21)", () => {
+  const lines89 = [{ ply: 89, bestSan: "Be7", pv: [] } as any];
+
+  it("never says the win took longer when she actually finished sooner", () => {
+    const out = missedWinText(
+      tp({ ply: 89, kind: "missed-win", mateIn: 4 }), 91, GAME150_SANS, lines89
+    );
+    expect(out).not.toMatch(/took \d+ more move/);
+    expect(out).not.toMatch(/later without it/);
+  });
+
+  it("names the best move, its guarantee, the real distance, and the reply", () => {
+    const out = missedWinText(
+      tp({ ply: 89, kind: "missed-win", mateIn: 4 }), 91, GAME150_SANS, lines89
+    );
+    expect(out).toContain("forced mate in four");
+    expect(out).toContain("mate in two");
+    expect(out).toContain("king to c4");
+  });
+
+  it("still reports the real cost when the game genuinely dragged on", () => {
+    // Same real game, an early ply (15, castling) flagged with a mateIn far
+    // shorter than the 39 of her own moves it actually took -- the genuine
+    // "slower" case, where the negative clause must stay.
+    const out = missedWinText(
+      tp({ ply: 15, kind: "missed-win", mateIn: 6 }), 91,
+      GAME150_SANS, [{ ply: 15, bestSan: "O-O", pv: [] } as any]
+    );
+    expect(out).toMatch(/took 38 more moves to land/);
   });
 });
 
