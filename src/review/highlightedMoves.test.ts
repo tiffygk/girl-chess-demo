@@ -17,6 +17,21 @@ const GAME_TO_PLY_17 = [
   "Nc3", "O-O", "Bg5", "h6", "Bh4", "g5", "Re1",
 ];
 
+// N1 (owner report 2026-08-21): shared real-game fixture (game 150), same
+// copy this repo's other review test files already keep (debriefBullets.
+// test.ts, turningPointNote.test.ts) -- its own tail (ply 89 Be7 her, ply 90
+// Kc4 mallow, ply 91 Qc6# her mate) is the single-intervening-move shape the
+// outcome tests below need, and it is real and fully replayable end to end.
+const GAME150_SANS: SummaryMove[] = toSummaryMoves([
+  "d4","d5","c3","c6","b3","e6","e3","Nf6","Bd2","Be7","Bd3","Bd7","Nf3","O-O","O-O","c5",
+  "dxc5","Bxc5","b4","Qe7","bxc5","Qxc5","Qb3","Nc6","c4","Nh5","cxd5","Ne7","Bb4","Ba4",
+  "Qxa4","Qc6","dxc6","f5","Bxe7","Rfe8","cxb7","g5","bxa8=Q","Rxa8","Bxg5","Nf4","exf4","Rc8",
+  "Qxa7","Ra8","Qxa8+","Kg7","Ne5","h6","Be7","h5","h4","Kh6","Nf7+","Kg6","Nh8+","Kh7",
+  "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
+  "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
+  "Qh6+","Kd5","Be7","Kc4","Qc6#",
+]);
+
 function toSummaryMoves(sans: string[]): SummaryMove[] {
   return sans.map((san, i) => ({ ply: i + 1, san }));
 }
@@ -165,5 +180,22 @@ describe("buildHighlightedRows", () => {
     expect(rows[0].verdict).toBe("done well");
     expect(rows[0].canTryLine).toBe(false);
     expect(rows[0].severity).toBe("not-an-error");
+  });
+
+  // N1 (owner report 2026-08-21). mateIn is an artificial override for this
+  // unit (game 150's real turning point at ply 89 doesn't carry mateIn 4) --
+  // the point under test is the wording when the real move list shows she
+  // finished faster than the stored prediction.
+  it("does not say the game went on without it when she mated two moves later", () => {
+    const rows = buildHighlightedRows({
+      highlightedPlies: [89],
+      gameSans: GAME150_SANS,
+      turningLines: [{ ply: 89, pvSans: [], bestSan: "Be7" }],
+      classifications: [],
+      turningPoints: [{ ply: 89, kind: "missed-win", mateIn: 4, missedCount: 1 } as never],
+    });
+    const row = rows.find((r) => r.ply === 89)!;
+    expect(row.note).not.toContain("the game went on without it");
+    expect(row.note).toContain("mate in two");
   });
 });
