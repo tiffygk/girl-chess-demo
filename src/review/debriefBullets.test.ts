@@ -1788,6 +1788,30 @@ describe("missedWinText outcome honesty (N1, owner report 2026-08-21)", () => {
   });
 });
 
+describe("conversion bullets outcome honesty (N1)", () => {
+  // Game 181: ply 39 Be4+, mateIn 9, mate delivered at ply 41 with Qd5#.
+  // conversionCouldBeBetterText never calls describedOrRaw/fenAtPly (no SAN
+  // description, unlike missedWinText) so this small fragment -- unlike the
+  // fixtures above -- needs no full, legal replay to be honest.
+  const g181 = [{ ply: 39, san: "Be4+" }, { ply: 40, san: "Kc6" }, { ply: 41, san: "Qd5#" }];
+
+  it("never claims a conversion took more moves when it took fewer", () => {
+    const out = conversionCouldBeBetterText(
+      tp({ ply: 39, plyEnd: 41, kind: "conversion", mateIn: 9 }), 41, g181
+    );
+    expect(out).not.toMatch(/more moves? to close it out/);
+  });
+
+  it("keeps the real complaint when the conversion genuinely dragged", () => {
+    // Game 177: ply 81 Rxb6, mateIn 2, ran to ply 104 without a mate.
+    const g177 = [{ ply: 81, san: "Rxb6" }, { ply: 104, san: "Kd4" }];
+    const out = conversionCouldBeBetterText(
+      tp({ ply: 81, plyEnd: 104, kind: "conversion", mateIn: 2 }), 104, g177
+    );
+    expect(out).toMatch(/to close it out/);
+  });
+});
+
 // visual gate (phase A, game 160 rca round): the gate drove the real app
 // against the owner's real games and caught "it took 1 moves" on game 145
 // (count of exactly 1 -- every other observed game had count >= 2, which is
