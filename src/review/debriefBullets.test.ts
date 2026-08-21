@@ -1790,6 +1790,24 @@ describe("missedWinText outcome honesty (N1, owner report 2026-08-21)", () => {
     expect(out).toMatch(/took 38 more moves to land/);
   });
 
+  // MEDIUM-4 (Opus review, N1 fix wave). The fallback branch's own
+  // `lastSan.includes("#")` re-derives "did the game end in HER checkmate"
+  // instead of routing through the shared, parity-aware mateOutcomeFor --
+  // so a game she LOST by checkmate (fool's mate: 1. f3 e5 2. g4 Qh4#, mate
+  // delivered by mallow at ply 4, EVEN) would render "the win took N more
+  // moves to land" for a game that was never her win at all.
+  it("never claims 'the win took N more moves to land' when mallow delivered the mate, not her", () => {
+    const foolsMate: SummaryMove[] = [
+      { ply: 1, san: "f3" }, { ply: 2, san: "e5" }, { ply: 3, san: "g4" }, { ply: 4, san: "Qh4#" },
+    ];
+    const out = missedWinText(
+      tp({ ply: 1, kind: "missed-win", mateIn: 3 }), 4,
+      foolsMate, [{ ply: 1, bestSan: "e4", pv: [] } as any]
+    );
+    expect(out).not.toMatch(/the win took \d+ more moves? to land/);
+    expect(out).toMatch(/later without it/);
+  });
+
   // HIGH-2 (Opus review, N1 fix wave): mateOutcomeFor measures only the
   // anchor ply. When missedCount > 1 a second, unmeasured miss exists by
   // construction (games 175 and 178, real data) -- crediting her on the

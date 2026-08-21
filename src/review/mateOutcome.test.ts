@@ -64,4 +64,19 @@ describe("mateOutcomeFor", () => {
     expect(mateOutcomeFor(41, 4, 43, undefined)).toBeUndefined();
     expect(mateOutcomeFor(41, 4, 43, [])).toBeUndefined();
   });
+
+  // MEDIUM-4 (Opus review, N1 fix wave). lastSan.includes("#") alone has no
+  // side check -- a game she LOST by checkmate also ends on a '#'. Odd plies
+  // are hers, even are mallow's (repo-wide convention). Real shape: game 162,
+  // she was mated by Qg2# at ply 72 (even -- mallow's move); before this fix
+  // mateOutcomeFor(69, 4, 72, ...) returned {outcome: "faster", actual: 2},
+  // which would render "it still ended in mate in two" for a game she lost.
+  it("reports UNRESOLVED when the mate lands on an even ply -- mallow delivered it, not her", () => {
+    const g162: SummaryMove[] = [
+      { ply: 69, san: "Rc8" }, { ply: 70, san: "Kg1" }, { ply: 71, san: "Rc1" }, { ply: 72, san: "Qg2#" },
+    ];
+    const r = mateOutcomeFor(69, 4, 72, g162)!;
+    expect(r.outcome).toBe("unresolved");
+    expect(r.actual).toBe(0);
+  });
 });

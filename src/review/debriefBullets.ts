@@ -337,9 +337,13 @@ export function missedWinText(
     return `move ${n}: your ${startsMate} here, whatever mallow played. what you did still ended in mate in ${actualWord}${because}.${repeat}`;
   }
 
-  const lastSan = gameSans[gameSans.length - 1].san;
   const extra = moveNumberForPly(totalPlies) - n;
-  const cost = lastSan.includes("#")
+  // MEDIUM-4 (N1 fix wave): "did the game end in HER checkmate" must route
+  // through the shared, parity-aware predicate (mateOutcome.ts) rather than
+  // re-deriving `lastSan.includes("#")` here -- a game she LOST by mate
+  // (game 162 shape) also ends on a "#", and would otherwise render "the win
+  // took N more moves to land" for a game she did not win.
+  const cost = outcome && outcome.outcome !== "unresolved"
     ? `, and the win took ${extra} more ${pluralizeWord(extra, "move")} to land.`
     : `, but the game ended ${extra} ${pluralizeWord(extra, "move")} later without it.`;
   return `move ${n}: you had checkmate in ${distance}. your ${startsMate}${cost}${repeat}`;
