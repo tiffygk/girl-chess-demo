@@ -86,8 +86,10 @@ import {
 
 type Captured = CapturedBySide;
 
-// The five bands with real maia weights in weights/ (server snaps anyway).
-const OPPONENT_ELOS = [1100, 1200, 1300, 1400, 1500];
+// The nine bands with real maia weights in weights/, 1900 being maia's
+// published ceiling (server snaps anyway). Keep in sync with ALLOWED_ELOS in
+// server/index.ts; the server also asserts each band's file exists at boot.
+const OPPONENT_ELOS = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900];
 const OPPONENT_ELO_KEY = "gc-opponent-elo";
 
 function readEloPref(): number {
