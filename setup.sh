@@ -6,7 +6,7 @@ brew list stockfish &>/dev/null || brew install stockfish
 brew list lc0 &>/dev/null || brew install lc0
 mkdir -p weights
 BASE="https://github.com/CSSLab/maia-chess/releases/download/v1.0"
-for elo in 1100 1200 1300 1400 1500; do
+for elo in 1100 1200 1300 1400 1500 1600 1700 1800 1900; do
   f="weights/maia-$elo.pb.gz"
   [ -f "$f" ] || curl -fL -o "$f" "$BASE/maia-$elo.pb.gz"
 done
