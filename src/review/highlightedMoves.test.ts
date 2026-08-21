@@ -202,4 +202,40 @@ describe("buildHighlightedRows", () => {
     // where the mate survived her move.
     expect(row.note).not.toMatch(/was not forced/);
   });
+
+  // N1 (owner report 2026-08-21), HIGH-2 gate. mateOutcomeFor only ever
+  // measures the anchor ply -- missedCount > 1 means a second, unmeasured
+  // miss exists by construction (real games 175 ply 39 and 178 ply 53, both
+  // mateIn 5/6 with missedCount 2). debriefBullets.ts, turningPointNote.ts,
+  // and DebriefPage.tsx all withhold credit on that anchor already; this
+  // file must match, or the same debrief contradicts itself on the exact
+  // same move (bullet: "the win took N more moves to land" vs highlight:
+  // "what you did still ended in mate in N", game 178's real shape).
+  it("does not credit her when a second, unmeasured miss exists (missedCount > 1)", () => {
+    const rows = buildHighlightedRows({
+      highlightedPlies: [89],
+      gameSans: GAME150_SANS,
+      turningLines: [{ ply: 89, pvSans: [], bestSan: "Be7" }],
+      classifications: [],
+      turningPoints: [{ ply: 89, kind: "missed-win", mateIn: 4, missedCount: 2 } as never],
+    });
+    const row = rows.find((r) => r.ply === 89)!;
+    expect(row.note).not.toMatch(/what you did still ended in mate/);
+    expect(row.note).toContain("the game went on without it");
+  });
+
+  // Same shape, missedCount === 1: the gate must not be wider than the
+  // defect it fixes -- games 184 ply 41 and 174 ply 59 (both missedCount 1)
+  // must keep the credit line unchanged.
+  it("still credits her on a faster/matched anchor when missedCount is 1", () => {
+    const rows = buildHighlightedRows({
+      highlightedPlies: [89],
+      gameSans: GAME150_SANS,
+      turningLines: [{ ply: 89, pvSans: [], bestSan: "Be7" }],
+      classifications: [],
+      turningPoints: [{ ply: 89, kind: "missed-win", mateIn: 4, missedCount: 1 } as never],
+    });
+    const row = rows.find((r) => r.ply === 89)!;
+    expect(row.note).toMatch(/what you did still ended in mate in two/);
+  });
 });
