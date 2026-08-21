@@ -627,6 +627,27 @@ describe("missed-win note", () => {
     expect(note.couldImprove).not.toContain("checkmate in one");
     expect(note.couldImprove).not.toContain("ends it on the spot");
   });
+
+  // N1 (owner report 2026-08-21). Same real GAME150_SANS tail already used
+  // above -- ply 89 Be7 (her), ply 90 Kc4 (mallow), ply 91 Qc6# (her mate)
+  // -- reused rather than the plan's own truncated fixture, which throws
+  // inside fenAtPly's from-the-start replay (see debriefBullets.test.ts's
+  // matching N1 block for the full explanation). mateIn is set to 4, an
+  // artificial override for this unit -- the point under test is the
+  // WORDING when the real game finished faster than the stored prediction,
+  // not a claim about what game 150's real turning point actually recorded.
+  it("does not imply she was slow when she finished faster than the forced line", () => {
+    const fasterTp = tp({
+      rank: 3, ply: 89, san: "Be7", label: "missed mate", deltaP: 0,
+      lowConfidence: false, kind: "missed-win", mateIn: 4,
+    });
+    const fasterLine = { ply: 89, bestSan: "Be7", pvSans: [] };
+    const note = buildTurningPointNote(fasterTp, undefined, fasterLine, GAME150_SANS);
+    expect(note.couldImprove).toContain("forced mate in four");
+    expect(note.couldImprove).toContain("mate in two");
+    expect(note.couldImprove).not.toMatch(/instead\.$/);
+    expect(note.couldImprove).toContain("king to c4");
+  });
 });
 
 // Truth round (2026-07-29), Task 3: the game-151 owner ruling

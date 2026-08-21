@@ -30,6 +30,13 @@ import { deriveOpportunity } from "./opportunity";
 // with.
 import { followedBest } from "./followedBest";
 import type { FollowedBest } from "./followedBest";
+// N1 (owner report 2026-08-21): the shared "what actually happened" module,
+// same one debriefBullets.ts's missedWinText now reads. This file's own
+// header bars importing debriefBullets.ts specifically -- mateOutcome.ts is
+// not that file, and reading it here is the same "one shared definition,
+// every claim-making surface reads it" discipline the module itself exists
+// to enforce.
+import { mateOutcomeFor } from "./mateOutcome";
 // Debrief Plain-English Notation round (Task 2): every raw-SAN mention in
 // the note (the played move, the punish, the stronger idea, the pv's first
 // move) now routes through the shared plain-English renderer whenever a fen
@@ -272,6 +279,28 @@ function buildCouldImprove(
       ? stripRedundantCheckSuffix(describedOrRaw(line.bestSan, seedFen), "checkmate")
       : undefined;
     const endsIt = mateIn === 1 ? `${best} ends it on the spot` : `${best} starts a forced mate in ${distance}`;
+    // N1 (2026-08-21), framing B. Same rule as debriefBullets' missedWinText:
+    // "you played X instead" carries an implied reproach that the game itself
+    // disproves when she finished as fast or faster. gameSans carries the ply
+    // on every entry, so totalPlies is the last entry's ply -- no new argument
+    // threaded through buildTurningPointNote's signature.
+    const totalPlies = gameSans && gameSans.length > 0 ? gameSans[gameSans.length - 1].ply : 0;
+    const outcome = best ? mateOutcomeFor(tp.ply, mateIn, totalPlies, gameSans) : undefined;
+    if (outcome && (outcome.outcome === "faster" || outcome.outcome === "matched")) {
+      // Note: describedOrRaw in this file takes a fen, not a ply -- the
+      // enabling reply is played at tp.ply + 1, one ply AFTER seedFen (the
+      // position BEFORE tp.ply's own move), so seedFen is the wrong fen to
+      // describe it from. fenBeforePly(gameSans, tp.ply + 1) is the position
+      // right before that reply, already a local helper in this file. Omit
+      // the clause entirely when it can't be produced -- a missing clause is
+      // honest, a wrong piece name is not.
+      const enablingFen = gameSans ? fenBeforePly(gameSans, tp.ply + 1) : undefined;
+      const because =
+        outcome.enablingReplySan && enablingFen
+          ? ` after mallow answered ${describedOrRaw(outcome.enablingReplySan, enablingFen)}`
+          : "";
+      return `your ${endsIt} here, whatever mallow played. ${played} was not forced, but it still ended in mate in ${numberWord(outcome.actual)}${because}.${repeat}`;
+    }
     return best
       ? `you had checkmate in ${distance} here. your ${endsIt}. you played ${played} instead.${repeat}`
       : `you had checkmate in ${distance} here. you played ${played} instead.${repeat}`;
