@@ -346,21 +346,45 @@ export function missedWinText(
 // long closing it out actually took. Every clause is a literal fact off
 // the TurningPoint (ply/plyEnd = the run's start/end, mateIn = the run's
 // shortest held mate, conversion.ts's ConversionEpisode.bestMissed).
-export function conversionCouldBeBetterText(tp: TurningPoint): string {
+export function conversionCouldBeBetterText(
+  tp: TurningPoint,
+  totalPlies: number,
+  gameSans: SummaryMove[] | undefined
+): string {
   const startMove = moveNumberForPly(tp.ply);
   const endMove = moveNumberForPly(tp.plyEnd ?? tp.ply);
   const length = Math.max(endMove - startMove, 0);
   const shortest = tp.mateIn != null ? numberWord(tp.mateIn) : "some";
+  // N1 (2026-08-21): same rule as missedWinText. "it took N more moves to
+  // close it out" is a claim about the real sequence, so it is only emitted
+  // when the real sequence bears it out. Game 181 held a mate in nine here
+  // and she finished in two.
+  const outcome =
+    tp.mateIn != null ? mateOutcomeFor(tp.ply, tp.mateIn, totalPlies, gameSans) : undefined;
+  if (outcome && (outcome.outcome === "faster" || outcome.outcome === "matched")) {
+    return `move ${startMove}: the shortest forced mate you held here was mate in ${shortest}. you closed it out in ${numberWord(outcome.actual)} instead.`;
+  }
   return `move ${startMove}: the shortest mate you held here was mate in ${shortest}, but it took ${length} more ${pluralizeWord(length, "move")} to close it out.`;
 }
 
 // The technique tip half of the same fact -- what to actually DO about a
 // mate that keeps getting slower, the owner's stated learning goal made
 // procedural (same discipline as missedWinText's watch-next sibling).
-function conversionWatchNextText(tp: TurningPoint): string {
+function conversionWatchNextText(
+  tp: TurningPoint,
+  totalPlies: number,
+  gameSans: SummaryMove[] | undefined
+): string {
   const startMove = moveNumberForPly(tp.ply);
   const endMove = moveNumberForPly(tp.plyEnd ?? tp.ply);
   const length = Math.max(endMove - startMove, 0);
+  const outcome =
+    tp.mateIn != null ? mateOutcomeFor(tp.ply, tp.mateIn, totalPlies, gameSans) : undefined;
+  // Nothing to practise when she already converted at least as fast as the
+  // forced line; a technique tip here would be scolding a correct result.
+  if (outcome && (outcome.outcome === "faster" || outcome.outcome === "matched")) {
+    return `moves ${startMove} to ${endMove}: you had a forced mate lined up here and you finished inside it. keep recounting the fastest mate every move.`;
+  }
   return `moves ${startMove} to ${endMove}: it took ${length} ${pluralizeWord(length, "move")} to land a mate you already had lined up. recount the fastest mate every move instead of playing the first check you see.`;
 }
 
@@ -597,6 +621,16 @@ function buildDoneWell(
 // true together with anchorKind === "repetition-entry"; the guard here is
 // spelled out on anchorKind anyway so this function does not depend on
 // that coupling holding forever in another file.
+//
+// N1 audit (2026-08-21, owner report): checked deliberately for the same
+// "took longer than the forced line" defect missedWinText/
+// conversionCouldBeBetterText had -- needs no branch and no mateOutcomeFor
+// call. An "unconverted" point by definition ends level (the win was never
+// delivered as her checkmate at all), so mateOutcomeFor's own outcome for
+// this kind is always "unresolved", never "faster"/"matched" -- there is no
+// "actual mate distance" to credit here, only the honest fact that the win
+// slipped. Recorded so the next audit of this file can tell "checked, fine"
+// from "missed".
 function unconvertedCouldBeBetterText(tp: TurningPoint): string {
   const how =
     tp.endKind === "repetition"
@@ -668,7 +702,7 @@ function buildCouldBeBetter(
     const conversionPhase = phases.phaseAt(conversionTp.ply);
     out.push({
       section: "could be better",
-      text: conversionCouldBeBetterText(conversionTp),
+      text: conversionCouldBeBetterText(conversionTp, totalPlies, gameSans),
       phase: conversionPhase,
       category: endgameOrConversion(conversionPhase),
       ply: conversionTp.ply,
@@ -784,7 +818,8 @@ function buildWatchNextTime(
   classifications: MoveClassification[],
   episode: TurningPoint | null,
   totalPlies: number,
-  phases: PhaseTimeline
+  phases: PhaseTimeline,
+  gameSans: SummaryMove[] | undefined
 ): DebriefBullet[] {
   const bullets: DebriefBullet[] = [];
 
@@ -794,7 +829,17 @@ function buildWatchNextTime(
   // her stated learning goal ("how to coordinate the pieces to corner the
   // king") made procedural.
   const missedWin = turningPoints.find((t) => t.kind === "missed-win");
-  if (missedWin) {
+  // N1 (2026-08-21): "played past it" is a reproach. Suppress the bullet
+  // entirely when the game shows she finished inside the forced line -- the
+  // could-be-better bullet already states the forcing fact, and a "watch next
+  // time" tip on a correct result is the exact thing she reported.
+  const missedWinOutcome =
+    missedWin?.mateIn != null
+      ? mateOutcomeFor(missedWin.ply, missedWin.mateIn, totalPlies, gameSans)
+      : undefined;
+  const missedWinIsReproachable =
+    !missedWinOutcome || missedWinOutcome.outcome === "slower" || missedWinOutcome.outcome === "unresolved";
+  if (missedWin && missedWinIsReproachable) {
     const count = missedWin.missedCount ?? 1;
     const opener =
       count > 1
@@ -822,7 +867,7 @@ function buildWatchNextTime(
     const conversionPhase = phases.phaseAt(conversionTp.ply);
     bullets.push({
       section: "watch next time",
-      text: conversionWatchNextText(conversionTp),
+      text: conversionWatchNextText(conversionTp, totalPlies, gameSans),
       phase: conversionPhase,
       category: endgameOrConversion(conversionPhase),
       ply: conversionTp.ply,
@@ -983,7 +1028,10 @@ export function debriefBullets(input: DebriefBulletsInput): DebriefBullet[] {
     turningLines,
     phases
   ).slice(0, 2);
-  const watchNext = buildWatchNextTime(turningPoints, classifications, episode, totalPlies, phases).slice(0, 2);
+  const watchNext = buildWatchNextTime(turningPoints, classifications, episode, totalPlies, phases, gameSans).slice(
+    0,
+    2
+  );
 
   return [doneWell, ...couldBeBetter, ...watchNext].slice(0, 5);
 }
