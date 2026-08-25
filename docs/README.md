@@ -31,6 +31,10 @@ Three live decisions, weighed in the open, all shipped and merged: **[technical-
 2. **The coach was too slow.** The trace-driven diagnosis, three options, and why I warmed the free path (an in-process Agent SDK backend) instead of paying for a metered API.
 3. **The coach gave me bad advice about a defended piece.** Why the fix was a computed fact, not a bigger model or an extra engine call.
 
+## How the tutor is kept honest
+
+Every sentence a player reads gets checked, and the check differs by surface: **[evaluation.md →](evaluation.md)**. Four text surfaces, only two of them written by a model. Seventeen rules replay the post-game analysis against my real games before any merge, sorted into the four ways generated text can lie. The audit that prompted it found the analysis telling me I had played inefficiently on moments the moves disproved, and the corrected count is the one published.
+
 ## Live demo
 
 A working local app, not a hosted product. The plan is to demo it live in the interview by sharing Chrome tabs. Tabs to have open, in order:

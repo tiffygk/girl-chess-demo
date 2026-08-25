@@ -10,6 +10,8 @@ I designed and built this 0-to-1 as a product person directing Claude Code, not 
 
 **[docs/README.md](docs/README.md)** is the portfolio front door: the product spec, one increment plan-to-gate, three real review catches, the build-plan red team, and the coach-transport decision, plus the Chrome-tab list for a live walkthrough.
 
+**[docs/evaluation.md](docs/evaluation.md)** is how the tutor is kept honest: four text surfaces, only two of them written by a model, and the seventeen rules that replay the post-game analysis against real games before any merge.
+
 `CLAUDE.md` is the architecture map and runbook a future Claude session reads first.
 
 ## Running it
