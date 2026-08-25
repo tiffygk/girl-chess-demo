@@ -9,7 +9,7 @@ ask()  { jq -n --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",per
 
 # #4 pattern-kill of servers (two live-stack incidents, same root cause)
 if printf '%s' "$cmd" | grep -qE '\b(pkill|killall)\b'; then
-  deny "NEVER pkill/killall in this project. A pattern kill cannot tell two identical-looking process stacks apart (2026-07-21 took down the owner's live 5173/3001 stack mid-demo; 2026-08-01 killed a sibling agent's in-flight subprocess whose flags matched). Kill only a PID you recorded when YOU spawned it, or report the process to the controller."
+  deny "NEVER pkill/killall in this project. A pattern kill cannot tell two identical-looking process stacks apart (2026-07-21 took down the owner's live 5173/3001 stack mid-demo; 2026-08-01 killed a sibling agent's in-flight subprocess whose flags matched). Kill only a PID you recorded when YOU spawned it, or report the process to the controller. NOTE: this guard matches the whole command string, so it also fires when you are merely WRITING this word into a file (a brief, a hook, a doc). That is deliberate -- narrowing it would trade a cheap visible block for a rare invisible miss. If that is your case, either write the file with the Write/Edit tool instead of a shell heredoc, or rephrase to 'pattern kill'. Do not try to smuggle the literal past this guard by splitting or encoding it."
 fi
 
 # #3 agent-browser --full-page flag typo (litters a stray PNG)
