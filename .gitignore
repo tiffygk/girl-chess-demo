@@ -45,6 +45,9 @@ tools/.playtest-scratch/
 # highlight-lines spot-check tool scratch (WAL-safe read-only db copy, never committed)
 tools/.highlight-lines-scratch/
 
+# focus-binding-audit tool scratch (WAL-safe read-only db copy, never committed)
+tools/.focus-audit-scratch/
+
 # nested agent worktrees (owner reorg 2026-07-28) — registered via git worktree,
 # never committed as directories into the parent repo. vite.config.ts already
 # ignores dev-server watching with the wt-* pattern (union finding 7,
