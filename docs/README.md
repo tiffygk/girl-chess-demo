@@ -23,7 +23,7 @@ Everything below is that spec turned into a shipped, gated build.
 1. **[One increment, plan to gate](increment-3.95.md)**: increment 3.95 end to end. The plan an AI agent wrote from playtest feedback, broken into 11 tasks, and the live gate it had to pass before merging.
 2. **[Where the review earned its keep](where-the-review-earned-its-keep.md)**: three bugs the adversarial review caught in one increment. A coach calling a loss a win, a security hole, and a regression, all before they shipped.
 3. **[Build-plan red team](build-plan-red-team.md)**: before increment 4, a three-agent panel (two critics, one defender separating real problems from nitpicks) attacked the plan and found my own north star metric didn't work. The finding is included, unsoftened.
-4. **The component library** (`component-library.html`): every front-end component that shipped, each one beside the alternatives it beat and the reason it won. The archive tab keeps the roads not taken. It is the working file I design against, not a writeup made afterwards, so it carries the shorthand of a real one; its log runs through 2026-08-05.
+4. **[The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html)**: every front-end component that shipped, each one beside the alternatives it beat and the reason it won. The archive tab keeps the roads not taken. It is the working file I design against, not a writeup made afterwards, so it carries the shorthand of a real one; its log runs through 2026-08-05.
 
 ## Decisions, measured
 
@@ -43,12 +43,12 @@ Two instruments live in there, and they did different jobs. Keeping them apart i
 
 ## Live demo
 
-A working local app, not a hosted product. It runs on your own machine, and the [root README](../README.md) covers what you need and what degrades if you skip a step.
+A working local app, not a hosted product. It runs on your own machine, and the [repository README](https://github.com/tiffygk/girl-chess-demo#running-it) covers what you need and what degrades if you skip a step.
 
-Three self-contained HTML files sit beside this one. GitHub shows HTML as source, so open them from a clone in a browser:
-1. `coach-eval-v3-dashboard.html`: the coach-eval v3 run, the cold-start control, and the audit of the instrument itself.
-2. `architecture.html`: how a move becomes a checked sentence.
-3. `component-library.html`: the design system above.
+Three self-contained pages, no clone needed:
+1. [The eval dashboard](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html): the coach-eval v3 run, the cold-start control, and the audit of the instrument itself.
+2. [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence.
+3. [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): the design system above.
 
 Then [technical-decisions.md](technical-decisions.md) and this doc, for anything that needs receipts.
 
@@ -56,4 +56,4 @@ One artifact stays out of the repo: a quiz I built to drill myself on defending 
 
 ## Code
 
-The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). See the root `README.md` for setup.
+The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). See the [repository README](https://github.com/tiffygk/girl-chess-demo#running-it) for setup.

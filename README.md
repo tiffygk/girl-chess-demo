@@ -10,6 +10,8 @@ Measured across the coach's highlighted plies, the same discipline took analysis
 
 ## Start here
 
+The docs are published at **[tiffygk.github.io/girl-chess-demo](https://tiffygk.github.io/girl-chess-demo/)**, so none of them need a clone to read.
+
 **[docs/README.md](docs/README.md)** is the portfolio front door: the product spec, one increment plan-to-gate, three real review catches, the build-plan red team, and the coach-transport decision, plus the Chrome-tab list for a live walkthrough.
 
 **[docs/evaluation.md](docs/evaluation.md)** is how the tutor is kept honest: four text surfaces, only two of them written by a model, and the seventeen rules that replay the post-game analysis against real games before any merge.
