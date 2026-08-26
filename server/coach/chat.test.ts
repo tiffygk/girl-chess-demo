@@ -467,15 +467,28 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
-  // Task 4 (2026-08-26, coach-truth round): the intersection rule above and
-  // checkPlacementClaims's own copy of it (server/coach/placementClaims.ts)
-  // exist so a claim true at the moment being discussed is never penalised
-  // for being untrue today -- right in general, but SYMMETRIC, which is how
-  // the coach told the owner a bishop was on d6 while she was asking about
-  // ply 31, a moment where that bishop still stood on e7 (it only reached
-  // d6 three of mallow's moves later). The intersection equally protected a
-  // claim true TODAY and false THEN. The fix is one-directional: when a
-  // turning point is in focus, the focused position governs alone.
+  // Task 4 (2026-08-26, coach-truth round -- reverted and re-fixed): an
+  // earlier version of this fix made the intersection ASYMMETRIC
+  // (`focusGoverns`: the focused position alone decides). It shipped on a
+  // wrong diagnosis and was reverted after `tools/focus-binding-audit.ts`
+  // measured it against the owner's 33 real focused traces: it false-flagged
+  // a true, correct reply (trace 102, game 147 -- the coach correctly
+  // described the mating position while a stale turning-point card was
+  // still open) at the same rate it caught the real bug (trace 284).
+  //
+  // The actual defect was in checkPlacementClaims's intersection itself:
+  // placementViolationsAgainst renders a DIFFERENT suffix depending on WHY
+  // a claim is false (`-- <sq> is empty` vs `-- not there`), so a claim
+  // false in BOTH positions for two different reasons produced two
+  // non-matching strings and slipped through a plain string-set
+  // intersection untouched -- exactly what happened in trace 284 (game
+  // 190): d6 was empty at the focused moment (ply 31) and held mallow's
+  // bishop -- not "your" bishop -- today. The fix keys the intersection on
+  // the claim identity instead of the rendered message (see
+  // placementClaims.ts and placementClaims.test.ts for the unit-level
+  // proof); this is the integration-level proof that validateChat's wiring
+  // actually benefits from it, per the invariant rule (a unit test proves
+  // the function, not the wiring).
   //
   // Fixture (game 190, trace 284 shape): focusFen is the position just
   // before ply 31 -- mallow's dark-squared bishop on e7, her other knight
@@ -483,7 +496,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
   // d6 and the d7 knight has moved to b6 -- built by hand (not a real
   // replayed game) but a legal position either way, verified directly
   // against chess.js in the console before being pasted in here.
-  describe("validateChat — focused asks bind placement claims to the focused position (game 190, trace 284)", () => {
+  describe("validateChat — a placement claim false in both positions for different reasons is caught (game 190, trace 284)", () => {
     const focusFen = "r2q1rk1/pp1nbpp1/5n1p/8/N2pP3/1P1B1Q1P/P2B1PP1/R4RK1 w - - 0 16";
     const finalFen = "r2q1rk1/pp3pp1/1n1b1n1p/8/N2pP3/1P1B1Q1P/P2B1PP1/R4RK1 w - - 0 16";
 
@@ -544,9 +557,14 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       };
     }
 
-    it("flags a piece named from today's board when a turning point is in focus", () => {
+    // RED case: "your bishop on d6" is false at the focused position (d6 is
+    // empty there -- reason "d6 is empty") AND false today (d6 holds
+    // mallow's bishop, not "your"/the player's -- reason "not there"). Same
+    // claim, two different failure reasons, so this is the shape a
+    // string-keyed intersection drops and a claim-keyed one still catches.
+    it("flags 'your bishop on d6' when it is empty at focus and mallow's (not yours) today", () => {
       const facts = factsWithFocus(focusFen, finalFen, { turningPointFocus: { ply: 31 } });
-      const result = validateChat("once it's on the board, it eyes her bishop on d6", facts);
+      const result = validateChat("once it's on the board, it eyes your bishop on d6", facts);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.violations.some((v) => v.includes("d6"))).toBe(true);
     });
