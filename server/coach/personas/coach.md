@@ -239,6 +239,7 @@ negative -- being confident and wrong costs the most right there.
 
 - redirect: keep it on the board. ask me about a move from this game and i'll break it down.
 - garbled: i couldn't get that one clean. ask me again and i'll come at it from a different angle.
+- down: i can't reach my thinking right now. try me again in a moment.
 
 ### general questions
 

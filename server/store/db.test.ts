@@ -15,6 +15,7 @@ import {
   getVerdicts,
   insertAdviceTrace,
   getAdviceTraces,
+  getAdviceTraceById,
   rateAdviceTrace,
   setMoveHighlighted,
   getGame,
@@ -292,6 +293,46 @@ describe("rateAdviceTrace", () => {
     const rows = getAdviceTraces(g);
     expect(rows[0].rating).toBe(1);
     expect(rows[0].feedback_text).toBeNull();
+  });
+});
+
+// Task 7 (coach-truth round, 2026-08-26): advice_traces.cause -- why a
+// fallback fired, additive/nullable per EXPECTED_COLUMNS' convention (same
+// shape as rating/feedback_text above). NULL means "not recorded", both for
+// a clean model answer and for every row written before this column
+// existed -- nothing backfills those.
+describe("advice_traces.cause (Task 7)", () => {
+  function seedTrace(gameId: number, cause?: string | null) {
+    return insertAdviceTrace({
+      gameId,
+      ply: 1,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "o",
+      source: "template",
+      backend: "claude-cli",
+      validated: false,
+      regenCount: 0,
+      latencyMs: 10,
+      cause,
+    });
+  }
+
+  it("persists the failure cause on a fallback trace", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    const id = seedTrace(g, "backend-down");
+    expect(getAdviceTraceById(id).cause).toBe("backend-down");
+  });
+
+  it("leaves cause null on a clean model answer", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    const id = seedTrace(g);
+    expect(getAdviceTraceById(id).cause).toBeNull();
   });
 });
 

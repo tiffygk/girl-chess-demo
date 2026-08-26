@@ -2142,6 +2142,11 @@ export async function chat(
     validated: source === "model",
     regenCount,
     latencyMs,
+    // Task 7: persist the same cause returned to the client -- previously
+    // only recoverable by string-matching `output`
+    // (tools/rca-eval/lib/causeFromTrace.ts). NULL on a clean model answer,
+    // exactly like every pre-this-wave row.
+    cause: failureCause,
   });
 
   return failureCause ? { text, source, cause: failureCause, traceId } : { text, source, traceId };

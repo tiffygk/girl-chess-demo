@@ -17,6 +17,16 @@ export function recordAdviceTrace(input: {
   validated: boolean;
   regenCount: number;
   latencyMs: number;
+  // Task 7 (coach-truth round, 2026-08-26): threaded straight through to
+  // insertAdviceTrace's own optional `cause` -- additive/optional so every
+  // pre-this-wave caller (narrate() itself, as of this wave, and every
+  // test) omits it and keeps writing NULL, exactly as before. narrate()
+  // has no cause-classification of its own yet (chat.ts's failureCause
+  // logic is the only computed source today), so this field exists here so
+  // a future caller can pass one without a second signature change -- see
+  // Task 7's brief on why both write paths (this wrapper and chat.ts's
+  // direct insertAdviceTrace call) needed the field added together.
+  cause?: string | null;
 }): number {
   return insertAdviceTrace({
     gameId: input.gameId,
@@ -30,5 +40,6 @@ export function recordAdviceTrace(input: {
     validated: input.validated,
     regenCount: input.regenCount,
     latencyMs: input.latencyMs,
+    cause: input.cause,
   });
 }
