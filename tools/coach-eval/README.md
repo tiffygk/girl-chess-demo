@@ -124,9 +124,9 @@ waits for *something to happen*, not for the whole answer. Two new fields on
   and timestamps its first fire, from the SAME start point `ttfwMs` uses.
   Since `onAttemptStart` fires right before the backend call even begins,
   `ttfpMs` reads near-0ms in practice -- `ttfwMs` (gated behind the full
-  generate+validate) is what carries the real wait. (Original 65fb9fe landed
+  generate+validate) is what carries the real wait. (Original bbb38e2 landed
   before Task 1c's hooks existed and aliased `ttfpMs = ttfwMs` unconditionally
-  as an honest interim baseline; that aliasing went stale the moment 151e7fb
+  as an honest interim baseline; that aliasing went stale the moment ebbcf1f
   added the hooks and was never updated -- caught by Opus review F1 and fixed
   the same round. `run.test.ts` proves the real wiring with a fake backend
   whose first delta is delayed well past its attempt-start signal.)

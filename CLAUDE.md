@@ -2,7 +2,7 @@
 
 **Read `6 handoffs/HANDOFF — Next model (2026-08-05).md` FIRST** (written for a fresh context — current
 state, the play answer, and the one greenlit build). **Everything through 2026-08-05 is SHIPPED to `main`
-and gate-green (code tip `708ba66`, docs `73fbc78`).** The round-3
+and gate-green (code tip `4cb86c0`, docs `316dfb4`).** The round-3
 continuation queue and the day's work are all merged: the coach general-theory router fix; the
 opponent-move analysis feature (magenta "mallow's moves you highlighted" drawer + engine-grounded
 opponent chat); OD-3b thinking-low (attempt-0 `low` for ALL coach chat incl. review, no mode gate); the
@@ -13,7 +13,7 @@ and em-dashes in coach output — both fixed early. Read `docs/changelog.md`'s t
 for the file-level map, and `6 handoffs/AUTONOMOUS LOG — Arrow Redesign (2026-08-04).md` for the arrow
 build trail. The 2026-08-03 round-3 continuation handoff is now historical (its queue is drained).
 
-**MERGED to main 2026-08-05 (owner approved), tip `57aa168`:** the voice-consistent four-arrow model,
+**MERGED to main 2026-08-05 (owner approved), tip `ebd3eb7`:** the voice-consistent four-arrow model,
 on non-highlighted turning-point cards AND both drawers. Each card has a subject actor (whoever moved)
 and an other actor; each gets up to two arrows, played (SOLID) and should-have-played (DASHED), in
 their own colour voice, subject primary and other actor secondary, deduping to `found` (her) or plain

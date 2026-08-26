@@ -61,3 +61,6 @@ tools/.highlight-lines-scratch/
 .env
 .env.*
 *.env
+
+# local safety backup taken before the 2026-08-26 history rewrite; delete when satisfied
+backup-*.git/
