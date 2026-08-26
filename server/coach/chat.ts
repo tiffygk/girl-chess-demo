@@ -1034,11 +1034,27 @@ export function validateChat(
   // possibly a template). The two runs produce identical strings when both
   // flag, because the message states the truth the claim contradicts and
   // the claim is fixed, so a plain intersection is exact here.
+  //
+  // 2026-08-26: that intersection is SYMMETRIC -- it equally protects a
+  // claim true today and false then, which is how the coach told her a
+  // bishop was on d6 while she was asking about ply 31, a moment where it
+  // still stood on e7. focusGoverns narrows the protection to one
+  // direction: only when the prompt has explicitly told the model to
+  // answer about a focused moment (facts.context.turningPointFocus set)
+  // AND there is an actual focused position to judge against does that
+  // moment alone decide -- never let the strict path run with a focus
+  // flag but no focus position, or every claim gets flagged. Hoisted so
+  // both defense blocks and the placement call below read the same value.
+  const focusGoverns = facts.context?.turningPointFocus != null && facts.focusPosition != null;
   const unsafeRecaptureSquares = unsafeRecaptureSquaresFrom(facts.context?.threat);
   const currentDefense = checkDefenseClaims(text, facts.currentFen, unsafeRecaptureSquares);
   if (facts.focusPosition) {
     const focusDefense = new Set(checkDefenseClaims(text, facts.focusPosition.fen, unsafeRecaptureSquares));
-    violations.push(...currentDefense.filter((v) => focusDefense.has(v)));
+    if (focusGoverns) {
+      violations.push(...focusDefense);
+    } else {
+      violations.push(...currentDefense.filter((v) => focusDefense.has(v)));
+    }
   } else {
     violations.push(...currentDefense);
   }
@@ -1047,8 +1063,9 @@ export function validateChat(
   // both occupancy lists itself and applies the same both-positions
   // intersection internally (see checkPlacementClaims's own comment) --
   // unlike checkDefenseClaims above, there's no separate current/focus call
-  // + filter needed here.
-  violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
+  // + filter needed here. focusGoverns (above) threads through so a focused
+  // ask gets the same one-directional treatment as the defense claims.
+  violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy, focusGoverns));
   // Task 3a (R2, voice-enforcement round): no facts needed -- this checker
   // is about the SHAPE of the prose (notation/banned words/numbers), not
   // whether a claim matches the position. Round 3 Task 13: opts threads
@@ -1126,16 +1143,24 @@ export function validateChatGeneral(
   const violations: string[] = [];
 
   if (replyReferencesPosition(text)) {
+    // focusGoverns: same one-directional narrowing as validateChat above
+    // (see that copy's comment) -- only when a turning point is explicitly
+    // in focus AND there is a real focused position to judge against.
+    const focusGoverns = facts.context?.turningPointFocus != null && facts.focusPosition != null;
     const unsafeRecaptureSquares = unsafeRecaptureSquaresFrom(facts.context?.threat);
     const currentDefense = checkDefenseClaims(text, facts.currentFen, unsafeRecaptureSquares);
     if (facts.focusPosition) {
       const focusDefense = new Set(checkDefenseClaims(text, facts.focusPosition.fen, unsafeRecaptureSquares));
-      violations.push(...currentDefense.filter((v) => focusDefense.has(v)));
+      if (focusGoverns) {
+        violations.push(...focusDefense);
+      } else {
+        violations.push(...currentDefense.filter((v) => focusDefense.has(v)));
+      }
     } else {
       violations.push(...currentDefense);
     }
     violations.push(...checkSideAttributionClaims(text, facts));
-    violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
+    violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy, focusGoverns));
   }
 
   violations.push(...checkVoice(text, opts));

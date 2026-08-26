@@ -467,6 +467,112 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
+  // Task 4 (2026-08-26, coach-truth round): the intersection rule above and
+  // checkPlacementClaims's own copy of it (server/coach/placementClaims.ts)
+  // exist so a claim true at the moment being discussed is never penalised
+  // for being untrue today -- right in general, but SYMMETRIC, which is how
+  // the coach told the owner a bishop was on d6 while she was asking about
+  // ply 31, a moment where that bishop still stood on e7 (it only reached
+  // d6 three of mallow's moves later). The intersection equally protected a
+  // claim true TODAY and false THEN. The fix is one-directional: when a
+  // turning point is in focus, the focused position governs alone.
+  //
+  // Fixture (game 190, trace 284 shape): focusFen is the position just
+  // before ply 31 -- mallow's dark-squared bishop on e7, her other knight
+  // on d7. finalFen is a later position where that bishop has relocated to
+  // d6 and the d7 knight has moved to b6 -- built by hand (not a real
+  // replayed game) but a legal position either way, verified directly
+  // against chess.js in the console before being pasted in here.
+  describe("validateChat — focused asks bind placement claims to the focused position (game 190, trace 284)", () => {
+    const focusFen = "r2q1rk1/pp1nbpp1/5n1p/8/N2pP3/1P1B1Q1P/P2B1PP1/R4RK1 w - - 0 16";
+    const finalFen = "r2q1rk1/pp3pp1/1n1b1n1p/8/N2pP3/1P1B1Q1P/P2B1PP1/R4RK1 w - - 0 16";
+
+    function occupancyFromFen(fen: string): ChatFactList["occupancy"] {
+      const chess = new Chess(fen);
+      const occupancy: ChatFactList["occupancy"] = [];
+      for (const row of chess.board()) {
+        for (const cell of row) {
+          if (!cell) continue;
+          occupancy.push({ square: cell.square, pieceKind: cell.type, color: cell.color === "w" ? "you" : "mallow" });
+        }
+      }
+      return occupancy;
+    }
+
+    // turningPointFocus present -> facts.focusPosition is derived from
+    // focusFen and facts.context.turningPointFocus is set, mirroring
+    // assembleChatFactList's own "focusPly present -> derive focusPosition"
+    // fold (chat.ts ~line 627). turningPointFocus absent (the {} case,
+    // test 3 below) -> neither field is set, the same as an ordinary
+    // (non-focused) live message.
+    function factsWithFocus(
+      focusFenArg: string,
+      finalFenArg: string,
+      contextOverrides: { turningPointFocus?: { ply: number } }
+    ): ChatFactList {
+      const finalChess = new Chess(finalFenArg);
+      const base: ChatFactList = {
+        gameSans: [],
+        currentFen: finalFenArg,
+        toMove: finalChess.turn() === "w" ? "you" : "mallow",
+        occupancy: occupancyFromFen(finalFenArg),
+        legalSans: [],
+        allowedSans: [],
+        contested: [],
+        status: "finished",
+      };
+      if (!contextOverrides.turningPointFocus) return base;
+      const focusChess = new Chess(focusFenArg);
+      return {
+        ...base,
+        context: {
+          mode: "review",
+          turningPointFocus: {
+            ply: contextOverrides.turningPointFocus.ply,
+            san: "Bd6",
+            label: "test",
+          },
+        },
+        focusPosition: {
+          ply: contextOverrides.turningPointFocus.ply,
+          fen: focusFenArg,
+          toMove: focusChess.turn() === "w" ? "you" : "mallow",
+          occupancy: occupancyFromFen(focusFenArg),
+          legalSans: [],
+          contested: [],
+        },
+      };
+    }
+
+    it("flags a piece named from today's board when a turning point is in focus", () => {
+      const facts = factsWithFocus(focusFen, finalFen, { turningPointFocus: { ply: 31 } });
+      const result = validateChat("once it's on the board, it eyes her bishop on d6", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.includes("d6"))).toBe(true);
+    });
+
+    // Guard rail: the fix must not reintroduce the false positives the
+    // intersection rule was written to prevent -- a claim true at the
+    // focused moment (mallow's knight really is on d7 at ply 31, it has
+    // since moved to b6) must still be accepted even though it is no
+    // longer true today.
+    it("still accepts a claim true at the focused moment but false today", () => {
+      const facts = factsWithFocus(focusFen, finalFen, { turningPointFocus: { ply: 31 } });
+      const result = validateChat("her knight sits on d7 there", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    // Guard rail: with no turning point in focus, ordinary chat about the
+    // current board is untouched by this change -- a true claim about
+    // today's position (the bishop really is on d6 by finalFen) still
+    // passes.
+    it("keeps the lenient rule when no turning point is in focus", () => {
+      const facts = factsWithFocus(focusFen, finalFen, {});
+      const result = validateChat("her bishop is on d6", facts);
+      expect(result.ok).toBe(true);
+    });
+  });
+
   // Side-to-move fact (round 2026-07-22): the coach once attributed the
   // PLAYER's own pending move to mallow ("you win her queen for free" about
   // the player's own Qh5) because ChatFactList had no fact stating whose
