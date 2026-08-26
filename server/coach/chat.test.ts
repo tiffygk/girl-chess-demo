@@ -1308,9 +1308,15 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       });
       const parts = buildChatPromptParts(facts, [], "where's my bishop?", getPersona(), "board");
 
-      expect(parts.dynamic).toMatch(
-        /currentFen.*occupancy.*(describe a different moment|not the position you are being asked about)/i
-      );
+      expect(parts.dynamic).toMatch(/currentFen.*occupancy.*describe a different moment/i);
+      // Review fix (Important): the instruction used to point at "the focused
+      // position above" for every claim, but focusForModel (chat.ts) never
+      // sends that position -- only a diff of what changed. This pins the
+      // corrected instruction's warning against standHereNowButNotThen
+      // specifically, since that field holds TODAY's squares and sits inside
+      // the focusPosition object -- naming a piece from it as "the focused
+      // moment" is the original bug inverted.
+      expect(parts.dynamic).toContain("never name a square from standHereNowButNotThen");
     });
 
     it("mallow-ply focus: carries the same warning on the opponent-move branch", () => {
@@ -1320,9 +1326,11 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       });
       const parts = buildChatPromptParts(facts, [], "what was mallow doing there?", getPersona(), "board");
 
-      expect(parts.dynamic).toMatch(
-        /currentFen.*occupancy.*(describe a different moment|not the position you are being asked about)/i
-      );
+      expect(parts.dynamic).toMatch(/currentFen.*occupancy.*describe a different moment/i);
+      // Minor review fix: without this, a ply-parity inversion would still
+      // land in the her-ply branch and this test would pass for the wrong
+      // reason -- prove which branch actually ran.
+      expect(parts.dynamic).toContain("MALLOW'S move");
     });
   });
 });

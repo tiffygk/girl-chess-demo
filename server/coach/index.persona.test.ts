@@ -241,6 +241,30 @@ describe("chat system prompt retune (Task 5, R2 + R5)", () => {
   });
 });
 
+// Task 3 (coach-truth round) review fix: the focused-moment persona rule
+// used to tell the coach to "name pieces from the focused position, never
+// from the current one" with no sanctioned source for a piece that never
+// moved. Deleting these lines made nothing go red -- this pins the
+// corrected rule so removing it fails here, the same idiom as the other
+// real-coach.md pins in this file.
+describe("chat system prompt: focused-moment ground rule (Task 3 review fix)", () => {
+  function parseRealCoachMd() {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const md = fs.readFileSync(path.join(here, "personas/coach.md"), "utf-8");
+    return parsePersona(md);
+  }
+
+  it("instructs the coach to derive the then-position from both change lists plus current occupancy, never from standHereNowButNotThen", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain(
+      "work out where a piece stood then from those two lists plus"
+    );
+    expect(persona.chatSystemPrompt).toContain(
+      "never report a square from standHereNowButNotThen"
+    );
+  });
+});
+
 // R2 Task 2 (2026-07-22, coach voice rewrite): the owner read real coach
 // answers and ruled on voice -- no "engine"/"eval"/centipawn numbers (the
 // tool's in-cast name is "our chess brain"), no raw notation as a move name,
