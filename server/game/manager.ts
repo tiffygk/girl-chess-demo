@@ -352,7 +352,21 @@ export class GameManager {
     const key = pref ?? "claude";
     const now = this.clock();
     const cached = this.coachBackends.get(key);
-    if (cached && now - cached.cachedAt < BACKEND_CACHE_TTL_MS) return cached.backend;
+    // Task 6 fix (coach-truth round, review finding 2): the cooldown must
+    // hold on this fast path too, not just the probe path below -- under
+    // concurrency two calls can both miss the cache, both start available(),
+    // and the SECOND one's own generate() can time out (which never evicts,
+    // by design -- a timeout means "slow", not "down") right after the
+    // first one's real failure marked+evicted the backend and the second
+    // one's now-stale probe re-inserts a cache entry for it. Without this
+    // check that entry survives its full BACKEND_CACHE_TTL_MS, serving a
+    // backend already known dead to every call in that window -- the exact
+    // window this task exists to close. isCoachBackendUnhealthy is cheap
+    // (a Map lookup, no I/O), so paying it on every cache hit costs nothing
+    // real backends don't already pay on the miss path.
+    if (cached && now - cached.cachedAt < BACKEND_CACHE_TTL_MS && !this.isCoachBackendUnhealthy(cached.backend.name)) {
+      return cached.backend;
+    }
 
     // Task 6: every branch below gates its available() probe on
     // !isCoachBackendUnhealthy(...) first -- a backend serving out its

@@ -1112,13 +1112,16 @@ describe("GameManager", () => {
       gm.setClockForTesting(() => Date.now());
     });
 
-    // Same discipline as the "agent-sdk" pref block above: gm/its caches AND
-    // its coachUnhealthy map are shared across this whole file (no per-test
-    // teardown clears either), so every test here must jump past whichever
-    // is LONGER-lived -- COACH_UNHEALTHY_COOLDOWN_MS (60s), not just
-    // BACKEND_CACHE_TTL_MS (30s) -- or an earlier test's still-outstanding
-    // cooldown on the same backend name (e.g. "ollama", reused across every
-    // test below) leaks into the next one's first assertion.
+    // Minor fix (review of Task 6): the outer afterEach (line 98,
+    // gm.resetCoachBackendStateForTesting()) already clears both the pref
+    // cache and the coachUnhealthy map after every test in this file, so
+    // this helper is never needed to escape a PRIOR test's leftover state --
+    // the comment used to claim otherwise. It's only needed WITHIN a single
+    // test, to jump the clock forward past whichever window that step cares
+    // about: BACKEND_CACHE_TTL_MS (30s) to force pickCoachBackend to
+    // re-probe instead of reusing its cache, or the longer
+    // COACH_UNHEALTHY_COOLDOWN_MS (60s) it's actually named for, to prove a
+    // cooldown has lapsed.
     function advanceClockPastCache() {
       clockOffset += COACH_UNHEALTHY_COOLDOWN_MS + 1;
       const offset = clockOffset;
@@ -1126,7 +1129,6 @@ describe("GameManager", () => {
     }
 
     it("chat(): a genuine (non-timeout) generate() failure marks that backend unhealthy, so the very next call skips it -- until the cooldown lapses", async () => {
-      advanceClockPastCache();
       const availableSpy = vi.spyOn(claudeCliBackend, "available").mockResolvedValue(true);
       const generateSpy = vi.spyOn(claudeCliBackend, "generate").mockRejectedValue(new Error("down"));
       vi.spyOn(ollamaBackend, "available").mockResolvedValue(true);
@@ -1170,7 +1172,6 @@ describe("GameManager", () => {
     }, 20000);
 
     it("narrate(): a genuine (non-timeout) generate() failure marks that backend unhealthy, so the very next call skips it -- pref 'ollama' has no claude-cli fallback, so it drops straight to template", async () => {
-      advanceClockPastCache();
       const availableSpy = vi.spyOn(ollamaBackend, "available").mockResolvedValue(true);
       const generateSpy = vi.spyOn(ollamaBackend, "generate").mockRejectedValue(new Error("connection refused"));
 
@@ -1199,9 +1200,16 @@ describe("GameManager", () => {
     }, 20000);
 
     it("a TIMEOUT does not mark the backend unhealthy -- the next call still tries it again", async () => {
-      advanceClockPastCache();
       const availableSpy = vi.spyOn(ollamaBackend, "available").mockResolvedValue(true);
-      vi.spyOn(ollamaBackend, "generate").mockRejectedValue(new Error("ollama request timed out after 15000ms"));
+      // Finding 1 fix: this fixture used to read "ollama request timed out
+      // after 15000ms" -- a message shape ollama.ts's generate() could never
+      // actually produce (its abort path threw the bare AbortError through
+      // unchanged). Re-pointed at the REAL message the fixed generate() now
+      // emits on abort (see ollama.test.ts's own abort-driven test, which
+      // proves the producer actually emits this string, not just that this
+      // mock says so). NARRATE_DEFAULT_BUDGET_MS (15000) is the budget
+      // narrate() threads to the ollama backend.
+      vi.spyOn(ollamaBackend, "generate").mockRejectedValue(new Error("ollama generate timed out after 15000ms"));
 
       const g1 = await gm.newGame(sessionId, 1100);
       const first = await gm.narrate(g1.gameId, {
@@ -1225,6 +1233,47 @@ describe("GameManager", () => {
       traces = getAdviceTraces(g2.gameId);
       expect(traces[traces.length - 1].backend).toBe("ollama"); // still tried, never skipped
       expect(availableSpy).toHaveBeenCalledTimes(2); // re-probed normally both times
+    }, 20000);
+
+    // Finding 2 fix (review of Task 6): pickCoachBackend's cache-hit branch
+    // used to return `cached.backend` on a fresh (well within
+    // BACKEND_CACHE_TTL_MS) entry without ever consulting
+    // isCoachBackendUnhealthy -- the cooldown was enforced only on the probe
+    // path below it, and relied on markCoachBackendUnhealthy's own eviction
+    // sweep to have already removed any stale entry. Under concurrency that
+    // eviction can be undone: two calls miss the cache and both start
+    // available(); the first resolves, fails auth, marks + evicts; the
+    // second's probe resolves AFTER that and re-inserts a fresh cache entry
+    // for the same now-known-dead backend. This test reproduces exactly that
+    // ordering directly (mark-then-reinsert), rather than racing two real
+    // calls, since the bug is in what the cache-hit branch checks, not in
+    // how the entry got there.
+    it("pickCoachBackend: a cache hit still consults the cooldown -- an entry re-inserted AFTER an eviction must not survive its own TTL", async () => {
+      // markCoachBackendUnhealthy both marks claude-cli unhealthy AND evicts
+      // any cache entry currently pointing at it -- exactly what the real
+      // onBackendFailure hook does on a genuine generate() failure.
+      gm.markCoachBackendUnhealthy(claudeCliBackend.name);
+
+      // Simulates a second, in-flight probe for the same pref ("claude")
+      // resolving AFTER that mark/eviction and re-inserting a fresh cache
+      // entry for the same backend -- setCoachBackendForTesting is the same
+      // seam pickCoachBackend's own cache-set line uses, stamped with the
+      // current clock, so the entry is well inside BACKEND_CACHE_TTL_MS.
+      gm.setCoachBackendForTesting(claudeCliBackend, "claude");
+
+      vi.spyOn(ollamaBackend, "available").mockResolvedValue(true);
+      vi.spyOn(ollamaBackend, "generate").mockResolvedValue("that keeps your development on track.");
+
+      const g = await gm.newGame(sessionId, 1100);
+      const result = await gm.chat(g.gameId, { message: "what should I do?", context: { mode: "live" } });
+      expect(result.ok).toBe(true);
+      const traces = getAdviceTraces(g.gameId);
+      // A cache-hit branch that never consults the cooldown would return the
+      // re-inserted claude-cli entry here, even though it is known dead --
+      // this pins that it instead falls through to ollama, same as the
+      // probe path already does.
+      expect(traces[traces.length - 1].backend).not.toBe("claude-cli");
+      expect(traces[traces.length - 1].backend).toBe("ollama");
     }, 20000);
   });
 
