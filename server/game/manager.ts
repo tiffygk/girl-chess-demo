@@ -123,6 +123,20 @@ const DRAW_ACCEPT_CP_BAND = 60;
 // exists for in the first place.
 export const BACKEND_CACHE_TTL_MS = 30000;
 
+// Task 6 (coach-truth round). 2026-08-25: an OAuth expiry kept every coach
+// call failing for 12.7 hours across two sessions while available() still
+// returned true, because the probe is spawn(binary, ["--version"]) and
+// never exercises auth. available() cannot cheaply prove auth works
+// without spending a real model call on every selection, so the fix is not
+// a smarter probe -- it's reacting to the failure that actually happened.
+// A backend that just threw a non-timeout error from generate() is skipped
+// for this cooldown, so the existing priority chain (agent-sdk -> claude-cli
+// -> ollama -> none) falls through to the next backend instead of re-picking
+// the dead one every call for up to BACKEND_CACHE_TTL_MS. claude-cli shares
+// its credential with agent-sdk, so an OAuth expiry fails both -- expected;
+// the chain still reaches ollama (local, no credential) or template cleanly.
+export const COACH_UNHEALTHY_COOLDOWN_MS = 60_000;
+
 // Wave 2, item 5: coach's-corner narration budgets. The agent-sdk backend
 // spins up a whole SDK session per call and is materially slower than the
 // claude CLI / ollama, so it gets double the flat budget; every other
@@ -211,6 +225,13 @@ export class GameManager {
   // and repeat calls with the same pref skip re-probing until the entry
   // ages past BACKEND_CACHE_TTL_MS (Task 8, Fix 2).
   private coachBackends = new Map<string, CachedBackend>();
+  // Task 6 (coach-truth round): backend name -> the clock time its cooldown
+  // lapses. Keyed by BACKEND NAME, not by pref -- a single real backend
+  // (e.g. "claude-cli") can be the resolved target of more than one pref
+  // chain ("claude" default and the "agent-sdk" chain's fallback both reach
+  // it), and a genuine failure means that backend itself is down regardless
+  // of which pref happened to be in use when it threw.
+  private coachUnhealthy = new Map<string, number>();
   // Task 8 (inc 3.95, Fix 2): injectable clock — production code never calls
   // Date.now() directly anywhere in this class, only through this seam, so
   // manager.test.ts can advance time deterministically past
@@ -264,6 +285,60 @@ export class GameManager {
     this.clock = clock;
   }
 
+  // Task 6 (coach-truth round): called by chat.ts/index.ts's narrate() via
+  // the onBackendFailure hook the moment a real (non-timeout) generate()
+  // call throws. Records the cooldown AND evicts every coachBackends cache
+  // entry currently pointing at this backend name -- not just the pref that
+  // happened to be in flight when it failed, since more than one pref chain
+  // can resolve to the same real backend (see coachUnhealthy's own comment).
+  // Without the eviction, a cache hit would keep serving the now-known-dead
+  // backend for up to BACKEND_CACHE_TTL_MS regardless of this cooldown.
+  markCoachBackendUnhealthy(name: string): void {
+    // noBackend.generate() throws UNCONDITIONALLY, by design (Task 8 Fix
+    // 1's own comment) -- every call that resolves to "none" (a deliberate
+    // "template" pref choice, or the whole chain legitimately exhausted)
+    // still reaches this same onBackendFailure hook. Marking "none" itself
+    // is never useful (it is the unconditional terminal fallback in every
+    // chain already, never gated on an available()/unhealthy check) and is
+    // actively harmful: it would evict every OTHER pref's cache entry
+    // currently resolved to noBackend -- including the entry THIS SAME call
+    // just set moments earlier inside pickCoachBackend -- forcing a needless
+    // re-probe on the very next call for a pref that was never actually
+    // wrong. Caught by the "ollama" self-heal test regressing when this
+    // guard was missing.
+    if (name === noBackend.name) return;
+    this.coachUnhealthy.set(name, this.clock() + COACH_UNHEALTHY_COOLDOWN_MS);
+    for (const [key, entry] of this.coachBackends) {
+      if (entry.backend.name === name) this.coachBackends.delete(key);
+    }
+  }
+
+  // Task 6: true while `name`'s cooldown still holds. pickCoachBackend
+  // below checks this alongside (never instead of) each backend's own
+  // available() -- a backend that is merely unhealthy right now should get
+  // a real re-probe again once the cooldown lapses, not stay excluded
+  // forever the way a permanently-unavailable one effectively would.
+  private isCoachBackendUnhealthy(name: string): boolean {
+    const until = this.coachUnhealthy.get(name);
+    return until !== undefined && this.clock() < until;
+  }
+
+  // Test seam only (Task 6): manager.test.ts shares ONE gm/one process
+  // across its whole file, and several pre-existing tests resolve to the
+  // real ollamaBackend and let its generate() run UNMOCKED against whatever
+  // local daemon this machine does or doesn't have -- by design, since only
+  // backend SELECTION was ever under test, not whether that real call
+  // happens to succeed. A real non-timeout failure there now legitimately
+  // marks that backend unhealthy (the whole point of this task), and with
+  // no per-test reset that mark would silently outlive its own test and
+  // break an unrelated later one expecting a fresh probe. Clears both maps
+  // so every test starts from a clean cache/health slate regardless of what
+  // a real (unmocked) backend call actually did. Unused in production.
+  resetCoachBackendStateForTesting(): void {
+    this.coachBackends.clear();
+    this.coachUnhealthy.clear();
+  }
+
   // pref semantics (panel A4/A5): "template" is a first-class choice with NO
   // probe (always noBackend); "ollama" is ollama-if-available else
   // noBackend (no claude-cli fallback — an explicit "local only" request
@@ -279,19 +354,29 @@ export class GameManager {
     const cached = this.coachBackends.get(key);
     if (cached && now - cached.cachedAt < BACKEND_CACHE_TTL_MS) return cached.backend;
 
+    // Task 6: every branch below gates its available() probe on
+    // !isCoachBackendUnhealthy(...) first -- a backend serving out its
+    // cooldown is treated as unavailable so the chain falls through, WITHOUT
+    // spending a real probe call on it (available() alone can't tell auth is
+    // broken anyway; there's no point asking it again mid-cooldown). noBackend
+    // is never gated here since it's the unconditional terminal fallback in
+    // every chain already.
     let backend: CoachBackend;
     if (key === "template") {
       backend = noBackend;
     } else if (key === "ollama") {
-      backend = (await ollamaBackend.available()) ? ollamaBackend : noBackend;
+      backend =
+        !this.isCoachBackendUnhealthy(ollamaBackend.name) && (await ollamaBackend.available())
+          ? ollamaBackend
+          : noBackend;
     } else if (key === "agent-sdk") {
-      if (await agentSdkBackend.available()) backend = agentSdkBackend;
-      else if (await claudeCliBackend.available()) backend = claudeCliBackend;
-      else if (await ollamaBackend.available()) backend = ollamaBackend;
+      if (!this.isCoachBackendUnhealthy(agentSdkBackend.name) && (await agentSdkBackend.available())) backend = agentSdkBackend;
+      else if (!this.isCoachBackendUnhealthy(claudeCliBackend.name) && (await claudeCliBackend.available())) backend = claudeCliBackend;
+      else if (!this.isCoachBackendUnhealthy(ollamaBackend.name) && (await ollamaBackend.available())) backend = ollamaBackend;
       else backend = noBackend;
     } else {
-      if (await claudeCliBackend.available()) backend = claudeCliBackend;
-      else if (await ollamaBackend.available()) backend = ollamaBackend;
+      if (!this.isCoachBackendUnhealthy(claudeCliBackend.name) && (await claudeCliBackend.available())) backend = claudeCliBackend;
+      else if (!this.isCoachBackendUnhealthy(ollamaBackend.name) && (await ollamaBackend.available())) backend = ollamaBackend;
       else backend = noBackend;
     }
     this.coachBackends.set(key, { backend, cachedAt: this.clock() });
@@ -1076,7 +1161,13 @@ export class GameManager {
     // may fall back (agent-sdk -> claude-cli -> ollama), and the budget must
     // track whatever actually runs.
     const budgetMs = backend.name === "agent-sdk" ? NARRATE_AGENT_SDK_BUDGET_MS : NARRATE_DEFAULT_BUDGET_MS;
-    const result = await narrateFacts(facts, backend, { gameId, ply: live.ply, kind: body.tier }, { budgetMs });
+    const result = await narrateFacts(facts, backend, { gameId, ply: live.ply, kind: body.tier }, {
+      budgetMs,
+      // Task 6: wires the real-failure signal to the cooldown -- narrate()
+      // itself has no idea a cooldown/priority chain exists, it only
+      // reports the backend name a non-timeout throw actually came from.
+      onBackendFailure: (name) => this.markCoachBackendUnhealthy(name),
+    });
     return { ok: true, text: result.text, source: result.source, traceId: result.traceId };
   }
 
@@ -1276,6 +1367,10 @@ export class GameManager {
       onAttemptStart: streamOpts?.onAttemptStart,
       onValidateStart: streamOpts?.onValidateStart,
       standingNotes,
+      // Task 6: same wiring as narrate() above -- chat.ts reports the
+      // backend name a non-timeout throw actually came from, this method
+      // turns that into a cooldown.
+      onBackendFailure: (name) => this.markCoachBackendUnhealthy(name),
     });
 
     // Wave 4, item 3: the WRITE half. An explicit record request persists a

@@ -373,6 +373,20 @@ export function buildPrompt(facts: CoachFactList, persona: Persona): string {
   ].join("\n");
 }
 
+// 2026-08-26 (coach-truth round, task 6): moved here from chat.ts so both
+// narrate() below and chat.ts's own attempt loop can classify the same way
+// without a circular import (chat.ts already imports getPersona/
+// NarrateTraceContext from this file; this file must never import FROM
+// chat.ts). Detects on the literal substring "timed out" -- every backend's
+// timeout path (claude-cli.ts's formatTimeoutError, agent-sdk.ts's
+// generate()/probe rejects, ollama.ts's probe reject) already formats its
+// error text through those words, so this stays a one-line classification
+// with no backend-side changes or typed error class needed.
+export function isTimeoutError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.toLowerCase().includes("timed out");
+}
+
 function correctiveSuffix(violations: readonly string[]): string {
   return [
     "",
@@ -420,7 +434,15 @@ export async function narrate(
   // threads a larger one for the slower agent-sdk backend (see
   // manager.ts's narrate); omitted, it falls back to the flat
   // NARRATE_TIMEOUT_MS so every pre-this-wave caller is unchanged.
-  opts?: { budgetMs?: number }
+  // Task 6 (coach-truth round, 2026-08-26): onBackendFailure is additive/
+  // optional -- every pre-this-wave caller (index.test.ts et al.) omits it
+  // and gets exactly today's behavior. Fired once, right here in the catch
+  // below, ONLY for a non-timeout failure -- a timeout means the backend was
+  // reachable but slow, and penalising that would take a working backend
+  // out of the priority chain under load. manager.ts wires this to
+  // markCoachBackendUnhealthy(name); this function has no idea a cooldown
+  // exists, it only reports what actually happened.
+  opts?: { budgetMs?: number; onBackendFailure?: (backendName: string) => void }
 ): Promise<NarrateResult> {
   const start = Date.now();
   const persona = getPersona();
@@ -439,6 +461,10 @@ export async function narrate(
       // Backend error/timeout at any attempt short-circuits straight to the
       // template fallback below — never worth a second network/process call.
       attemptOutput = `[backend error] ${err instanceof Error ? err.message : String(err)}`;
+      // Task 6: a genuine (non-timeout) failure means this backend is
+      // actually down, not just slow -- report it so the caller can skip it
+      // for a cooldown instead of re-picking it on the very next call.
+      if (!isTimeoutError(err)) opts?.onBackendFailure?.(backend.name);
       break;
     }
 

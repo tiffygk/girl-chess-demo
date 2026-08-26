@@ -19,7 +19,7 @@ import { toMoverCp } from "../annotator/classify";
 import { phasesForGame, type GamePhase } from "../../src/review/gamePhases";
 import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
 import type { CoachBackend, CoachUsage } from "./backends/types";
-import { getPersona, type NarrateTraceContext } from "./index";
+import { getPersona, isTimeoutError, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims } from "./placementClaims";
@@ -1748,10 +1748,10 @@ export function correctiveSuffix(violations: readonly string[]): string {
 // agent-sdk.ts's generate()/probe rejects, ollama.ts's probe reject) --
 // detect on that substring rather than adding a typed error class, so this
 // stays a one-line classification with no backend-side changes.
-function isTimeoutError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return message.toLowerCase().includes("timed out");
-}
+// 2026-08-26: isTimeoutError itself moved to ./index (coach-truth round,
+// task 6) so narrate() there can share the same classification without a
+// circular import -- this file already depends on ./index for getPersona/
+// NarrateTraceContext, so importing it back is the non-circular direction.
 
 export async function chat(
   userMessage: string,
@@ -1803,6 +1803,14 @@ export async function chat(
   // that never reaches a caller-visible answer -- that attempt still spent
   // real billed tokens, and the eval harness's whole point is to make that
   // spend visible even when the row's final answer is a template.
+  // Task 6 (coach-truth round, 2026-08-26): onBackendFailure is additive/
+  // optional -- every pre-this-wave caller (chat.test.ts and its siblings)
+  // omits it and gets exactly today's behavior. Fired once from the catch
+  // below, ONLY when failureCause resolves to "backend-down" -- a timeout
+  // means the backend was reachable but slow, and penalising that would
+  // take a working backend out of the priority chain under load.
+  // manager.ts wires this to markCoachBackendUnhealthy(name); this function
+  // has no idea a cooldown exists, it only reports what actually happened.
   opts?: {
     budgetMs?: number;
     intent?: ChatIntent;
@@ -1812,6 +1820,7 @@ export async function chat(
     onValidateStart?: () => void;
     onUsage?: (usage: CoachUsage) => void;
     standingNotes?: string[];
+    onBackendFailure?: (backendName: string) => void;
   }
 ): Promise<{
   text: string;
@@ -1999,6 +2008,12 @@ export async function chat(
     } catch (err) {
       attemptOutput = normalizeEmDash(`[backend error] ${err instanceof Error ? err.message : String(err)}`);
       failureCause = isTimeoutError(err) ? "timeout" : "backend-down";
+      // Task 6: a genuine (non-timeout) failure means this backend is
+      // actually down, not just slow -- report it so the caller can skip it
+      // for a cooldown instead of re-picking it on the very next call. Runs
+      // for BOTH attempt 0 and a regen's attempt 1 (whichever one actually
+      // threw non-timeout), never for a timeout on either attempt.
+      if (failureCause === "backend-down") opts?.onBackendFailure?.(backend.name);
       // Wave 3, item 4 regression (live-eval): an attempt-0 TIMEOUT must not
       // throw away the reserved half of the budget. The cap means "attempt 0
       // may not consume more than half", NOT "a slow answer dies at half" --
