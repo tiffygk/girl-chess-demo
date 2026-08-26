@@ -58,9 +58,21 @@ describe("guard claims: bare negators and sentence boundaries (game 189, trace 2
     expect(checkDefenseClaims(real, postKf2)).toEqual([]);
   });
 
-  it("reads 'nothing defends' as a negation, not an affirmative guard claim", () => {
-    // c6 is genuinely undefended here, so a NEGATIVE claim about it is true.
-    expect(checkDefenseClaims("nothing defends c6", postKf2)).toEqual([]);
+  it("reads a bare-negator guard claim ('nothing defends') as a negation, isolated from the sentence-split fix", () => {
+    // Review finding (2026-08-26): the previous version of this test used
+    // "nothing defends c6", which contains only ONE square -- guardClaimRe
+    // never matches (it requires two squares), so GUARD_NEGATION_RE is never
+    // consulted and the test passes whether or not the bare-negator
+    // alternatives are in GUARD_NEGATION_RE at all. It was vacuous both
+    // before and after the fix it claimed to cover, and is replaced here.
+    // This fixture keeps both squares in ONE sentence (so the per-sentence
+    // scan can't be what saves it) and relies on "nothing" -- a bare
+    // negator, not "does not"/"can't" -- to flip the claim to negative and
+    // true. Fails only if the bare-negator alternatives are removed from
+    // GUARD_NEGATION_RE.
+    expect(
+      checkDefenseClaims("her pawn on b7 can take it and nothing defends f2", postKf2)
+    ).toEqual([]);
   });
 
   it("still catches a real affirmative guard falsehood inside one sentence", () => {
@@ -68,6 +80,17 @@ describe("guard claims: bare negators and sentence boundaries (game 189, trace 2
     expect(checkDefenseClaims("the pawn on b7 defends f2", postKf2)).toContain(
       "defense-claim: b7 does not guard f2"
     );
+  });
+
+  it("does not invent a guard claim across a sentence break, isolated from the bare-negator fix", () => {
+    // Review finding (2026-08-26): the headline fixture above is satisfied
+    // by EITHER fix alone (bare negators OR per-sentence scanning), so it
+    // can't tell them apart. This fixture uses no negation words at all --
+    // both clauses are plain affirmative guard claims -- so it fails only if
+    // the per-sentence scan is reverted to a whole-text scan (which would
+    // let the filler window pair "b7" from the first sentence with a square
+    // from the second).
+    expect(checkDefenseClaims("b7 defends it. f2 defends e3.", postKf2)).toEqual([]);
   });
 
   it("splits on sentence terminators", () => {
