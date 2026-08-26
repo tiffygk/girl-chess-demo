@@ -5,6 +5,15 @@ needle-in-a-haystack problem (it had grown to ~230 dense lines / ~56KB / ~14k to
 every session). `CLAUDE.md` keeps a one-line pointer into this file per entry; nothing below is
 abridged from the original. Newest first, matching `CLAUDE.md`'s own convention.
 
+This is an internal engineering work log, written for the next session rather than for a reader. It is
+published because the record is part of what this repo shows, not because it is a tour. Start at
+[README.md](README.md) if you want one.
+
+Paths in the shape `1 product/`, `2 build/`, `3 visual/` and `6 handoffs/` point into a private
+Obsidian vault holding the product docs, plans and handoffs. They are not in this repository and will
+not resolve. They are left as written, because rewriting them would misrepresent what each entry
+actually cited at the time.
+
 ## Honest efficiency claims, elo to 1900, conversion reason at the badge (2026-08-21, merged)
 
 Three waves in the owner's order, all merged to `main`: N2 `d347de4..f9a2da2`, N1 `f9a2da2..b6e3a7b`,
