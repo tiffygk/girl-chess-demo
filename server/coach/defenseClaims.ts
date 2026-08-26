@@ -24,7 +24,12 @@ import { Chess } from "chess.js";
 // one-regen-then-template fallback picks them up unchanged on both surfaces.
 export const SQ = "[a-h][1-8]";
 export const GUARD_VERBS = "guards?|guarding|defends?|defending|protects?|protecting";
-export const GUARD_NEGATION_RE = /\b(does not|doesn't|do not|don't|cannot|can't|never)\b/i;
+// 2026-08-25: "nothing defends it" parsed as an AFFIRMATIVE guard claim,
+// because the list below only had verbal negations ("does not", "can't").
+// A bare negator subject negates the relation just as hard. Precision-first,
+// same as the rest of this file: an enumerated list, not a general matcher.
+export const GUARD_NEGATION_RE =
+  /\b(does not|doesn't|do not|don't|cannot|can't|never|nothing|nobody|no piece|no pieces|none)\b/i;
 export const SAFETY_UNDEFENDED_WORDS = ["undefended", "unprotected", "unguarded", "hanging", "hangs", "not defended", "not protected", "not guarded"];
 export const SAFETY_DEFENDED_WORDS = ["defended", "protected", "guarded", "safe", "covered"];
 // Controller follow-up (issue B, 2026-07-22 review): the safety-claim shape
@@ -42,6 +47,16 @@ export const SAFETY_DEFENDED_WORDS = ["defended", "protected", "guarded", "safe"
 // SAFETY_UNDEFENDED_WORDS), so this never double-negates it.
 export const SAFETY_COPULA_RE = /\b(?:is|isn't|are|aren't)\b/i;
 export const SAFETY_NEGATION_RE = /\b(isn't|aren't)\b/i;
+
+// 2026-08-25, the other half of trace 278: the filler windows below cap at 40
+// characters but say nothing about sentence terminators, so a match happily
+// paired "b7" in one sentence with "f2" in the next and asserted a relation
+// between two squares the coach never connected. Both claim shapes are
+// within-sentence claims by construction, so the cheapest correct fix is to
+// never let a match see two sentences at once.
+export function splitSentences(text: string): string[] {
+  return text.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
+}
 
 export function guardClaimRe(): RegExp {
   // group 1: sqA, group 2: text between sqA and the verb (checked for
@@ -102,47 +117,54 @@ export function checkDefenseClaims(
   const unsafeRecapture = new Set([...unsafeRecaptureSquares].map((s) => s.toLowerCase()));
   const violations: string[] = [];
 
-  for (const m of text.matchAll(guardClaimRe())) {
-    const [, sqA, between, sqB] = m;
-    const a = sqA.toLowerCase();
-    const b = sqB.toLowerCase();
-    if (a === b) continue;
-    const colorA = colorAt(a);
-    const colorB = colorAt(b);
-    if (!colorA || !colorB) continue; // an empty square -- can't adjudicate
-    const claimsDefends = !GUARD_NEGATION_RE.test(between);
-    const truth = colorA === colorB && chess.attackers(sq(b), colorA).includes(sq(a));
-    if (claimsDefends !== truth) {
-      violations.push(`defense-claim: ${a} ${truth ? "does guard" : "does not guard"} ${b}`);
+  // Trace 278 (game 189 ply 28): run both claim shapes per sentence rather
+  // than over the whole reply, so a filler window can never pair a square
+  // from one sentence with a square from the next. Every rule, threshold,
+  // and violation string below is unchanged; only the unit of text they
+  // scan is.
+  for (const sentence of splitSentences(text)) {
+    for (const m of sentence.matchAll(guardClaimRe())) {
+      const [, sqA, between, sqB] = m;
+      const a = sqA.toLowerCase();
+      const b = sqB.toLowerCase();
+      if (a === b) continue;
+      const colorA = colorAt(a);
+      const colorB = colorAt(b);
+      if (!colorA || !colorB) continue; // an empty square -- can't adjudicate
+      const claimsDefends = !GUARD_NEGATION_RE.test(between);
+      const truth = colorA === colorB && chess.attackers(sq(b), colorA).includes(sq(a));
+      if (claimsDefends !== truth) {
+        violations.push(`defense-claim: ${a} ${truth ? "does guard" : "does not guard"} ${b}`);
+      }
     }
-  }
 
-  for (const m of text.matchAll(safetyClaimRe())) {
-    const [, sqB, between, rawPredicate] = m;
-    if (!SAFETY_COPULA_RE.test(between)) continue; // not the "<sq> is/are <predicate>" shape
-    const b = sqB.toLowerCase();
-    const colorB = colorAt(b);
-    if (!colorB) continue; // an empty square -- can't adjudicate
-    const predicate = rawPredicate.toLowerCase().replace(/\s+/g, " ");
-    let claimsDefended: boolean | null = null;
-    if (SAFETY_UNDEFENDED_WORDS.includes(predicate)) claimsDefended = false;
-    else if (SAFETY_DEFENDED_WORDS.includes(predicate)) claimsDefended = true;
-    if (claimsDefended === null) continue;
-    // A contracted-negative copula ("isn't"/"aren't") flips the predicate's
-    // base polarity -- "isn't defended" (predicate "defended", base true)
-    // becomes a claim of "undefended" (false). The spelled-out "is not
-    // defended" case never reaches here with `between` containing a
-    // negation word at all (see SAFETY_NEGATION_RE's comment above), so
-    // this can't double-negate it.
-    if (SAFETY_NEGATION_RE.test(between)) claimsDefended = !claimsDefended;
-    const truth = chess.attackers(sq(b), colorB).length > 0;
-    // Round 3 (Q4, trace-180): a claim that b is NOT safe/defended, on a
-    // square the recapture-viability fact says legitimately doesn't hold up
-    // even though it's geometrically defended, is a MORE PRECISE truth, not
-    // a contradiction -- skip it rather than flag an honest claim.
-    if (claimsDefended === false && truth === true && unsafeRecapture.has(b)) continue;
-    if (claimsDefended !== truth) {
-      violations.push(`defense-claim: ${b} is ${truth ? "defended" : "undefended"}`);
+    for (const m of sentence.matchAll(safetyClaimRe())) {
+      const [, sqB, between, rawPredicate] = m;
+      if (!SAFETY_COPULA_RE.test(between)) continue; // not the "<sq> is/are <predicate>" shape
+      const b = sqB.toLowerCase();
+      const colorB = colorAt(b);
+      if (!colorB) continue; // an empty square -- can't adjudicate
+      const predicate = rawPredicate.toLowerCase().replace(/\s+/g, " ");
+      let claimsDefended: boolean | null = null;
+      if (SAFETY_UNDEFENDED_WORDS.includes(predicate)) claimsDefended = false;
+      else if (SAFETY_DEFENDED_WORDS.includes(predicate)) claimsDefended = true;
+      if (claimsDefended === null) continue;
+      // A contracted-negative copula ("isn't"/"aren't") flips the predicate's
+      // base polarity -- "isn't defended" (predicate "defended", base true)
+      // becomes a claim of "undefended" (false). The spelled-out "is not
+      // defended" case never reaches here with `between` containing a
+      // negation word at all (see SAFETY_NEGATION_RE's comment above), so
+      // this can't double-negate it.
+      if (SAFETY_NEGATION_RE.test(between)) claimsDefended = !claimsDefended;
+      const truth = chess.attackers(sq(b), colorB).length > 0;
+      // Round 3 (Q4, trace-180): a claim that b is NOT safe/defended, on a
+      // square the recapture-viability fact says legitimately doesn't hold up
+      // even though it's geometrically defended, is a MORE PRECISE truth, not
+      // a contradiction -- skip it rather than flag an honest claim.
+      if (claimsDefended === false && truth === true && unsafeRecapture.has(b)) continue;
+      if (claimsDefended !== truth) {
+        violations.push(`defense-claim: ${b} is ${truth ? "defended" : "undefended"}`);
+      }
     }
   }
 
