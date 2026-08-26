@@ -35,14 +35,21 @@ Three live decisions, weighed in the open, all shipped and merged: **[technical-
 
 Every sentence a player reads gets checked, and the check differs by surface: **[evaluation.md →](evaluation.md)**. Four text surfaces, only two of them written by a model. Seventeen rules replay the post-game analysis against my real games before any merge, sorted into the four ways generated text can lie. The audit that prompted it found the analysis telling me I had played inefficiently on moments the moves disproved, and the corrected count is the one published.
 
+Two instruments live in there, and they did different jobs. Keeping them apart is the point.
+
+- **The accuracy fix:** seven surfaces were each deriving the same chess fact on their own, so one wrong idea had seven routes to the screen. Routing all seven through a single verified source and adding a regression check to the merge gate is what took analysis errors on the coach's highlighted plies from 60% to zero. The audit, the population, the named source and the named check are traced in [evaluation.md](evaluation.md#the-sixty-percent-and-what-zero-counts).
+- **The blinded A/B evals:** Sonnet against Opus, across thinking budgets, with the grading key sealed until after I had written every grade. Those tuned answer quality, latency and fallback rate, and settled which model to run. They did not move the accuracy number.
+
 ## Live demo
 
-A working local app, not a hosted product. The plan is to demo it live in the interview by sharing Chrome tabs. Tabs to have open, in order:
-1. **The app itself**: `localhost:5173`, a game in progress or a finished one ready for debrief.
-2. **The eval dashboard**: `2 build/Girl Chess — Coach Chat QA Dashboard.html` (vault), the root-cause finding and the v2 eval results.
-3. **The component library**: `3 visual/component-library.html` (vault), the design system with selected choices marked and the archived alternatives.
-4. **The interview quiz**: the interactive multiple-choice quiz built to defend these engineering decisions live (`1 product/` in the vault).
-5. **This doc** (`docs/README.md`) and `technical-decisions.md`, for anything that needs receipts.
+A working local app, not a hosted product. It runs on your own machine, and the [root README](../README.md) covers what you need and what degrades if you skip a step.
+
+Committed here and clickable without running anything:
+1. **[The eval dashboard](coach-eval-v3-dashboard.html)**: the coach-eval v3 run, the cold-start control, and the audit of the instrument itself.
+2. **[The architecture walkthrough](architecture.html)**: how a move becomes a checked sentence.
+3. **This doc** and [technical-decisions.md](technical-decisions.md), for anything that needs receipts.
+
+Two artifacts stay out of the repo on purpose, live working files rather than published ones: the component library, where every shipped front-end component is recorded, and a quiz I built to drill myself on defending these decisions out loud. Both get screen-shared, not linked.
 
 ## Code
 
