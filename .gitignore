@@ -56,3 +56,8 @@ tools/.highlight-lines-scratch/
 
 # vite dep-optimizer cache, recreated on every dev start (2026-07-29)
 .vite/
+
+# local env files — never commit credentials (pre-publication audit 2026-08-26)
+.env
+.env.*
+*.env
