@@ -88,13 +88,25 @@ function placementViolationsAgainst(text: string, occupancy: OccupancyEntry[]): 
 // position -- the intersection discipline validateChat already uses for
 // checkDefenseClaims, so a claim true at the moment being discussed is never
 // penalized for being untrue today.
+//
+// 2026-08-26. That intersection is right but was SYMMETRIC: it equally
+// protected a claim true today and false then, which is how "it eyes your
+// bishop on d6" reached her while she was asking about a ply where that
+// bishop stood on e7. When the caller passes focusGoverns (only ever true
+// when the prompt has explicitly told the model to answer about a focused
+// moment -- see chat.ts's own focusGoverns), the focused position alone
+// decides: a claim is flagged whenever it is false at that moment,
+// regardless of whether it happens to be true today. Defaults false so
+// every existing caller keeps today's (symmetric-intersection) behavior.
 export function checkPlacementClaims(
   text: string,
   occupancy: OccupancyEntry[],
-  focusOccupancy?: OccupancyEntry[]
+  focusOccupancy?: OccupancyEntry[],
+  focusGoverns = false
 ): string[] {
   const current = placementViolationsAgainst(text, occupancy);
   if (!focusOccupancy) return current;
+  if (focusGoverns) return placementViolationsAgainst(text, focusOccupancy);
   const focus = new Set(placementViolationsAgainst(text, focusOccupancy));
   return current.filter((v) => focus.has(v));
 }
