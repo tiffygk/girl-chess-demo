@@ -11,7 +11,15 @@ for elo in 1100 1200 1300 1400 1500 1600 1700 1800 1900; do
   [ -f "$f" ] || curl -fL -o "$f" "$BASE/maia-$elo.pb.gz"
 done
 echo "--- sanity: stockfish uci handshake"
-printf "uci\nquit\n" | stockfish | grep -q uciok && echo "stockfish OK"
+sf_out="$(printf "uci\nquit\n" | stockfish 2>/dev/null || true)"
+case "$sf_out" in
+  *uciok*) echo "stockfish OK" ;;
+  *) echo "stockfish did not answer the uci handshake. try: brew reinstall stockfish"; exit 1 ;;
+esac
 echo "--- sanity: lc0 loads maia-1100"
-printf "uci\nquit\n" | lc0 --weights=weights/maia-1100.pb.gz 2>/dev/null | grep -q uciok && echo "lc0+maia OK"
+lc0_out="$(printf "uci\nquit\n" | lc0 --weights=weights/maia-1100.pb.gz 2>/dev/null || true)"
+case "$lc0_out" in
+  *uciok*) echo "lc0+maia OK" ;;
+  *) echo "lc0 did not load weights/maia-1100.pb.gz. try: brew reinstall lc0, then delete weights/ and rerun"; exit 1 ;;
+esac
 echo "setup complete"
