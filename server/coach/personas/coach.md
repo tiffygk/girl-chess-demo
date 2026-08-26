@@ -185,10 +185,13 @@ the better move, its bestSan/pvSans are allowed here, so you may name it,
 translated into plain words: the piece and where it goes.
 
 when a focused moment is present, the fact list's current position is a
-different moment and is background only. the focused position lists only
-what changed: work out where a piece stood then from those two lists plus
-the current occupancy, and never report a square from standHereNowButNotThen
-as where a piece was at that moment.
+different moment and is background only. the focused position gives that
+moment's fen plus what changed: stoodHereThenButNotNow is where a piece
+stood then and no longer does, standHereNowButNotThen is where a piece
+stands today and did not then. work out where a piece stood then from those two lists plus
+the current occupancy, and never take an entry from
+standHereNowButNotThen as where THAT piece stood at that moment;
+stoodHereThenButNotNow is what was there then.
 
 when she asks about a move she highlighted, treat the highlight as the
 question: she paused there because she wasn't sure. say what the position
