@@ -2,7 +2,8 @@
 # Tier S SessionStart checks (girl-chess). Injects one additionalContext block
 # combining any warnings that apply. Blocks nothing. Proposal: "2 build/Girl Chess
 # — Skill-Deploy Hooks Proposal (2026-08-02).md" items #1, #2, #2b.
-canon="/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents"
+canon="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+canon="${canon%/.git}"
 msgs=""
 
 # #1 CLAUDE.md staleness (gate-rule postscript; play rule broke twice from an uncommitted CLAUDE.md)
@@ -20,7 +21,7 @@ if [ -n "$hits" ]; then
 fi
 
 # #2b non-canonical cwd => shadow copy of the real db
-if [ "$(pwd)" != "$canon" ]; then
+if [ -n "$canon" ] && [ "$(pwd)" != "$canon" ]; then
   msgs="${msgs}- Session cwd is NOT the canonical repo root (girl-chess-agents/). data/girlchess.db resolves relative to cwd, so any server/tool run here reads/writes a SHADOW copy of the owner's real history, not the canonical db. Verify by counting games/moves; never assume this cwd's db is canonical.
 "
 fi
