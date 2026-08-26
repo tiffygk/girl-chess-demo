@@ -115,6 +115,15 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // and insertAdviceTrace call site keeps working unchanged.
     { name: "rating", addSql: "rating INTEGER" },
     { name: "feedback_text", addSql: "feedback_text TEXT" },
+    // Task 7 (coach-truth round, 2026-08-26): why a fallback fired --
+    // "backend-down" | "templates-only" | "timeout" | "validation-failed" |
+    // "off-topic" (the same union chat.ts's return type already carries),
+    // NULL for a clean model answer AND for every row written before this
+    // column existed (including all five rows from the owner's real
+    // 2026-08 outage -- nothing backfills them; NULL there means "not
+    // recorded", not "no cause"). Additive/nullable, no default, same
+    // convention as rating/feedback_text above.
+    { name: "cause", addSql: "cause TEXT" },
   ],
   // Increment 3b: panel-ruled turning points (server/annotator/turningPoints.ts),
   // up to 3 rows per game, written once at game end. Brand-new table (CREATE
@@ -250,7 +259,8 @@ export function openDb(path = "data/girlchess.db") {
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), ply INTEGER,
       kind TEXT, facts_json TEXT, prompt TEXT, output TEXT, source TEXT,
       backend TEXT, validated INTEGER, regen_count INTEGER, latency_ms INTEGER,
-      created_at TEXT DEFAULT (datetime('now')), rating INTEGER, feedback_text TEXT);
+      created_at TEXT DEFAULT (datetime('now')), rating INTEGER, feedback_text TEXT,
+      cause TEXT);
     CREATE TABLE IF NOT EXISTS turning_points(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), rank INTEGER,
       ply INTEGER, san TEXT, label TEXT, punish_san TEXT, delta_p REAL,
@@ -383,14 +393,19 @@ export const insertAdviceTrace = (t: {
   validated: boolean;
   regenCount: number;
   latencyMs: number;
+  // Task 7: why a fallback fired -- see EXPECTED_COLUMNS.advice_traces'
+  // `cause` comment above for the vocabulary and the NULL convention.
+  // Optional so every pre-Task-7 call site (narrate()'s recordAdviceTrace
+  // wrapper, existing tests) keeps working unchanged and gets NULL.
+  cause?: string | null;
 }): number =>
   Number(
     db.prepare(
-      `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms, cause)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
     ).run(
       t.gameId, t.ply, t.kind, t.factsJson, t.prompt, t.output, t.source, t.backend,
-      t.validated ? 1 : 0, t.regenCount, t.latencyMs
+      t.validated ? 1 : 0, t.regenCount, t.latencyMs, t.cause ?? null
     ).lastInsertRowid
   );
 export const getAdviceTraces = (gameId: number) =>
