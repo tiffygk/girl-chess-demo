@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkDefenseClaims } from "./defenseClaims";
+import { checkDefenseClaims, splitSentences } from "./defenseClaims";
 
 // The trace-180 shelf fen: game 167, her real move g2-g4, real-position fen
 // (before the move). h3 pawn geometrically defends g4 (a legal hxg4 exists),
@@ -46,5 +46,31 @@ describe("checkDefenseClaims (defended-but-can't-safely-recapture scoping, Q4/tr
     // exemption at all. Claiming it's defended must still be caught.
     const violations = checkDefenseClaims("h1 is defended.", AFTER_G4_FEN, ["g4"]);
     expect(violations).toEqual(["defense-claim: h1 is undefended"]);
+  });
+});
+
+describe("guard claims: bare negators and sentence boundaries (game 189, trace 278)", () => {
+  // Her real position at game 189 ply 28, after her pending Kf2.
+  const postKf2 = "2k3nr/1pp3p1/p1N4p/4Pp2/2B2P2/4PR2/PP3KPP/R1Br4 b - - 2 15";
+  const real = "her pawn on b7 can take it and nothing defends it. moving your king to f2 doesn't stop that";
+
+  it("does not invent a b7-guards-f2 claim across a sentence break", () => {
+    expect(checkDefenseClaims(real, postKf2)).toEqual([]);
+  });
+
+  it("reads 'nothing defends' as a negation, not an affirmative guard claim", () => {
+    // c6 is genuinely undefended here, so a NEGATIVE claim about it is true.
+    expect(checkDefenseClaims("nothing defends c6", postKf2)).toEqual([]);
+  });
+
+  it("still catches a real affirmative guard falsehood inside one sentence", () => {
+    // b7 is a black pawn; it does not guard f2.
+    expect(checkDefenseClaims("the pawn on b7 defends f2", postKf2)).toContain(
+      "defense-claim: b7 does not guard f2"
+    );
+  });
+
+  it("splits on sentence terminators", () => {
+    expect(splitSentences("a. b! c? d")).toEqual(["a.", "b!", "c?", "d"]);
   });
 });
