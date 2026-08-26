@@ -1519,8 +1519,11 @@ function focusedMomentSection(facts: ChatFactList): string | undefined {
       `this focused moment overrides whatever the conversation so far was about -- answer about THIS moment. ` +
       `the conversation history above is background only. ` +
       `the fact list's currentFen, occupancy and contested describe a DIFFERENT moment (the position today), not ` +
-      `the moment you are being asked about. every claim about where a piece stands must come from the focused ` +
-      `position above. if a piece moved between the two, the focused position is the one that is true for this answer.`
+      `the moment you are being asked about. the focused position above lists only what CHANGED between then and ` +
+      `now: stoodHereThenButNotNow is where a piece stood at that moment and no longer does, ` +
+      `standHereNowButNotThen is where a piece stands today and did not then, and any piece in neither list stood ` +
+      `then exactly where occupancy shows it now. never name a square from standHereNowButNotThen as where a ` +
+      `piece was at the focused moment.`
     );
   }
   return (
@@ -1528,8 +1531,11 @@ function focusedMomentSection(facts: ChatFactList): string | undefined {
     `this focused moment overrides whatever the conversation so far was about -- answer about THIS moment. ` +
     `the conversation history above is background only. ` +
     `the fact list's currentFen, occupancy and contested describe a DIFFERENT moment (the position today), not ` +
-    `the moment you are being asked about. every claim about where a piece stands must come from the focused ` +
-    `position above. if a piece moved between the two, the focused position is the one that is true for this answer.`
+    `the moment you are being asked about. the focused position above lists only what CHANGED between then and ` +
+    `now: stoodHereThenButNotNow is where a piece stood at that moment and no longer does, ` +
+    `standHereNowButNotThen is where a piece stands today and did not then, and any piece in neither list stood ` +
+    `then exactly where occupancy shows it now. never name a square from standHereNowButNotThen as where a ` +
+    `piece was at the focused moment.`
   );
 }
 
