@@ -6,7 +6,7 @@ import {
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
   insertVerdict, getAllChatMessages, listCoachNotes, setMoveHighlighted,
 } from "../store/db";
-import { GameManager, BACKEND_CACHE_TTL_MS, buildVerdictFactsJson, COACH_NOTE_ACK } from "./manager";
+import { GameManager, BACKEND_CACHE_TTL_MS, COACH_UNHEALTHY_COOLDOWN_MS, buildVerdictFactsJson, COACH_NOTE_ACK } from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
 // Task 5 reviewer fix: the "ollama unavailable" test below spies on this
 // module's own available() rather than pre-seeding pickCoachBackend's cache,
@@ -86,6 +86,16 @@ describe("GameManager", () => {
   // never killed it -- see GameManager.shutdown()'s comment in manager.ts
   // for the full leak this closes across four files.
   afterAll(() => gm.shutdown());
+
+  // Task 6 (coach-truth round): this file's single shared `gm` means a
+  // backend that genuinely fails a REAL (unmocked) generate() call in one
+  // test -- several pre-existing tests here only mock available() and let
+  // ollamaBackend.generate() run unmocked, since only backend SELECTION was
+  // ever under test -- now leaves a real markCoachBackendUnhealthy() effect
+  // that would otherwise silently outlive that test and break a later,
+  // unrelated one expecting a fresh probe. Reset after every test so the
+  // cache/health state is never inherited across tests.
+  afterEach(() => gm.resetCoachBackendStateForTesting());
 
   it("plays a move, gets a legal reply, and records both moves", async () => {
     const g = await gm.newGame(sessionId, 1100);
@@ -1083,6 +1093,138 @@ describe("GameManager", () => {
       if (result.ok) expect(result.source).toBe("template");
       const traces = getAdviceTraces(g.gameId);
       expect(traces[traces.length - 1].backend).toBe("none");
+    }, 20000);
+  });
+
+  // Task 6 (coach-truth round, 2026-08-26): the OAuth-expiry incident this
+  // fixes -- available() is a cheap spawn(binary, ["--version"]) probe that
+  // never exercises auth, so a backend can report healthy while every real
+  // generate() call dies at auth, with no fallthrough for the whole
+  // BACKEND_CACHE_TTL_MS window. These tests drive REAL (non-mocked-away)
+  // failures through the actual chat.ts/index.ts catch sites -- not just a
+  // direct markCoachBackendUnhealthy() call -- so they prove the wiring, the
+  // skip, the per-pref cache eviction, AND the cooldown expiry, together.
+  describe("markCoachBackendUnhealthy / COACH_UNHEALTHY_COOLDOWN_MS (Task 6)", () => {
+    let clockOffset = 0;
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      gm.setClockForTesting(() => Date.now());
+    });
+
+    // Same discipline as the "agent-sdk" pref block above: gm/its caches AND
+    // its coachUnhealthy map are shared across this whole file (no per-test
+    // teardown clears either), so every test here must jump past whichever
+    // is LONGER-lived -- COACH_UNHEALTHY_COOLDOWN_MS (60s), not just
+    // BACKEND_CACHE_TTL_MS (30s) -- or an earlier test's still-outstanding
+    // cooldown on the same backend name (e.g. "ollama", reused across every
+    // test below) leaks into the next one's first assertion.
+    function advanceClockPastCache() {
+      clockOffset += COACH_UNHEALTHY_COOLDOWN_MS + 1;
+      const offset = clockOffset;
+      gm.setClockForTesting(() => Date.now() + offset);
+    }
+
+    it("chat(): a genuine (non-timeout) generate() failure marks that backend unhealthy, so the very next call skips it -- until the cooldown lapses", async () => {
+      advanceClockPastCache();
+      const availableSpy = vi.spyOn(claudeCliBackend, "available").mockResolvedValue(true);
+      const generateSpy = vi.spyOn(claudeCliBackend, "generate").mockRejectedValue(new Error("down"));
+      vi.spyOn(ollamaBackend, "available").mockResolvedValue(true);
+      vi.spyOn(ollamaBackend, "generate").mockResolvedValue("that keeps your development on track.");
+
+      // First call: pref "claude" (default) resolves to claude-cli (healthy
+      // per available()), generate() throws non-timeout -- this is the real
+      // failure chat.ts's catch must react to.
+      const g1 = await gm.newGame(sessionId, 1100);
+      const first = await gm.chat(g1.gameId, { message: "what should I do?", context: { mode: "live" } });
+      expect(first.ok).toBe(true);
+      let traces = getAdviceTraces(g1.gameId);
+      expect(traces[traces.length - 1].backend).toBe("claude-cli");
+
+      // Second call, same pref, well inside the cooldown: claude-cli must be
+      // SKIPPED (not re-picked and re-failed) -- the chain falls through to
+      // ollama instead, proving both the mark and the cache eviction (a
+      // stale cache hit would have returned claude-cli again without even
+      // consulting the cooldown).
+      const g2 = await gm.newGame(sessionId, 1100);
+      const second = await gm.chat(g2.gameId, { message: "what should I do?", context: { mode: "live" } });
+      expect(second.ok).toBe(true);
+      traces = getAdviceTraces(g2.gameId);
+      expect(traces[traces.length - 1].backend).not.toBe("claude-cli");
+      expect(traces[traces.length - 1].backend).toBe("ollama");
+      expect(generateSpy).toHaveBeenCalledTimes(1); // never re-tried claude-cli's generate()
+
+      // Advance past COACH_UNHEALTHY_COOLDOWN_MS (which also clears the
+      // second call's own cache entry, since it's well past BACKEND_CACHE_TTL_MS
+      // too) -- claude-cli must be selectable again.
+      generateSpy.mockResolvedValue("that keeps your development on track.");
+      clockOffset += COACH_UNHEALTHY_COOLDOWN_MS + 1;
+      const offset = clockOffset;
+      gm.setClockForTesting(() => Date.now() + offset);
+      const g3 = await gm.newGame(sessionId, 1100);
+      const third = await gm.chat(g3.gameId, { message: "what should I do?", context: { mode: "live" } });
+      expect(third.ok).toBe(true);
+      traces = getAdviceTraces(g3.gameId);
+      expect(traces[traces.length - 1].backend).toBe("claude-cli");
+      expect(availableSpy).toHaveBeenCalled();
+    }, 20000);
+
+    it("narrate(): a genuine (non-timeout) generate() failure marks that backend unhealthy, so the very next call skips it -- pref 'ollama' has no claude-cli fallback, so it drops straight to template", async () => {
+      advanceClockPastCache();
+      const availableSpy = vi.spyOn(ollamaBackend, "available").mockResolvedValue(true);
+      const generateSpy = vi.spyOn(ollamaBackend, "generate").mockRejectedValue(new Error("connection refused"));
+
+      const g1 = await gm.newGame(sessionId, 1100);
+      const first = await gm.narrate(g1.gameId, {
+        herPiece: "n", from: "f6", to: "g4", tier: "nudge", deltaCp: 80, backendPref: "ollama",
+      });
+      expect(first.ok).toBe(true);
+      let traces = getAdviceTraces(g1.gameId);
+      expect(traces[traces.length - 1].backend).toBe("ollama");
+
+      // Second call: ollama must be SKIPPED -- "ollama" pref has no other
+      // real backend to fall to (deliberately, per pickCoachBackend's own
+      // comment), so it drops straight to noBackend/template WITHOUT ever
+      // calling generate() again.
+      const g2 = await gm.newGame(sessionId, 1100);
+      const second = await gm.narrate(g2.gameId, {
+        herPiece: "n", from: "f6", to: "g4", tier: "nudge", deltaCp: 80, backendPref: "ollama",
+      });
+      expect(second.ok).toBe(true);
+      if (second.ok) expect(second.source).toBe("template");
+      traces = getAdviceTraces(g2.gameId);
+      expect(traces[traces.length - 1].backend).toBe("none");
+      expect(generateSpy).toHaveBeenCalledTimes(1);
+      expect(availableSpy).toHaveBeenCalledTimes(1); // never re-probed while unhealthy
+    }, 20000);
+
+    it("a TIMEOUT does not mark the backend unhealthy -- the next call still tries it again", async () => {
+      advanceClockPastCache();
+      const availableSpy = vi.spyOn(ollamaBackend, "available").mockResolvedValue(true);
+      vi.spyOn(ollamaBackend, "generate").mockRejectedValue(new Error("ollama request timed out after 15000ms"));
+
+      const g1 = await gm.newGame(sessionId, 1100);
+      const first = await gm.narrate(g1.gameId, {
+        herPiece: "n", from: "f6", to: "g4", tier: "nudge", deltaCp: 80, backendPref: "ollama",
+      });
+      expect(first.ok).toBe(true);
+      let traces = getAdviceTraces(g1.gameId);
+      expect(traces[traces.length - 1].backend).toBe("ollama");
+
+      // Force a re-probe (past BACKEND_CACHE_TTL_MS only, well short of
+      // COACH_UNHEALTHY_COOLDOWN_MS -- there is no cooldown running here to
+      // outlast). If the timeout had wrongly marked ollama unhealthy,
+      // isCoachBackendUnhealthy would short-circuit available() and this
+      // call would resolve to noBackend instead.
+      advanceClockPastCache();
+      const g2 = await gm.newGame(sessionId, 1100);
+      const second = await gm.narrate(g2.gameId, {
+        herPiece: "n", from: "f6", to: "g4", tier: "nudge", deltaCp: 80, backendPref: "ollama",
+      });
+      expect(second.ok).toBe(true);
+      traces = getAdviceTraces(g2.gameId);
+      expect(traces[traces.length - 1].backend).toBe("ollama"); // still tried, never skipped
+      expect(availableSpy).toHaveBeenCalledTimes(2); // re-probed normally both times
     }, 20000);
   });
 
