@@ -59,6 +59,24 @@ export const ollamaBackend: CoachBackend = {
       if (!res.ok) throw new Error(`ollama http ${res.status}`);
       const data = (await res.json()) as { response?: string };
       return (data.response ?? "").trim();
+    } catch (err) {
+      // Task 6 fix (coach-truth round, review finding 1): an aborted fetch
+      // rejects with an AbortError/DOMException whose message ("This
+      // operation was aborted") never contains "timed out" -- isTimeoutError
+      // (coach/index.ts) classifies a timeout on that literal substring
+      // only, the same convention claude-cli.ts's formatTimeoutError and
+      // agent-sdk.ts's generate()/probe already follow. Left alone, a
+      // slow-but-alive ollama's generate() timeout read as a genuine
+      // failure and got marked unhealthy for COACH_UNHEALTHY_COOLDOWN_MS
+      // (manager.ts), pulling a working backend out of the chain for 60s.
+      // Only the abort WE triggered (the timer above) gets remapped to the
+      // honest message; any other rejection (the http-status throw above,
+      // a DNS failure, JSON parse error) passes through unchanged, so this
+      // never masks a real non-timeout failure as a timeout.
+      if (controller.signal.aborted) {
+        throw new Error(`ollama generate timed out after ${timeoutMs}ms`);
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
     }
