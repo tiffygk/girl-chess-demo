@@ -254,13 +254,22 @@ describe("chat system prompt: focused-moment ground rule (Task 3 review fix)", (
     return parsePersona(md);
   }
 
-  it("instructs the coach to derive the then-position from both change lists plus current occupancy, never from standHereNowButNotThen", () => {
+  it("instructs the coach to derive the then-position from both named change lists plus current occupancy, entry-wise never from standHereNowButNotThen", () => {
     const persona = parseRealCoachMd();
+    // Both lists are named before "those two lists" refers back to them --
+    // the prior wording named only one field, leaving "those two lists"
+    // with no antecedent.
+    expect(persona.chatSystemPrompt).toContain("stoodHereThenButNotNow is where a piece");
+    expect(persona.chatSystemPrompt).toContain("standHereNowButNotThen is where a piece");
     expect(persona.chatSystemPrompt).toContain(
       "work out where a piece stood then from those two lists plus"
     );
+    // Entry-wise, not square-wise: a capture/recapture square can appear in
+    // BOTH lists, so the rule forbids taking an ENTRY from
+    // standHereNowButNotThen as where that piece stood, not naming the
+    // square at all -- see chat.ts's matching fix and its own comment.
     expect(persona.chatSystemPrompt).toContain(
-      "never report a square from standHereNowButNotThen"
+      "never take an entry from\nstandHereNowButNotThen as where THAT piece stood at that moment"
     );
   });
 });

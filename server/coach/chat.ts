@@ -1031,9 +1031,22 @@ export function validateChat(
   // keep only what is false in BOTH -- a claim the checker flags in one
   // position but not the other is one the conversation's own moment
   // vindicates, and flagging it would cost a truthful reply a regen (and
-  // possibly a template). The two runs produce identical strings when both
-  // flag, because the message states the truth the claim contradicts and
-  // the claim is fixed, so a plain intersection is exact here.
+  // possibly a template).
+  //
+  // 2026-08-26 review fix: this comment used to close with "so a plain
+  // intersection is exact here." It is not. checkDefenseClaims DECLINES
+  // (returns nothing) on an empty square rather than affirmatively judging
+  // it false (see that file's own comment), so a claim false at BOTH
+  // moments can still be dropped: "your rook on a1 defends d1." with a1
+  // occupied now but EMPTY at the focused moment yields a violation from
+  // the current position and nothing from the focus run (the empty square
+  // declines instead of confirming the lie), so the intersection keeps
+  // nothing and the false claim survives. This is the same claim-identity
+  // shape checkPlacementClaims was fixed for this round (see
+  // placementClaims.ts's 2026-08-26 comment) -- left here for a follow-up
+  // wave because fixing it means widening what checkDefenseClaims treats as
+  // adjudicable, and this exact shape is unexercised by her real corpus so
+  // far, unlike the placement bug that actually reached her.
   const unsafeRecaptureSquares = unsafeRecaptureSquaresFrom(facts.context?.threat);
   const currentDefense = checkDefenseClaims(text, facts.currentFen, unsafeRecaptureSquares);
   if (facts.focusPosition) {
@@ -1126,6 +1139,12 @@ export function validateChatGeneral(
   const violations: string[] = [];
 
   if (replyReferencesPosition(text)) {
+    // Same defense-claim intersection as validateChat above, and the same
+    // limitation: checkDefenseClaims declines on an empty square rather
+    // than flagging it false, so a claim false at both moments can still
+    // slip through if the square is empty (unadjudicable) in one of the two
+    // runs -- see validateChat's own comment for the concrete case and why
+    // this is left for a follow-up wave.
     const unsafeRecaptureSquares = unsafeRecaptureSquaresFrom(facts.context?.threat);
     const currentDefense = checkDefenseClaims(text, facts.currentFen, unsafeRecaptureSquares);
     if (facts.focusPosition) {
@@ -1501,11 +1520,17 @@ function formatHistory(history: { role: "user" | "coach"; text: string }[], back
 // verdict the facts don't support. Side comes from sideForPly(focus.ply) --
 // the SAME canonical per-ply function perPlyForModel already uses to mark
 // every projected ply "you"/"mallow" (chat.sideLabel.test.ts) -- never a
-// second, independent parity computation written fresh here. A her-ply
-// focus takes the exact pre-existing branch, byte-identical to before this
-// wave (chat.stablePrefix/chat.focusPrompt.test.ts's own pin) -- prompt
-// caching and the latency baselines (CLAUDE.md) depend on that text never
-// shifting for an existing call shape.
+// second, independent parity computation written fresh here.
+//
+// 2026-08-26 review fix: this comment used to claim the her-ply focus
+// branch stays byte-identical forever and that prompt caching depended on
+// that never shifting -- commit 5921935 shifted exactly that branch (the
+// diff-encoding review fix rewrote both branches of focusedMomentSection
+// together). Nothing actually broke: this whole section rides in
+// buildChatPromptParts's `dynamic` half, never in `stablePrefix` (see that
+// function below), and prompt caching only requires stablePrefix to stay
+// byte-identical per voice+intent pair -- this focus text was never part of
+// what caching depends on.
 function focusedMomentSection(facts: ChatFactList): string | undefined {
   const focus = facts.focusPosition;
   const tp = facts.context?.turningPointFocus;
@@ -1519,11 +1544,13 @@ function focusedMomentSection(facts: ChatFactList): string | undefined {
       `this focused moment overrides whatever the conversation so far was about -- answer about THIS moment. ` +
       `the conversation history above is background only. ` +
       `the fact list's currentFen, occupancy and contested describe a DIFFERENT moment (the position today), not ` +
-      `the moment you are being asked about. the focused position above lists only what CHANGED between then and ` +
-      `now: stoodHereThenButNotNow is where a piece stood at that moment and no longer does, ` +
-      `standHereNowButNotThen is where a piece stands today and did not then, and any piece in neither list stood ` +
-      `then exactly where occupancy shows it now. never name a square from standHereNowButNotThen as where a ` +
-      `piece was at the focused moment.`
+      `the moment you are being asked about. the focused position above gives that moment's fen plus what ` +
+      `changed between then and now: stoodHereThenButNotNow is where a piece stood at that moment and no longer ` +
+      `does, standHereNowButNotThen is where a piece stands today and did not then, and any piece in neither list ` +
+      `stood then exactly where occupancy shows it now. a square can appear in BOTH lists -- that's any capture or ` +
+      `recapture square, where a different piece stands now than stood then. never take an entry from ` +
+      `standHereNowButNotThen as where THAT piece stood at the focused moment; stoodHereThenButNotNow is what was ` +
+      `there then.`
     );
   }
   return (
@@ -1531,11 +1558,13 @@ function focusedMomentSection(facts: ChatFactList): string | undefined {
     `this focused moment overrides whatever the conversation so far was about -- answer about THIS moment. ` +
     `the conversation history above is background only. ` +
     `the fact list's currentFen, occupancy and contested describe a DIFFERENT moment (the position today), not ` +
-    `the moment you are being asked about. the focused position above lists only what CHANGED between then and ` +
-    `now: stoodHereThenButNotNow is where a piece stood at that moment and no longer does, ` +
-    `standHereNowButNotThen is where a piece stands today and did not then, and any piece in neither list stood ` +
-    `then exactly where occupancy shows it now. never name a square from standHereNowButNotThen as where a ` +
-    `piece was at the focused moment.`
+    `the moment you are being asked about. the focused position above gives that moment's fen plus what ` +
+    `changed between then and now: stoodHereThenButNotNow is where a piece stood at that moment and no longer ` +
+    `does, standHereNowButNotThen is where a piece stands today and did not then, and any piece in neither list ` +
+    `stood then exactly where occupancy shows it now. a square can appear in BOTH lists -- that's any capture or ` +
+    `recapture square, where a different piece stands now than stood then. never take an entry from ` +
+    `standHereNowButNotThen as where THAT piece stood at the focused moment; stoodHereThenButNotNow is what was ` +
+    `there then.`
   );
 }
 
@@ -2142,10 +2171,21 @@ export async function chat(
     validated: source === "model",
     regenCount,
     latencyMs,
-    // Task 7: persist the same cause returned to the client -- previously
-    // only recoverable by string-matching `output`
-    // (tools/rca-eval/lib/causeFromTrace.ts). NULL on a clean model answer,
-    // exactly like every pre-this-wave row.
+    // Task 7: persist failureCause -- previously only recoverable by
+    // string-matching `output` (tools/rca-eval/lib/causeFromTrace.ts). NULL
+    // on a clean model answer, exactly like every pre-this-wave row.
+    //
+    // 2026-08-26 review fix: this is not always the same cause the CLIENT
+    // sees. server/game/manager.ts reclassifies "backend-down" to
+    // "templates-only" when the request's backendPref was "template" (a
+    // deliberate voice pick, not the coach going offline) -- and it does
+    // that reclassification on the RETURNED result, after this row has
+    // already been written, so the row keeps "backend-down" while the
+    // client is told "templates-only". `backend` === "none" (this same
+    // insert's own field, above) is the discriminator: "none" is
+    // noBackend's name, and noBackend.generate() is the only backend that
+    // throws unconditionally, so it is the only backend the
+    // reclassification can ever apply to.
     cause: failureCause,
   });
 

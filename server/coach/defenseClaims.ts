@@ -26,8 +26,17 @@ export const SQ = "[a-h][1-8]";
 export const GUARD_VERBS = "guards?|guarding|defends?|defending|protects?|protecting";
 // 2026-08-25: "nothing defends it" parsed as an AFFIRMATIVE guard claim,
 // because the list below only had verbal negations ("does not", "can't").
-// A bare negator subject negates the relation just as hard. Precision-first,
-// same as the rest of this file: an enumerated list, not a general matcher.
+// Precision-first, same as the rest of this file: an enumerated list, not a
+// general matcher.
+//
+// 2026-08-26 review fix: the line above used to add "a bare negator subject
+// negates the relation just as hard," as if that were now covered -- it
+// isn't, in general. The added alternatives are only tested against
+// guardClaimRe's own `between` capture, the span from sqA up to the verb
+// (e.g. "e4 -- nothing defends f5", where "nothing" sits between "e4" and
+// "defends"). A negator that comes BEFORE sqA as the sentence's own
+// subject, e.g. "no piece on b7 defends f2", is outside that capture
+// entirely and is still invisible to this check.
 export const GUARD_NEGATION_RE =
   /\b(does not|doesn't|do not|don't|cannot|can't|never|nothing|nobody|no piece|no pieces|none)\b/i;
 export const SAFETY_UNDEFENDED_WORDS = ["undefended", "unprotected", "unguarded", "hanging", "hangs", "not defended", "not protected", "not guarded"];

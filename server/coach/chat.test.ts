@@ -1440,7 +1440,17 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       // specifically, since that field holds TODAY's squares and sits inside
       // the focusPosition object -- naming a piece from it as "the focused
       // moment" is the original bug inverted.
-      expect(parts.dynamic).toContain("never name a square from standHereNowButNotThen");
+      //
+      // 2026-08-26 (final review): the diff is square-wise, so a capture or
+      // recapture square lands in BOTH lists -- the prior wording ("never
+      // name a square from standHereNowButNotThen") forbade naming that
+      // square at all, even though stoodHereThenButNotNow vouches for it.
+      // This pins the entry-wise rewrite instead: the prohibition is on
+      // taking an ENTRY from standHereNowButNotThen as where THAT piece
+      // stood, not on the square appearing.
+      expect(parts.dynamic).toContain(
+        "never take an entry from standHereNowButNotThen as where THAT piece stood at the focused moment"
+      );
     });
 
     it("mallow-ply focus: carries the same warning on the opponent-move branch", () => {

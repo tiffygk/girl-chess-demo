@@ -115,14 +115,23 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // and insertAdviceTrace call site keeps working unchanged.
     { name: "rating", addSql: "rating INTEGER" },
     { name: "feedback_text", addSql: "feedback_text TEXT" },
-    // Task 7 (coach-truth round, 2026-08-26): why a fallback fired --
-    // "backend-down" | "templates-only" | "timeout" | "validation-failed" |
-    // "off-topic" (the same union chat.ts's return type already carries),
-    // NULL for a clean model answer AND for every row written before this
-    // column existed (including all five rows from the owner's real
-    // 2026-08 outage -- nothing backfills them; NULL there means "not
-    // recorded", not "no cause"). Additive/nullable, no default, same
-    // convention as rating/feedback_text above.
+    // Task 7 (coach-truth round, 2026-08-26): why a fallback fired.
+    // Correction (same round, final review): the values that can actually
+    // land here are "backend-down" | "timeout" | "validation-failed" --
+    // chat.ts's own failureCause (what this column is fed from) can only
+    // ever be one of those three or null. "templates-only" is a
+    // client-facing-only reclassification server/game/manager.ts applies to
+    // the RETURNED result after this row is already written (see chat.ts's
+    // insertAdviceTrace comment), so it is never itself persisted; the
+    // written row keeps "backend-down" in that case. "off-topic" is wired
+    // for a future intent router but documented unreachable this wave (see
+    // the `redirect` branch comment on chat.ts's failureTemplate) and has
+    // never been written either. NULL for a clean model answer AND for
+    // every row written before this column existed (including all five
+    // rows from the owner's real 2026-08 outage -- nothing backfills them;
+    // NULL there means "not recorded", not "no cause"). Additive/nullable,
+    // no default, same convention as
+    // rating/feedback_text above.
     { name: "cause", addSql: "cause TEXT" },
   ],
   // Increment 3b: panel-ruled turning points (server/annotator/turningPoints.ts),
