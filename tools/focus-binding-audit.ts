@@ -268,7 +268,13 @@ function checkComposition(
   focus: FocusPosition,
   composedA: string[]
 ): void {
-  const directPlacementA = checkPlacementClaims(row.output, facts.occupancy, focus.occupancy, false);
+  // 2026-08-26 update: checkPlacementClaims lost its focusGoverns 4th
+  // parameter when Task 4 reverted the asymmetry this audit recommended
+  // against and shipped the claim-keyed intersection (rule D) as the ONLY
+  // behavior instead. So this direct call now reproduces rule D, not the
+  // old string-keyed rule A -- which is the correct comparison, because
+  // rule D is what checkPlacementClaims does unconditionally now.
+  const directPlacementA = checkPlacementClaims(row.output, facts.occupancy, focus.occupancy);
   const directDefenseCurrent = checkDefenseClaims(row.output, facts.currentFen, []);
   const directDefenseFocus = new Set(checkDefenseClaims(row.output, focus.fen, []));
   const directDefenseA = directDefenseCurrent.filter((v) => directDefenseFocus.has(v));

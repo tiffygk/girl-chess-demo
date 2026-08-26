@@ -46,6 +46,32 @@ describe("checkPlacementClaims (Task 1, R3)", () => {
     expect(result).toHaveLength(1);
   });
 
+  // 2026-08-26 (coach-truth round). RED case for the claim-keyed intersection
+  // fix: the SAME claim is false in both positions, but for TWO DIFFERENT
+  // reasons -- empty square at focus, wrong owner (occupied, but not
+  // "yours") today. Before the fix, checkPlacementClaims intersected on the
+  // rendered message string, and "-- d6 is empty" never matches "-- not
+  // there" even though both describe the identical false claim -- so this
+  // exact shape (trace 284, game 190: "it eyes your bishop on d6") slipped
+  // through untouched. Run this against the pre-fix string-keyed
+  // intersection (`current.filter((v) => new Set(focus).has(v))` on the raw
+  // message strings) and watch it go green when it should be red -- that is
+  // the bug this test exists to catch.
+  it("a claim false in BOTH positions for DIFFERENT reasons (empty at focus, wrong owner today) -> still one violation", () => {
+    // today: d6 holds mallow's bishop, not "your" (the player's) bishop --
+    // wrong owner, "-- not there".
+    const occupancyNow: OccupancyEntry[] = [{ square: "d6", pieceKind: "b", color: "mallow" }];
+    // focus: d6 is bare, the bishop is still on e7 -- "-- d6 is empty".
+    const focusOccupancy: OccupancyEntry[] = [{ square: "e7", pieceKind: "b", color: "mallow" }];
+    const result = checkPlacementClaims(
+      "once it's on the board, it eyes your bishop on d6",
+      occupancyNow,
+      focusOccupancy
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toContain("placement-claim: your bishop on d6");
+  });
+
   // The rejected 60-char-proximity idiom: an owner word from an EARLIER
   // clause in the same sentence must never bind to a LATER, unrelated
   // piece mention. The owner is only inferred when it directly precedes the

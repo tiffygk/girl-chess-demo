@@ -45,17 +45,23 @@ export function placementClaimRe(): RegExp {
   return /\b(your|her|mallow'?s)?\s*(pawn|knight|bishop|rook|queen|king)s?\s+(?:is\s+|sits\s+)?on\s+([a-h][1-8])\b/gi;
 }
 
-// One pass of `text` against one occupancy list. The violation message
-// describes the CLAIM itself (owner word + piece word + square), never the
-// actual occupant found -- so the same false claim produces the identical
-// string against either position, which is what makes the plain-set
-// intersection in checkPlacementClaims below exact (the same discipline
-// validateChat already applies to checkDefenseClaims's own output).
-function placementViolationsAgainst(text: string, occupancy: OccupancyEntry[]): string[] {
+// One violation from one pass of `text` against one occupancy list. `key`
+// identifies the CLAIM (owner word + piece word + square) and is stable
+// across positions; `message` is the rendered string, whose suffix records
+// WHY the claim failed here (empty square vs. wrong piece/owner) and can
+// therefore differ between two positions even for the identical claim --
+// see checkPlacementClaims below for why that distinction matters.
+interface PlacementViolation {
+  key: string;
+  message: string;
+}
+
+// One pass of `text` against one occupancy list.
+function placementViolationsAgainst(text: string, occupancy: OccupancyEntry[]): PlacementViolation[] {
   const bySquare = new Map<string, OccupancyEntry>();
   for (const o of occupancy) bySquare.set(o.square.toLowerCase(), o);
 
-  const violations: string[] = [];
+  const violations: PlacementViolation[] = [];
   for (const m of text.matchAll(placementClaimRe())) {
     const [, ownerRaw, pieceWordRaw, squareRaw] = m;
     const square = squareRaw.toLowerCase();
@@ -63,10 +69,11 @@ function placementViolationsAgainst(text: string, occupancy: OccupancyEntry[]): 
     const claimedKind = PIECE_WORD_TO_KIND[pieceWord];
     const claimedColor = ownerWordToColor(ownerRaw);
     const claimLabel = `${ownerRaw ? ownerRaw.toLowerCase() + " " : ""}${pieceWord} on ${square}`;
+    const key = claimLabel;
 
     const occupant = bySquare.get(square);
     if (!occupant) {
-      violations.push(`placement-claim: ${claimLabel} -- ${square} is empty`);
+      violations.push({ key, message: `placement-claim: ${claimLabel} -- ${square} is empty` });
       continue;
     }
     const kindMatches = occupant.pieceKind === claimedKind;
@@ -75,7 +82,7 @@ function placementViolationsAgainst(text: string, occupancy: OccupancyEntry[]): 
     // kind-only claim, deliberately color-agnostic.
     const colorMatches = claimedColor === null || occupant.color === claimedColor;
     if (!kindMatches || !colorMatches) {
-      violations.push(`placement-claim: ${claimLabel} -- not there`);
+      violations.push({ key, message: `placement-claim: ${claimLabel} -- not there` });
     }
   }
   return violations;
@@ -89,24 +96,32 @@ function placementViolationsAgainst(text: string, occupancy: OccupancyEntry[]): 
 // checkDefenseClaims, so a claim true at the moment being discussed is never
 // penalized for being untrue today.
 //
-// 2026-08-26. That intersection is right but was SYMMETRIC: it equally
-// protected a claim true today and false then, which is how "it eyes your
-// bishop on d6" reached her while she was asking about a ply where that
-// bishop stood on e7. When the caller passes focusGoverns (only ever true
-// when the prompt has explicitly told the model to answer about a focused
-// moment -- see chat.ts's own focusGoverns), the focused position alone
-// decides: a claim is flagged whenever it is false at that moment,
-// regardless of whether it happens to be true today. Defaults false so
-// every existing caller keeps today's (symmetric-intersection) behavior.
+// 2026-08-26 (coach-truth round). This intersection used to be keyed on the
+// rendered violation MESSAGE, and that was wrong: placementViolationsAgainst
+// appends a different suffix depending on why a claim failed (`-- <sq> is
+// empty` when the square is bare, `-- not there` when it holds the wrong
+// piece or owner), so the same claim false in both positions for two
+// different reasons produced two strings that never matched, and the plain
+// string-set intersection let it through untouched. That is exactly how "it
+// eyes your bishop on d6" reached her: d6 was empty at the focused ply and
+// held mallow's bishop -- not hers -- today, two different reasons, one
+// real lie neither run's message-string matched. An asymmetric fix was
+// tried and reverted (see chat.test.ts and the round's audit report): it
+// traded that miss for a new false positive on a genuinely correct reply
+// elsewhere in her history. The fix here keeps the intersection symmetric
+// and instead keys it on the claim's IDENTITY (owner word + piece word +
+// square, independent of why either run failed it) rather than the message
+// text, then reports the CURRENT position's message for anything that
+// survives -- so a claim that is false everywhere is caught regardless of
+// which reason each position gives, while a claim true at the focused
+// moment (the case this intersection exists to protect) is still cleared.
 export function checkPlacementClaims(
   text: string,
   occupancy: OccupancyEntry[],
-  focusOccupancy?: OccupancyEntry[],
-  focusGoverns = false
+  focusOccupancy?: OccupancyEntry[]
 ): string[] {
   const current = placementViolationsAgainst(text, occupancy);
-  if (!focusOccupancy) return current;
-  if (focusGoverns) return placementViolationsAgainst(text, focusOccupancy);
-  const focus = new Set(placementViolationsAgainst(text, focusOccupancy));
-  return current.filter((v) => focus.has(v));
+  if (!focusOccupancy) return current.map((v) => v.message);
+  const focusKeys = new Set(placementViolationsAgainst(text, focusOccupancy).map((v) => v.key));
+  return current.filter((v) => focusKeys.has(v.key)).map((v) => v.message);
 }
