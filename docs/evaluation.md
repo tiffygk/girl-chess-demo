@@ -30,7 +30,17 @@ Seventeen rules run over the post-game analysis, sorted into four failures.
 
 Omission is the sycophancy failure: dropping bad news to stay pleasant. A human reviewer almost never catches it, because nothing on screen looks wrong.
 
-The audit found seven code paths deriving the same fact independently: one wrong idea had seven ways to the screen. The fix: one verified source plus a regression check.
+## the sixty percent, and what zero counts
+
+The audit at the top of this page is dated 2026-08-21 and ran against my own game history: ten moments carrying a claim that I had played inefficiently, six of them contradicted by the moves that followed. That is the 60%. Four of the six were flatly false. A forced mate is a guarantee against any defence; what I actually played was faster only because the opponent cooperated. The debrief set the smaller number beside the larger and called it a cost. The other two were fair, for a reason the count could not see: each hid a second missed mate later in the same game, and the measurement only ever looked at the flagged move.
+
+The cause was structural, not a bad sentence. Seven surfaces were each doing their own arithmetic off one stored `mateIn` field, so a single wrong idea had seven routes to the screen: the missed-win line, the turning-point card, the highlighted-move line, the conversion bullet, the watch-next bullet, the could-be-better bullet, and a dead lesson renderer that would have brought it back. The fix routes all seven through `mateOutcomeFor()` in `src/review/mateOutcome.ts`, which derives what happened from a replay of the game instead of trusting the stored number. When a game hides more than one missed mate, it withholds credit entirely.
+
+The regression check is the `conversion-claim` rule in `src/review/debriefInvariants.ts`. It accepts an efficiency claim only when the replayed sequence agrees with it. `npm run gate` runs that rule and the other sixteen over every finished game in my history, through `tools/replay-check.ts`, and refuses the merge on any violation.
+
+Zero is that check's count, not a second pass of my hand audit: `debrief-output violations: 0` corpus-wide, and it has to stay 0 for the gate to pass. Put the bug back by hand and the rule flags fourteen. The two fair complaints still stand in their original wording, because measuring every missed mate in a game rather than only the flagged one is work I have not done.
+
+This is a separate mechanism from the blinded A/B evals below. The evals chose a model and a thinking budget. The single verified source and its regression check are what moved this number.
 
 ## where the checks run
 
