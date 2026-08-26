@@ -19,6 +19,15 @@ Measured across the coach's highlighted plies, the same discipline took analysis
 ## Running it
 
 ```
-./setup.sh   # once: installs Stockfish + lc0, downloads Maia weights
+npm install
+./setup.sh   # once: installs Stockfish + lc0, downloads Maia weights for all nine Elo bands
 npm run dev  # starts the server (3001) and the web client (5173)
 ```
+
+Then open http://localhost:5173. Everything runs on your machine: no API key, no hosted service, no account.
+
+The coach is the one optional part. It reaches Claude Sonnet 5 through the Agent SDK on a Claude subscription you are already logged into. Without one, the game, the opponent, the judge and the post-game analysis still work, every claim computed by code. The coach's prose falls back to written templates; the first fallback can take several seconds while the backend gives up. You can skip the wait by choosing the template voice in the settings popover.
+
+Skipping `setup.sh` fails loudly: the server refuses to start and names the missing weight files. That is deliberate. A missing Maia band used to silently swap in a strength-limited Stockfish, which is a much stronger and far less human opponent than the band you picked.
+
+`data/girlchess-demo.db` is committed on purpose, a scrubbed game history so the debrief has real games to show on a fresh clone. Your own games go to `data/girlchess.db`, created on first run.
