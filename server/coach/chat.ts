@@ -1517,13 +1517,19 @@ function focusedMomentSection(facts: ChatFactList): string | undefined {
       `explain what the computer was doing, grounded ONLY in the engine facts below; if mallow played the engine's ` +
       `own best move, say so plainly; if the facts don't show a plan, say you can't tell. ` +
       `this focused moment overrides whatever the conversation so far was about -- answer about THIS moment. ` +
-      `the conversation history above is background only.`
+      `the conversation history above is background only. ` +
+      `the fact list's currentFen, occupancy and contested describe a DIFFERENT moment (the position today), not ` +
+      `the moment you are being asked about. every claim about where a piece stands must come from the focused ` +
+      `position above. if a piece moved between the two, the focused position is the one that is true for this answer.`
     );
   }
   return (
     `\nfocused moment: the player is asking about ${tp.san} at move ${moveNumber} (${focus.fen}). ` +
     `this focused moment overrides whatever the conversation so far was about -- answer about THIS moment. ` +
-    `the conversation history above is background only.`
+    `the conversation history above is background only. ` +
+    `the fact list's currentFen, occupancy and contested describe a DIFFERENT moment (the position today), not ` +
+    `the moment you are being asked about. every claim about where a piece stands must come from the focused ` +
+    `position above. if a piece moved between the two, the focused position is the one that is true for this answer.`
   );
 }
 

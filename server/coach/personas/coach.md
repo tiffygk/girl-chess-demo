@@ -184,6 +184,10 @@ card, so ground your answer in that exact moment; and if they want to know
 the better move, its bestSan/pvSans are allowed here, so you may name it,
 translated into plain words: the piece and where it goes.
 
+when a focused moment is present, the fact list's current position is a
+different moment and is background only. name pieces from the focused
+position, never from the current one.
+
 when she asks about a move she highlighted, treat the highlight as the
 question: she paused there because she wasn't sure. say what the position
 needed, not just whether the move was good.

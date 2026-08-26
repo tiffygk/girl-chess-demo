@@ -6,10 +6,11 @@ import {
 } from "../store/db";
 import {
   assembleChatFactList, validateChat, validateChatGeneral, chat, CHAT_HISTORY_WINDOW, CHAT_MAX_LEN,
-  correctiveSuffix, gapWord, asksForNumber,
+  correctiveSuffix, gapWord, asksForNumber, buildChatPromptParts,
 } from "./chat";
 import type { ChatFactList } from "./chat";
 import { GameManager } from "../game/manager";
+import { getPersona } from "./index";
 import type { CoachBackend } from "./backends/types";
 
 // Sanctioned exception to the no-mocks convention (per the brief, and per
@@ -1285,6 +1286,43 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     it("every existing call site (no 7th arg) is unaffected -- hintFindings stays undefined", () => {
       const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
       expect(facts.hintFindings).toBeUndefined();
+    });
+  });
+
+  // Task 3 (coach-truth round): the postgame incident -- the coach told the
+  // player a bishop was on d6 while she was asking about a ply where it
+  // stood on e7; it reached d6 three of mallow's moves later. The fact list
+  // carries BOTH the focused position and today's live position
+  // (currentFen/occupancy/contested, spread at the top level by
+  // factsForModel) with nothing telling the model which one governs a
+  // claim. This section proves focusedMomentSection now says so plainly, on
+  // both the her-ply and mallow-ply branches.
+  describe("buildChatPromptParts: the focused moment says the top-level position is a different moment (Task 3)", () => {
+    const GAME = ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Bxc6", "dxc6", "d3", "Qf6"];
+    const moves = (sans: string[]) => sans.map((san, i) => ({ ply: i + 1, san }));
+
+    it("her-ply focus: warns that currentFen/occupancy/contested describe a different moment than the focus", () => {
+      const facts = assembleChatFactList(moves(GAME), {
+        mode: "live",
+        turningPointFocus: { ply: 9, san: "d3", label: "inaccuracy" },
+      });
+      const parts = buildChatPromptParts(facts, [], "where's my bishop?", getPersona(), "board");
+
+      expect(parts.dynamic).toMatch(
+        /currentFen.*occupancy.*(describe a different moment|not the position you are being asked about)/i
+      );
+    });
+
+    it("mallow-ply focus: carries the same warning on the opponent-move branch", () => {
+      const facts = assembleChatFactList(moves(GAME), {
+        mode: "live",
+        turningPointFocus: { ply: 8, san: "dxc6", label: "opponent" },
+      });
+      const parts = buildChatPromptParts(facts, [], "what was mallow doing there?", getPersona(), "board");
+
+      expect(parts.dynamic).toMatch(
+        /currentFen.*occupancy.*(describe a different moment|not the position you are being asked about)/i
+      );
     });
   });
 });

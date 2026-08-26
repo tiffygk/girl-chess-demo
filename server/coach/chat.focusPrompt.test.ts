@@ -95,9 +95,15 @@ describe("buildChatPrompt: focus overrides the history topic (item 1)", () => {
     const facts = assembleChatFactList(moves(GAME), {});
     const prompt = await capturePrompt(facts, gameId);
 
-    // no focus machinery leaks in
-    expect(prompt).not.toContain("focused moment");
-    expect(prompt).not.toContain("background only");
+    // no focus machinery leaks in. Task 3 (coach-truth round) added a general,
+    // always-present persona rule that also uses the words "focused moment"
+    // and "background only" as vocabulary (coach.md, beside the
+    // turningPointFocus guidance) -- so the leak check below targets the
+    // per-call DYNAMIC markers (the "focused moment:" label with its colon,
+    // and formatHistory's "conversation so far (background only" header),
+    // never those bare substrings anywhere in the full prompt.
+    expect(prompt).not.toContain("focused moment:");
+    expect(prompt).not.toContain("conversation so far (background only");
     // the history block is exactly today's plain rendering
     const plainHistoryBlock = ["", "conversation so far:", "player: how do knights move?", "coach: in an l-shape, two then one."].join("\n");
     expect(prompt).toContain(plainHistoryBlock);
