@@ -4,6 +4,7 @@ import {
   createSession,
   createGame,
   recordMove,
+  attachEval,
   finishGame,
   insertAdviceTrace,
   insertChatMessage,
@@ -540,5 +541,82 @@ describe("coach-backfill: rebuildChatFacts (F1 -- review finding HIGH-1)", () =>
     expect(facts!.outcome).toBeDefined();
     expect(facts!.outcome!.winner).toBe("you");
     expect(facts!.turningPoints).toEqual([{ ply: 2, san: "e5", label: "opponent blunder", punishSan: undefined }]);
+  });
+});
+
+describe("coach-backfill: buildPerPlyAnalysis via rebuildChatFacts (F2 -- review finding HIGH-2)", () => {
+  // Falsification: revert buildPerPlyAnalysis/pvLine to attaching each row's
+  // OWN best_move to its OWN ply (replaying from fenAfter instead of
+  // fenBefore with the PRIOR row's eval) and this goes red exactly as it
+  // did against the real code -- moves.best_move is the eval of the
+  // position AFTER the ply (attachEval's own documented convention), so a
+  // ply's own best_move names the best move for whoever moves NEXT, an
+  // opposite-side, illegal-as-an-alternative SAN. Real game 188 shape:
+  // she plays e4/e5/Nf3 (the engine's own suggestions each time) then
+  // deviates with d6 instead of the recommended Nc6.
+  it("attaches the PRIOR ply's eval to each ply (fenBefore replay), never a same-ply opposite-side move, and only flags gap on a real deviation", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "f1", timeSpentMs: 1000 });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "f2", timeSpentMs: 1000 });
+    recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "f3", timeSpentMs: 1000 });
+    recordMove({ gameId: g, ply: 4, san: "d6", uci: "d7d6", fenAfter: "f4", timeSpentMs: 1000 });
+    // Each row's best_move/pv is the position AFTER that ply, per
+    // attachEval's own contract -- ply 1's is black's reply (e5), ply 2's
+    // is white's next (Nf3), ply 3's is black's next (Nc6, the move she did
+    // NOT play at ply 4), ply 4's is white's next (d4).
+    attachEval(g, 1, { cp: 20, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
+    attachEval(g, 2, { cp: -180, mate: null, bestMove: "g1f3", pv: ["g1f3"] });
+    attachEval(g, 3, { cp: 30, mate: null, bestMove: "b8c6", pv: ["b8c6"] });
+    attachEval(g, 4, { cp: -220, mate: null, bestMove: "d2d4", pv: ["d2d4"] });
+
+    const rowId = insertAdviceTrace({
+      gameId: g,
+      ply: 4,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "[backend error] Claude Code returned an error result: Failed",
+      source: "template",
+      backend: "agent-sdk",
+      validated: false,
+      regenCount: 0,
+      latencyMs: 10,
+    });
+    const row: FailedTrace = {
+      id: rowId,
+      gameId: g,
+      ply: 4,
+      kind: "chat",
+      factsJson: "{}",
+      output: "[backend error] Claude Code returned an error result: Failed",
+      source: "template",
+      backend: "agent-sdk",
+      cause: null,
+      createdAt: getAdviceTraceById(rowId).created_at,
+    };
+
+    const facts = rebuildChatFacts(row);
+    expect(facts).toBeDefined();
+    const byPly = new Map(facts!.perPlyAnalysis!.map((p) => [p.ply, p]));
+
+    // Ply 1 has no prior row -- an honest gap (null), never the
+    // opposite-side "e5" the buggy fenAfter/own-eval pairing would attach.
+    expect(byPly.get(1)!.bestSan).toBeNull();
+    // Ply 2 (black's move): the PRIOR row's (ply 1) best_move e7e5 -> "e5",
+    // matching what she actually played -- same side, legal, and no
+    // deviation, so gap must not fire here.
+    expect(byPly.get(2)!.bestSan).toBe("e5");
+    expect(byPly.get(2)!.gap).toBeUndefined();
+    // Ply 3 (white's move): prior row's (ply 2) best_move g1f3 -> "Nf3",
+    // matching what she played -- same, no gap.
+    expect(byPly.get(3)!.bestSan).toBe("Nf3");
+    expect(byPly.get(3)!.gap).toBeUndefined();
+    // Ply 4 (black's move): prior row's (ply 3) best_move b8c6 -> "Nc6" --
+    // she played "d6" instead, a REAL deviation, so gap must fire here.
+    expect(byPly.get(4)!.bestSan).toBe("Nc6");
+    expect(byPly.get(4)!.gap).toBeDefined();
   });
 });

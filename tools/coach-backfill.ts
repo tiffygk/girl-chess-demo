@@ -171,14 +171,22 @@ interface MoveRow {
   eval_mate: number | null;
 }
 
-// Mirrors tools/coach-eval/run.ts's pvLine/truncatedMoves/buildPerPlyAnalysis
-// exactly (that file's own comment: "duplicated here on purpose ... a
-// harness that doesn't go through GameManager needs its own tiny UCI->SAN
-// replay rather than reaching into a private class method") -- reused SHAPE,
-// not a second invention, per this round's brief. Those three functions are
-// module-private in run.ts (not exported), so they are reproduced here
-// rather than imported.
-function pvLine(fenBefore: string, ev: { bestMove: string | null; pv: string | null }): { pvSans: string[]; bestSan?: string } {
+// F2 fix (fix wave, 2026-08-27, review finding HIGH-2): this used to mirror
+// tools/coach-eval/run.ts's pvLine/truncatedMoves/buildPerPlyAnalysis
+// exactly -- but run.ts carries the same fenAfter/own-eval off-by-one this
+// file's buildPerPlyAnalysis used to have, and run.ts only feeds an eval
+// harness while this tool writes to her real history, so pvLine and
+// buildPerPlyAnalysis below were corrected to mirror manager.ts's chat()
+// path (:1265-1301) instead -- see buildPerPlyAnalysis's own comment for
+// the mapping. run.ts is unchanged; out of scope for this wave.
+// truncatedMoves alone still mirrors run.ts's (trivial, no offset logic)
+// and is reproduced here (module-private there, not exported) rather than
+// imported.
+function pvLine(
+  fenBefore: string,
+  ev: { bestMove: string | null; pv: string | null } | undefined
+): { pvSans: string[]; bestSan?: string } {
+  if (!ev) return { pvSans: [] };
   const uciList = ev.pv && ev.pv.trim().length > 0 ? ev.pv.trim().split(/\s+/) : ev.bestMove ? [ev.bestMove] : [];
   if (uciList.length === 0) return { pvSans: [] };
   const replay = new Chess(fenBefore);
@@ -202,13 +210,24 @@ function truncatedMoves(rows: MoveRow[], ply: number): { ply: number; san: strin
   return rows.filter((r) => r.ply <= ply).map((r) => ({ ply: r.ply, san: r.san }));
 }
 
+// A ply's OWN best_move/pv is the eval of the position AFTER that ply
+// (attachEval(ply) persists fenAfter(ply)'s eval -- see manager.ts:1265-1281's
+// own documentation of this exact off-by-one, fixed there 2026-07-28), so it
+// names the best move for whoever moves NEXT, not an alternative to the move
+// just played. Mirrors manager.ts's chat()-path perPlyAnalysis loop
+// (:1282-1301) exactly: replay from fenBefore, attach the PRIOR row's eval
+// to the CURRENT ply, then carry this row's own eval forward as the prior
+// for the next iteration. Ply 1 has no prior row, so pvLine(fenBefore,
+// undefined) returns an honest empty line rather than a guess.
 function buildPerPlyAnalysis(rows: MoveRow[], ply: number): ChatPerPlyInput[] {
   const truncated = rows.filter((r) => r.ply <= ply);
   const replay = new Chess();
+  let priorEval: { bestMove: string | null; pv: string | null } | undefined;
   return truncated.map((r) => {
+    const fenBefore = replay.fen();
     const mv = replay.move(r.san);
-    const fenAfter = replay.fen();
-    const { pvSans, bestSan } = pvLine(fenAfter, { bestMove: r.best_move, pv: r.pv });
+    const { pvSans, bestSan } = pvLine(fenBefore, priorEval);
+    priorEval = { bestMove: r.best_move ?? null, pv: r.pv ?? null };
     return {
       ply: r.ply,
       san: mv.san,
