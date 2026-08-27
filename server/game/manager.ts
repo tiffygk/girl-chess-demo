@@ -471,6 +471,7 @@ export class GameManager {
           crossedAdvantage: t.crossedAdvantage ?? false,
           mateIn: t.mateIn ?? null, missedCount: t.missedCount ?? null,
           endKind: t.endKind ?? null, anchorKind: t.anchorKind ?? null,
+          leader: t.leader ?? null, leadMarginCp: t.leadMarginCp ?? null, leadNth: t.leadNth ?? null,
         })),
         TP_ALGO_VERSION
       );
@@ -537,6 +538,7 @@ export class GameManager {
           crossedAdvantage: t.crossedAdvantage ?? false,
           mateIn: t.mateIn ?? null, missedCount: t.missedCount ?? null,
           endKind: t.endKind ?? null, anchorKind: t.anchorKind ?? null,
+          leader: t.leader ?? null, leadMarginCp: t.leadMarginCp ?? null, leadNth: t.leadNth ?? null,
         })),
         TP_ALGO_VERSION
       );
@@ -554,6 +556,7 @@ export class GameManager {
           crossedAdvantage: !!r.crossed_advantage,
           mateIn: r.mate_in ?? undefined, missedCount: r.missed_count ?? undefined,
           endKind: r.end_kind ?? undefined, anchorKind: r.anchor_kind ?? undefined,
+          leader: r.leader ?? undefined, leadMarginCp: r.lead_margin_cp ?? undefined, leadNth: r.lead_nth ?? undefined,
         })),
         classifications: rows
           .filter((m: any) => m.classification)
@@ -599,6 +602,7 @@ export class GameManager {
           crossedAdvantage: t.crossedAdvantage ?? false,
           mateIn: t.mateIn ?? null, missedCount: t.missedCount ?? null,
           endKind: t.endKind ?? null, anchorKind: t.anchorKind ?? null,
+          leader: t.leader ?? null, leadMarginCp: t.leadMarginCp ?? null, leadNth: t.leadNth ?? null,
         })),
         TP_ALGO_VERSION
       );
