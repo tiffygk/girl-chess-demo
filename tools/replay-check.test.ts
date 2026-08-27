@@ -7,6 +7,7 @@ import {
   unconvertedInvariant,
   unconvertedAnchorInvariant,
   noPlyCollisionInvariant,
+  leadChangeInvariant,
   missedMateInvariant,
   isKnownDebriefViolation,
   KNOWN_DEBRIEF_VIOLATIONS,
@@ -125,6 +126,63 @@ describe("noPlyCollisionInvariant (union review DELTA)", () => {
   it("stays silent on an empty or single-point game", () => {
     expect(noPlyCollisionInvariant(1, [])).toBeNull();
     expect(noPlyCollisionInvariant(1, [{ kind: "swing", ply: 8 }])).toBeNull();
+  });
+});
+
+// Wave E (2026-08-27): leadChangeInvariant -- bidirectional coverage between
+// detectLeadChanges' own computed events and whatever the point set claims.
+// A free-ply climb (every per-ply delta sub-TP_FLOOR) that crosses LEAD_CP at
+// ply 8 and holds -- same shape as turningPoints.test.ts's own E3 fixture --
+// produces exactly one real event: { ply: 8, leader: "her", marginCp: 310,
+// nth: 1 }. Hand-broken point sets below prove each of the three failure
+// modes a bidirectional check exists to catch.
+describe("leadChangeInvariant (Wave E)", () => {
+  const LEAD_CLIMB: MoveEval[] = [
+    { ply: 1, san: "a3", evalCp: -40, evalMate: null },
+    { ply: 2, san: "a6", evalCp: 80, evalMate: null },
+    { ply: 3, san: "b3", evalCp: -120, evalMate: null },
+    { ply: 4, san: "b6", evalCp: 160, evalMate: null },
+    { ply: 5, san: "c3", evalCp: -200, evalMate: null },
+    { ply: 6, san: "c6", evalCp: 240, evalMate: null },
+    { ply: 7, san: "d3", evalCp: -280, evalMate: null },
+    { ply: 8, san: "d6", evalCp: 310, evalMate: null },
+    { ply: 9, san: "e3", evalCp: -330, evalMate: null },
+    { ply: 10, san: "e6", evalCp: 350, evalMate: null },
+  ];
+  const FLAT: MoveEval[] = [
+    { ply: 1, san: "e4", evalCp: -10, evalMate: null },
+    { ply: 2, san: "e5", evalCp: 12, evalMate: null },
+  ];
+
+  it("passes when the point set matches detectLeadChanges exactly", () => {
+    const points = [{ ply: 8, kind: "lead-change", leader: "her" as const, leadMarginCp: 310, leadNth: 1 }];
+    expect(leadChangeInvariant(1, LEAD_CLIMB, points)).toBeNull();
+  });
+
+  it("passes when zero events and zero surfaces (a quiet game)", () => {
+    expect(leadChangeInvariant(1, FLAT, [])).toBeNull();
+  });
+
+  it("surface with no event: a fake leader-bearing point on a game with zero real crossings", () => {
+    const points = [{ ply: 1, kind: "lead-change", leader: "her" as const, leadMarginCp: 400, leadNth: 1 }];
+    expect(leadChangeInvariant(1, FLAT, points)).toMatch(/surface\(s\) claim a lead change but detectLeadChanges found none/);
+  });
+
+  it("event with no surface: the real ply-8 crossing exists but the point set never mentions it", () => {
+    expect(leadChangeInvariant(1, LEAD_CLIMB, [])).toMatch(/lead change at ply 8 \(her, nth 1\) has no surface/);
+  });
+
+  it("two surfaces for one event: a duplicated flag on the same ply/leader", () => {
+    const points = [
+      { ply: 8, kind: "lead-change", leader: "her" as const, leadMarginCp: 310, leadNth: 1 },
+      { ply: 8, kind: "swing", leader: "her" as const, leadMarginCp: 310, leadNth: 1 },
+    ];
+    expect(leadChangeInvariant(1, LEAD_CLIMB, points)).toMatch(/has 2 surfaces, expected exactly one/);
+  });
+
+  it("a surface with the wrong leadNth is caught even though the ply/leader match", () => {
+    const points = [{ ply: 8, kind: "lead-change", leader: "her" as const, leadMarginCp: 310, leadNth: 2 }];
+    expect(leadChangeInvariant(1, LEAD_CLIMB, points)).toMatch(/leadNth 2 does not match computed nth 1/);
   });
 });
 

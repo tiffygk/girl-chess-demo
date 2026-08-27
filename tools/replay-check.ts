@@ -60,7 +60,12 @@ import {
   getVerdicts,
 } from "../server/store/db";
 import { moveEndpoints } from "../server/annotator/moveEndpoints";
-import { computeTurningPoints, buildDeltaSeries, type MoveEval } from "../server/annotator/turningPoints";
+import {
+  computeTurningPoints,
+  buildDeltaSeries,
+  detectLeadChanges,
+  type MoveEval,
+} from "../server/annotator/turningPoints";
 // M2 fix (union review, 2026-07-31): this used to import MISSED_MATE_DEPTH
 // from missedWins.ts (the byte-stable depth-1 detector), whose comment
 // claimed "Task 6's widening tightens this automatically -- no gate edit
@@ -197,6 +202,114 @@ export function noPlyCollisionInvariant(
       return `game ${gameId}: two turning points share ply ${p.ply} -- "${prior}" and "${p.kind}"`;
     }
     seen.set(p.ply, p.kind);
+  }
+  return null;
+}
+
+// -- HARD invariant (Wave E, Task E7) ----------------------------------------
+// Bidirectional, because a check must cover every surface that claims it
+// (CLAUDE.md's Invariant rule): every event detectLeadChanges computes from
+// stored moves must have exactly one surface in the computed point set (a
+// kind==="lead-change" point at its ply, or a point at its ply carrying a
+// MATCHING leader/nth), and every point carrying a leader must correspond to
+// a computed event with matching leader/nth. Zero events must mean zero
+// leader-bearing surfaces. Scoped to the new kind's own claim (`leader`,
+// something nothing else emits) -- widens neither the INPUT nor the ACCEPTED
+// SET of any existing detector, so it cannot false-flag one (the
+// check-widening lesson, classified before shipping).
+export function leadChangeInvariant(
+  gameId: number,
+  moves: MoveEval[],
+  points: { ply: number; kind: string; leader?: "her" | "mallow"; leadMarginCp?: number; leadNth?: number }[]
+): string | null {
+  const events = detectLeadChanges(buildDeltaSeries(moves));
+  const surfaces = points.filter((p) => p.leader != null);
+
+  if (events.length === 0 && surfaces.length > 0) {
+    return `game ${gameId}: ${surfaces.length} surface(s) claim a lead change but detectLeadChanges found none`;
+  }
+
+  for (const ev of events) {
+    const matches = points.filter((p) => p.ply === ev.ply && p.leader === ev.leader);
+    if (matches.length === 0) {
+      return `game ${gameId}: lead change at ply ${ev.ply} (${ev.leader}, nth ${ev.nth}) has no surface in the computed point set`;
+    }
+    if (matches.length > 1) {
+      return `game ${gameId}: lead change at ply ${ev.ply} (${ev.leader}) has ${matches.length} surfaces, expected exactly one`;
+    }
+    const surface = matches[0];
+    if (surface.leadNth !== ev.nth) {
+      return `game ${gameId}: ply ${ev.ply} surface leadNth ${surface.leadNth} does not match computed nth ${ev.nth}`;
+    }
+    if (surface.leadMarginCp !== ev.marginCp) {
+      return `game ${gameId}: ply ${ev.ply} surface leadMarginCp ${surface.leadMarginCp} does not match computed marginCp ${ev.marginCp}`;
+    }
+  }
+
+  for (const s of surfaces) {
+    const ev = events.find((e) => e.ply === s.ply && e.leader === s.leader);
+    if (!ev) {
+      return `game ${gameId}: ply ${s.ply} surface claims leader "${s.leader}" with no matching computed event`;
+    }
+  }
+
+  return null;
+}
+
+// -- HARD invariant (Wave E, Task E7 continued) -- named-game pins ----------
+// Design question 6's named expectations, RE-VERIFIED against the real db
+// at implementation time (2026-08-27), not transcribed blindly from the
+// plan -- the plan's own corpus-total numbers (51 cards / 52 games / 45+3+4)
+// were measured at DESIGN time and are already stale by 2-3 games by the
+// time this shipped (the corpus grows every time she plays); the individual
+// named games below were re-checked directly and match exactly. Report the
+// corpus-total drift, never tune the detector to chase a stale count.
+export function leadChangePinnedExpectation(
+  gameId: number,
+  points: { ply: number; kind: string; leader?: "her" | "mallow"; leadMarginCp?: number; leadNth?: number }[]
+): string | null {
+  const standaloneAt = (ply: number) => points.find((p) => p.ply === ply && p.kind === "lead-change");
+  const flagAt = (ply: number) => points.find((p) => p.ply === ply && p.kind !== "lead-change" && p.leader != null);
+
+  if (gameId === 189) {
+    const p = standaloneAt(22);
+    if (!p || p.leader !== "her" || p.leadMarginCp !== 307 || p.leadNth !== 1) {
+      return `game 189: expected standalone lead-change at ply 22 (leader her, margin 307, nth 1), got ${JSON.stringify(p)}`;
+    }
+  }
+  if (gameId === 131) {
+    const flag = flagAt(15);
+    if (!flag || flag.leader !== "mallow" || flag.leadMarginCp !== 388 || flag.leadNth !== 1) {
+      return `game 131: expected flag at ply 15 (leader mallow, margin 388, nth 1), got ${JSON.stringify(flag)}`;
+    }
+    const card = standaloneAt(42);
+    if (!card || card.leader !== "her" || card.leadNth !== 2 || card.leadMarginCp !== 301) {
+      return `game 131: expected standalone lead-change at ply 42 (leader her, nth 2, margin 301), got ${JSON.stringify(card)}`;
+    }
+  }
+  if (gameId === 147) {
+    const card = standaloneAt(24);
+    if (!card || card.leader !== "her" || card.leadNth !== 1 || card.leadMarginCp !== 402) {
+      return `game 147: expected standalone lead-change at ply 24 (leader her, nth 1, margin 402), got ${JSON.stringify(card)}`;
+    }
+    const flag = flagAt(27);
+    if (!flag || flag.leader !== "mallow" || flag.leadNth !== 2 || flag.leadMarginCp !== 2990) {
+      return `game 147: expected flag at ply 27 (leader mallow, nth 2, margin 2990), got ${JSON.stringify(flag)}`;
+    }
+  }
+  if (gameId === 180) {
+    const flag = flagAt(17);
+    if (!flag || flag.leader !== "mallow" || flag.leadMarginCp !== 329 || flag.leadNth !== 1) {
+      return `game 180: expected flag at ply 17 (leader mallow, margin 329, nth 1), got ${JSON.stringify(flag)}`;
+    }
+    if (points.some((p) => p.kind === "lead-change")) {
+      return `game 180: expected NO standalone lead-change point (flag only) -- one exists`;
+    }
+  }
+  if (gameId === 75 || gameId === 127 || gameId === 140) {
+    if (points.some((p) => p.leader != null)) {
+      return `game ${gameId}: expected zero lead surfaces (correct silence), found one`;
+    }
   }
   return null;
 }
@@ -454,6 +567,16 @@ async function main() {
   const missedMateViolations: string[] = [];
   const debriefViolations: string[] = [];
   const debriefViolationsByGame = new Map<number, string[]>();
+  // Wave E (2026-08-27): the lead-change corpus check -- the bidirectional
+  // coverage invariant (always checked, never allowlisted -- a coverage gap
+  // is exactly what a listed game would hide) plus the named-game pins from
+  // design question 6. WATCH-only totals (leadChangeCardCounts) are printed
+  // for comparison against the plan's design-time numbers, never asserted --
+  // the corpus grows every time she plays, so a fixed total is stale by
+  // construction (see leadChangePinnedExpectation's own comment).
+  const leadChangeViolations: string[] = [];
+  const leadChangePinnedViolations: string[] = [];
+  const leadChangeCardCounts = { total: 0, zero: 0, one: 0, two: 0, threePlus: 0 };
 
   // WATCH-only counters (printed, never failing).
   let watchParityHer = 0;
@@ -519,6 +642,22 @@ async function main() {
     // a collision is exactly the kind of gap a listed game would hide.
     const collisionViolation = noPlyCollisionInvariant(gameId, tps);
     if (collisionViolation) plyCollisionViolations.push(collisionViolation);
+
+    // Wave E (2026-08-27): always checked, never allowlisted -- same
+    // reasoning as the collision check above, and this kind can never
+    // trip the collision invariant by construction (flag fallback), so
+    // there is no tension between the two.
+    const leadViolation = leadChangeInvariant(gameId, moves, tps);
+    if (leadViolation) leadChangeViolations.push(leadViolation);
+    const leadPinViolation = leadChangePinnedExpectation(gameId, tps);
+    if (leadPinViolation) leadChangePinnedViolations.push(leadPinViolation);
+    const leadCardCount = tps.filter((t) => t.kind === "lead-change").length +
+      tps.filter((t) => t.kind !== "lead-change" && t.leader != null).length;
+    leadChangeCardCounts.total += leadCardCount;
+    if (leadCardCount === 0) leadChangeCardCounts.zero++;
+    else if (leadCardCount === 1) leadChangeCardCounts.one++;
+    else if (leadCardCount === 2) leadChangeCardCounts.two++;
+    else leadChangeCardCounts.threePlus++;
 
     // M2 fix (union review, 2026-07-31): cross-checks the depth-5 detector
     // that actually drives her debrief (conversion.ts, via
@@ -709,6 +848,17 @@ async function main() {
   console.log(`\nmissed-mate violations: ${missedMateViolations.length} (must be 0)`);
   for (const v of missedMateViolations) console.log(`  ${v}`);
 
+  console.log(`\nlead-change coverage violations: ${leadChangeViolations.length} (must be 0, never allowlisted -- Wave E)`);
+  for (const v of leadChangeViolations) console.log(`  ${v}`);
+  console.log(`\nlead-change pinned-game violations: ${leadChangePinnedViolations.length} (must be 0, named games 189/131/147/180/75/127/140)`);
+  for (const v of leadChangePinnedViolations) console.log(`  ${v}`);
+  console.log(
+    `  lead-change corpus totals (WATCH, printed only -- the corpus grows every time she plays, so this ` +
+    `drifts from the plan's design-time snapshot by construction; the named-game pins above are the real assertion): ` +
+    `${leadChangeCardCounts.total} card(s) across ${replayedCount} games examined -- ` +
+    `${leadChangeCardCounts.zero} with 0, ${leadChangeCardCounts.one} with 1, ${leadChangeCardCounts.two} with 2, ${leadChangeCardCounts.threePlus} with 3+`
+  );
+
   console.log(`\nem-dash violations: ${emDashViolations.length} (must be 0, KNOWN_EM_DASH_TRACES excluded)`);
   for (const id of emDashViolations) console.log(`  trace ${id}`);
 
@@ -742,6 +892,8 @@ async function main() {
     unconvertedAnchorViolations.length === 0 &&
     plyCollisionViolations.length === 0 &&
     missedMateViolations.length === 0 &&
+    leadChangeViolations.length === 0 &&
+    leadChangePinnedViolations.length === 0 &&
     emDashViolations.length === 0 &&
     defenseClaimViolations.length === 0 &&
     debriefViolations.length === 0 &&
