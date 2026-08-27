@@ -364,6 +364,47 @@ describe("DebriefPage: the conversion card gets the negative tint (union review 
   });
 });
 
+// Wave E (2026-08-27): a lead-change card's tint depends on WHO the leader
+// is, not on its label (which is always the neutral "lead change" for both
+// leaders) -- her taking the lead is good news (lavender), mallow taking
+// the lead is a warning-class fact (pink alarm), same family as an episode
+// card.
+describe("DebriefPage: a lead-change card's tint depends on leader (Wave E)", () => {
+  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?">/g;
+
+  function negativeClassOnCardContaining(html: string, needle: string): boolean {
+    const cardsSection = html.slice(html.indexOf('class="debrief-cards"'));
+    const idx = cardsSection.indexOf(needle);
+    expect(idx).toBeGreaterThan(-1);
+    const re = new RegExp(CARD_OPEN_TAG_RE.source, "g");
+    let match: RegExpExecArray | null;
+    let last: RegExpExecArray | null = null;
+    while ((match = re.exec(cardsSection)) && match.index < idx) {
+      last = match;
+    }
+    expect(last).not.toBeNull();
+    return !!last![1];
+  }
+
+  it("leader her: stays lavender, no negative tint", () => {
+    const herLeadPoint: TurningPoint = {
+      rank: 1, ply: 3, san: "Qh5", label: "lead change", deltaP: 0, lowConfidence: false,
+      kind: "lead-change", leader: "her", leadMarginCp: 310, leadNth: 1,
+    };
+    const html = renderToStaticMarkup(<DebriefPage {...baseProps({ turningPoints: [herLeadPoint] })} />);
+    expect(negativeClassOnCardContaining(html, "· lead change<")).toBe(false);
+  });
+
+  it("leader mallow: gets the negative (pink alarm) tint", () => {
+    const mallowLeadPoint: TurningPoint = {
+      rank: 1, ply: 4, san: "Nc6", label: "lead change", deltaP: 0, lowConfidence: false,
+      kind: "lead-change", leader: "mallow", leadMarginCp: 388, leadNth: 1,
+    };
+    const html = renderToStaticMarkup(<DebriefPage {...baseProps({ turningPoints: [mallowLeadPoint] })} />);
+    expect(negativeClassOnCardContaining(html, "· lead change<")).toBe(true);
+  });
+});
+
 // N1 (owner report 2026-08-21). A card labelled "missed mate" (already in
 // NEGATIVE_CARD_LABELS) sitting in the pink alarm tint while its own copy
 // says the move was good enough is a mixed signal -- owner rule on file,

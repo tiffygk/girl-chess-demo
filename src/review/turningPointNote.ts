@@ -67,7 +67,19 @@ export interface TurningPointNote {
 // backfill labels "checkmate" / "the losing move" / "the clincher", which
 // carry no distinct motif of their own) falls through to GENERIC_TIP below —
 // a declared cut (plan Task 3), asserted directly in the test file.
-export type Motif = "king-safety" | "missed-punish" | "good-moment" | "eval-drop" | "missed-mate" | "unconverted";
+export type Motif =
+  | "king-safety"
+  | "missed-punish"
+  | "good-moment"
+  | "eval-drop"
+  | "missed-mate"
+  | "unconverted"
+  // Wave E (2026-08-27): the "decision checkpoint" lead-change point --
+  // exclusively tp.kind === "lead-change" (see inferMotif below). Resolves
+  // to one of TWO tips depending on tp.leader (nextTimeTipFor's own branch,
+  // same pattern the unconverted endKind branch already uses), so the bank
+  // entry below is only ever the leader-her half of the story.
+  | "lead-change";
 
 function moveNumberForPly(ply: number): number {
   return Math.ceil(ply / 2);
@@ -137,7 +149,15 @@ export const NEXT_TIME_TIPS: Record<Motif, string> = {
   // only on the repetition path.
   unconverted:
     "when you are winning, treat a repeated position as a stop sign: find the move that makes new progress before it repeats.",
+  // Wave E (2026-08-27, owner ask game 189 chat): leader-her half of the
+  // tip; nextTimeTipFor below swaps in LEAD_CHANGE_MALLOW_TIP when
+  // tp.leader === "mallow".
+  "lead-change":
+    "learn to feel this moment as you play: when you are up about a piece and nothing hangs, the job changes. trade pieces, keep your king safe, and let the lead win the game.",
 };
+
+const LEAD_CHANGE_MALLOW_TIP =
+  "when the lead tips against you, the job changes too: keep pieces on, make her prove it, and look for chances to complicate.";
 
 // Fix wave (2026-07-29, review-3.md MEDIUM finding 4): the card tip is
 // documented as "generic across endKinds" but named repetition
@@ -152,7 +172,69 @@ const UNCONVERTED_NON_REPETITION_TIP =
 
 function nextTimeTipFor(tp: TurningPoint, motif: Motif): string {
   if (motif === "unconverted" && tp.endKind !== "repetition") return UNCONVERTED_NON_REPETITION_TIP;
+  if (motif === "lead-change" && tp.leader === "mallow") return LEAD_CHANGE_MALLOW_TIP;
   return NEXT_TIME_TIPS[motif];
+}
+
+// Margin words (design question 5): >= 2800 "a forced mate" (the mate-cap
+// convention turningPoints.ts's mateToRawSigned already produces),
+// >= 850 "about a queen's worth", >= 450 "about a rook's worth", else
+// "about a piece's worth" (cp >= LEAD_CP=300 by construction, since
+// leadMarginCp is only ever set by detectLeadChanges).
+function leadMarginWord(cp: number): string {
+  if (cp >= 2800) return "a forced mate";
+  if (cp >= 850) return "about a queen's worth";
+  if (cp >= 450) return "about a rook's worth";
+  return "about a piece's worth";
+}
+
+// Wave E: the standalone lead-change card, leader her (didWell). Mover
+// parity changes the copy ("your X put you ahead" vs "after her X you were
+// ahead"), never the fact -- her own ply (odd) gets the direct sentence,
+// mallow's ply (even) gets the "after her" framing since she didn't play
+// the move herself. nth > 1 (a retake) gets its own shorter template
+// (design question 5) rather than repeating the first-establishment
+// sentence, which would falsely claim this is the first time she ever led.
+function leadChangeDidWellText(tp: TurningPoint, gameSans: SummaryMove[] | undefined): string {
+  const n = moveNumberForPly(tp.ply);
+  const margin = leadMarginWord(tp.leadMarginCp ?? 0);
+  const played = describedOrRaw(tp.san, fenBeforePly(gameSans, tp.ply));
+  if ((tp.leadNth ?? 1) > 1) {
+    return `the lead changed hands again. after ${played} on move ${n} you were back on top by ${margin}.`;
+  }
+  const isHerMove = tp.ply % 2 === 1;
+  return isHerMove
+    ? `this is where the game tipped. your ${played} on move ${n} put you ahead by ${margin}, and the lead was still there a move later. from here, steady play is what wins.`
+    : `this is where the game tipped. after her ${played} on move ${n} you were ahead by ${margin}, and the lead was still there a move later. from here, steady play is what wins.`;
+}
+
+// Wave E: the standalone lead-change card, leader mallow (couldImprove) --
+// the symmetric mirror of leadChangeDidWellText above.
+function leadChangeCouldImproveText(tp: TurningPoint, gameSans: SummaryMove[] | undefined): string {
+  const n = moveNumberForPly(tp.ply);
+  const margin = leadMarginWord(tp.leadMarginCp ?? 0);
+  const played = describedOrRaw(tp.san, fenBeforePly(gameSans, tp.ply));
+  if ((tp.leadNth ?? 1) > 1) {
+    return `the lead changed hands again. after ${played} on move ${n} mallow took back the lead by ${margin}.`;
+  }
+  const isHerMove = tp.ply % 2 === 1;
+  return isHerMove
+    ? `this is where the game tipped away. your ${played} on move ${n} left mallow ahead by ${margin}, and it held into the next move. the time for careful defence started here.`
+    : `this is where the game tipped away. after her ${played} on move ${n} mallow was ahead by ${margin}, and it held into the next move. the time for careful defence started here.`;
+}
+
+// Wave E: the flag clause -- appended (by buildTurningPointNote, below) to
+// whichever of didWell/couldImprove already exists on a card of ANOTHER
+// kind whose ply a confirmed lead crossing also landed on (the main path:
+// 29 of 50 real-corpus anchors collide with an existing swing). Never
+// applies to a standalone lead-change point itself -- that shape is fully
+// handled by leadChangeDidWellText/leadChangeCouldImproveText above.
+function leadClause(tp: TurningPoint): string | undefined {
+  if (tp.leader == null || tp.kind === "lead-change") return undefined;
+  const margin = leadMarginWord(tp.leadMarginCp ?? 0);
+  return tp.leader === "her"
+    ? `this was also the moment the game tipped: from here you were ahead by ${margin}.`
+    : `this was also the moment the game tipped her way: from here mallow was ahead by ${margin}.`;
 }
 
 // Motif inference is read-only off TurningPoint.label/kind/missedPunish —
@@ -164,6 +246,7 @@ function nextTimeTipFor(tp: TurningPoint, motif: Motif): string {
 // are pure winprob-delta magnitude bands — they say nothing about *why* the
 // eval moved, so they only ever earn the honest eval-drop/good-moment tips.
 function inferMotif(tp: TurningPoint): Motif | undefined {
+  if (tp.kind === "lead-change") return "lead-change";
   if (tp.kind === "missed-win") return "missed-mate";
   if (tp.kind === "unconverted") return "unconverted";
   if (tp.kind === "episode") return "king-safety";
@@ -180,6 +263,11 @@ function buildDidWell(
   line: TurningLine | undefined,
   fb: FollowedBest | undefined
 ): string | undefined {
+  // Wave E: the standalone lead-change card. Only ever the good-news half
+  // (leader her) -- leader mallow is buildCouldImprove's story below.
+  if (tp.kind === "lead-change") {
+    return tp.leader === "her" ? leadChangeDidWellText(tp, gameSans) : undefined;
+  }
   if (tp.kind === "episode") {
     const n = moveNumberForPly(tp.ply);
     return `you held up under real pressure starting around move ${n}. that composure is a skill.`;
@@ -248,6 +336,11 @@ function buildCouldImprove(
   seedFen: string | undefined,
   fb: FollowedBest | undefined
 ): string | undefined {
+  // Wave E: the standalone lead-change card. Only ever the bad-news half
+  // (leader mallow) -- leader her is buildDidWell's story above.
+  if (tp.kind === "lead-change") {
+    return tp.leader === "mallow" ? leadChangeCouldImproveText(tp, gameSans) : undefined;
+  }
   const played = describedOrRaw(tp.san, fenBeforePly(gameSans, tp.ply));
   if (tp.missedPunish) {
     const bestClause = line?.bestSan ? ` ${describedOrRaw(line.bestSan, seedFen)} was on the board.` : "";
@@ -426,6 +519,17 @@ export function buildTurningPointNote(
   if (didWell) note.didWell = didWell;
   const couldImprove = buildCouldImprove(tp, cls, line, gameSans, seedFen, fb);
   if (couldImprove) note.couldImprove = couldImprove;
+  // Wave E: the flag clause -- appends to whichever of didWell/couldImprove
+  // already exists (never a standalone lead-change point itself, see
+  // leadClause's own guard), creating one when neither does so a flagged
+  // point is never silent.
+  const clause = leadClause(tp);
+  if (clause) {
+    if (note.didWell) note.didWell = `${note.didWell} ${clause}`;
+    else if (note.couldImprove) note.couldImprove = `${note.couldImprove} ${clause}`;
+    else if (tp.leader === "her") note.didWell = clause;
+    else note.couldImprove = clause;
+  }
   if (highlighted && !note.couldImprove) {
     const bestSan = line?.bestSan;
     const notFollowed = fb ? !fb.followed : !!bestSan && bestSan !== tp.san;
