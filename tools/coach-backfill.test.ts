@@ -685,3 +685,85 @@ describe("coach-backfill: findPrecedingQuestion (F4 -- review finding LOW-1)", (
     expect(findPrecedingQuestion(g, "2026-08-24 20:12:23")).toBe("second question, 19 seconds later");
   });
 });
+
+describe("coach-backfill: rebuildChatFacts turning points heal (F5 -- review finding LOW-2)", () => {
+  // Falsification: read turning points via a plain getTurningPoints call
+  // (no version check) and this goes red -- the game's only stored row set
+  // is stamped algo_version 7, so backfill would ground its regenerated
+  // answer on the stale placeholder instead of the real v8 "lead change"
+  // point production's own self-heal (GameManager.getSummary) would have
+  // produced. Move sequence lifted verbatim from turningPoints.test.ts's
+  // own "a free-ply crossing becomes its own lead-change point" case --
+  // a known, deterministic v8-only output (leader/leadMarginCp/leadNth
+  // did not exist before TP_ALGO_VERSION 8).
+  it("heals stale (v7) stored turning points to the current algorithm before grounding a regenerated chat answer", () => {
+    const dbHandle = openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+
+    const moves: { ply: number; san: string; evalCp: number }[] = [
+      { ply: 1, san: "a3", evalCp: -40 },
+      { ply: 2, san: "a6", evalCp: 80 },
+      { ply: 3, san: "b3", evalCp: -120 },
+      { ply: 4, san: "b6", evalCp: 160 },
+      { ply: 5, san: "c3", evalCp: -200 },
+      { ply: 6, san: "c6", evalCp: 240 },
+      { ply: 7, san: "d3", evalCp: -280 },
+      { ply: 8, san: "d6", evalCp: 310 },
+      { ply: 9, san: "e3", evalCp: -330 },
+      { ply: 10, san: "e6", evalCp: 350 },
+    ];
+    for (const m of moves) {
+      recordMove({ gameId: g, ply: m.ply, san: m.san, uci: "a1a1", fenAfter: `f${m.ply}`, timeSpentMs: 1000 });
+      attachEval(g, m.ply, { cp: m.evalCp, mate: null, bestMove: "a1a1", pv: [] });
+    }
+    finishGame(g, "1-0");
+
+    // Stale v7 row set: a placeholder that the real v8 algorithm would
+    // never produce (no leader/leadMarginCp/leadNth fields at all).
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 1, san: "a3", label: "placeholder-v7", deltaP: 0, lowConfidence: false, kind: "swing" }],
+      7
+    );
+
+    const rowId = insertAdviceTrace({
+      gameId: g,
+      ply: 10,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "[backend error] Claude Code returned an error result: Failed",
+      source: "template",
+      backend: "agent-sdk",
+      validated: false,
+      regenCount: 0,
+      latencyMs: 10,
+    });
+    // Asked after the game ended -- review mode, so rebuildChatFacts's
+    // finishedAtAsk branch (which reads turning points) actually runs.
+    dbHandle.prepare("UPDATE games SET ended_at = ? WHERE id = ?").run("2026-08-24 20:00:00", g);
+    dbHandle.prepare("UPDATE advice_traces SET created_at = ? WHERE id = ?").run("2026-08-24 20:05:00", rowId);
+
+    const row: FailedTrace = {
+      id: rowId,
+      gameId: g,
+      ply: 10,
+      kind: "chat",
+      factsJson: "{}",
+      output: "[backend error] Claude Code returned an error result: Failed",
+      source: "template",
+      backend: "agent-sdk",
+      cause: null,
+      createdAt: getAdviceTraceById(rowId).created_at,
+    };
+
+    const facts = rebuildChatFacts(row);
+    expect(facts).toBeDefined();
+    const labels = (facts!.turningPoints ?? []).map((p) => p.label);
+    expect(labels).not.toContain("placeholder-v7");
+    expect(facts!.turningPoints).toContainEqual(
+      expect.objectContaining({ ply: 8, san: "d6", label: "lead change" })
+    );
+  });
+});
