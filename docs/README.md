@@ -45,10 +45,17 @@ Two instruments live in there, and they did different jobs. Keeping them apart i
 
 A working local app, not a hosted product. It runs on your own machine, and the [repository README](https://github.com/tiffygk/girl-chess-demo#running-it) covers what you need and what degrades if you skip a step.
 
-Three self-contained pages, no clone needed:
-1. [The eval dashboard](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html): the coach-eval v3 run, the cold-start control, and the audit of the instrument itself.
-2. [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence.
-3. [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): the design system above.
+Five self-contained pages, no clone needed.
+
+How it is built:
+1. [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence.
+2. [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): the design system above.
+
+Three evaluations, in the order they happened. Each answers the question the one before it left open:
+
+3. [Sonnet against Opus](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html) (2026-07-23): which model to run, graded blind with the key sealed. It carries its own correction where later work moved one of its numbers.
+4. [Why the answers feel slow](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html) (2026-08-02): the latency investigation. It ends on a question it could not close, and says so.
+5. [Three thinking budgets, one pick](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html) (2026-08-03): the three-repeat run that closed it. Shipped the next day.
 
 Then [technical-decisions.md](technical-decisions.md) and this doc, for anything that needs receipts.
 

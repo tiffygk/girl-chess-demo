@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Girl Chess — OD-3b Thinking-Arm Dashboard (2026-08-03)</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2430; --ink2:#54606e; --muted:#8a95a3;
+    --line:#e4e8ee; --line2:#eef1f5; --shadow:0 1px 3px rgba(20,30,45,.08),0 1px 2px rgba(20,30,45,.04);
+    --accent:#0f4c81;
+    /* arm colors (Okabe-Ito, CVD-checked in OKLab: normal dE>=18.7, CVD pairs pass; orange contrast WARN
+       mitigated by ink direct labels + data tables) */
+    --armD:#0072b2;  /* default  = normal thinking  */
+    --armL:#009e73;  /* low      = bounded thinking */
+    --armX:#e69f00;  /* disabled = thinking off     */
+    --warn:#e69f00; --bad:#d55e00; --good:#009e73;
+    --tip-bg:#1c2430; --tip-ink:#fff;
+    --radius:12px;
+  }
+  :root[data-theme="dark"]{
+    --bg:#12161c; --panel:#1a2029; --ink:#e9edf2; --ink2:#aeb9c6; --muted:#7f8b99;
+    --line:#2a323d; --line2:#232b35; --shadow:0 1px 3px rgba(0,0,0,.4);
+    --accent:#5aa0dd;
+    /* dark arm steps re-validated against #1a2029: all CVD pairs >=11.5, contrast >=4.5 */
+    --armD:#4c9fe0; --armL:#3fd6a0; --armX:#f0b429;
+    --warn:#f0b429; --bad:#ff7a45; --good:#2ec4a0;
+    --tip-bg:#e9edf2; --tip-ink:#12161c;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#12161c; --panel:#1a2029; --ink:#e9edf2; --ink2:#aeb9c6; --muted:#7f8b99;
+      --line:#2a323d; --line2:#232b35; --shadow:0 1px 3px rgba(0,0,0,.4);
+      --accent:#5aa0dd;
+      --armD:#4c9fe0; --armL:#3fd6a0; --armX:#f0b429;
+      --warn:#f0b429; --bad:#ff7a45; --good:#2ec4a0;
+      --tip-bg:#e9edf2; --tip-ink:#12161c;
+    }
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.55;font-size:15px;
+    padding:24px 18px 64px;transition:background .2s,color .2s}
+  .wrap{max-width:1120px;margin:0 auto}
+  header.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:23px;font-weight:700;letter-spacing:-.01em}
+  .sub{color:var(--ink2);font-size:14px;margin-top:4px;max-width:70ch}
+  .themebtn{border:1px solid var(--line);background:var(--panel);color:var(--ink2);
+    border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;white-space:nowrap}
+  .themebtn:hover{color:var(--ink);border-color:var(--muted)}
+  .caveat-banner{font-size:13px;color:var(--ink2);background:rgba(230,159,0,.10);border:1px solid rgba(230,159,0,.35);
+    border-radius:10px;padding:10px 14px;margin:14px 0 0}
+  .caveat-banner b{color:var(--warn)}
+  .thesis{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);
+    border-radius:var(--radius);padding:16px 20px;margin:16px 0 22px;box-shadow:var(--shadow)}
+  .thesis b{color:var(--ink)}
+  .thesis .lead{font-size:16px;font-weight:600}
+  .thesis .body{color:var(--ink2);font-size:14.5px;margin-top:6px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:24px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+  .kpi .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;
+    display:flex;align-items:center;gap:7px}
+  .kpi .chip{width:11px;height:11px;border-radius:3px;flex:none}
+  .kpi .v{font-size:27px;font-weight:750;margin:6px 0 2px;letter-spacing:-.02em}
+  .kpi .d{font-size:12.5px;color:var(--ink2)}
+  .kpi.pick{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)}
+  .kpi .picktag{display:inline-block;font-size:10px;font-weight:800;color:#fff;background:var(--accent);
+    border-radius:4px;padding:2px 6px;letter-spacing:.05em;vertical-align:middle;margin-left:6px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px 24px 20px;box-shadow:var(--shadow);margin-bottom:22px}
+  .panel .num{font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.05em}
+  .panel h2{font-size:18px;font-weight:700;margin:3px 0 2px;letter-spacing:-.01em}
+  .panel .q{font-size:13.5px;color:var(--ink2);margin-bottom:16px}
+  .panel .q em{color:var(--muted);font-style:italic}
+  .chartbox{width:100%;overflow-x:auto}
+  svg{display:block;max-width:100%;height:auto;font-family:inherit}
+  svg text{fill:var(--ink2)}
+  .axislbl{font-size:12px;fill:var(--muted)}
+  .vallbl{font-size:12.5px;font-weight:650;fill:var(--ink)}
+  .grid{stroke:var(--line2);stroke-width:1}
+  .legend{display:flex;flex-wrap:wrap;gap:14px 18px;margin:6px 2px 4px;font-size:13px;color:var(--ink2)}
+  .legend .it{display:flex;align-items:center;gap:7px}
+  .sw{width:13px;height:13px;border-radius:3px;flex:none;box-shadow:0 0 0 2px var(--panel)}
+  .sw.round{border-radius:50%}
+  .concl{margin-top:16px;background:var(--line2);border-radius:10px;padding:13px 16px;
+    display:flex;gap:11px;align-items:flex-start}
+  .concl .tag{font-size:11px;font-weight:800;color:#fff;background:var(--accent);border-radius:5px;
+    padding:3px 7px;letter-spacing:.04em;flex:none;margin-top:1px}
+  .concl p{font-size:14px;color:var(--ink)}
+  .foot{font-size:12px;color:var(--muted);margin-top:11px}
+  .foot code{background:var(--line2);padding:1px 5px;border-radius:4px;font-size:11.5px}
+  .tbtn{margin-top:12px;border:1px solid var(--line);background:transparent;color:var(--ink2);
+    border-radius:7px;padding:5px 11px;font-size:12.5px;cursor:pointer}
+  .tbtn:hover{border-color:var(--muted);color:var(--ink)}
+  table.dt{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px;display:none}
+  table.dt.show{display:table}
+  table.dt th,table.dt td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line)}
+  table.dt th{font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700}
+  table.dt td.n{text-align:right;font-variant-numeric:tabular-nums}
+  #tip{position:fixed;pointer-events:none;background:var(--tip-bg);color:var(--tip-ink);
+    font-size:12.5px;padding:7px 10px;border-radius:7px;opacity:0;transition:opacity .1s;z-index:50;
+    box-shadow:0 4px 16px rgba(0,0,0,.25);max-width:260px;line-height:1.4}
+  #tip .tt{font-weight:700;margin-bottom:2px}
+  .mark{cursor:default}
+  footer.pg{color:var(--muted);font-size:12px;text-align:center;margin-top:34px;line-height:1.7}
+  @media (max-width:620px){ body{font-size:14px} .panel{padding:18px 16px} h1{font-size:20px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>OD-3b — Three Thinking Budgets, One Pick</h1>
+      <div class="sub">The decisive 3-arm run: the coach answered the same 119 questions three times each with normal thinking (<b>default</b>), a small bounded budget (<b>low</b>), and thinking turned off (<b>disabled</b>) — 357 answers per arm, 1,071 total. "Failed" means the answer ended as a canned apology (a template) even after its one automatic retry.</div>
+    </div>
+    <button class="themebtn" id="themebtn" onclick="toggleTheme()">◐ Theme</button>
+  </header>
+
+  <div class="caveat-banner"><b>⚠ Two limits on these numbers:</b> the fact-shelf coverage flag is <b>true for all 1,071 rows</b> (that axis is degenerate here — question difficulty is the axis that discriminates), and <b>nothing here is comparable to the July board-live baseline</b> — different question population, so no before/after claim is made.</div>
+
+  <div class="thesis">
+    <div class="lead">A small thinking budget wins the first attempt: near-top speed, and the fewest failures on the questions that matter most.</div>
+    <div class="body"><b>low</b> beats <b>disabled</b> on quality in every difficulty bucket at essentially the same speed (6.2s vs 5.6s typical), and beats <b>default</b> on tactics-and-mate questions (13.3% vs 18.7% failed) while answering <b>2.3× faster</b> on a fifth of the output tokens. Decision: <b>attempt-0 = low, retry = default</b> — live chat only; the postgame review keeps its own budget.</div>
+  </div>
+
+  <div style="background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:var(--radius);padding:13px 17px;margin:0 0 22px">
+    <div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--bad);text-transform:uppercase">Scope correction &middot; noted 2026-08-18</div>
+    <div style="font-size:13.5px;color:var(--ink2);margin-top:6px">The two "live chat only" lines above describe the plan, not what shipped. The merged code applies <b style="color:var(--ink)">attempt-0 = low to every intent, postgame review included</b>, with no mode gate: <code style="font-size:12px">thinkingForIntent</code> returns <code style="font-size:12px">low</code> from a single default branch, and <code style="font-size:12px">chat.ts</code> uses the same pref for review as for live. The numbers on this page are unaffected.</div>
+  </div>
+
+  <!-- KPI ROW -->
+  <div class="kpis" id="kpis"></div>
+
+  <!-- CHART 1 -->
+  <section class="panel">
+    <div class="num">CHART 1 · THE HEADLINE</div>
+    <h2>Where failures cluster: difficulty × thinking budget</h2>
+    <div class="q">One dot per (difficulty bucket, arm): its position is that cell's failure rate. Dot area reflects how many questions the bucket holds. The pattern to see: every arm slides right on the bottom row, <b>disabled</b> is rightmost almost everywhere, and <b>low</b> is leftmost where it counts.</div>
+    <div class="legend" id="lg1"></div>
+    <div class="chartbox" id="c1"></div>
+    <button class="tbtn" onclick="tog('t1')">Show data table</button>
+    <table class="dt" id="t1"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Failures concentrate on tactics-and-mate in every arm</b> (18.7% / 13.3% / 22.7%), well above each arm's own easier buckets. <b>disabled fails most everywhere</b> — it is the only arm that fails simple fact questions at a real rate (9.5%). And <b>low is best exactly on the hard row</b>: 13.3%, beating even default's unbounded thinking there.</p></div>
+    <div class="foot">Rates are final outcomes: every failed row got exactly one retry first. n per bucket: direct-fact 42, needs-line 240, tactical-or-mate 75 (per arm). Source: <code>2026-08-03-od3b-all-summary.json</code>.</div>
+  </section>
+
+  <!-- CHART 2 -->
+  <section class="panel">
+    <div class="num">CHART 2</div>
+    <h2>Which difficulty buckets drive the failures (Pareto)</h2>
+    <div class="q">All 90 failed answers across the three arms, sorted by which difficulty bucket produced them. Bars are share of all failures, split by arm; the line is the running total on the same 0–100% axis.</div>
+    <div class="legend" id="lg2"></div>
+    <div class="chartbox" id="c2"></div>
+    <button class="tbtn" onclick="tog('t2')">Show data table</button>
+    <table class="dt" id="t2"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Two buckets carry 94% of all failures.</b> needs-line contributes the most by count (44) because it is two-thirds of the question set; tactical-or-mate contributes nearly as many (41) from a bucket a third that size — it fails at 3× the rate. Chart 1 carries the rate story; this chart says where the repair effort would land.</p></div>
+    <div class="foot">Counts are pooled across arms (23 + 28 + 39 = 90 failed answers of 1,071). Bucket sizes differ — the bar heights reflect volume × rate, not rate alone.</div>
+  </section>
+
+  <!-- CHART 3 -->
+  <section class="panel">
+    <div class="num">CHART 3</div>
+    <h2>Speed vs. failures: the trade each arm offers</h2>
+    <div class="q">One point per arm. Left is faster, lower is fewer failed answers — the bottom-left corner wins. The thin tail on each point stretches to its 90th-percentile wait.</div>
+    <div class="legend" id="lg3"></div>
+    <div class="chartbox" id="c3"></div>
+    <button class="tbtn" onclick="tog('t3')">Show data table</button>
+    <table class="dt" id="t3"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>low sits in the sweet spot</b>: 0.6s slower than disabled at the median but 3.1 points fewer failures — and its tail stays under 12s. <b>default buys nothing you'd wait for</b>: 2.3× slower typical, a 47-second p90 tail, and it still isn't the best arm on the hardest questions. It keeps one job: the escalated retry, where its extra thinking room rescues about two-thirds of failed first drafts.</p></div>
+    <div class="foot">Latency is wall time to the final answer (nearest-rank percentiles). Failure rate is the arm's overall post-retry template rate, n=357 each.</div>
+  </section>
+
+  <footer class="pg">
+    Girl Chess — OD-3b Thinking-Arm Dashboard · built 2026-08-03 · numbers re-derived from the 9 raw run files, not copied from summaries.<br>
+    Source: <b>tools/coach-eval/runs/2026-08-03-od3b-all-summary.json</b> · narrative: "OD-3b Post-Shelf Eval Results (2026-08-03)".
+  </footer>
+</div>
+
+<div id="tip"><div class="tt"></div><div class="tb"></div></div>
+
+<script>
+/* ============================ DATA — from 2026-08-03-od3b-all-summary.json (read, not recomputed) ============================ */
+const ARMS=[
+ {id:"default", k:"default · normal thinking",  c:"var(--armD)", n:357, templates:23, rate:6.4,  p50:14.459, p90:47.351, tok:878},
+ {id:"low",     k:"low · bounded thinking",     c:"var(--armL)", n:357, templates:28, rate:7.8,  p50:6.212,  p90:11.848, tok:181},
+ {id:"disabled",k:"disabled · thinking off",    c:"var(--armX)", n:357, templates:39, rate:10.9, p50:5.593,  p90:10.528, tok:168}
+];
+const DIFF=[
+ {id:"direct-fact",      k:"direct-fact",      sub:"simple lookups", n:42,
+  cells:{default:{t:0, r:0.0}, low:{t:1, r:2.4}, disabled:{t:4, r:9.5}}},
+ {id:"needs-line",       k:"needs-line",       sub:"needs a concrete line", n:240,
+  cells:{default:{t:9, r:3.8}, low:{t:17,r:7.1}, disabled:{t:18,r:7.5}}},
+ {id:"tactical-or-mate", k:"tactical-or-mate", sub:"the trust bucket", n:75,
+  cells:{default:{t:14,r:18.7},low:{t:10,r:13.3},disabled:{t:17,r:22.7}}}
+];
+// Pareto: pooled failures by difficulty, sorted desc (of 90 total)
+const PARETO=[
+ {k:"needs-line",       per:{default:9, low:17, disabled:18}, tot:44},
+ {k:"tactical-or-mate", per:{default:14,low:10, disabled:17}, tot:41},
+ {k:"direct-fact",      per:{default:0, low:1,  disabled:4},  tot:5}
+];
+const PARETO_TOTAL=90;
+
+/* ============================ helpers ============================ */
+const $=id=>document.getElementById(id);
+const SVGNS="http://www.w3.org/2000/svg";
+function el(tag,attrs,txt){const e=document.createElementNS(SVGNS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(txt!=null)e.textContent=txt;return e;}
+function svg(w,h){return el("svg",{viewBox:`0 0 ${w} ${h}`,width:w,height:h,role:"img"});}
+const tip=$("tip");
+function showTip(e,title,body){tip.querySelector(".tt").textContent=title;tip.querySelector(".tb").innerHTML=body;tip.style.opacity=1;moveTip(e);}
+function moveTip(e){const p=12;let x=e.clientX+p,y=e.clientY+p;if(x>innerWidth-270)x=e.clientX-270;tip.style.left=x+"px";tip.style.top=y+"px";}
+function hideTip(){tip.style.opacity=0;}
+function hov(node,title,body){node.addEventListener("mousemove",e=>showTip(e,title,body));node.addEventListener("mouseleave",hideTip);}
+function legend(container,items){container.innerHTML="";items.forEach(it=>{const d=document.createElement("div");d.className="it";const sw=document.createElement("span");sw.className="sw"+(it.round?" round":"");sw.style.background=it.c;d.appendChild(sw);d.appendChild(document.createTextNode(it.k));container.appendChild(d);});}
+function tog(id){$(id).classList.toggle("show");}
+function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>${x}</th>`).join("")+"</tr></thead><tbody>";rows.forEach(r=>{h+="<tr>"+r.map((c,i)=>`<td class="${i>0?'n':''}">${c}</td>`).join("")+"</tr>";});t.innerHTML=h+"</tbody>";}
+const s1=v=>v.toFixed(1);
+
+/* ============================ KPIs ============================ */
+(function(){
+  $("kpis").innerHTML=ARMS.map(a=>{
+    const pick=a.id==="low";
+    return `<div class="kpi${pick?' pick':''}">
+      <div class="l"><span class="chip" style="background:${a.c}"></span>${a.k}${pick?'<span class="picktag">ATTEMPT-0 PICK</span>':''}</div>
+      <div class="v">${s1(a.rate)}%</div>
+      <div class="d">failed answers (${a.templates} of ${a.n})<br>
+      wait: <b>${s1(a.p50)}s</b> typical · <b>${s1(a.p90)}s</b> p90<br>
+      output: <b>${a.tok}</b> tokens typical</div>
+    </div>`;
+  }).join("")+`
+    <div class="kpi">
+      <div class="l">Decision</div>
+      <div class="v" style="font-size:19px;line-height:1.35;margin-top:8px">low answers first,<br>default handles the retry</div>
+      <div class="d">shipped to every intent, postgame review included (see the scope correction above)</div>
+    </div>`;
+})();
+
+/* ============================ CHART 1 — dot chart on the difficulty × arm grid ============================ */
+(function(){
+  const W=960,L=195,R=48,plotW=W-L-R,top=26,rowH=88;
+  const H=top+DIFF.length*rowH+40;
+  const maxR=25; // % axis, honest 0-origin
+  const x=v=>L+plotW*v/maxR;
+  const s=svg(W,H);
+  // grid + axis
+  for(let t=0;t<=maxR;t+=5){const gx=x(t);
+    s.appendChild(el("line",{x1:gx,y1:top-8,x2:gx,y2:top+DIFF.length*rowH,class:"grid"}));
+    s.appendChild(el("text",{x:gx,y:top+DIFF.length*rowH+20,"text-anchor":"middle",class:"axislbl"},t+"%"));}
+  s.appendChild(el("text",{x:W-R,y:top+DIFF.length*rowH+36,"text-anchor":"end",class:"axislbl","font-size":"11.5"},"share of that bucket's answers that failed →"));
+  DIFF.forEach((d,i)=>{
+    const cy=top+i*rowH+rowH/2-6;
+    const hard=d.id==="tactical-or-mate";
+    if(hard) s.appendChild(el("rect",{x:L-4,y:top+i*rowH+4,width:plotW+8,height:rowH-8,rx:8,fill:"var(--line2)"}));
+    // row labels
+    s.appendChild(el("text",{x:L-14,y:cy-4,"text-anchor":"end",class:"vallbl","font-size":"13"},d.k));
+    s.appendChild(el("text",{x:L-14,y:cy+13,"text-anchor":"end",class:"axislbl","font-size":"11"},d.sub+" · n="+d.n));
+    // connector from min to max rate
+    const rates=ARMS.map(a=>d.cells[a.id].r);
+    s.appendChild(el("line",{x1:x(Math.min(...rates)),y1:cy,x2:x(Math.max(...rates)),y2:cy,stroke:"var(--line)","stroke-width":2}));
+    // dot radius ~ sqrt(n)
+    const rad=4.5+0.5*Math.sqrt(d.n);
+    // draw dots, larger-rate first so close pairs keep both visible
+    const order=[...ARMS].sort((a,b)=>d.cells[b.id].r-d.cells[a.id].r);
+    order.forEach(a=>{
+      const cell=d.cells[a.id], cx=x(cell.r);
+      const dot=el("circle",{cx:cx,cy:cy,r:rad,fill:a.c,stroke:"var(--panel)","stroke-width":2,class:"mark"});
+      hov(dot,a.id+" · "+d.k,`<b>${cell.t}</b> of ${d.n} answers failed · <b>${s1(cell.r)}%</b><br>post-retry final outcome`);
+      s.appendChild(dot);
+    });
+    // % labels — low above / disabled below on the crowded needs-line row, else all above
+    ARMS.forEach(a=>{
+      const cell=d.cells[a.id], cx=x(cell.r);
+      const below=(d.id==="needs-line"&&a.id==="disabled");
+      const ly=below?cy+rad+16:cy-rad-8;
+      s.appendChild(el("text",{x:cx,y:ly,"text-anchor":"middle",class:"vallbl","font-size":"12"},s1(cell.r)+"%"));
+      if(hard) s.appendChild(el("text",{x:cx,y:cy+rad+16,"text-anchor":"middle",class:"axislbl","font-size":"11"},a.id));
+    });
+    if(hard) s.appendChild(el("text",{x:W-R+4,y:cy+4,"text-anchor":"end",class:"axislbl","font-size":"10.5",transform:`rotate(-90 ${W-R+10} ${cy})`},""));
+  });
+  $("c1").appendChild(s);
+  legend($("lg1"),ARMS.map(a=>({k:a.k,c:a.c,round:true})).concat([{k:"shaded row = hardest bucket in every arm",c:"var(--line2)"}]));
+  table("t1",["Bucket","n / arm","default","low","disabled"],
+    DIFF.map(d=>[d.k,d.n,
+      `${d.cells.default.t} (${s1(d.cells.default.r)}%)`,
+      `${d.cells.low.t} (${s1(d.cells.low.r)}%)`,
+      `${d.cells.disabled.t} (${s1(d.cells.disabled.r)}%)`])
+    .concat([["<b>overall</b>","357","23 (6.4%)","28 (7.8%)","39 (10.9%)"]]));
+})();
+
+/* ============================ CHART 2 — Pareto of failures by difficulty (single 0–100% axis) ============================ */
+(function(){
+  const W=960,H=360,L=64,R=40,top=28,bottom=64;
+  const plotW=W-L-R,plotH=H-top-bottom;
+  const s=svg(W,H);
+  const y=p=>top+plotH*(1-p/100);
+  for(let p=0;p<=100;p+=25){
+    s.appendChild(el("line",{x1:L,y1:y(p),x2:W-R,y2:y(p),class:"grid"}));
+    s.appendChild(el("text",{x:L-10,y:y(p)+4,"text-anchor":"end",class:"axislbl"},p+"%"));}
+  s.appendChild(el("text",{x:L,y:14,class:"axislbl","font-size":"12"},"share of all 90 failed answers (bars, split by arm) and running total (line) — one axis"));
+  const colW=plotW/PARETO.length,barW=130;
+  let cum=0;const pts=[];
+  PARETO.forEach((b,i)=>{
+    const cx=L+colW*i+colW/2, x0=cx-barW/2;
+    // stacked by arm, fixed order, 2px gaps
+    let accPct=0;
+    ARMS.forEach(a=>{
+      const cnt=b.per[a.id]; if(!cnt)return;
+      const pct=100*cnt/PARETO_TOTAL;
+      const y1=y(accPct+pct),h=Math.max(y(accPct)-y1-2,1);
+      const r=el("rect",{x:x0,y:y1,width:barW,height:h,rx:3,fill:a.c,class:"mark"});
+      hov(r,a.id+" · "+b.k,`<b>${cnt}</b> failed answers · ${s1(pct)}% of all 90`);
+      s.appendChild(r);
+      if(pct>=5)s.appendChild(el("text",{x:cx,y:y1+h/2+4,"text-anchor":"middle","font-size":"11.5",fill:"#fff","font-weight":"650"},cnt));
+      accPct+=pct;
+    });
+    const shr=100*b.tot/PARETO_TOTAL;
+    // first bar's top coincides with the first cumulative marker — keep the count label clear of it
+    if(i===0) s.appendChild(el("text",{x:cx-16,y:y(shr)-8,"text-anchor":"end",class:"vallbl"},b.tot+" of 90"));
+    else s.appendChild(el("text",{x:cx,y:y(shr)-8,"text-anchor":"middle",class:"vallbl"},b.tot+" of 90"));
+    s.appendChild(el("text",{x:cx,y:top+plotH+22,"text-anchor":"middle",class:"vallbl","font-size":"12.5"},b.k));
+    s.appendChild(el("text",{x:cx,y:top+plotH+38,"text-anchor":"middle",class:"axislbl","font-size":"11"},s1(shr)+"% of failures"));
+    cum+=shr;pts.push({x:cx,y:y(cum),cum:cum,k:b.k});
+  });
+  // cumulative line
+  s.appendChild(el("polyline",{points:pts.map(p=>p.x+","+p.y).join(" "),fill:"none",stroke:"var(--accent)","stroke-width":2}));
+  pts.forEach(p=>{
+    const m=el("circle",{cx:p.x,cy:p.y,r:5,fill:"var(--accent)",stroke:"var(--panel)","stroke-width":2,class:"mark"});
+    hov(m,"running total through "+p.k,`<b>${s1(p.cum)}%</b> of all failures`);
+    s.appendChild(m);
+    s.appendChild(el("text",{x:p.x+12,y:p.y-8,class:"axislbl","font-size":"11.5",fill:"var(--accent)","font-weight":"700"},s1(p.cum)+"%"));
+  });
+  $("c2").appendChild(s);
+  legend($("lg2"),ARMS.map(a=>({k:a.k,c:a.c})).concat([{k:"running total of failures",c:"var(--accent)",round:true}]));
+  table("t2",["Bucket","default","low","disabled","Total","Share","Cumulative"],(()=>{let c=0;return PARETO.map(b=>{const shr=100*b.tot/PARETO_TOTAL;c+=shr;return [b.k,b.per.default,b.per.low,b.per.disabled,b.tot,s1(shr)+"%",s1(c)+"%"];});})());
+})();
+
+/* ============================ CHART 3 — latency vs failure-rate scatter ============================ */
+(function(){
+  const W=960,H=380,L=64,R=60,top=30,bottom=58;
+  const plotW=W-L-R,plotH=H-top-bottom;
+  const maxX=50,maxY=12; // honest 0-origins
+  const x=v=>L+plotW*v/maxX, y=v=>top+plotH*(1-v/maxY);
+  const s=svg(W,H);
+  for(let t=0;t<=maxX;t+=10){
+    s.appendChild(el("line",{x1:x(t),y1:top,x2:x(t),y2:top+plotH,class:"grid"}));
+    s.appendChild(el("text",{x:x(t),y:top+plotH+20,"text-anchor":"middle",class:"axislbl"},t+"s"));}
+  for(let t=0;t<=maxY;t+=3){
+    s.appendChild(el("line",{x1:L,y1:y(t),x2:W-R,y2:y(t),class:"grid"}));
+    s.appendChild(el("text",{x:L-10,y:y(t)+4,"text-anchor":"end",class:"axislbl"},t+"%"));}
+  s.appendChild(el("text",{x:L,y:14,class:"axislbl","font-size":"12"},"↓ failed answers (overall) vs typical wait → · tail line reaches each arm's p90 wait"));
+  s.appendChild(el("text",{x:W-R,y:top+plotH+38,"text-anchor":"end",class:"axislbl","font-size":"11.5"},"typical wait, seconds (median; tail to p90) →"));
+  ARMS.forEach(a=>{
+    const px=x(a.p50),py=y(a.rate);
+    // p90 tail
+    s.appendChild(el("line",{x1:px,y1:py,x2:x(a.p90),y2:py,stroke:a.c,"stroke-width":2,opacity:".45"}));
+    s.appendChild(el("line",{x1:x(a.p90),y1:py-5,x2:x(a.p90),y2:py+5,stroke:a.c,"stroke-width":2,opacity:".7"}));
+    s.appendChild(el("text",{x:x(a.p90)+7,y:py+4,class:"axislbl","font-size":"10.5"},"p90 "+s1(a.p90)+"s"));
+    if(a.id==="low"){ // the pick — dashed ring
+      s.appendChild(el("circle",{cx:px,cy:py,r:17,fill:"none",stroke:"var(--accent)","stroke-width":1.6,"stroke-dasharray":"4 3"}));
+    }
+    const dot=el("circle",{cx:px,cy:py,r:10,fill:a.c,stroke:"var(--panel)","stroke-width":2,class:"mark"});
+    hov(dot,a.k,`failed: <b>${s1(a.rate)}%</b> (${a.templates}/${a.n})<br>wait: <b>${s1(a.p50)}s</b> median · ${s1(a.p90)}s p90<br>output tokens: ${a.tok} typical`);
+    s.appendChild(dot);
+    // direct labels (positions tuned per point to avoid the p90 tails and top caption)
+    const lab={default:[px,py+30],low:[px-14,py+44],disabled:[px,py+30]}[a.id];
+    s.appendChild(el("text",{x:lab[0],y:lab[1],"text-anchor":"middle",class:"vallbl","font-size":"13"},a.id+(a.id==="low"?" — the pick":"")));
+    s.appendChild(el("text",{x:lab[0],y:lab[1]+15,"text-anchor":"middle",class:"axislbl","font-size":"11.5"},s1(a.p50)+"s · "+s1(a.rate)+"% failed"));
+  });
+  $("c3").appendChild(s);
+  legend($("lg3"),ARMS.map(a=>({k:a.k,c:a.c,round:true})));
+  table("t3",["Arm","Failed answers","Median wait","p90 wait","Output tokens p50","p90"],
+    ARMS.map(a=>[a.k,`${s1(a.rate)}% (${a.templates}/${a.n})`,s1(a.p50)+"s",s1(a.p90)+"s",a.tok,({default:3362,low:529,disabled:309})[a.id]]));
+})();
+
+/* ============================ theme toggle ============================ */
+function toggleTheme(){
+  const cur=document.documentElement.getAttribute("data-theme");
+  const sysDark=matchMedia("(prefers-color-scheme:dark)").matches;
+  let next;
+  if(cur==="dark")next="light"; else if(cur==="light")next="dark"; else next=sysDark?"light":"dark";
+  document.documentElement.setAttribute("data-theme",next);
+}
+</script>
+</body>
+</html>

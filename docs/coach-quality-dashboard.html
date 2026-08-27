@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Girl Chess — Coach Quality Dashboard (2026-08-02)</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2430; --ink2:#54606e; --muted:#8a95a3;
+    --line:#e4e8ee; --line2:#eef1f5; --shadow:0 1px 3px rgba(20,30,45,.08),0 1px 2px rgba(20,30,45,.04);
+    --accent:#0f4c81;
+    /* status / outcome (Okabe-Ito, CVD-safe) */
+    --good:#009e73; --warn:#e69f00; --bad:#d55e00;
+    /* neutral series */
+    --n1:#6e8ca0; --n2:#0072b2; --sky:#56b4e9; --grey:#9aa7b2; --grey-l:#c9d1d9;
+    --pending:#b7c0cb; --pending-bg:repeating-linear-gradient(45deg,#e9edf2,#e9edf2 7px,#dfe4eb 7px,#dfe4eb 14px);
+    --tip-bg:#1c2430; --tip-ink:#fff;
+    --radius:12px;
+  }
+  :root[data-theme="dark"]{
+    --bg:#12161c; --panel:#1a2029; --ink:#e9edf2; --ink2:#aeb9c6; --muted:#7f8b99;
+    --line:#2a323d; --line2:#232b35; --shadow:0 1px 3px rgba(0,0,0,.4);
+    --accent:#5aa0dd;
+    --good:#2ec4a0; --warn:#f0b429; --bad:#ff7a45;
+    --n1:#8aa3b6; --n2:#4ca3e0; --sky:#7cc7f0; --grey:#8593a1; --grey-l:#5f6b78;
+    --pending:#3a4450; --pending-bg:repeating-linear-gradient(45deg,#232b35,#232b35 7px,#2a323d 7px,#2a323d 14px);
+    --tip-bg:#e9edf2; --tip-ink:#12161c;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#12161c; --panel:#1a2029; --ink:#e9edf2; --ink2:#aeb9c6; --muted:#7f8b99;
+      --line:#2a323d; --line2:#232b35; --shadow:0 1px 3px rgba(0,0,0,.4);
+      --accent:#5aa0dd;
+      --good:#2ec4a0; --warn:#f0b429; --bad:#ff7a45;
+      --n1:#8aa3b6; --n2:#4ca3e0; --sky:#7cc7f0; --grey:#8593a1; --grey-l:#5f6b78;
+      --pending:#3a4450; --pending-bg:repeating-linear-gradient(45deg,#232b35,#232b35 7px,#2a323d 7px,#2a323d 14px);
+      --tip-bg:#e9edf2; --tip-ink:#12161c;
+    }
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.55;font-size:15px;
+    padding:24px 18px 64px;transition:background .2s,color .2s}
+  .wrap{max-width:1120px;margin:0 auto}
+  /* header */
+  header.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:23px;font-weight:700;letter-spacing:-.01em}
+  .sub{color:var(--ink2);font-size:14px;margin-top:4px;max-width:70ch}
+  .themebtn{border:1px solid var(--line);background:var(--panel);color:var(--ink2);
+    border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;white-space:nowrap}
+  .themebtn:hover{color:var(--ink);border-color:var(--muted)}
+  /* the one-line thesis */
+  .thesis{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);
+    border-radius:var(--radius);padding:16px 20px;margin:16px 0 22px;box-shadow:var(--shadow)}
+  .thesis b{color:var(--ink)}
+  .thesis .lead{font-size:16px;font-weight:600}
+  .thesis .body{color:var(--ink2);font-size:14.5px;margin-top:6px}
+  /* kpi */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+  .kpi .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+  .kpi .v{font-size:27px;font-weight:750;margin:6px 0 2px;letter-spacing:-.02em}
+  .kpi .d{font-size:12.5px;color:var(--ink2)}
+  .kpi .v.hot{color:var(--bad)} .kpi .v.cool{color:var(--good)}
+  /* panels */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px 24px 20px;box-shadow:var(--shadow);margin-bottom:22px}
+  .panel .num{font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.05em}
+  .panel h2{font-size:18px;font-weight:700;margin:3px 0 2px;letter-spacing:-.01em}
+  .panel .q{font-size:13.5px;color:var(--ink2);margin-bottom:16px}
+  .panel .q em{color:var(--muted);font-style:italic}
+  .chartbox{width:100%;overflow-x:auto}
+  svg{display:block;max-width:100%;height:auto;font-family:inherit}
+  svg text{fill:var(--ink2)}
+  .axislbl{font-size:12px;fill:var(--muted)}
+  .vallbl{font-size:12.5px;font-weight:650;fill:var(--ink)}
+  .caxis{stroke:var(--line);stroke-width:1}
+  .grid{stroke:var(--line2);stroke-width:1}
+  /* legend */
+  .legend{display:flex;flex-wrap:wrap;gap:14px 18px;margin:6px 2px 4px;font-size:13px;color:var(--ink2)}
+  .legend .it{display:flex;align-items:center;gap:7px}
+  .sw{width:13px;height:13px;border-radius:3px;flex:none;box-shadow:0 0 0 2px var(--panel)}
+  .sw.tex{background:var(--pending-bg);border:1px solid var(--pending)}
+  /* conclusion */
+  .concl{margin-top:16px;background:var(--line2);border-radius:10px;padding:13px 16px;
+    display:flex;gap:11px;align-items:flex-start}
+  .concl .tag{font-size:11px;font-weight:800;color:#fff;background:var(--accent);border-radius:5px;
+    padding:3px 7px;letter-spacing:.04em;flex:none;margin-top:1px}
+  .concl p{font-size:14px;color:var(--ink)}
+  .concl.pend .tag{background:var(--warn);color:#3a2c00}
+  /* meta / footnote */
+  .foot{font-size:12px;color:var(--muted);margin-top:11px}
+  .foot code{background:var(--line2);padding:1px 5px;border-radius:4px;font-size:11.5px}
+  .caveat{font-size:12.5px;color:var(--ink2);background:rgba(230,159,0,.10);border:1px solid rgba(230,159,0,.35);
+    border-radius:8px;padding:9px 12px;margin-top:12px}
+  .caveat b{color:var(--warn)}
+  /* data table toggle */
+  .tbtn{margin-top:12px;border:1px solid var(--line);background:transparent;color:var(--ink2);
+    border-radius:7px;padding:5px 11px;font-size:12.5px;cursor:pointer}
+  .tbtn:hover{border-color:var(--muted);color:var(--ink)}
+  table.dt{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px;display:none}
+  table.dt.show{display:table}
+  table.dt th,table.dt td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line)}
+  table.dt th{font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700}
+  table.dt td.n{text-align:right;font-variant-numeric:tabular-nums}
+  /* incoming banner */
+  .incoming{background:var(--pending-bg);border:1px dashed var(--pending);border-radius:var(--radius);
+    padding:14px 18px;margin:26px 0 10px;color:var(--ink2);font-size:14px}
+  .incoming b{color:var(--ink)}
+  .incoming .pill{display:inline-block;background:var(--warn);color:#3a2c00;font-size:11px;font-weight:800;
+    border-radius:20px;padding:3px 10px;letter-spacing:.03em;margin-right:8px;vertical-align:middle}
+  /* quotes */
+  .quotes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px}
+  .quote{border-left:3px solid var(--bad);padding:8px 12px;background:var(--line2);border-radius:0 8px 8px 0}
+  .quote p{font-size:13.5px;font-style:italic;color:var(--ink)}
+  .quote .m{font-size:11.5px;color:var(--muted);margin-top:5px;font-style:normal}
+  /* tooltip */
+  #tip{position:fixed;pointer-events:none;background:var(--tip-bg);color:var(--tip-ink);
+    font-size:12.5px;padding:7px 10px;border-radius:7px;opacity:0;transition:opacity .1s;z-index:50;
+    box-shadow:0 4px 16px rgba(0,0,0,.25);max-width:240px;line-height:1.4}
+  #tip .tt{font-weight:700;margin-bottom:2px}
+  .bar-seg{cursor:default}
+  .divider{height:1px;background:var(--line);border:0;margin:8px 0 26px}
+  footer.pg{color:var(--muted);font-size:12px;text-align:center;margin-top:34px;line-height:1.7}
+  @media (max-width:620px){ body{font-size:14px} .panel{padding:18px 16px} h1{font-size:20px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>Coach Quality — Why the Answers Feel Slow</h1>
+      <div class="sub">A read on the chess coach's answer speed and reliability, in plain terms. Each chart makes one point and nothing else. Numbers are computed from the eval runs and your real games; sample sizes are shown on every chart.</div>
+    </div>
+    <button class="themebtn" id="themebtn" onclick="toggleTheme()">◐ Theme</button>
+  </header>
+
+  <div class="thesis">
+    <div class="lead">The slow answers aren't the network or our code — the assistant is silently "thinking" before it replies.</div>
+    <div class="body">On hard questions it spends <b>20–50 seconds reasoning privately</b> before writing the first word. A <b>3-minute budget alone fixed the timeouts</b> — retries now rescue every stalled answer (10 of 10), proving retrying was never broken, just starved. Capping the thinking on top makes answers <b>~3× faster</b>, but costs correctness (<b>6.2% of first drafts failed fact-checks vs 0%</b>) — so the verified-facts work should ship before or alongside it. One subjective quality read stays sealed.</div>
+  </div>
+
+  <!-- KPI ROW -->
+  <div class="kpis" id="kpis"></div>
+
+  <!-- G1 -->
+  <section class="panel">
+    <div class="num">CHART 1</div>
+    <h2>Where a slow answer's time actually goes</h2>
+    <div class="q">One fully-measured 20-second answer, broken into its four stages. What is the reader waiting on?</div>
+    <div class="legend" id="lg1"></div>
+    <div class="chartbox" id="c1"></div>
+    <button class="tbtn" onclick="tog('t1')">Show data table</button>
+    <table class="dt" id="t1"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The invisible thinking is the entire tail.</b> Starting up, reading the board, and writing the reply take about 4 seconds combined; the private thinking takes 16. On the hardest questions that one block stretches to 20–50 seconds while the other three stay flat.</p></div>
+    <div class="foot">Source: per-event timeline of one instrumented answer, corroborated by 26 controlled backend calls on your real questions (root-cause investigation, 2026-08-02).</div>
+  </section>
+
+  <!-- G2 -->
+  <section class="panel">
+    <div class="num">CHART 2</div>
+    <h2>How often she gets an answer vs. an apology</h2>
+    <div class="q">Every question sorted into one of three outcomes, across four versions. The bars are share-of-questions, so they always add to 100%.</div>
+    <div class="legend" id="lg2"></div>
+    <div class="chartbox" id="c2"></div>
+    <button class="tbtn" onclick="tog('t2')">Show data table</button>
+    <table class="dt" id="t2"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Give-ups roughly doubled since July — and the change is failures, not slowness.</b> The share of fast answers fell and the "gave up" slice grew from ~8% to ~18% in testing and ~23% in your real play. The answers that used to arrive slowly now arrive not at all.</p></div>
+    <div style="background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:var(--radius);padding:13px 17px;margin:0 0 22px">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--bad);text-transform:uppercase">Superseded &middot; noted 2026-08-26</div>
+      <div style="font-size:13.5px;color:var(--ink2);margin-top:6px">This page ends on an open question, and that question has since been answered. The sealed quality read closed the next day: <b style="color:var(--ink)">attempt-0 = low shipped to every intent</b>, postgame review included, with no mode gate. See the <a href="thinking-arm-dashboard.html">thinking-arm dashboard</a> for the three-repeat run that decided it. The measurements below are unaffected; only the "still sealed" framing is out of date.</div>
+    </div>
+    <div class="caveat"><b>⚠ One bar carries a caveat.</b> The pre-fix test ran on a machine that became busy partway through; only its board questions (shown here) are usable, and its give-up rate is directional, not certified. July and after-wave-1 are clean.</div>
+    <div class="foot">Testing bars: 65 board questions each (July = average of 3 repeats). Your real play: 91 chat questions from the wave-1 playtest save.</div>
+  </section>
+
+  <!-- G3 -->
+  <section class="panel">
+    <div class="num">CHART 3</div>
+    <h2>Do retries actually rescue answers?</h2>
+    <div class="q">You said <em>"I've never seen the regen work."</em> When an answer runs long, the system retries once. Here is what those retries produced — at the old 45-second limit, and at the new 3-minute budget.</div>
+    <div class="legend" id="lg3"></div>
+    <div class="chartbox" id="c3"></div>
+    <button class="tbtn" onclick="tog('t3')">Show data table</button>
+    <table class="dt" id="t3"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Retrying was never broken — the 45-second limit starved it.</b> Give a retry room to finish and, at normal thinking, <b>every stalled answer was rescued (10 of 10)</b> — up from 9 of 21 at the old limit. The regen you never saw work now works.</p></div>
+    <div class="concl"><span class="tag">SURPRISE</span><p><b>At a 3-minute budget even normal thinking had zero give-ups.</b> Raising the budget alone erased the timeout failures — so the thinking limit is a <b>speed</b> lever, not a rescue lever. (The two bounded arms show 4 give-ups each, but those are the fact-check failures of Chart 5, not timeouts.)</p></div>
+    <div class="foot">Source: the three overnight 3-minute runs (65 questions each) vs the 45-second baseline. Retries counted as regens that fired; "rescued" = ended as a real answer, "starved" = ended as an apology.</div>
+  </section>
+
+  <!-- G4 -->
+  <section class="panel">
+    <div class="num">CHART 4</div>
+    <h2>Did our last round make it worse?</h2>
+    <div class="q">An honest before/after on the wave-1 change. Three speed measures, plus the one thing that genuinely changed.</div>
+    <div class="legend" id="lg4"></div>
+    <div class="chartbox" id="c4"></div>
+    <button class="tbtn" onclick="tog('t4')">Show data table</button>
+    <table class="dt" id="t4"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Wave-1 changed what you see, not how fast the answer arrives.</b> Give-ups, slow answers, and typical wait were unchanged. What it added: an <b>instant "thinking" signal</b> (visible in a fraction of a second) so the screen no longer looks frozen. The real regression came earlier — a 22.5-second cut-off added on 08-01 that turned slow-but-delivered answers into guaranteed give-ups.</p></div>
+    <div class="foot">Source: the two 65-question runs before and after wave-1+caching. "Instant signal" = time to first on-screen response; "the answer" = time to the first real word.</div>
+  </section>
+
+  <!-- INCOMING -->
+  <div class="incoming"><span class="pill" style="background:var(--good);color:#04231a">RESULTS ARE IN</span><b>The decisive test finished overnight.</b> Three versions of the coach — normal, limited, and off thinking — each ran the full 65 questions at a 3-minute budget. Speed and fact-check failures below are now real, measured data. One piece remains sealed: the subjective blinded read of whether the faster answers still teach well.</div>
+
+  <!-- G5 -->
+  <section class="panel">
+    <div class="num">CHART 5</div>
+    <h2>What the fix costs</h2>
+    <div class="q">Capping the thinking makes answers faster — but does a faster answer become a wrong answer? Both speed and fact-check failures are now measured.</div>
+    <div class="legend" id="lg5"></div>
+    <div class="chartbox" id="c5"></div>
+    <button class="tbtn" onclick="tog('t5')">Show data table</button>
+    <table class="dt" id="t5"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The speed win is about 3× at the median — and it tames the 64-second tail to 15 — but it has a real cost.</b> Bounding the thinking made roughly 1 in 16 first drafts (6.2%) fail the coach's fact-checks and turn into apologies, versus none at normal thinking. That argues for shipping the <b>verified-facts work before or alongside</b> the thinking limit, so the faster answers don't trade speed for being wrong.</p></div>
+    <div class="concl pend"><span class="tag">STILL SEALED</span><p>The subjective, blinded quality read — is a limited-thinking answer actually as helpful to learn from? — is built but its answer key is unopened. Until it is read, "cap the thinking" is a strong speed lead, not a shipping decision.</p></div>
+    <div class="foot">Source: the three overnight 3-minute runs, 65 questions each. Speed = wall time to the answer; fact-check failures = first drafts rejected by the coach's own validators. Subjective grade: <code>blinded worksheet built, key sealed</code>.</div>
+  </section>
+
+  <!-- HER VOICE -->
+  <section class="panel">
+    <div class="num">IN HER WORDS</div>
+    <h2>What the failures felt like</h2>
+    <div class="q">Verbatim feedback attached to give-ups and slow answers in the wave-1 playtest — the human side of Chart 2.</div>
+    <div class="quotes" id="quotes"></div>
+    <div class="foot">Source: your thumbs-down notes in the wave-1 playtest save (advice_traces).</div>
+  </section>
+
+  <footer class="pg">
+    Girl Chess — Coach Quality Dashboard · built 2026-08-02 · complete (speed + fact-checks measured; one subjective read still sealed).<br>
+    All figures computed directly from the raw test runs and playtest saves. Contaminated rows excluded and flagged per the run's conditions file.
+  </footer>
+</div>
+
+<div id="tip"><div class="tt"></div><div class="tb"></div></div>
+
+<script>
+/* ============================ DATA (swap overnight numbers here) ============================ */
+const PENDING = {pending:true};
+const DATA = {
+  kpis:[
+    {l:"Of a slow answer, this much is silent thinking", v:"80%", d:"16s of a measured 20s reply", cls:"hot"},
+    {l:"Give-ups at the old 45-second limit", v:"18%", d:"the problem we set out to fix", cls:"hot"},
+    {l:"Retries rescued at a 3-minute budget", v:"10 of 10", d:"100% — up from 9 of 21 at 45s", cls:"cool"},
+    {l:"Faster with thinking capped", v:"~3×", d:"median 13.5s → 4.7s; 64s tail → 15s", cls:"cool"},
+    {l:"Wrong first drafts when thinking is capped", v:"6.2%", d:"vs 0% at normal thinking — the cost", cls:"hot"}
+  ],
+  // CHART 1 — stage anatomy of one instrumented 20.3s answer (seconds)
+  stages:[
+    {k:"Starting up",        s:1.0, c:"var(--grey-l)", note:"launch + connect"},
+    {k:"Reading the position",s:0.7, c:"var(--grey)",   note:"prompt loaded (cached)"},
+    {k:"Invisible thinking", s:16.0,c:"var(--bad)",     note:"1,430 private reasoning tokens"},
+    {k:"Writing the answer", s:2.4, c:"var(--n2)",      note:"200 words to screen"}
+  ],
+  // CHART 2 — outcomes (counts); rendered as 100% stacked
+  outcomes:[
+    {v:"July (baseline)",     n:65, fast:44, slow:16, gaveup:5,  caveat:false, note:"avg of 3 repeats"},
+    {v:"Pre-fix test",        n:65, fast:37, slow:16, gaveup:12, caveat:true,  note:"board questions only; give-up rate directional"},
+    {v:"After wave-1",        n:65, fast:34, slow:19, gaveup:12, caveat:false, note:"clean"},
+    {v:"Her real play",       n:91, fast:43, slow:27, gaveup:21, caveat:false, note:"wave-1 playtest chats"}
+  ],
+  // CHART 3 — retries: 45s limit (before) vs 3-minute budget arms (overnight, verified from raw b180)
+  retries:{
+    at45:{k:"45-second limit (before)", fired:21, rescued:9, starved:12},
+    at180:[
+      {k:"3-min · normal thinking",  fired:10, rescued:10, starved:0},
+      {k:"3-min · limited thinking", fired:12, rescued:8,  starved:4},
+      {k:"3-min · thinking off",     fired:14, rescued:10, starved:4}
+    ]
+  },
+  // CHART 4 — before/after wave-1
+  beforeAfter:[
+    {k:"Gave up (count / 65)",  pre:12,   post:12,   fmt:"n",  same:true},
+    {k:"Slow answers (count / 65)", pre:16, post:19, fmt:"n",  same:true},
+    {k:"Typical wait (seconds)",pre:10.9, post:13.2, fmt:"s",  same:true}
+  ],
+  signal:{ttfp:"0.27s"[0]?"under 0.3s":"", ttfpMs:0.27, ttfw:"12.0s"},
+  // CHART 5 — fix cost. speed + fact-check failures measured (b180, n=65 each); subjective grade sealed
+  fixCost:{
+    speed:[
+      {k:"Normal thinking",  med:13.5, p90:32.0, max:64.3, c:"var(--bad)",  n:65},
+      {k:"Limited thinking", med:4.7,  p90:11.2, max:14.6, c:"var(--warn)", n:65},
+      {k:"Thinking off",     med:5.0,  p90:8.8,  max:27.6, c:"var(--good)", n:65}
+    ],
+    // fact-check (validation) failures = first drafts that failed the coach's own checks -> apology
+    quality:[
+      {k:"Normal thinking",  failPct:0,   failN:0, c:"var(--good)"},
+      {k:"Limited thinking", failPct:6.2, failN:4, c:"var(--bad)"},
+      {k:"Thinking off",     failPct:6.2, failN:4, c:"var(--bad)"}
+    ],
+    blindedPending:true
+  },
+  quotes:[
+    {t:"This took so long. I had already found it myself and did it.", m:"slow answer, 43s"},
+    {t:"timed out", m:"give-up, 45s"},
+    {t:"timeout after asking the same question again", m:"retry starved, 45s"},
+    {t:"The coach appears to somehow be offline and acts like I just said something off topic.", m:"give-up template, 20s"}
+  ]
+};
+
+/* ============================ helpers ============================ */
+const $=id=>document.getElementById(id);
+const SVGNS="http://www.w3.org/2000/svg";
+function el(tag,attrs,txt){const e=document.createElementNS(SVGNS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(txt!=null)e.textContent=txt;return e;}
+function svg(w,h){const s=el("svg",{viewBox:`0 0 ${w} ${h}`,width:w,height:h,role:"img"});return s;}
+const tip=$("tip");
+function showTip(e,title,body){tip.querySelector(".tt").textContent=title;tip.querySelector(".tb").innerHTML=body;tip.style.opacity=1;moveTip(e);}
+function moveTip(e){const p=12;let x=e.clientX+p,y=e.clientY+p;if(x>innerWidth-250)x=e.clientX-250;tip.style.left=x+"px";tip.style.top=y+"px";}
+function hideTip(){tip.style.opacity=0;}
+function hov(node,title,body){node.addEventListener("mousemove",e=>showTip(e,title,body));node.addEventListener("mouseleave",hideTip);}
+function legend(container,items){container.innerHTML="";items.forEach(it=>{const d=document.createElement("div");d.className="it";const sw=document.createElement("span");sw.className="sw"+(it.tex?" tex":"");if(!it.tex)sw.style.background=it.c;d.appendChild(sw);d.appendChild(document.createTextNode(it.k));container.appendChild(d);});}
+function tog(id){$(id).classList.toggle("show");}
+function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>${x}</th>`).join("")+"</tr></thead><tbody>";rows.forEach(r=>{h+="<tr>"+r.map((c,i)=>`<td class="${i>0?'n':''}">${c}</td>`).join("")+"</tr>";});t.innerHTML=h+"</tbody>";}
+
+/* ============================ KPIs ============================ */
+(function(){$("kpis").innerHTML=DATA.kpis.map(k=>
+  `<div class="kpi"><div class="l">${k.l}</div><div class="v ${k.cls}">${k.v}</div><div class="d">${k.d}</div></div>`).join("");})();
+
+/* ============================ CHART 1 — stage anatomy (single horizontal stacked bar) ============================ */
+(function(){
+  const S=DATA.stages, total=S.reduce((a,b)=>a+b.s,0);
+  const W=960,H=190,L=20,R=30,barY=54,barH=58,plot=W-L-R;
+  const s=svg(W,H);
+  // axis 0..total (seconds), start at 0 — honest
+  const maxT=Math.ceil(total/5)*5;
+  const x=v=>L+plot*v/maxT;
+  // gridlines
+  for(let t=0;t<=maxT;t+=5){const gx=x(t);s.appendChild(el("line",{x1:gx,y1:barY-10,x2:gx,y2:barY+barH+6,class:"grid"}));s.appendChild(el("text",{x:gx,y:barY+barH+22,"text-anchor":"middle",class:"axislbl"},t+"s"));}
+  // segments
+  let acc=0;
+  S.forEach(seg=>{
+    const x0=x(acc),x1=x(acc+seg.s),w=Math.max(x1-x0-2,1);
+    const r=el("rect",{x:x0,y:barY,width:w,height:barH,rx:4,fill:seg.c,class:"bar-seg"});
+    hov(r,seg.k,`<b>${seg.s.toFixed(1)}s</b> · ${(100*seg.s/total).toFixed(0)}% of the wait<br>${seg.note}`);
+    s.appendChild(r);
+    if(seg.s>=2.0){ // direct label inside wide segments
+      s.appendChild(el("text",{x:(x0+x1)/2,y:barY+barH/2-3,"text-anchor":"middle",class:"vallbl",fill:"#fff"},seg.s.toFixed(1)+"s"));
+      s.appendChild(el("text",{x:(x0+x1)/2,y:barY+barH/2+14,"text-anchor":"middle","font-size":"11.5",fill:"#fff",opacity:".92"},seg.k));
+    }
+    acc+=seg.s;
+  });
+  // callout for the two tiny stages
+  s.appendChild(el("text",{x:L,y:34,class:"axislbl","font-size":"12.5"},"One measured 20.1-second answer, start → finish"));
+  s.appendChild(el("text",{x:x(0.85),y:barY-14,"text-anchor":"middle","font-size":"10.5",fill:"var(--muted)"},"start-up + reading ≈ 1.7s"));
+  s.appendChild(el("line",{x1:x(1.7),y1:barY-8,x2:x(1.7),y2:barY,stroke:"var(--muted)","stroke-width":1}));
+  $("c1").appendChild(s);
+  legend($("lg1"),S.map(x=>({k:x.k+" ("+x.s.toFixed(1)+"s)",c:x.c})));
+  table("t1",["Stage","Seconds","Share"],S.map(x=>[x.k,x.s.toFixed(1),(100*x.s/total).toFixed(0)+"%"]).concat([["<b>Total</b>",total.toFixed(1),"100%"]]));
+})();
+
+/* ============================ CHART 2 — outcomes (100% stacked horizontal, one bar per version) ============================ */
+(function(){
+  const O=DATA.outcomes;
+  const cols=[{k:"Answered fast (under 15s)",key:"fast",c:"var(--good)"},
+              {k:"Answered slow (15s+)",key:"slow",c:"var(--warn)"},
+              {k:"Gave up (canned apology)",key:"gaveup",c:"var(--bad)"}];
+  const W=960,rowH=52,top=14,L=150,R=54,plot=W-L-R;
+  const H=top+O.length*rowH+34;
+  const s=svg(W,H);
+  const x=p=>L+plot*p; // p in 0..1
+  // axis 0..100%
+  for(let p=0;p<=100;p+=25){const gx=x(p/100);s.appendChild(el("line",{x1:gx,y1:top-4,x2:gx,y2:top+O.length*rowH,class:"grid"}));s.appendChild(el("text",{x:gx,y:top+O.length*rowH+20,"text-anchor":"middle",class:"axislbl"},p+"%"));}
+  O.forEach((o,i)=>{
+    const y=top+i*rowH+8, bh=30, tot=o.fast+o.slow+o.gaveup;
+    // label
+    const lbl=el("text",{x:L-12,y:y+bh/2+1,"text-anchor":"end",class:"vallbl","font-size":"13"},o.v);
+    s.appendChild(lbl);
+    s.appendChild(el("text",{x:L-12,y:y+bh/2+16,"text-anchor":"end",class:"axislbl","font-size":"11"},"n="+o.n+(o.caveat?" ⚠":"")));
+    let acc=0;
+    cols.forEach(col=>{
+      const val=o[col.key], frac=val/tot;
+      const x0=x(acc),x1=x(acc+frac),w=Math.max(x1-x0-2,0.5);
+      const r=el("rect",{x:x0,y:y,width:w,height:bh,rx:3,fill:col.c,class:"bar-seg"});
+      hov(r,o.v+" — "+col.k,`<b>${val}</b> of ${tot} questions · <b>${(100*frac).toFixed(0)}%</b>`);
+      s.appendChild(r);
+      if(frac>=0.10)s.appendChild(el("text",{x:(x0+x1)/2,y:y+bh/2+4,"text-anchor":"middle","font-size":"12",fill:"#fff","font-weight":"650"},Math.round(100*frac)+"%"));
+      acc+=frac;
+    });
+  });
+  $("c2").appendChild(s);
+  legend($("lg2"),cols.map(c=>({k:c.k,c:c.c})));
+  table("t2",["Version","n","Fast","Slow","Gave up"],O.map(o=>[o.v+(o.caveat?" ⚠":""),o.n,`${o.fast} (${Math.round(100*o.fast/o.n)}%)`,`${o.slow} (${Math.round(100*o.slow/o.n)}%)`,`${o.gaveup} (${Math.round(100*o.gaveup/o.n)}%)`]));
+})();
+
+/* ============================ CHART 3 — retries: 45s limit vs 3-minute budget arms (stacked) ============================ */
+(function(){
+  const R=DATA.retries, rows=[R.at45, ...R.at180];
+  const maxF=Math.max(...rows.map(r=>r.fired)); // 21
+  const W=960,L=210,Rm=100,top=18,rowH=50,barH=26,plotW=W-L-Rm;
+  const H=top+rows.length*rowH+26;
+  const s=svg(W,H);
+  const x=v=>L+plotW*v/maxF;
+  for(let t=0;t<=maxF;t+=5){const gx=x(t);s.appendChild(el("line",{x1:gx,y1:top-2,x2:gx,y2:top+rows.length*rowH-18,class:"grid"}));s.appendChild(el("text",{x:gx,y:top+rows.length*rowH-2,"text-anchor":"middle",class:"axislbl"},t));}
+  s.appendChild(el("text",{x:L,y:top+rows.length*rowH+16,class:"axislbl","font-size":"11"},"number of retries that fired →"));
+  rows.forEach((row,i)=>{
+    const y=top+i*rowH+6, isBefore=i===0;
+    s.appendChild(el("text",{x:L-12,y:y+barH/2+1,"text-anchor":"end",class:"vallbl","font-size":"12.5"},row.k));
+    const wr=Math.max(x(row.rescued)-L,0.5);
+    const rr=el("rect",{x:L,y:y,width:wr,height:barH,rx:3,fill:"var(--good)",class:"bar-seg"});
+    hov(rr,row.k+" — rescued",`<b>${row.rescued}</b> of ${row.fired} retries finished in time → a real answer`);
+    s.appendChild(rr);
+    if(row.rescued>0)s.appendChild(el("text",{x:L+wr/2,y:y+barH/2+4,"text-anchor":"middle","font-size":"12",fill:"#fff","font-weight":"650"},row.rescued));
+    if(row.starved>0){
+      const x1=x(row.rescued), ws=Math.max(x(row.fired)-x1,0.5);
+      const rs=el("rect",{x:x1,y:y,width:ws,height:barH,rx:3,fill:"var(--bad)",class:"bar-seg"});
+      hov(rs,row.k+" — starved",`<b>${row.starved}</b> of ${row.fired} ran out of time → apology`);
+      s.appendChild(rs);
+      s.appendChild(el("text",{x:x1+ws/2,y:y+barH/2+4,"text-anchor":"middle","font-size":"12",fill:"#fff","font-weight":"650"},row.starved));
+    }
+    const pct=Math.round(100*row.rescued/row.fired);
+    s.appendChild(el("text",{x:x(row.fired)+10,y:y+barH/2+4,class:"vallbl","font-size":"12.5",fill:isBefore?"var(--bad)":(pct===100?"var(--good)":"var(--ink2)")},pct+"% rescued"));
+  });
+  $("c3").appendChild(s);
+  legend($("lg3"),[{k:"Retry rescued the answer",c:"var(--good)"},{k:"Retry starved by the limit → apology",c:"var(--bad)"}]);
+  table("t3",["Condition","Retries fired","Rescued","Starved","Rescue rate"],rows.map(r=>[r.k,r.fired,r.rescued,r.starved,Math.round(100*r.rescued/r.fired)+"%"]));
+})();
+
+/* ============================ CHART 4 — before/after grouped bars + signal callout ============================ */
+(function(){
+  const B=DATA.beforeAfter;
+  const W=960,H=300,L=54,R=260,top=30,plotW=W-L-R,groupH=64,gap=20;
+  const s=svg(W,H);
+  const maxByRow=B.map(b=>Math.max(b.pre,b.post)*1.18);
+  B.forEach((b,i)=>{
+    const y=top+i*(groupH+gap);
+    const max=maxByRow[i], x=v=>L+plotW*v/max;
+    s.appendChild(el("text",{x:L,y:y-6,class:"axislbl","font-size":"12.5"},b.k));
+    const barH=22;
+    [["Before wave-1",b.pre,"var(--n1)",0],["After wave-1",b.post,"var(--n2)",barH+4]].forEach(([lab,val,c,off])=>{
+      const w=Math.max(x(val)-L,2);
+      const r=el("rect",{x:L,y:y+off,width:w,height:barH,rx:4,fill:c,class:"bar-seg"});
+      hov(r,b.k+" — "+lab,`<b>${b.fmt=="s"?val.toFixed(1)+"s":val}</b>`);
+      s.appendChild(r);
+      s.appendChild(el("text",{x:L+w+8,y:y+off+barH/2+4,class:"vallbl","font-size":"12.5"},b.fmt=="s"?val.toFixed(1)+"s":val));
+      s.appendChild(el("text",{x:L+w+ (b.fmt=="s"?42:26),y:y+off+barH/2+4,class:"axislbl","font-size":"11"},lab));
+    });
+    // "no change" tag
+    s.appendChild(el("text",{x:W-R+8,y:y+groupH/2-4,class:"axislbl","font-size":"12.5",fill:"var(--muted)"},"≈ no change"));
+  });
+  $("c4").appendChild(s);
+  // signal callout drawn as its own mini block
+  const sig=document.createElement("div");
+  sig.style.cssText="margin-top:14px;display:flex;gap:14px;flex-wrap:wrap";
+  sig.innerHTML=`
+    <div style="flex:1;min-width:220px;background:rgba(0,158,115,.10);border:1px solid rgba(0,158,115,.4);border-radius:10px;padding:12px 15px">
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">What wave-1 actually added</div>
+      <div style="font-size:20px;font-weight:750;margin-top:4px">Instant "thinking" signal</div>
+      <div style="font-size:13px;color:var(--ink2);margin-top:3px">On screen in <b>under 0.3 seconds</b> — the app no longer looks frozen while it works.</div>
+    </div>
+    <div style="flex:1;min-width:220px;background:var(--line2);border:1px solid var(--line);border-radius:10px;padding:12px 15px">
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">…but the answer itself</div>
+      <div style="font-size:20px;font-weight:750;margin-top:4px">Still ~12 seconds</div>
+      <div style="font-size:13px;color:var(--ink2);margin-top:3px">Typical time to the first real word was unchanged. The signal is faster; the reply is not.</div>
+    </div>`;
+  $("c4").appendChild(sig);
+  legend($("lg4"),[{k:"Before wave-1",c:"var(--n1)"},{k:"After wave-1",c:"var(--n2)"}]);
+  table("t4",["Measure","Before","After"],B.map(b=>[b.k,b.fmt=="s"?b.pre.toFixed(1)+"s":b.pre,b.fmt=="s"?b.post.toFixed(1)+"s":b.post]).concat([["Instant on-screen signal","—","under 0.3s"],["Time to first real word","—","~12.0s"]]));
+})();
+
+/* ============================ CHART 5 — fix cost: speed distribution + fact-check failures (both measured); subjective grade sealed ============================ */
+(function(){
+  const F=DATA.fixCost, S=F.speed, Q=F.quality;
+  const W=960,L=150,top=36,barGap=20,barH=32,plotW=W-L-150;
+  const H=top+S.length*(barH+barGap)+22;
+  const s=svg(W,H);
+  const maxS=70, x=v=>L+plotW*v/maxS;
+  for(let t=0;t<=70;t+=10){const gx=x(t);s.appendChild(el("line",{x1:gx,y1:top-8,x2:gx,y2:top+S.length*(barH+barGap)-8,class:"grid"}));s.appendChild(el("text",{x:gx,y:top+S.length*(barH+barGap)+8,"text-anchor":"middle",class:"axislbl"},t+"s"));}
+  s.appendChild(el("text",{x:L,y:14,class:"axislbl","font-size":"12"},"Speed across all 65 questions — solid = typical (median), lighter = out to p90, tick = slowest"));
+  S.forEach((row,i)=>{
+    const y=top+i*(barH+barGap);
+    s.appendChild(el("text",{x:L-12,y:y+barH/2-2,"text-anchor":"end",class:"vallbl","font-size":"13"},row.k));
+    s.appendChild(el("text",{x:L-12,y:y+barH/2+14,"text-anchor":"end",class:"axislbl","font-size":"10.5"},"n="+row.n));
+    const xm=x(row.med), xp=x(row.p90), xx=x(row.max);
+    const light=el("rect",{x:L,y:y,width:Math.max(xp-L,2),height:barH,rx:5,fill:row.c,opacity:".36",class:"bar-seg"});
+    hov(light,row.k+" — spread",`typical <b>${row.med}s</b> · p90 <b>${row.p90}s</b> · slowest <b>${row.max}s</b>`);
+    s.appendChild(light);
+    const solid=el("rect",{x:L,y:y,width:Math.max(xm-L,2),height:barH,rx:5,fill:row.c,class:"bar-seg"});
+    hov(solid,row.k+" — typical",`<b>${row.med}s</b> median`);
+    s.appendChild(solid);
+    s.appendChild(el("text",{x:xm-8,y:y+barH/2+4,"text-anchor":"end","font-size":"12.5",fill:"#fff","font-weight":"700"},row.med+"s"));
+    s.appendChild(el("line",{x1:xx,y1:y-3,x2:xx,y2:y+barH+3,stroke:row.c,"stroke-width":2}));
+    s.appendChild(el("text",{x:xx+6,y:y+barH/2+4,class:"axislbl","font-size":"11"},"max "+row.max+"s"));
+  });
+  $("c5").appendChild(s);
+  legend($("lg5"),[{k:"Normal thinking (today)",c:"var(--bad)"},{k:"Limited thinking",c:"var(--warn)"},{k:"Thinking off",c:"var(--good)"}]);
+
+  // QUALITY — measured fact-check failures + sealed subjective note
+  const q=document.createElement("div");
+  q.style.cssText="margin-top:18px;border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--line2)";
+  q.innerHTML=`<div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:800;margin-bottom:2px">The cost — first drafts that failed the coach's own fact-checks <span style="color:var(--ink2);font-weight:600;text-transform:none;letter-spacing:0">· measured, 65 questions each</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px">
+      ${Q.map(a=>`
+        <div style="background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 12px 14px;text-align:center">
+          <div style="font-size:12.5px;font-weight:650">${a.k}</div>
+          <div style="height:60px;display:flex;align-items:flex-end;justify-content:center;margin-top:8px">
+            <div style="width:52px;height:${Math.max(a.failPct/6.2*54,3)}px;background:${a.failPct>0?'var(--bad)':'var(--good)'};border-radius:4px 4px 0 0"></div>
+          </div>
+          <div style="font-size:23px;font-weight:750;color:${a.failPct>0?'var(--bad)':'var(--good)'};margin-top:6px">${a.failPct}%</div>
+          <div style="font-size:11px;color:var(--muted)">${a.failN} of 65 wrong first drafts</div>
+        </div>`).join("")}
+    </div>
+    <div style="font-size:12.5px;color:var(--ink2);margin-top:13px"><b>Mechanical checks</b> (grounding, length, plain language) scored ≥95% and comparable across all three arms. But bounding the thinking made <b>about 1 in 16 first drafts fail the coach's fact-checks</b> — versus none at normal thinking; those became apologies. <span style="opacity:.9">The <b>subjective blinded read</b> — does the answer actually teach well? — is built but the answer key is still sealed, so that verdict stays <b>pending</b>.</span></div>`;
+  $("c5").appendChild(q);
+  table("t5",["Version","Median","p90","Slowest","Fact-check failures"],S.map((r,i)=>[r.k,r.med+"s",r.p90+"s",r.max+"s",Q[i].failPct+"% ("+Q[i].failN+"/65)"]));
+})();
+
+/* ============================ quotes ============================ */
+$("quotes").innerHTML=DATA.quotes.map(q=>`<div class="quote"><p>"${q.t}"</p><div class="m">${q.m}</div></div>`).join("");
+
+/* ============================ theme toggle ============================ */
+function toggleTheme(){
+  const cur=document.documentElement.getAttribute("data-theme");
+  const sysDark=matchMedia("(prefers-color-scheme:dark)").matches;
+  let next;
+  if(cur==="dark")next="light"; else if(cur==="light")next="dark"; else next=sysDark?"light":"dark";
+  document.documentElement.setAttribute("data-theme",next);
+}
+</script>
+</body>
+</html>
