@@ -12,7 +12,7 @@ import {
   getAdviceTraces,
   getAdviceTraceById,
 } from "../server/store/db";
-import { findFailedTraces, backfillTrace, rebuildChatFacts, type FailedTrace } from "./coach-backfill";
+import { findFailedTraces, backfillTrace, rebuildChatFacts, findPrecedingQuestion, type FailedTrace } from "./coach-backfill";
 import type { CoachBackend } from "../server/coach/backends/types";
 import type { CoachFactList } from "../server/coach/index";
 
@@ -618,5 +618,70 @@ describe("coach-backfill: buildPerPlyAnalysis via rebuildChatFacts (F2 -- review
     // she played "d6" instead, a REAL deviation, so gap must fire here.
     expect(byPly.get(4)!.bestSan).toBe("Nc6");
     expect(byPly.get(4)!.gap).toBeDefined();
+  });
+});
+
+describe("coach-backfill: findPrecedingQuestion (F4 -- review finding LOW-1)", () => {
+  // Falsification: revert to "sort every candidate <= the trace's own
+  // timestamp, ties broken by ascending id, take the last" and this goes
+  // red exactly as the finding describes -- an immediate re-ask landing in
+  // the SAME rounded second as the trace's own created_at outranks the
+  // question that actually failed.
+  it("resolves to the question that actually failed, not a same-second re-ask that lands after it", () => {
+    const dbHandle = openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+
+    const failingQuestionId = insertChatMessage({ gameId: g, role: "user", text: "why did that move lose material" });
+    // Re-asked immediately, inside the SAME second as the trace this
+    // synchronous failure is about to write.
+    const reAskId = insertChatMessage({ gameId: g, role: "user", text: "never mind, is my king safe right now" });
+
+    const rowId = insertAdviceTrace({
+      gameId: g,
+      ply: 10,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "[backend error] Claude Code returned an error result: Failed",
+      source: "template",
+      backend: "agent-sdk",
+      validated: false,
+      regenCount: 0,
+      latencyMs: 10,
+    });
+
+    const tieSecond = "2026-08-24 20:12:04";
+    dbHandle.prepare("UPDATE chat_messages SET created_at = ? WHERE id IN (?, ?)").run(tieSecond, failingQuestionId, reAskId);
+    dbHandle.prepare("UPDATE advice_traces SET created_at = ? WHERE id = ?").run(tieSecond, rowId);
+
+    const resolved = findPrecedingQuestion(g, tieSecond);
+    expect(resolved).toBe("why did that move lose material");
+  });
+
+  it("still resolves correctly when the preceding question is in a genuinely earlier (unambiguous) second", () => {
+    const dbHandle = openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    const q1 = insertChatMessage({ gameId: g, role: "user", text: "first question" });
+    const q2 = insertChatMessage({ gameId: g, role: "user", text: "second question, 19 seconds later" });
+    const rowId = insertAdviceTrace({
+      gameId: g,
+      ply: 20,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "[backend error] Claude Code returned an error result: Failed",
+      source: "template",
+      backend: "agent-sdk",
+      validated: false,
+      regenCount: 0,
+      latencyMs: 10,
+    });
+    dbHandle.prepare("UPDATE chat_messages SET created_at = ? WHERE id = ?").run("2026-08-24 20:12:03", q1);
+    dbHandle.prepare("UPDATE chat_messages SET created_at = ? WHERE id = ?").run("2026-08-24 20:12:22", q2);
+    dbHandle.prepare("UPDATE advice_traces SET created_at = ? WHERE id = ?").run("2026-08-24 20:12:23", rowId);
+
+    expect(findPrecedingQuestion(g, "2026-08-24 20:12:23")).toBe("second question, 19 seconds later");
   });
 });

@@ -154,12 +154,30 @@ async function backfillNarrateTrace(row: FailedTrace, backend: CoachBackend): Pr
 // real rows 269/270 (same game, same ply, 19 seconds apart, two separate
 // questions) and 271: each resolves to a distinct, correct question.
 
-function findPrecedingQuestion(gameId: number, tsAtOrBefore: string): string | undefined {
+// F4 fix (fix wave, 2026-08-27, review finding LOW-1): created_at is
+// second-resolution, and a synchronous backend-down throw lands its trace
+// row ~1s after the question that caused it (measured on her real data:
+// msg 236 at 20:12:03 -> trace 269 at 20:12:04) -- but an IMMEDIATE re-ask
+// can land in that SAME rounded second as the trace itself, and the old
+// code (sort everything <= the trace's own timestamp, ties broken by
+// ascending id, take the last) would then return the re-ask instead of the
+// question that actually failed. A candidate strictly BEFORE the trace's
+// own second is unambiguous and always correct to prefer over one that ties
+// it; only when EVERY candidate ties the trace's own second (no earlier
+// question exists at all) do we fall back to the earliest of those tied
+// rows -- the one already in flight when the call that produced this trace
+// started, not a later one asked into the same second after the failure.
+export function findPrecedingQuestion(gameId: number, tsAtOrBefore: string): string | undefined {
   const messages = getAllChatMessages(gameId) as { role: string; text: string; created_at: string; id: number }[];
   const candidates = messages.filter((m) => m.role === "user" && m.created_at <= tsAtOrBefore);
   if (candidates.length === 0) return undefined;
-  candidates.sort((a, b) => (a.created_at === b.created_at ? a.id - b.id : a.created_at < b.created_at ? -1 : 1));
-  return candidates[candidates.length - 1].text;
+  const strictlyBefore = candidates.filter((m) => m.created_at < tsAtOrBefore);
+  if (strictlyBefore.length > 0) {
+    strictlyBefore.sort((a, b) => (a.created_at === b.created_at ? a.id - b.id : a.created_at < b.created_at ? -1 : 1));
+    return strictlyBefore[strictlyBefore.length - 1].text;
+  }
+  candidates.sort((a, b) => a.id - b.id);
+  return candidates[0].text;
 }
 
 interface MoveRow {
