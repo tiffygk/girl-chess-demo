@@ -229,14 +229,33 @@ function buildPerPlyAnalysis(rows: MoveRow[], ply: number): ChatPerPlyInput[] {
 // into today's chat()/validateChat risks a shape mismatch this function
 // avoids by rebuilding from the same primitives the live app assembles from
 // right now.
-function rebuildChatFacts(row: FailedTrace): ChatFactList | undefined {
-  const game = getGame(row.gameId) as { result: string | null; end_reason?: string | null } | undefined;
+//
+// F1 fix (fix wave, 2026-08-27, review finding HIGH-1): `finished`/`outcome`
+// must describe the game AS OF this trace's own created_at, not the game's
+// state TODAY. Mirrors manager.ts:1248 (`const finished = game.result !=
+// null`) -- but that runs LIVE, so reading game.result there IS reading it
+// "as of now" for that call. This tool runs long after the fact, so the
+// faithful reconstruction compares this trace's own created_at against
+// game.ended_at (stamped once, by finishGame -- server/store/db.ts): a
+// trace created before the game's own ended_at was necessarily generated
+// while the game was still live, no matter how long finished the game is by
+// the time this tool runs. Concrete case: game 188 traces 269/270, asked at
+// ply 20 while created_at (20:12:04) is well before ended_at (20:24:19, the
+// game ran to ply 47) -- the old code read only game.result != null (true
+// today) and fabricated "you won by resignation on ply 20". With the fix,
+// finishedAtAsk is false, so status is "in-progress", outcome is omitted
+// entirely, and turningPoints is omitted entirely too (never the whole
+// finished game's set, which would otherwise ground the answer on plies
+// 41/47 she had not yet played) -- exactly what manager.ts's chat() would
+// have assembled had it been called live at that moment.
+export function rebuildChatFacts(row: FailedTrace): ChatFactList | undefined {
+  const game = getGame(row.gameId) as { result: string | null; end_reason?: string | null; ended_at?: string | null } | undefined;
   if (!game) return undefined;
   const moveRows = getGameMoves(row.gameId) as MoveRow[];
   const truncated = truncatedMoves(moveRows, row.ply);
   const perPly = buildPerPlyAnalysis(moveRows, row.ply);
-  const finished = game.result != null;
-  const turningPoints = finished
+  const finishedAtAsk = game.result != null && game.ended_at != null && row.createdAt >= game.ended_at;
+  const turningPoints = finishedAtAsk
     ? (getTurningPoints(row.gameId) as any[]).map((r) => ({
         ply: r.ply,
         san: r.san,
@@ -244,12 +263,12 @@ function rebuildChatFacts(row: FailedTrace): ChatFactList | undefined {
         punishSan: r.punish_san ?? undefined,
       }))
     : undefined;
-  const outcome = finished
+  const outcome = finishedAtAsk
     ? deriveChatOutcome(game.result as string, game.end_reason ?? null, truncated[truncated.length - 1]?.san, truncated.length)
     : undefined;
-  const ctx: ChatContext = { mode: finished ? "review" : "live" };
+  const ctx: ChatContext = { mode: finishedAtAsk ? "review" : "live" };
   return assembleChatFactList(truncated, ctx, turningPoints, perPly, {
-    status: finished ? "finished" : "in-progress",
+    status: finishedAtAsk ? "finished" : "in-progress",
     outcome,
   });
 }
