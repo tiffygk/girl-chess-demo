@@ -27,4 +27,39 @@ if printf '%s' "$cmd" | grep -qE '\bnpm run gate\b' && ! printf '%s' "$cmd" | gr
   jq -n --arg m "Play rule: never run npm run gate while she is playing. tools/gate.ts checkInPlay hard-blocks if a game moved in the last 30min, but the standing rule is to ASK or WAIT anyway (broken twice: 07-29 starved her live game at +492, 07-30 five runs in one round). Confirm she is not mid-game before this runs." '{systemMessage:$m}'
 fi
 
+# #16 git push content scan against a LOCAL, gitignored pattern file (2026-08-26).
+# Three failures in one session: a sweep was reported clean, then a later commit
+# put the string back; a scrub script reintroduced it by grepping for it; and a
+# stale "remote is clean" check was trusted after more commits landed. All three
+# share a boundary -- the push -- so the check belongs there, not earlier.
+# NEVER put the guarded string in this file: it is tracked and public, and a
+# literal here would be the same bug in the guard's own body.
+if printf '%s' "$cmd" | grep -qE '\bgit[[:space:]]+push\b'; then
+  toplevel="$(git rev-parse --show-toplevel 2>/dev/null)"
+  patfile="$toplevel/.claude/hooks/.push-guard-patterns"
+  if [ -s "$patfile" ]; then
+    upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"
+    if [ -z "$upstream" ] && git rev-parse --verify origin/main >/dev/null 2>&1; then upstream="origin/main"; fi
+    if [ -n "$upstream" ] && git rev-parse --verify "$upstream" >/dev/null 2>&1; then
+      payload="$(git log "$upstream..HEAD" -p --format='%B' 2>/dev/null)"
+    else
+      payload="$(git show -p --format='%B' HEAD 2>/dev/null)"
+    fi
+    if printf '%s' "$payload" | grep -qinf "$patfile" 2>/dev/null; then
+      n="$(printf '%s' "$payload" | grep -cinf "$patfile" 2>/dev/null)"
+      deny "git push BLOCKED: ${n} line(s) in the commits about to be pushed (diffed against ${upstream:-HEAD}) match a pattern in .claude/hooks/.push-guard-patterns. Find them with: git log ${upstream:-HEAD}..HEAD -p --format=%B | grep -inf .claude/hooks/.push-guard-patterns  -- and note the match may be in a COMMIT MESSAGE, not only in a diff. A follow-up commit that removes it going forward is NOT a fix: the string stays in history. The fix is a history rewrite before any push. If it is a false positive, say so and retry."
+    fi
+  else
+    ask "git push: .claude/hooks/.push-guard-patterns is missing or empty, so the push content scan is a no-op. If any string must never reach the public remote, create that file first (one grep -E pattern per line; it is gitignored, never git add it). Confirm you want to push unscanned."
+  fi
+fi
+
+# #17 grep -c / -q feeding a && chain (2026-08-26, at least three times in one
+# session). grep exits 1 on ZERO matches, so `grep -c foo file && git add ...`
+# silently skips everything after the &&, and the transcript reads as if it ran.
+# Advisory, not blocking: the shape is sometimes exactly what you want.
+if printf '%s' "$cmd" | grep -qE 'grep[[:space:]]+-[a-zA-Z]*[cq][a-zA-Z]*[^|]*&&'; then
+  jq -n --arg m "Shell chain warning: grep exits NON-ZERO when it finds zero matches, so a 'grep -c/-q ... && next-command' chain silently skips everything after the && on a clean result, and the output looks like it ran. This broke git add/commit three times on 2026-08-26. Separate the check from the action with ';' or newlines, or append '|| true' to the grep. Then verify the action actually happened (git log / git status), do not infer it from the absence of an error." '{systemMessage:$m}'
+fi
+
 exit 0
