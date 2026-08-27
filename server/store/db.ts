@@ -133,6 +133,16 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // no default, same convention as
     // rating/feedback_text above.
     { name: "cause", addSql: "cause TEXT" },
+    // Task 8 (coach-backfill, coach-truth-continuation round): stamped by
+    // updateAdviceTraceOutput below the moment a backfill regeneration
+    // overwrites this row's output -- NULL on every row that has never been
+    // touched by the backfill tool, including a row backfilled before this
+    // column existed (impossible in practice: this column ships alongside
+    // the tool that would ever set it) and every ordinary model/template row
+    // written by narrate()/chat() themselves, which never set it. Additive/
+    // nullable, no default, same convention as cause/rating/feedback_text
+    // above.
+    { name: "backfilled_at", addSql: "backfilled_at TEXT" },
   ],
   // Increment 3b: panel-ruled turning points (server/annotator/turningPoints.ts),
   // up to 3 rows per game, written once at game end. Brand-new table (CREATE
@@ -269,7 +279,7 @@ export function openDb(path = "data/girlchess.db") {
       kind TEXT, facts_json TEXT, prompt TEXT, output TEXT, source TEXT,
       backend TEXT, validated INTEGER, regen_count INTEGER, latency_ms INTEGER,
       created_at TEXT DEFAULT (datetime('now')), rating INTEGER, feedback_text TEXT,
-      cause TEXT);
+      cause TEXT, backfilled_at TEXT);
     CREATE TABLE IF NOT EXISTS turning_points(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), rank INTEGER,
       ply INTEGER, san TEXT, label TEXT, punish_san TEXT, delta_p REAL,
@@ -427,6 +437,46 @@ export const getAdviceTraces = (gameId: number) =>
 // scan just to look up the one row its own chat() call produced.
 export const getAdviceTraceById = (id: number) =>
   db.prepare("SELECT * FROM advice_traces WHERE id = ?").get(id) as any;
+// Task 8 (coach-backfill): every advice_traces row, across every game,
+// oldest first -- generic and reusable, unlike the selection PREDICATE that
+// decides which of these rows are backfill candidates (that logic lives in
+// tools/coach-backfill.ts itself, next to the tool that owns it, the same
+// way replay-check.ts keeps its own invariants local rather than growing
+// this file into a second home for tool-specific business rules).
+export const getAllAdviceTraces = () =>
+  db.prepare("SELECT * FROM advice_traces ORDER BY id").all() as any[];
+// Task 8 (coach-backfill): updates a row IN PLACE rather than inserting a
+// new one -- advice_traces is otherwise insert-only, and chat_messages.
+// trace_id points at a specific row id, so inserting a fresh row for a
+// regenerated answer would orphan that pointer and duplicate her
+// conversation. Stamps backfilled_at itself (datetime('now'), not a
+// caller-supplied value) so the timestamp always reflects the moment of the
+// actual write, never a value computed earlier and passed stale. Clears
+// `cause` to NULL on the assumption every real caller only calls this after
+// a genuine model answer replaces a failure -- there is no other reason to
+// call this function. created_at, prompt, facts_json, regen_count, and
+// latency_ms are deliberately left untouched: they describe the ORIGINAL
+// attempt, and backfilled_at is what marks the row as later touched, per
+// coach-backfill.ts's own "the history stays honest" rule.
+export const updateAdviceTraceOutput = (
+  id: number,
+  fields: { output: string; source: string; backend: string; validated: boolean; cause?: string | null }
+): void => {
+  db.prepare(
+    `UPDATE advice_traces
+       SET output = ?, source = ?, backend = ?, validated = ?, cause = ?, backfilled_at = datetime('now')
+       WHERE id = ?`
+  ).run(fields.output, fields.source, fields.backend, fields.validated ? 1 : 0, fields.cause ?? null, id);
+};
+// Task 8 (coach-backfill): removes a row by id -- used ONLY to discard the
+// transient row narrate()/chat() themselves insert (both functions are
+// unconditional-insert, F40 completeness gates) the moment coach-backfill.ts
+// has copied its content onto the original row via updateAdviceTraceOutput
+// above. Never called on a row that represents a real, standalone coach
+// interaction -- see that file's own header for why this is safe.
+export const deleteAdviceTraceById = (id: number): void => {
+  db.prepare("DELETE FROM advice_traces WHERE id = ?").run(id);
+};
 // Wave 3, item 3 (F5 family, game-164): the most recent REJECTED chat draft
 // for this game that the player never saw a valid reply for -- so a follow-up
 // like "that made no sense" has a referent. "Newer than the last persisted
