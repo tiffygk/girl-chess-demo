@@ -43,7 +43,7 @@ export interface TurningPoint {
   punishSan?: string; // the "you punished with {san}" suffix source, when the guard passes
   deltaP: number; // signed, white perspective
   lowConfidence: boolean; // null-gap > TP_DEDUP_PLIES plies behind this point
-  kind: "swing" | "backfill" | "episode" | "missed-win" | "unconverted" | "conversion";
+  kind: "swing" | "backfill" | "episode" | "missed-win" | "unconverted" | "conversion" | "lead-change";
   // debrief-v2, dedup fix: set on HER kept swing when the preceding kept
   // point in the same dedup cluster is an opponent-error label and her
   // swing is negative — the "missed punish" shape (she had a winning
@@ -119,6 +119,17 @@ export interface TurningPoint {
   // conversion.ts's MIN_CONVERSION_RUN_PLIES span gate (M1 fix -- a
   // handful of plies of a flickering evaluator is not a conversion
   // episode; see that constant's own comment for real game 144's shape).
+
+  // Wave E: set on kind "lead-change" points AND on any point of another
+  // kind whose ply the confirmed crossing landed on (the flag case --
+  // measured 29 of 50 anchors on the real corpus collide with an existing
+  // swing, so the flag path is the main path, never an edge case). leader
+  // is the side that became the leader; leadMarginCp is |white cp| at the
+  // confirmed crossing; leadNth is the 1-based ordinal of this leader
+  // change in the game.
+  leader?: "her" | "mallow";
+  leadMarginCp?: number;
+  leadNth?: number;
 }
 
 // debrief-v2: bumped when the turning-point algorithm changes shape in a way
@@ -146,7 +157,14 @@ export interface TurningPoint {
 // game, naming the shortest mate she ever held during a mate run and how
 // long the run took, appended whenever that run shows real slip evidence.
 // Old games heal to pick up both on their next summary read.
-export const TP_ALGO_VERSION = 7;
+// v8: Wave E (2026-08-27, owner ask game 189 chat) -- the "decision
+// checkpoint" lead-change detector (detectLeadChanges, LEAD_CP=300). Either
+// pushes a new kind:"lead-change" point on a free ply, or sets
+// leader/leadMarginCp/leadNth on whichever existing point already owns the
+// confirmed crossing's ply (the main path -- 29 of 50 real-corpus anchors
+// collide with an existing swing). Old games heal to pick this up on their
+// next summary read.
+export const TP_ALGO_VERSION = 8;
 
 // Owner-calibratable: cp -> winprob steepness. This is the same constant as
 // chess.com's published win% formula (0.00368208, here to 3 sig figs per
@@ -673,6 +691,10 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
         deltaP: 0,
         lowConfidence: false,
         moverIsWhite: mv.ply % 2 === 1,
+        // Wave E: same extreme mate-cap convention buildDeltaSeries' own
+        // "#" branch uses -- this is a delivered checkmate, never a real
+        // eval read, so the sign is the mover's, not a stored number.
+        whiteCp: mv.ply % 2 === 1 ? 3000 : -3000,
         label: sheWon ? "checkmate" : sheLost ? "the losing move" : "checkmate",
         kind: "backfill",
       };
@@ -983,6 +1005,27 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
           mateIn: conversionEpisode.bestMissed,
         });
       }
+    }
+  }
+
+  // Wave E: lead-change points. Applied LAST so no existing kind's anchor
+  // scan changes behaviour; the flag fallback means this kind can never
+  // trip noPlyCollisionInvariant by construction. Keys on eval LEVEL
+  // (LEAD_CP), never winprob delta -- the crossing move's own deltaP is
+  // routinely sub-TP_FLOOR (game 189's Bb4: 0.062), which is exactly why
+  // the swing detector cannot see it. Never lower TP_FLOOR to chase this.
+  for (const lc of detectLeadChanges(series)) {
+    const owner = points.find((p) => p.ply === lc.ply);
+    if (owner) {
+      owner.leader = lc.leader;
+      owner.leadMarginCp = lc.marginCp;
+      owner.leadNth = lc.nth;
+    } else {
+      points.push({
+        rank: points.length + 1, ply: lc.ply, san: lc.san, label: "lead change",
+        deltaP: 0, lowConfidence: lc.lowConfidence, kind: "lead-change",
+        leader: lc.leader, leadMarginCp: lc.marginCp, leadNth: lc.nth,
+      });
     }
   }
 

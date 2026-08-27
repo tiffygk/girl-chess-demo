@@ -186,6 +186,65 @@ describe("detectLeadChanges (Wave E)", () => {
   });
 });
 
+// Wave E, Task E3: lead-change points inside computeTurningPoints -- push a
+// free-ply point, or flag the ply's existing point when one already owns
+// it (the main path: 29 of 50 real-corpus anchors collide with an existing
+// swing).
+describe("computeTurningPoints — lead-change (Wave E)", () => {
+  it("a free-ply crossing becomes its own lead-change point", () => {
+    // gradual climb: every per-ply delta is sub-floor, so no swing can
+    // exist -- the exact shape the swing detector is structurally blind to.
+    const moves: MoveEval[] = [
+      { ply: 1, san: "a3", evalCp: -40, evalMate: null },
+      { ply: 2, san: "a6", evalCp: 80, evalMate: null },
+      { ply: 3, san: "b3", evalCp: -120, evalMate: null },
+      { ply: 4, san: "b6", evalCp: 160, evalMate: null },
+      { ply: 5, san: "c3", evalCp: -200, evalMate: null },
+      { ply: 6, san: "c6", evalCp: 240, evalMate: null },
+      { ply: 7, san: "d3", evalCp: -280, evalMate: null },
+      { ply: 8, san: "d6", evalCp: 310, evalMate: null },
+      { ply: 9, san: "e3", evalCp: -330, evalMate: null },
+      { ply: 10, san: "e6", evalCp: 350, evalMate: null },
+    ];
+    const pts = computeTurningPoints(moves, "1-0");
+    const lead = pts.find((p) => p.kind === "lead-change");
+    expect(lead).toMatchObject({
+      ply: 8, san: "d6", label: "lead change",
+      leader: "her", leadMarginCp: 310, leadNth: 1, deltaP: 0,
+    });
+  });
+
+  it("a crossing on a swing-owned ply flags the swing instead of colliding", () => {
+    const moves: MoveEval[] = [
+      { ply: 1, san: "e4", evalCp: 20, evalMate: null },
+      { ply: 2, san: "e5", evalCp: 30, evalMate: null },
+      { ply: 3, san: "Nf3", evalCp: 25, evalMate: null },
+      { ply: 4, san: "Qh4", evalCp: 500, evalMate: null }, // mallow blunder: jump AND crossing
+      { ply: 5, san: "Nxh4", evalCp: -510, evalMate: null },
+      { ply: 6, san: "d6", evalCp: 520, evalMate: null },
+    ];
+    const pts = computeTurningPoints(moves, "1-0");
+    expect(pts.filter((p) => p.kind === "lead-change")).toHaveLength(0);
+    const swing = pts.find((p) => p.ply === 4 && p.kind === "swing");
+    expect(swing).toMatchObject({ leader: "her", leadMarginCp: 500, leadNth: 1 });
+    const plies = pts.map((p) => p.ply);
+    expect(new Set(plies).size).toBe(plies.length); // no ply collision, ever
+  });
+
+  it("feature-removal: no lead-change detection means no leader field anywhere", () => {
+    // Documented here (not executed as a toggle) — see the manual
+    // detectLeadChanges revert already proven above; this test instead
+    // proves the wiring itself: a game with zero eval swings past LEAD_CP
+    // gets zero leader-bearing points.
+    const moves: MoveEval[] = [
+      { ply: 1, san: "e4", evalCp: -10, evalMate: null },
+      { ply: 2, san: "e5", evalCp: 12, evalMate: null },
+    ];
+    const pts = computeTurningPoints(moves, "1/2-1/2");
+    expect(pts.every((p) => p.leader == null)).toBe(true);
+  });
+});
+
 describe("computeTurningPoints — acceptance fixtures", () => {
   // NOTE on labels (see turningPoints.ts's header comment for the full
   // writeup): the ruling's prose calls every opponent-caused point here
@@ -307,8 +366,12 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     // already claims, since both detectors hunt the shallowest mate in the
     // run and land on the same moment here. The collision guard suppresses
     // the redundant conversion point (see the game-85 test above for the
-    // same reasoning) -- length stays 4, not 5.
-    expect(tps).toHaveLength(4);
+    // same reasoning).
+    //
+    // Wave E (2026-08-27): this fixture's own ply 20 (her Nec6, white +372
+    // after ply 19's Bxb5+) is a genuine free-ply lead-change -- confirmed
+    // by direct computation, not assumed -- so length is 5, not 4.
+    expect(tps).toHaveLength(5);
     expect(tps.slice(0, 3).every((t) => t.kind === "swing")).toBe(true);
 
     expect(tps[0]).toMatchObject({ rank: 1, ply: 18, san: "c5", label: "opponent mistake", kind: "swing" });
@@ -339,10 +402,15 @@ describe("computeTurningPoints — acceptance fixtures", () => {
     });
     expect(tps[3].deltaP).toBe(0);
 
-    // No tps[4]: bestMissedPly (37 -- her Qxe6+, where mate-in-1 was
-    // actually held) collides with the missed-win point already at ply 37,
-    // so the conversion point is suppressed -- see the comment above.
+    // No conversion point: bestMissedPly (37 -- her Qxe6+, where mate-in-1
+    // was actually held) collides with the missed-win point already at ply
+    // 37, so the conversion point is suppressed -- see the comment above.
     expect(tps.some((t) => t.kind === "conversion")).toBe(false);
+
+    expect(tps[4]).toMatchObject({
+      rank: 5, ply: 20, san: "Nec6", label: "lead change", kind: "lead-change",
+      leader: "her", leadMarginCp: 372, leadNth: 1,
+    });
   });
 });
 
@@ -483,9 +551,19 @@ describe("computeTurningPoints — backfill requires the hold, not a touch (task
     expect(winProb(cpForP(0.91))).toBeGreaterThanOrEqual(TP_HOLD_THRESHOLD);
     expect(winProb(cpForP(0.89))).toBeLessThan(TP_HOLD_THRESHOLD);
 
+    // Wave E (2026-08-27): this same monotonic climb crosses LEAD_CP=300
+    // at ply 6 (white +377) and holds (ply 7's -493 is still white +493
+    // once negated), so a genuine free-ply lead-change fires there --
+    // orthogonal to the backfill mechanism this test is about (LEAD_CP is
+    // a plain cp band, TP_HOLD_THRESHOLD/TP_HOLD_PLIES are a winprob-hold
+    // rule; they answer different questions on the same data).
     const tps = computeTurningPoints(moves, "1-0");
-    expect(tps).toEqual([]); // no real swing cleared the floor, and the touch didn't hold
+    expect(tps.filter((t) => t.kind !== "lead-change")).toEqual([]); // no real swing cleared the floor, and the touch didn't hold
     expect(tps.some((t) => t.label === "the clincher")).toBe(false);
+    expect(tps).toEqual([
+      { rank: 1, ply: 6, san: "m6", label: "lead change", deltaP: 0, lowConfidence: false,
+        kind: "lead-change", leader: "her", leadMarginCp: 377, leadNth: 1 },
+    ]);
   });
 
   it("a climb that crosses >= .90 and HOLDS across the window DOES backfill, at the exact ply the hold begins", () => {
@@ -494,18 +572,29 @@ describe("computeTurningPoints — backfill requires the hold, not a touch (task
     const targetPs = [0.5, 0.56, 0.62, 0.68, 0.74, 0.8, 0.86, 0.91, 0.93];
     const moves = targetPs.map((p, i) => mv(i + 1, `m${i + 1}`, cpForP(p)));
 
+    // Wave E (2026-08-27): same climb, same LEAD_CP=300 crossing at ply 6
+    // as the touch-and-retreat fixture above -- a second, genuine point,
+    // orthogonal to the backfill mechanism under test here.
     const tps = computeTurningPoints(moves, "1-0");
-    expect(tps).toHaveLength(1);
+    expect(tps).toHaveLength(2);
     expect(tps[0]).toMatchObject({ ply: 8, label: "the clincher", kind: "backfill" });
+    expect(tps[1]).toMatchObject({
+      ply: 6, label: "lead change", kind: "lead-change", leader: "her", leadMarginCp: 377, leadNth: 1,
+    });
   });
 
   it("symmetric case for the losing side: hold below (1 - TP_HOLD_THRESHOLD) backfills as 'the losing move'", () => {
     const targetPs = [0.5, 0.44, 0.38, 0.32, 0.26, 0.2, 0.14, 0.09, 0.07];
     const moves = targetPs.map((p, i) => mv(i + 1, `m${i + 1}`, cpForP(p)));
 
+    // Wave E (2026-08-27): the symmetric mirror of the above -- ply 6 also
+    // crosses -LEAD_CP here (mallow leader), a second genuine point.
     const tps = computeTurningPoints(moves, "0-1");
-    expect(tps).toHaveLength(1);
+    expect(tps).toHaveLength(2);
     expect(tps[0]).toMatchObject({ ply: 8, label: "the losing move", kind: "backfill" });
+    expect(tps[1]).toMatchObject({
+      ply: 6, label: "lead change", kind: "lead-change", leader: "mallow", leadMarginCp: 377, leadNth: 1,
+    });
   });
 });
 
@@ -892,8 +981,8 @@ describe("conversion turning point parity (H2, union review)", () => {
   });
 });
 
-it("TP_ALGO_VERSION is 7 (game-160 RCA round, K1: conversion + wider missed-win heal old games on read)", () => {
-  expect(TP_ALGO_VERSION).toBe(7);
+it("TP_ALGO_VERSION is 8 (Wave E: lead-change points heal old games on read)", () => {
+  expect(TP_ALGO_VERSION).toBe(8);
 });
 
 // Game-160 RCA round, Task K1 (2026-07-31): real db evals (verified
