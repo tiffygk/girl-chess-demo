@@ -121,7 +121,7 @@
 
 <div class="kpis">
   <div class="kpi"><div class="l">False piece placements</div><div class="v">0%</div><div class="d">was 7.5%, same models</div></div>
-  <div class="kpi"><div class="l">Tests</div><div class="v">1,931</div><div class="d">30,662 test lines against 34,869 app</div></div>
+  <div class="kpi"><div class="l">Tests</div><div class="v">2,158</div><div class="d">139 files, 30,628 test lines against 36,106 app</div></div>
   <div class="kpi"><div class="l">Nondeterministic parts</div><div class="v">1</div><div class="d">of the whole system</div></div>
   <div class="kpi"><div class="l">Cost to run</div><div class="v">$0</div><div class="d">on an existing subscription</div></div>
 </div>
@@ -508,26 +508,26 @@
 <div class="panel">
   <div class="num">11</div>
   <h2>One SQLite file, ten tables, no ORM</h2>
-  <p>181 games, 2,604 moves, integrity verified by counting rows.</p>
+  <p>189 games, 2,910 moves, integrity verified by counting rows.</p>
   <table class="dt">
     <thead><tr><th>Table</th><th class="n">Rows</th><th>What it records</th></tr></thead>
     <tbody>
-      <tr><td><code>sessions</code></td><td class="n">813</td><td>one per sitting</td></tr>
-      <tr><td><code>games</code></td><td class="n">181</td><td>opponent, result</td></tr>
-      <tr><td><code>moves</code></td><td class="n">2,604</td><td>both sides, with the engine's eval attached</td></tr>
-      <tr><td><code>verdicts</code></td><td class="n">3,274</td><td>every judged move, including retracted ones</td></tr>
-      <tr><td><code>advice_traces</code></td><td class="n">245</td><td>every coach call, prompt and output</td></tr>
-      <tr><td><code>turning_points</code></td><td class="n">117</td><td>what actually swung each game</td></tr>
-      <tr><td><code>chat_messages</code></td><td class="n">214</td><td>my questions, and only validated replies</td></tr>
-      <tr><td><code>game_events</code></td><td class="n">1,179</td><td>hints and overrides</td></tr>
-      <tr><td><code>mode_timers</code></td><td class="n">225</td><td>screen time</td></tr>
-      <tr><td><code>coach_notes</code></td><td class="n">2</td><td>the only cross-game memory</td></tr>
+      <tr><td><code>sessions</code></td><td class="n">873</td><td>one per sitting</td></tr>
+      <tr><td><code>games</code></td><td class="n">189</td><td>opponent, result</td></tr>
+      <tr><td><code>moves</code></td><td class="n">2,910</td><td>both sides, with the engine's eval attached</td></tr>
+      <tr><td><code>verdicts</code></td><td class="n">3,594</td><td>every judged move, including retracted ones</td></tr>
+      <tr><td><code>advice_traces</code></td><td class="n">281</td><td>every coach call, prompt and output</td></tr>
+      <tr><td><code>turning_points</code></td><td class="n">136</td><td>what actually swung each game</td></tr>
+      <tr><td><code>chat_messages</code></td><td class="n">253</td><td>my questions, and only validated replies</td></tr>
+      <tr><td><code>game_events</code></td><td class="n">1,382</td><td>hints and overrides</td></tr>
+      <tr><td><code>mode_timers</code></td><td class="n">253</td><td>screen time</td></tr>
+      <tr><td><code>coach_notes</code></td><td class="n">4</td><td>the only cross-game memory</td></tr>
     </tbody>
   </table>
-  <p style="margin-top:12px"><strong>Verdicts outnumber moves</strong>, because every move I considered and retracted was judged and recorded too. <strong>Chat stores only validated coach replies</strong>, so the gap between my 115 messages and cookie's 99 is literally the count of answers that failed a check and got pulled. And <strong>there is no migration folder and no version number</strong>. The code carries a declared list of every column each table should have. At startup it diffs that against the live database and adds what is missing.</p>
+  <p style="margin-top:12px"><strong>Verdicts outnumber moves</strong>, because every move I considered and retracted was judged and recorded too. <strong>Chat stores only validated coach replies</strong>, so the gap between my 136 messages and cookie's 117 is literally the count of answers that failed a check and got pulled. And <strong>there is no migration folder and no version number</strong>. The code carries a declared list of every column each table should have. At startup it diffs that against the live database and adds what is missing.</p>
 </div>
 
-<p class="foot">Girl Chess. Built 0-to-1 by directing Claude Code. Counts verified read-only against the live database, 2026-08-18.</p>
+<p class="foot">Girl Chess. Built 0-to-1 by directing Claude Code. Counts verified read-only against the live database, 2026-08-26.</p>
 
 </div>
 <script>
