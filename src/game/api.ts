@@ -604,7 +604,7 @@ export interface TurningPoint {
   punishSan?: string;
   deltaP: number;
   lowConfidence: boolean;
-  kind: "swing" | "backfill" | "episode" | "missed-win" | "unconverted" | "conversion";
+  kind: "swing" | "backfill" | "episode" | "missed-win" | "unconverted" | "conversion" | "lead-change";
   missedPunish?: boolean;
   plyEnd?: number;
   // 2026-07-22: mirrors server TurningPoint's crossedAdvantage — see that
@@ -626,6 +626,15 @@ export interface TurningPoint {
   // alternative there); "run-start" means ply is only the first ply of
   // the held-winning run, never a claim about when the win ended.
   anchorKind?: "repetition-entry" | "run-start";
+  // Wave E (2026-08-27): mirrors the server TurningPoint's leader/
+  // leadMarginCp/leadNth -- set on kind "lead-change" points AND on any
+  // point of another kind whose ply the confirmed crossing landed on (the
+  // flag case, the main path on the real corpus). leader is the side that
+  // became the leader; leadMarginCp is |white cp| at the confirmed
+  // crossing; leadNth is the 1-based ordinal of this leader change.
+  leader?: "her" | "mallow";
+  leadMarginCp?: number;
+  leadNth?: number;
 }
 
 export interface MoveClassification {
