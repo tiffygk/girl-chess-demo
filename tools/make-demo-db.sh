@@ -27,6 +27,25 @@ live="$(sqlite3 -readonly "$SRC" "SELECT COUNT(*) FROM games g JOIN moves m ON m
 # .backup, never cp: the real db runs in WAL mode and a raw file copy is torn.
 sqlite3 -readonly "$SRC" ".backup '$TMP'"
 
+# Fail closed on schema drift. Every table must be named below as scrubbed,
+# filtered with its game, or deliberately kept. A table this script has never
+# heard of is REFUSED rather than carried into the demo db whole. This is how
+# coach_notes nearly shipped: it was added after the original hand recipe was
+# written, so the recipe could not know to scrub it. Patching that one table
+# fixed one instance; this covers the next one.
+KNOWN="advice_traces chat_messages coach_notes game_events games mode_timers moves sessions turning_points verdicts"
+actual="$(sqlite3 "$TMP" "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")"
+unknown=""
+for t in $actual; do
+  case " $KNOWN " in *" $t "*) ;; *) unknown="$unknown $t" ;; esac
+done
+if [ -n "$unknown" ]; then
+  echo "REFUSING: table(s) this script does not know how to handle:$unknown"
+  echo "Decide for each one whether it holds private data, then add it to KNOWN"
+  echo "and give it a DELETE or a filter below. Do not just add it to KNOWN."
+  exit 1
+fi
+
 sqlite3 "$TMP" <<'SQL'
 BEGIN;
 DELETE FROM chat_messages;                                    -- her coach conversations
