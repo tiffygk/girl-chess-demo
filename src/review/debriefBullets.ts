@@ -459,7 +459,16 @@ function buildDoneWell(
   // point (standalone lead-change or a flag on another kind) whose leader
   // is her, picking the lowest-nth event, and only when the punish branch
   // above did not already claim the slot. Placed here (right below the
-  // punish branch) so no existing game's first bullet changes.
+  // punish branch), per design: this branch preempts every branch below it,
+  // on purpose (design question 5, "only when no punish point already owns
+  // the section"). CORRECTION (fix wave, 2026-08-27, review finding
+  // MEDIUM-1): an earlier version of this comment claimed "so no existing
+  // game's first bullet changes" -- that was false. Re-derived across her
+  // whole real corpus (57 finished games, readonly): 13 games have no punish
+  // point and at least one leader === "her" point, so their "done well"
+  // bullet's TEXT changes here: 141, 146, 147, 151, 164, 171, 173, 175, 177,
+  // 181, 183, 185, 187. The behavior itself is on-spec; only the prior
+  // comment's claim about it was wrong.
   const leadPoints = turningPoints.filter((t) => t.leader === "her");
   if (leadPoints.length > 0) {
     const best = leadPoints.reduce((a, b) => ((b.leadNth ?? Infinity) < (a.leadNth ?? Infinity) ? b : a));
