@@ -64,3 +64,8 @@ tools/.highlight-lines-scratch/
 
 # local safety backup taken before the 2026-08-26 history rewrite; delete when satisfied
 backup-*.git/
+
+# push-guard patterns: read at push time, never committed. Keeping the strings
+# out of the tracked tree is the whole point; a guard that spells out what it
+# guards against reintroduces the leak in its own body (2026-08-26).
+.claude/hooks/.push-guard-patterns
