@@ -142,6 +142,18 @@ const CROSSING_GRADED_LABELS = new Set(["mistake", "inaccuracy"]);
 export { NUMBER_WORDS, numberWord } from "./numberWords";
 import { numberWord, pluralizeWord } from "./numberWords";
 
+// Wave E (2026-08-27): same margin-word bands as turningPointNote.ts's own
+// local leadMarginWord (design question 5) -- duplicated rather than
+// imported, same "copy the few lines it needs" convention this file's
+// sibling already documents for moveNumberForPly/NUMBER_WORDS (this file's
+// own header, Parallel-safety contract).
+function leadMarginWord(cp: number): string {
+  if (cp >= 2800) return "a forced mate";
+  if (cp >= 850) return "about a queen's worth";
+  if (cp >= 450) return "about a rook's worth";
+  return "about a piece's worth";
+}
+
 // san -> the piece that moved, for "the free {piece}" / "hung her {piece}"
 // phrasing. Deterministic from SAN's own first character; never a claim
 // beyond what the move notation already says.
@@ -437,6 +449,24 @@ function buildDoneWell(
     return {
       section: "done well",
       text: `you took the free ${pieceNameFromSan(best.san)} on move ${n} when she dropped it.`,
+      phase: phases.phaseAt(best.ply),
+      category: "conversion",
+      ply: best.ply,
+    };
+  }
+
+  // Wave E (2026-08-27): the lead-change done-well bullet -- gated on ANY
+  // point (standalone lead-change or a flag on another kind) whose leader
+  // is her, picking the lowest-nth event, and only when the punish branch
+  // above did not already claim the slot. Placed here (right below the
+  // punish branch) so no existing game's first bullet changes.
+  const leadPoints = turningPoints.filter((t) => t.leader === "her");
+  if (leadPoints.length > 0) {
+    const best = leadPoints.reduce((a, b) => ((b.leadNth ?? Infinity) < (a.leadNth ?? Infinity) ? b : a));
+    const n = moveNumberForPly(best.ply);
+    return {
+      section: "done well",
+      text: `the game tipped your way on move ${n}: ahead by ${leadMarginWord(best.leadMarginCp ?? 0)} from there.`,
       phase: phases.phaseAt(best.ply),
       category: "conversion",
       ply: best.ply,

@@ -235,6 +235,53 @@ describe("individual rules", () => {
     const rules = checkDebriefOutput({ bullets: [] } as any, facts).map((v) => v.rule);
     expect(rules).toContain("missed-mate-silent");
   });
+  // Wave E (2026-08-27): lead-change-silent -- following the
+  // unconverted-silent pattern but accepting EITHER surface (bullet OR
+  // note), because the card note is the guaranteed one on a real debrief
+  // (the done-well bullet slot is single, and the punish branch legitimately
+  // outranks it).
+  it("a lead-change point with no bullet and no note on its ply is a silence violation", () => {
+    const factsWithLeadPoint = {
+      ...g151Facts,
+      turningPoints: [
+        { rank: 1, ply: 8, san: "d6", label: "lead change", deltaP: 0, lowConfidence: false,
+          kind: "lead-change", leader: "her", leadMarginCp: 310, leadNth: 1 },
+      ],
+    } as any;
+    const v = checkDebriefOutput({ bullets: [], notes: [] } as any, factsWithLeadPoint);
+    expect(v.some((x) => x.rule === "lead-change-silent")).toBe(true);
+  });
+
+  it("the note surface alone satisfies lead-change-silent", () => {
+    const factsWithLeadPoint = {
+      ...g151Facts,
+      turningPoints: [
+        { rank: 1, ply: 8, san: "d6", label: "lead change", deltaP: 0, lowConfidence: false,
+          kind: "lead-change", leader: "her", leadMarginCp: 310, leadNth: 1 },
+      ],
+    } as any;
+    const v = checkDebriefOutput(
+      { bullets: [], notes: [{ ply: 8, didWell: "this is where the game tipped. your d6 on move 4 put you ahead by about a piece's worth, and the lead was still there a move later. from here, steady play is what wins." }] } as any,
+      factsWithLeadPoint
+    );
+    expect(v.some((x) => x.rule === "lead-change-silent")).toBe(false);
+  });
+
+  it("the bullet surface alone also satisfies lead-change-silent", () => {
+    const factsWithLeadPoint = {
+      ...g151Facts,
+      turningPoints: [
+        { rank: 1, ply: 8, san: "d6", label: "lead change", deltaP: 0, lowConfidence: false,
+          kind: "lead-change", leader: "her", leadMarginCp: 310, leadNth: 1 },
+      ],
+    } as any;
+    const v = checkDebriefOutput(
+      { bullets: [{ section: "done well", text: "the game tipped your way on move 4: ahead by about a piece's worth from there.", phase: "opening", category: "conversion", ply: 8 }] } as any,
+      factsWithLeadPoint
+    );
+    expect(v.some((x) => x.rule === "lead-change-silent")).toBe(false);
+  });
+
   it("unknown-square: a bare square in bullet text that appears nowhere verifiable, only when turning lines are supplied", () => {
     const squareTestSans = [{ ply: 1, san: "e4" }];
     const out = {
