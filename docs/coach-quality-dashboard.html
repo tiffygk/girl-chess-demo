@@ -142,6 +142,11 @@
     <div class="body">On hard questions it spends <b>20–50 seconds reasoning privately</b> before writing the first word. A <b>3-minute budget alone fixed the timeouts</b> — retries now rescue every stalled answer (10 of 10), proving retrying was never broken, just starved. Capping the thinking on top makes answers <b>~3× faster</b>, but costs correctness (<b>6.2% of first drafts failed fact-checks vs 0%</b>) — so the verified-facts work should ship before or alongside it. One subjective quality read stays sealed.</div>
   </div>
 
+    <div style="background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:var(--radius);padding:13px 17px;margin:0 0 22px">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--bad);text-transform:uppercase">Superseded &middot; noted 2026-08-26</div>
+      <div style="font-size:13.5px;color:var(--ink2);margin-top:6px">This page ends on an open question, and that question has since been answered. The sealed quality read closed the next day: <b style="color:var(--ink)">attempt-0 = low shipped to every intent</b>, postgame review included, with no mode gate. See the <a href="thinking-arm-dashboard.html">thinking-arm dashboard</a> for the three-repeat run that decided it. The measurements below are unaffected; only the "still sealed" framing is out of date.</div>
+    </div>
+
   <!-- KPI ROW -->
   <div class="kpis" id="kpis"></div>
 
@@ -168,10 +173,6 @@
     <button class="tbtn" onclick="tog('t2')">Show data table</button>
     <table class="dt" id="t2"></table>
     <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Give-ups roughly doubled since July — and the change is failures, not slowness.</b> The share of fast answers fell and the "gave up" slice grew from ~8% to ~18% in testing and ~23% in your real play. The answers that used to arrive slowly now arrive not at all.</p></div>
-    <div style="background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:var(--radius);padding:13px 17px;margin:0 0 22px">
-      <div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--bad);text-transform:uppercase">Superseded &middot; noted 2026-08-26</div>
-      <div style="font-size:13.5px;color:var(--ink2);margin-top:6px">This page ends on an open question, and that question has since been answered. The sealed quality read closed the next day: <b style="color:var(--ink)">attempt-0 = low shipped to every intent</b>, postgame review included, with no mode gate. See the <a href="thinking-arm-dashboard.html">thinking-arm dashboard</a> for the three-repeat run that decided it. The measurements below are unaffected; only the "still sealed" framing is out of date.</div>
-    </div>
     <div class="caveat"><b>⚠ One bar carries a caveat.</b> The pre-fix test ran on a machine that became busy partway through; only its board questions (shown here) are usable, and its give-up rate is directional, not certified. July and after-wave-1 are clean.</div>
     <div class="foot">Testing bars: 65 board questions each (July = average of 3 repeats). Your real play: 91 chat questions from the wave-1 playtest save.</div>
   </section>
