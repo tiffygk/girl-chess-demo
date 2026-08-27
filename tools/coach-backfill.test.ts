@@ -7,10 +7,11 @@ import {
   finishGame,
   insertAdviceTrace,
   insertChatMessage,
+  insertTurningPoints,
   getAdviceTraces,
   getAdviceTraceById,
 } from "../server/store/db";
-import { findFailedTraces, backfillTrace, type FailedTrace } from "./coach-backfill";
+import { findFailedTraces, backfillTrace, rebuildChatFacts, type FailedTrace } from "./coach-backfill";
 import type { CoachBackend } from "../server/coach/backends/types";
 import type { CoachFactList } from "../server/coach/index";
 
@@ -404,5 +405,140 @@ describe("coach-backfill: backfillTrace", () => {
 
     const outcome = await backfillTrace(row, fakeBackend("anything"));
     expect(outcome).toBe("skipped");
+  });
+});
+
+describe("coach-backfill: rebuildChatFacts (F1 -- review finding HIGH-1)", () => {
+  // Falsification: revert rebuildChatFacts to deciding `finished` from
+  // `game.result != null` alone (today's state) and this goes red exactly
+  // as it did against the real code -- a mid-game question gets told the
+  // game is over, with a fabricated outcome and turning points from plies
+  // she had not yet reached. Mirrors her real trace 269 (game 188, asked at
+  // ply 20 while the game ran on to ply 47): here scaled down to a 6-ply
+  // fixture, chat row at ply 3.
+  it("describes the game AS OF row.ply, not today's finished state -- a mid-game question must never be told the game is over", () => {
+    const dbHandle = openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+
+    // Plies 1-3 must be real, chess.js-legal SAN: rebuildChatFacts replays
+    // the TRUNCATED list (<= row.ply) through assembleChatFactList. Plies
+    // 4-6 are never replayed by this path (only read as raw rows for the
+    // "is the game over yet" / turning-point bookkeeping this test is
+    // falsifying), so their SAN strings don't need to be legal.
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "f1", timeSpentMs: 1000 });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "f2", timeSpentMs: 1000 });
+    recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "f3", timeSpentMs: 1000 });
+
+    // The chat question fails HERE, mid-game -- ply 3, game not yet over.
+    const rowId = insertAdviceTrace({
+      gameId: g,
+      ply: 3,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "[backend error] Claude Code returned an error result: Failed",
+      source: "template",
+      backend: "agent-sdk",
+      validated: false,
+      regenCount: 0,
+      latencyMs: 10,
+    });
+
+    // Three more plies get played after the failed question, then the game
+    // ends -- a turning point lands at ply 5, strictly after row.ply.
+    recordMove({ gameId: g, ply: 4, san: "Nc6", uci: "b8c6", fenAfter: "f4", timeSpentMs: 1000 });
+    recordMove({ gameId: g, ply: 5, san: "Bb5", uci: "f1b5", fenAfter: "f5", timeSpentMs: 1000 });
+    recordMove({ gameId: g, ply: 6, san: "Qxd8#", uci: "d1d8", fenAfter: "f6", timeSpentMs: 1000 });
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 5, san: "Bb5", label: "opponent blunder", deltaP: 0.5, lowConfidence: false, kind: "swing" }],
+      8
+    );
+    finishGame(g, "1-0");
+
+    // Pin the timestamps directly (both columns default to second-
+    // resolution `datetime('now')`, which a fast test run could otherwise
+    // collapse into the same second): the question failed well before the
+    // game's own ended_at, exactly the real-data shape (trace 269 at
+    // 20:12:04, game 188 ended_at 20:24:19).
+    dbHandle.prepare("UPDATE advice_traces SET created_at = ? WHERE id = ?").run("2026-08-24 20:12:04", rowId);
+    dbHandle.prepare("UPDATE games SET ended_at = ? WHERE id = ?").run("2026-08-24 20:24:19", g);
+
+    const row: FailedTrace = {
+      id: rowId,
+      gameId: g,
+      ply: 3,
+      kind: "chat",
+      factsJson: "{}",
+      output: "[backend error] Claude Code returned an error result: Failed",
+      source: "template",
+      backend: "agent-sdk",
+      cause: null,
+      createdAt: getAdviceTraceById(rowId).created_at,
+    };
+
+    const facts = rebuildChatFacts(row);
+    expect(facts).toBeDefined();
+    expect(facts!.status).toBe("in-progress");
+    expect(facts!.outcome).toBeUndefined();
+    expect(facts!.turningPoints).toBeUndefined();
+    expect(facts!.gameSans).toEqual(["e4", "e5", "Nf3"]); // truncated to row.ply, never the whole game
+  });
+
+  // Companion case (not itself a defect, recorded so the fix isn't
+  // over-corrected into "chat facts are never finished"): a question asked
+  // genuinely AFTER the game ended (review mode) must still get the real
+  // outcome and the full turning-point set -- exactly what manager.ts's
+  // chat() assembles live for a review-mode call.
+  it("still reports finished + outcome + turning points for a question asked after the game actually ended", () => {
+    const dbHandle = openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "f1", timeSpentMs: 1000 });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "f2", timeSpentMs: 1000 });
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 2, san: "e5", label: "opponent blunder", deltaP: 0.5, lowConfidence: false, kind: "swing" }],
+      8
+    );
+    finishGame(g, "1-0");
+
+    const rowId = insertAdviceTrace({
+      gameId: g,
+      ply: 2,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "[backend error] Claude Code returned an error result: Failed",
+      source: "template",
+      backend: "agent-sdk",
+      validated: false,
+      regenCount: 0,
+      latencyMs: 10,
+    });
+    // Asked well AFTER the game's own ended_at -- a genuine review-mode question.
+    dbHandle.prepare("UPDATE games SET ended_at = ? WHERE id = ?").run("2026-08-24 20:12:00", g);
+    dbHandle.prepare("UPDATE advice_traces SET created_at = ? WHERE id = ?").run("2026-08-24 20:30:00", rowId);
+
+    const row: FailedTrace = {
+      id: rowId,
+      gameId: g,
+      ply: 2,
+      kind: "chat",
+      factsJson: "{}",
+      output: "[backend error] Claude Code returned an error result: Failed",
+      source: "template",
+      backend: "agent-sdk",
+      cause: null,
+      createdAt: getAdviceTraceById(rowId).created_at,
+    };
+
+    const facts = rebuildChatFacts(row);
+    expect(facts).toBeDefined();
+    expect(facts!.status).toBe("finished");
+    expect(facts!.outcome).toBeDefined();
+    expect(facts!.outcome!.winner).toBe("you");
+    expect(facts!.turningPoints).toEqual([{ ply: 2, san: "e5", label: "opponent blunder", punishSan: undefined }]);
   });
 });
