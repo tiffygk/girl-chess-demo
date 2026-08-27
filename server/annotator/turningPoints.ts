@@ -227,6 +227,13 @@ export interface DeltaPoint {
   deltaP: number; // signed, white perspective, vs previous non-null point
   lowConfidence: boolean;
   moverIsWhite: boolean;
+  // Wave E, Task E1: the already-computed normalized white-perspective cp
+  // (mate-capped via mateToRawSigned, same value `p` was derived from a few
+  // lines below) -- encoded in data so the lead-change detector (E2) keys
+  // on eval LEVEL without ever re-deriving the odd/even parity sign itself
+  // (the ply-parity lesson: encode the convention in data, not in a helper
+  // every caller has to remember to call correctly).
+  whiteCp: number;
 }
 
 /**
@@ -297,6 +304,7 @@ export function buildDeltaSeries(moves: MoveEval[]): (DeltaPoint | null)[] {
       deltaP: p[i]! - prevP,
       lowConfidence: gap > TP_DEDUP_PLIES,
       moverIsWhite: moves[i].ply % 2 === 1,
+      whiteCp: whiteCp[i]!,
     };
     prevP = p[i]!;
     prevPly = moves[i].ply;

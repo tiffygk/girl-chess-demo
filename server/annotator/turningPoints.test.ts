@@ -5,6 +5,7 @@ import { Chess } from "chess.js";
 import {
   computeTurningPoints,
   detectKingPressureEpisode,
+  buildDeltaSeries,
   EP_MIN_PLIES,
   EP_QUEEN_DIST,
   EP_PIECE_DIST,
@@ -84,6 +85,22 @@ const GAME_86 = parseFixture(
     "61. Rb5+ -> M-3 | 62. Kxc3 -> M2 | 63. Rab1 -> M-4 | 64. Rxa2 -> M2 | 65. Qxa2 -> M-2 | 66. f4 -> M2 | " +
     "67. Qd2+ -> M-8 | 68. Kxd2 -> M8 | 69. R5b2+ -> M-8 | 70. Kd3 -> M8 | 71. Rd1+ -> M-8 | 72. Kc3 -> M8"
 );
+
+// Wave E, Task E1: DeltaPoint carries the already-computed normalized
+// white-perspective cp (mate-capped) so the lead-change detector (E2) never
+// re-derives the odd/even parity sign itself -- ply-parity lesson, encode
+// the convention in data.
+it("delta series carries normalized white-perspective cp", () => {
+  const moves: MoveEval[] = [
+    { ply: 1, san: "d4", evalCp: -60, evalMate: null }, // stored side-to-move -> white +60
+    { ply: 2, san: "d5", evalCp: 61, evalMate: null }, // white +61
+    { ply: 3, san: "Qh5", evalCp: null, evalMate: -2 }, // mate for side-to-move's opponent -> white +2980
+  ];
+  const s = buildDeltaSeries(moves);
+  expect(s[0]!.whiteCp).toBe(60);
+  expect(s[1]!.whiteCp).toBe(61);
+  expect(s[2]!.whiteCp).toBe(2980);
+});
 
 describe("computeTurningPoints — acceptance fixtures", () => {
   // NOTE on labels (see turningPoints.ts's header comment for the full
