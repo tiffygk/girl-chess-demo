@@ -60,6 +60,7 @@ import {
   getGame,
   getGameMoves,
   getTurningPoints,
+  insertTurningPoints,
   getAllChatMessages,
   getAllAdviceTraces,
   getAdviceTraceById,
@@ -69,6 +70,7 @@ import {
 import { narrate, type CoachFactList } from "../server/coach/index";
 import { chat, assembleChatFactList, type ChatContext, type ChatFactList, type ChatPerPlyInput } from "../server/coach/chat";
 import { deriveChatOutcome } from "../server/game/manager";
+import { computeTurningPoints, TP_ALGO_VERSION, type MoveEval } from "../server/annotator/turningPoints";
 import type { CoachBackend } from "../server/coach/backends/types";
 import { agentSdkBackend } from "../server/coach/backends/agent-sdk";
 import { resolveRealDbPath, copyScratchDb } from "./truth-check";
@@ -257,6 +259,51 @@ function buildPerPlyAnalysis(rows: MoveRow[], ply: number): ChatPerPlyInput[] {
   });
 }
 
+// F5 fix (fix wave, 2026-08-27, review finding LOW-2): mirrors
+// GameManager.getSummary's own self-heal (manager.ts:498-546) WITHOUT
+// constructing a GameManager -- that class's `evaluator = new
+// StockfishEvaluator()` field initializer spawns a real stockfish child
+// process the instant it is instantiated, before init() is ever called and
+// with no way to opt out (see tools/rca-eval/suites/fm.ts's own comment for
+// the same discovery, made the hard way). getTurningPoints already returns
+// only the highest-version row set stored for a game; the v8 (lead-change)
+// heal only ever ran from getSummary's own call path, so a game not opened
+// in the app since the bump would otherwise ground a backfilled answer on
+// stale (pre-v8) points her own debrief no longer shows. Reproduces just
+// the heal-check slice -- read, compare version, recompute + persist +
+// re-read if behind -- with no engine call anywhere.
+function healedTurningPoints(gameId: number): any[] {
+  let persisted = getTurningPoints(gameId) as any[];
+  const persistedVersion = persisted.length > 0 ? (persisted[0].algo_version ?? 1) : TP_ALGO_VERSION;
+  if (persisted.length > 0 && persistedVersion < TP_ALGO_VERSION) {
+    const rows = getGameMoves(gameId) as MoveRow[];
+    const evalMoves: MoveEval[] = rows.map((r) => ({
+      ply: r.ply,
+      san: r.san,
+      evalCp: r.eval_cp,
+      evalMate: r.eval_mate,
+      bestMove: r.best_move ?? null,
+    }));
+    const game = getGame(gameId) as { result: string | null } | undefined;
+    const healed = computeTurningPoints(evalMoves, game?.result ?? "");
+    insertTurningPoints(
+      gameId,
+      healed.map((t) => ({
+        rank: t.rank, ply: t.ply, san: t.san, label: t.label,
+        punishSan: t.punishSan ?? null, deltaP: t.deltaP, lowConfidence: t.lowConfidence, kind: t.kind,
+        plyEnd: t.plyEnd ?? null, missedPunish: t.missedPunish ?? false,
+        crossedAdvantage: t.crossedAdvantage ?? false,
+        mateIn: t.mateIn ?? null, missedCount: t.missedCount ?? null,
+        endKind: t.endKind ?? null, anchorKind: t.anchorKind ?? null,
+        leader: t.leader ?? null, leadMarginCp: t.leadMarginCp ?? null, leadNth: t.leadNth ?? null,
+      })),
+      TP_ALGO_VERSION
+    );
+    persisted = getTurningPoints(gameId);
+  }
+  return persisted;
+}
+
 // Rebuilds a ChatFactList fresh from current db state (getGameMoves ->
 // truncate to the row's ply -> buildPerPlyAnalysis -> getTurningPoints ->
 // assembleChatFactList) rather than trusting the row's OWN facts_json, the
@@ -293,7 +340,7 @@ export function rebuildChatFacts(row: FailedTrace): ChatFactList | undefined {
   const perPly = buildPerPlyAnalysis(moveRows, row.ply);
   const finishedAtAsk = game.result != null && game.ended_at != null && row.createdAt >= game.ended_at;
   const turningPoints = finishedAtAsk
-    ? (getTurningPoints(row.gameId) as any[]).map((r) => ({
+    ? healedTurningPoints(row.gameId).map((r) => ({
         ply: r.ply,
         san: r.san,
         label: r.label,
