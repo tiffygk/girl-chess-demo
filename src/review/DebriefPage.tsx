@@ -239,7 +239,11 @@ function TurningPointCard({
     !!mateOutcomeForCard &&
     (mateOutcomeForCard.outcome === "faster" || mateOutcomeForCard.outcome === "matched") &&
     !mateOutcomeHasUnmeasuredRepeat;
-  const negative = (NEGATIVE_CARD_LABELS.has(point.label) && !mateOutcomeIsHonestlyPositive) || isEpisode;
+  // Wave E (2026-08-27): a lead-change card whose leader is mallow is a
+  // warning-class fact by construction (the lead tipped away from her) --
+  // same flat-tint family as an episode card, just a different reason.
+  const isMallowLead = point.kind === "lead-change" && point.leader === "mallow";
+  const negative = (NEGATIVE_CARD_LABELS.has(point.label) && !mateOutcomeIsHonestlyPositive) || isEpisode || isMallowLead;
   const startMove = moveNumberForPly(point.ply);
   const endMove = point.plyEnd != null ? moveNumberForPly(point.plyEnd) : startMove;
   const note = active ? buildTurningPointNote(point, classification, line, gameSans) : null;

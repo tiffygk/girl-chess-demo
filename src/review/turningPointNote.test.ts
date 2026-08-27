@@ -80,7 +80,10 @@ describe("NEXT_TIME_TIPS motif bank", () => {
   it("has a distinct tip for every declared motif", () => {
     const motifs = Object.keys(NEXT_TIME_TIPS);
     expect(motifs.sort()).toEqual(
-      ["eval-drop", "good-moment", "king-safety", "missed-punish", "missed-mate", "unconverted"].sort()
+      // Wave E (2026-08-27): "lead-change" joins the bank -- see
+      // nextTimeTipFor's own leader-mallow branch below for the second,
+      // non-bank tip this motif also resolves to.
+      ["eval-drop", "good-moment", "king-safety", "missed-punish", "missed-mate", "unconverted", "lead-change"].sort()
     );
     const tips = Object.values(NEXT_TIME_TIPS);
     expect(new Set(tips).size).toBe(tips.length);
@@ -724,5 +727,165 @@ describe("unconverted note (game-151 owner ruling, feedback-unconverted-copy.md)
     const repetitionNote = buildTurningPointNote(unconvertedTp, undefined, undefined);
     expect(repetitionNote.nextTime).toBe(NEXT_TIME_TIPS["unconverted"]);
     expect(repetitionNote.nextTime).toContain("repeated position");
+  });
+});
+
+// Wave E (2026-08-27): the "decision checkpoint" card copy -- the lead
+// changed hands, either standalone (kind "lead-change") or as a flag clause
+// on a colliding card of another kind. No gameSans passed below (the
+// documented no-gameSans raw-SAN fallback, same as every other describedOrRaw
+// call site in this file); with gameSans, played moves render through
+// describedOrRaw exactly as every other branch does.
+describe("lead-change card copy (Wave E)", () => {
+  it("lead-change card, leader her, on mallow's ply", () => {
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 22, san: "Bb4", label: "lead change", deltaP: 0,
+        lowConfidence: false, kind: "lead-change", leader: "her",
+        leadMarginCp: 307, leadNth: 1 } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.didWell).toBe(
+      "this is where the game tipped. after her Bb4 on move 11 you were ahead by about a piece's worth, and the lead was still there a move later. from here, steady play is what wins."
+    );
+    expect(note.nextTime).toBe(
+      "learn to feel this moment as you play: when you are up about a piece and nothing hangs, the job changes. trade pieces, keep your king safe, and let the lead win the game."
+    );
+    expect(note.couldImprove).toBeUndefined();
+  });
+
+  it("lead-change card, leader her, on her OWN ply (mover parity: 'your X put you ahead')", () => {
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 21, san: "bxc4", label: "lead change", deltaP: 0,
+        lowConfidence: false, kind: "lead-change", leader: "her",
+        leadMarginCp: 301, leadNth: 1 } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.didWell).toBe(
+      "this is where the game tipped. your bxc4 on move 11 put you ahead by about a piece's worth, and the lead was still there a move later. from here, steady play is what wins."
+    );
+  });
+
+  it("lead-change card, leader mallow, on her ply", () => {
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 15, san: "Be2", label: "lead change", deltaP: 0,
+        lowConfidence: false, kind: "lead-change", leader: "mallow",
+        leadMarginCp: 388, leadNth: 1 } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.couldImprove).toBe(
+      "this is where the game tipped away. your Be2 on move 8 left mallow ahead by about a piece's worth, and it held into the next move. the time for careful defence started here."
+    );
+    expect(note.nextTime).toBe(
+      "when the lead tips against you, the job changes too: keep pieces on, make her prove it, and look for chances to complicate."
+    );
+    expect(note.didWell).toBeUndefined();
+  });
+
+  it("lead-change card, leader mallow, on mallow's own ply (mover parity: 'after her X mallow was ahead')", () => {
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 20, san: "Rd8", label: "lead change", deltaP: 0,
+        lowConfidence: false, kind: "lead-change", leader: "mallow",
+        leadMarginCp: 623, leadNth: 1 } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.couldImprove).toBe(
+      "this is where the game tipped away. after her Rd8 on move 10 mallow was ahead by about a rook's worth, and it held into the next move. the time for careful defence started here."
+    );
+  });
+
+  it("a flagged swing card gains the lead clause without losing its own story", () => {
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 4, san: "Qh4", label: "opponent blunder", punishSan: "Nxh4",
+        deltaP: 0.34, lowConfidence: false, kind: "swing", leader: "her",
+        leadMarginCp: 500, leadNth: 1 } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.didWell).toContain("you punished her slip on move 2");
+    expect(note.didWell).toContain(
+      "this was also the moment the game tipped: from here you were ahead by about a rook's worth."
+    );
+  });
+
+  it("a flagged swing card, leader mallow, gets the mallow-side flag clause", () => {
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 17, san: "Nh3", label: "blunder",
+        deltaP: -0.3, lowConfidence: false, kind: "swing", leader: "mallow",
+        leadMarginCp: 329, leadNth: 1 } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.couldImprove).toContain(
+      "this was also the moment the game tipped her way: from here mallow was ahead by about a piece's worth."
+    );
+  });
+
+  it("a flag with no pre-existing didWell/couldImprove creates one rather than staying silent", () => {
+    // A neutral kind carrying no motif of its own (label unrecognized by
+    // buildDidWell/buildCouldImprove) but flagged with a leader -- must not
+    // go completely silent (the invariant this whole flag mechanism exists
+    // to satisfy).
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 6, san: "d6", label: "the clincher", deltaP: 0,
+        lowConfidence: false, kind: "backfill", leader: "her",
+        leadMarginCp: 310, leadNth: 1 } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.didWell).toBe("this was also the moment the game tipped: from here you were ahead by about a piece's worth.");
+  });
+
+  // Retake: nth > 1 gets its own, shorter wording (design question 5's
+  // "the lead changed hands again" template) rather than repeating the
+  // first-establishment sentence, which would falsely claim this is the
+  // first time she ever led.
+  it("retake (nth > 1, leader her) gets the 'changed hands again' wording, not the first-time sentence", () => {
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 42, san: "bxc4", label: "lead change", deltaP: 0,
+        lowConfidence: false, kind: "lead-change", leader: "her",
+        leadMarginCp: 301, leadNth: 2 } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.didWell).toBe("the lead changed hands again. after bxc4 on move 21 you were back on top by about a piece's worth.");
+    expect(note.didWell).not.toContain("this is where the game tipped");
+  });
+
+  it("retake (nth > 1, leader mallow) gets the symmetric 'changed hands again' wording", () => {
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 27, san: "Nxc6", label: "lead change", deltaP: 0,
+        lowConfidence: false, kind: "lead-change", leader: "mallow",
+        leadMarginCp: 633, leadNth: 2 } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.couldImprove).toBe("the lead changed hands again. after Nxc6 on move 14 mallow took back the lead by about a rook's worth.");
+  });
+
+  // Margin words: >= 2800 "a forced mate", >= 850 "about a queen's worth",
+  // >= 450 "about a rook's worth", else "about a piece's worth".
+  it("a leadMarginCp of 2990 pins the forced-mate margin word", () => {
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 8, san: "Qxg7#", label: "lead change", deltaP: 0,
+        lowConfidence: false, kind: "lead-change", leader: "her",
+        leadMarginCp: 2990, leadNth: 1 } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.didWell).toContain("a forced mate");
+  });
+
+  it("a leadMarginCp of 900 pins the queen's-worth margin word", () => {
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 8, san: "Qxg7", label: "lead change", deltaP: 0,
+        lowConfidence: false, kind: "lead-change", leader: "her",
+        leadMarginCp: 900, leadNth: 1 } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.didWell).toContain("about a queen's worth");
+  });
+
+  it("feature-removal: a lead-change point with no leader produces neither didWell nor couldImprove from the lead-change branch", () => {
+    const note = buildTurningPointNote(
+      { rank: 1, ply: 8, san: "d6", label: "lead change", deltaP: 0,
+        lowConfidence: false, kind: "lead-change" } as TurningPoint,
+      undefined, undefined, undefined
+    );
+    expect(note.didWell).toBeUndefined();
+    expect(note.couldImprove).toBeUndefined();
   });
 });
