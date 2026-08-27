@@ -6,6 +6,8 @@ import {
   computeTurningPoints,
   detectKingPressureEpisode,
   buildDeltaSeries,
+  detectLeadChanges,
+  LEAD_CP,
   EP_MIN_PLIES,
   EP_QUEEN_DIST,
   EP_PIECE_DIST,
@@ -100,6 +102,88 @@ it("delta series carries normalized white-perspective cp", () => {
   expect(s[0]!.whiteCp).toBe(60);
   expect(s[1]!.whiteCp).toBe(61);
   expect(s[2]!.whiteCp).toBe(2980);
+});
+
+// Wave E, Task E2: the lead-change detector. Keys on eval LEVEL (whiteCp),
+// never winprob delta -- the swing detector is structurally blind to the
+// move that actually establishes a lead (game 189's real Bb4: deltaP 0.062,
+// below TP_FLOOR). Real data straight from data/girlchess.db, side-to-move
+// signed, per the brief.
+describe("detectLeadChanges (Wave E)", () => {
+  // game 189, plies 15-27
+  const G189_TAIL: MoveEval[] = [
+    { ply: 15, san: "Nf3", evalCp: -195, evalMate: null },
+    { ply: 16, san: "h6", evalCp: 242, evalMate: null },
+    { ply: 17, san: "Nc3", evalCp: -258, evalMate: null },
+    { ply: 18, san: "Bg4", evalCp: 253, evalMate: null },
+    { ply: 19, san: "O-O", evalCp: -242, evalMate: null },
+    { ply: 20, san: "Bxf3", evalCp: 228, evalMate: null },
+    { ply: 21, san: "Rxf3", evalCp: -222, evalMate: null },
+    { ply: 22, san: "Bb4", evalCp: 307, evalMate: null },
+    { ply: 23, san: "Nd5", evalCp: -319, evalMate: null },
+    { ply: 24, san: "O-O-O", evalCp: 385, evalMate: null },
+    { ply: 25, san: "Nxb4", evalCp: -396, evalMate: null },
+    { ply: 26, san: "f5", evalCp: 618, evalMate: null },
+    { ply: 27, san: "Nxc6", evalCp: -633, evalMate: null },
+  ];
+
+  it("game 189: one lead change, at Bb4, not at the sub-threshold Nc3 poke", () => {
+    const ev = detectLeadChanges(buildDeltaSeries(G189_TAIL));
+    expect(ev).toEqual([
+      { ply: 22, san: "Bb4", leader: "her", marginCp: 307, nth: 1, lowConfidence: false },
+    ]);
+  });
+
+  // game 131, plies 13-17 and 40-44 (the corpus's one comeback win)
+  const G131_SPLICE: MoveEval[] = [
+    { ply: 13, san: "e5", evalCp: -75, evalMate: null },
+    { ply: 14, san: "Ng4", evalCp: 402, evalMate: null }, // +402 one-ply spike...
+    { ply: 15, san: "Be2", evalCp: 388, evalMate: null }, // ...flips to white -388
+    { ply: 16, san: "Nxf2", evalCp: -392, evalMate: null },
+    { ply: 17, san: "Qd2", evalCp: 406, evalMate: null },
+    { ply: 40, san: "b5", evalCp: 12, evalMate: null },
+    { ply: 41, san: "Nxb7", evalCp: -9, evalMate: null },
+    { ply: 42, san: "bxc4", evalCp: 301, evalMate: null },
+    { ply: 43, san: "Nxc5", evalCp: -315, evalMate: null },
+    { ply: 44, san: "Qxc5", evalCp: 310, evalMate: null },
+  ];
+
+  it("game 131: the unconfirmed +402 spike never fires; mallow leads, then she retakes", () => {
+    const ev = detectLeadChanges(buildDeltaSeries(G131_SPLICE));
+    expect(ev.map((e) => [e.ply, e.leader, e.nth])).toEqual([
+      [15, "mallow", 1],
+      [42, "her", 2],
+    ]);
+  });
+
+  it("schmitt: wobble around the band after a confirmed lead re-fires nothing", () => {
+    const moves: MoveEval[] = [
+      { ply: 1, san: "a3", evalCp: -LEAD_CP - 10, evalMate: null }, // white +310
+      { ply: 2, san: "a6", evalCp: 320, evalMate: null }, // +320 confirms
+      { ply: 3, san: "b3", evalCp: -280, evalMate: null }, // dips under
+      { ply: 4, san: "b6", evalCp: 305, evalMate: null }, // back over
+      { ply: 5, san: "c3", evalCp: -315, evalMate: null },
+    ];
+    expect(detectLeadChanges(buildDeltaSeries(moves))).toHaveLength(1);
+  });
+
+  it("a null eval on the next ply leaves a crossing unconfirmed", () => {
+    const moves: MoveEval[] = [
+      { ply: 1, san: "a3", evalCp: -310, evalMate: null },
+      { ply: 2, san: "a6", evalCp: null, evalMate: null }, // no reading: cannot confirm
+      { ply: 3, san: "b3", evalCp: -200, evalMate: null },
+    ];
+    expect(detectLeadChanges(buildDeltaSeries(moves))).toHaveLength(0);
+  });
+
+  it("a terminal-ply crossing never fires (the mate is backfill's job)", () => {
+    const moves: MoveEval[] = [
+      { ply: 1, san: "e4", evalCp: -40, evalMate: null },
+      { ply: 2, san: "f6", evalCp: 120, evalMate: null },
+      { ply: 3, san: "Qh5#", evalCp: null, evalMate: null }, // forced +3000 by parity
+    ];
+    expect(detectLeadChanges(buildDeltaSeries(moves))).toHaveLength(0);
+  });
 });
 
 describe("computeTurningPoints — acceptance fixtures", () => {

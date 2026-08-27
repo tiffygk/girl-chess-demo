@@ -526,6 +526,58 @@ export function detectKingPressureEpisode(
   };
 }
 
+// Wave E: the "decision checkpoint" the swing detector can never produce
+// (owner ask, game 189 chat, 2026-08) -- the move that establishes a lead
+// usually arrives in sub-TP_FLOOR steps (game 189's Bb4: deltaP 0.062), so
+// this keys on eval LEVEL (a centipawn band), never on winprob delta.
+// TP_FLOOR stays untouched -- the two detectors answer different questions.
+// Owner-calibratable: about a minor piece's worth; winProb(300) = 0.751.
+export const LEAD_CP = 300;
+
+export interface LeadChange {
+  ply: number; // confirmed crossing ply (either side's move)
+  san: string;
+  leader: "her" | "mallow";
+  marginCp: number; // |white cp| at the crossing, >= LEAD_CP
+  nth: number; // 1-based ordinal of this leader change
+  lowConfidence: boolean; // the crossing point's own null-gap flag
+}
+
+// Two mechanisms, both required (design questions 2/3,
+// .superpowers/sdd/rounds/2026-08-27-coach-truth-continuation/... Wave E):
+// (1) confirmation (anti-spike) -- a crossing only counts if the
+// IMMEDIATELY FOLLOWING ply carries a reading still past the same band. A
+// null-eval ply in between, or the game ending here, leaves it unconfirmed
+// (never claim it held without a reading to prove it -- TP_HOLD_PLIES's own
+// philosophy). Side effect: a terminal-ply crossing never fires, so the
+// delivered mate stays backfill's job. (2) a Schmitt trigger (anti-chatter)
+// -- leader state is none|her|mallow, moves to "her" only on a confirmed
+// crossing of +LEAD_CP, to "mallow" only on a confirmed crossing of
+// -LEAD_CP, and returning to the neutral zone does NOT clear it. A new card
+// requires the OTHER side to reach a full confirmed lead -- the give-back
+// itself is already a swing card, and pure Schmitt is her own words ("becomes
+// the NEW leader") as code.
+export function detectLeadChanges(series: (DeltaPoint | null)[]): LeadChange[] {
+  const readings = series.filter((d): d is DeltaPoint & { whiteCp: number } => d != null);
+  const out: LeadChange[] = [];
+  let state: "none" | "her" | "mallow" = "none";
+  for (let i = 0; i < readings.length; i++) {
+    const d = readings[i];
+    const next = i + 1 < readings.length ? readings[i + 1] : null;
+    const adjacent = next != null && next.ply === d.ply + 1;
+    if (state !== "her" && d.whiteCp >= LEAD_CP && adjacent && next.whiteCp >= LEAD_CP) {
+      out.push({ ply: d.ply, san: d.san, leader: "her", marginCp: d.whiteCp,
+                 nth: out.length + 1, lowConfidence: d.lowConfidence });
+      state = "her";
+    } else if (state !== "mallow" && d.whiteCp <= -LEAD_CP && adjacent && next.whiteCp <= -LEAD_CP) {
+      out.push({ ply: d.ply, san: d.san, leader: "mallow", marginCp: -d.whiteCp,
+                 nth: out.length + 1, lowConfidence: d.lowConfidence });
+      state = "mallow";
+    }
+  }
+  return out;
+}
+
 export function computeTurningPoints(moves: MoveEval[], finalResult: string): TurningPoint[] {
   if (moves.length <= 1) return [];
 
