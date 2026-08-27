@@ -401,6 +401,65 @@ describe("done well: fallback chain", () => {
   });
 });
 
+// Wave E (2026-08-27): the lead-change done-well bullet -- gated on
+// turningPoints.some((t) => t.leader === "her"), picking the lowest-nth her
+// event whether standalone or flag, and only when the punish branch above
+// did not already claim the slot (placed right below it in buildDoneWell so
+// no existing game's first bullet changes).
+describe("done well: lead-change (Wave E)", () => {
+  const leadTp: TurningPoint = tp({
+    rank: 1, ply: 8, san: "d6", label: "lead change", deltaP: 0, kind: "lead-change",
+    leader: "her", leadMarginCp: 310, leadNth: 1,
+  });
+
+  it("her lead-change point earns the done-well bullet when no punish claims it", () => {
+    const bullets = debriefBullets({
+      turningPoints: [leadTp], classifications: [], result: "1-0", totalPlies: 40,
+    });
+    expect(bullets.find((b) => b.ply === 8)?.text).toBe(
+      "the game tipped your way on move 4: ahead by about a piece's worth from there."
+    );
+    expect(bullets.find((b) => b.ply === 8)?.category).toBe("conversion");
+  });
+
+  it("a punish story still wins the slot over a lead-change point in the same game", () => {
+    const bullets = debriefBullets({
+      turningPoints: [
+        leadTp,
+        tp({ ply: 20, san: "Qh5", label: "opponent blunder", deltaP: 0.3, punishSan: "Nxh5" }),
+      ],
+      classifications: [],
+      result: "1-0",
+      totalPlies: 40,
+    });
+    expect(bullets[0].text).toBe("you took the free queen on move 10 when she dropped it.");
+    expect(bullets.some((b) => b.text.includes("the game tipped your way"))).toBe(false);
+  });
+
+  it("a mallow-led (flag or standalone) point never earns this bullet -- her-leader only", () => {
+    const mallowLeadTp: TurningPoint = tp({
+      rank: 1, ply: 8, san: "d6", label: "lead change", deltaP: 0, kind: "lead-change",
+      leader: "mallow", leadMarginCp: 310, leadNth: 1,
+    });
+    const bullets = debriefBullets({
+      turningPoints: [mallowLeadTp], classifications: [], result: "0-1", totalPlies: 40,
+    });
+    expect(bullets.some((b) => b.text.includes("the game tipped your way"))).toBe(false);
+  });
+
+  it("picks the lowest-nth her lead event when more than one exists", () => {
+    const secondLeadTp: TurningPoint = tp({
+      rank: 2, ply: 42, san: "bxc4", label: "lead change", deltaP: 0, kind: "lead-change",
+      leader: "her", leadMarginCp: 301, leadNth: 2,
+    });
+    const bullets = debriefBullets({
+      turningPoints: [secondLeadTp, leadTp], classifications: [], result: "1-0", totalPlies: 44,
+    });
+    expect(bullets.find((b) => b.ply === 8)).toBeDefined();
+    expect(bullets.some((b) => b.ply === 42)).toBe(false);
+  });
+});
+
 // Truth round (2026-07-29), Task 3: owner ruling, feedback-unconverted-copy.md
 // REVISED COPY SPEC. Supersedes plan Task 3's original strings entirely --
 // "you outplayed her" is false (she didn't win), "that part is real" is a

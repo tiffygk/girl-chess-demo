@@ -717,6 +717,26 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
     }
   }
 
+  // Wave E (2026-08-27): lead-change-silent -- follows the unconverted-
+  // silent pattern above but accepts EITHER surface (bullet OR note),
+  // because the card note is the guaranteed one (the done-well bullet slot
+  // is single, and the punish branch legitimately outranks this bullet).
+  for (const tp of facts.turningPoints) {
+    if (kindOf(tp) !== "lead-change") continue;
+    const hasBullet = bullets.some((b) => b.ply === tp.ply);
+    const hasNote = (output.notes ?? []).some(
+      (n) => n.ply === tp.ply && (n.didWell || n.couldImprove)
+    );
+    if (!hasBullet && !hasNote) {
+      violations.push({
+        kind: "silence",
+        rule: "lead-change-silent",
+        where: "debrief",
+        message: `lead-change point at ply ${tp.ply} has no bullet and no note on its ply`,
+      });
+    }
+  }
+
   const tacticPoints = facts.turningPoints.filter((tp) => TACTIC_KINDS.includes(kindOf(tp)));
   if (tacticPoints.length > 0 && !bullets.some((b) => tacticPoints.some((tp) => tp.ply === b.ply))) {
     violations.push({
