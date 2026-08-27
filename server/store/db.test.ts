@@ -24,6 +24,7 @@ import {
   getGame,
   finishGame,
   insertTurningPoints,
+  getTurningPoints,
   getTurningPointsAllVersions,
   insertChatMessage,
   getAllChatMessages,
@@ -746,6 +747,70 @@ describe("deleteGameRows (Wave 3.5 item 2 -- real per-game deletion)", () => {
     // Game 2's rows, in every one of the same tables, are untouched.
     expect(countsFor(g2)).toEqual(before2);
     expect(getGame(g2)).toBeTruthy();
+  });
+});
+
+// Wave E (2026-08-27): the lead field round trip -- mirrors
+// TurningPoint.leader/leadMarginCp/leadNth, set on kind='lead-change' rows
+// AND on flagged rows of other kinds. Additive/nullable, same convention as
+// every other column above (crossed_advantage, mate_in/missed_count,
+// end_kind/anchor_kind) -- proven the same way missedCount's own round-trip
+// test proves itself: without this, the insert/read plumbing for the three
+// new columns would be dead code nobody ever exercises past a unit test on
+// the pure compute function.
+describe("lead-change fields (Wave E)", () => {
+  it("lead fields round-trip through insert and highest-version read", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    recordMove({ gameId: g, ply: 8, san: "d6", uci: "d7d6", fenAfter: "fen8", timeSpentMs: 0 });
+    insertTurningPoints(
+      g,
+      [{
+        rank: 1, ply: 8, san: "d6", label: "lead change", deltaP: 0, lowConfidence: false,
+        kind: "lead-change", leader: "her", leadMarginCp: 310, leadNth: 1,
+      }],
+      8
+    );
+    const rows = getTurningPoints(g) as any[];
+    expect(rows[0]).toMatchObject({
+      kind: "lead-change", leader: "her", lead_margin_cp: 310, lead_nth: 1,
+    });
+  });
+
+  it("a flagged (non-lead-change) row also carries the leader fields", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    recordMove({ gameId: g, ply: 4, san: "Qh4", uci: "d8h4", fenAfter: "fen4", timeSpentMs: 0 });
+    insertTurningPoints(
+      g,
+      [{
+        rank: 1, ply: 4, san: "Qh4", label: "opponent blunder", deltaP: 0.39, lowConfidence: false,
+        kind: "swing", leader: "her", leadMarginCp: 500, leadNth: 1,
+      }],
+      8
+    );
+    const rows = getTurningPoints(g) as any[];
+    expect(rows[0]).toMatchObject({
+      kind: "swing", leader: "her", lead_margin_cp: 500, lead_nth: 1,
+    });
+  });
+
+  it("leader is null for a row nothing ever flagged (existing rows keep compiling unchanged)", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 1, san: "e4", label: "blunder", deltaP: -0.2, lowConfidence: false, kind: "swing" }],
+      8
+    );
+    const rows = getTurningPoints(g) as any[];
+    expect(rows[0].leader).toBeNull();
+    expect(rows[0].lead_margin_cp).toBeNull();
+    expect(rows[0].lead_nth).toBeNull();
   });
 });
 

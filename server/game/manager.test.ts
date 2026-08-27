@@ -1422,6 +1422,52 @@ describe("GameManager", () => {
     expect(latest2.find((r) => r.kind === "unconverted").anchor_kind).toBe("run-start");
   });
 
+  // Wave E (2026-08-27): algo versioning self-heal to v8 -- a game finished
+  // under the old (pre-lead-change) algorithm has a stale v7 row set;
+  // getSummary must recompute under v8, persist the fresh set alongside it,
+  // and never delete the v7 rows (CLAUDE.md's data rule). Same gradual-climb
+  // shape as turningPoints.test.ts's E3 "a free-ply crossing becomes its own
+  // lead-change point" fixture (every per-ply delta stays sub-TP_FLOOR, so no
+  // swing card exists to collide with -- the exact shape the swing detector
+  // is structurally blind to and lead-change exists to catch).
+  it("heals a stale v7 turning_points row set to v8, picking up the lead-change point", () => {
+    const g = createGame(sessionId, "maia-1100");
+    const targetCp = [-40, 80, -120, 160, -200, 240, -280, 310, -330, 350];
+    const sans = ["a3", "a6", "b3", "b6", "c3", "c6", "d3", "d6", "e3", "e6"];
+    targetCp.forEach((cp, i) => {
+      const ply = i + 1;
+      recordMove({ gameId: g, ply, san: sans[i], uci: "a1a1", fenAfter: `fen${ply}`, timeSpentMs: 0 });
+      attachEval(g, ply, { cp, mate: null, bestMove: null, pv: [] });
+    });
+    finishGame(g, "1-0");
+
+    // Seed a stale v7 row set the way a pre-Wave-E game would have it.
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 8, san: "d6", label: "the clincher", deltaP: 0.05, lowConfidence: false, kind: "backfill" }],
+      7
+    );
+    expect(getTurningPointsAllVersions(g).some((r: any) => (r.algo_version ?? 1) === 7)).toBe(true);
+
+    const summary = gm.getSummary(g); // heals: v7 < TP_ALGO_VERSION(8)
+    expect(TP_ALGO_VERSION).toBe(8);
+    const lead = summary.turningPoints.find((t: any) => t.kind === "lead-change");
+    expect(lead).toMatchObject({ ply: 8, san: "d6", leader: "her", leadMarginCp: 310, leadNth: 1 });
+
+    // The healed rows carry the columns; the stale v7 rows survive untouched.
+    const latest = getTurningPoints(g) as any[];
+    const row = latest.find((r) => r.kind === "lead-change");
+    expect(row.leader).toBe("her");
+    expect(row.lead_margin_cp).toBe(310);
+    expect(row.lead_nth).toBe(1);
+    expect(getTurningPointsAllVersions(g).some((r: any) => (r.algo_version ?? 1) === 7)).toBe(true);
+
+    // Second read is a no-op (idempotent heal).
+    const before = getTurningPointsAllVersions(g).length;
+    gm.getSummary(g);
+    expect(getTurningPointsAllVersions(g).length).toBe(before);
+  });
+
   // Task 11 fix 2 (.superpowers/sdd/rounds/2026-07-20-inc-3.95/task-11-brief.md):
   // on-read historical backfill. A finished game that has NEVER had
   // turning_points computed (zero rows — not just a stale version, the case
