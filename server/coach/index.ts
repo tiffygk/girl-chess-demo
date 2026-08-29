@@ -356,7 +356,17 @@ export function buildPrompt(facts: CoachFactList, persona: Persona): string {
   // with no mate on the board the deltaCp ships exactly as before.
   const hasMate = facts.mateBefore != null || facts.mateAfter != null;
   const factsForModel = {
-    yourMove: facts.herMove,
+    // Task 5 (game192 fixes, RC5): narrate is only ever called from the
+    // pending-move verdict flow -- this candidate was picked up and set
+    // down, never actually played. confirmed:false plus this note is
+    // unconditional (there is no other call site) and exists so the model
+    // speaks of it in present/conditional tense, never past (real trace:
+    // game 192, trace 297, "pushing your own pawn to h4 was stronger").
+    yourMove: {
+      ...facts.herMove,
+      confirmed: false,
+      note: "this move is only being considered -- picked up and set down, NOT played. currentFen shows the board from before it. speak of it in present or conditional tense, never past.",
+    },
     tier: facts.tier,
     ...(hasMate ? { mateBefore: facts.mateBefore, mateAfter: facts.mateAfter } : { deltaCp: facts.deltaCp }),
     threat: facts.threat ? stripThreatUci(facts.threat) : undefined,

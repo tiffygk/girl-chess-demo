@@ -261,6 +261,23 @@ describe("buildPrompt", () => {
     expect(prompt).not.toMatch(/\d{5}/); // no 5-digit folded deltaCp (99098) anywhere
     expect(prompt).not.toContain('"deltaCp"');
   });
+
+  // Task 5 (game192 fixes, RC5): narrate is only ever called from the
+  // pending-move verdict flow, so the candidate under yourMove was picked up
+  // and set down -- never actually played. Real trace: game 192, trace 297
+  // graded it in past tense ("pushing your own pawn to h4 was stronger")
+  // because the payload carried no unplayed flag. yourMove must now carry
+  // confirmed: false plus a note telling the model to speak of it in
+  // present/conditional tense.
+  it("marks yourMove as an unconfirmed, considered candidate, never a played move", () => {
+    const prompt = buildPrompt(mkFacts(), getPersona());
+    const jsonStart = prompt.indexOf("{");
+    const parsed = JSON.parse(prompt.slice(jsonStart));
+    expect(parsed.yourMove.confirmed).toBe(false);
+    expect(parsed.yourMove.note).toBe(
+      "this move is only being considered -- picked up and set down, NOT played. currentFen shows the board from before it. speak of it in present or conditional tense, never past.",
+    );
+  });
 });
 
 describe("buildTemplateNarration", () => {
@@ -337,6 +354,25 @@ describe("buildTemplateNarration", () => {
       // The motif's OWN arm rendered, not the no-template fallback.
       expect(text, `threat motif "${motif}" has no coach.md arm`).not.toBe(GENERIC_FALLBACK);
     }
+  });
+
+  // Task 5 (game192 fixes, RC5): the capture-moved template used to say
+  // "she can take the piece you just moved, right back on {capturesSquare}"
+  // -- past tense about a candidate that was only picked up and set down,
+  // never played. It must speak conditionally about what happens IF the
+  // player plays it.
+  it("capture-moved template speaks conditionally about a candidate that hasn't been played", () => {
+    const facts: CoachFactList = {
+      herMove: { pieceKind: "n", from: "f6", to: "g4" },
+      tier: "warning",
+      deltaCp: 300,
+      threat: baseThreat("capture-moved", { capturesSquare: "d8", capturedPieceKind: "n" }),
+      allowedSquares: [],
+      allowedSans: [],
+    };
+    const text = buildTemplateNarration(facts);
+    expect(text).toBe("if you play this, she can take that piece right back on d8.");
+    expect(text).not.toContain("you just moved");
   });
 
   it("renders every recommendation accomplishment template with no unresolved placeholders", () => {

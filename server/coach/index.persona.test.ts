@@ -328,7 +328,10 @@ describe("persona voice rewrite (R2 Task 2)", () => {
   it("carries the owner calibration pair (sharper/reply bad, consequence good)", () => {
     const persona = parseRealCoachMd();
     expect(persona.voice).toContain("e5 was the sharper reply");
-    expect(persona.voice).toContain("pushing your pawn to e5 was stronger");
+    // Task 5 (game192 fixes, RC5): the candidate move narrate speaks about
+    // has not been played -- picked up and set down, not confirmed -- so the
+    // voice example must not put it in past tense either.
+    expect(persona.voice).toContain("pushing your pawn to e5 is stronger");
   });
 
   it("chat prompt never contains 'engine' or 'eval' as standalone words", () => {
@@ -341,6 +344,19 @@ describe("persona voice rewrite (R2 Task 2)", () => {
     const persona = parseRealCoachMd();
     expect(persona.systemPrompt).not.toMatch(/\bengine\b/i);
     expect(persona.systemPrompt).not.toMatch(/\beval(s|uation)?\b/i);
+  });
+
+  // Task 5 (game192 fixes, RC5): narrate is only ever called from the
+  // pending-move verdict flow -- the candidate it narrates about was picked
+  // up and set down, never actually played. The old prompt said "reacting
+  // to the move they just made," which reads as past tense and produced a
+  // real trace (game 192, trace 297) grading the unplayed candidate as
+  // already-played ("pushing your own pawn to h4 was stronger"). Pin that
+  // the system prompt now names it as a considered, unconfirmed move.
+  it("narrate system prompt speaks of a considered move, not a played one", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.systemPrompt).toContain("a move they are considering");
+    expect(persona.systemPrompt).not.toContain("reacting to the move they just made");
   });
 
   it("fallback templates use no raw-SAN variables and no 'engine'", () => {
