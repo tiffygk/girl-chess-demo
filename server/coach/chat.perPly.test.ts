@@ -945,6 +945,84 @@ describe("hintFindingsForModel — candidates and the margin projection (Task 2,
     expect(capturedPrompt).not.toMatch(/close call/);
     expect(capturedPrompt).not.toMatch(/decisively ahead/);
   });
+
+  // Fix round 1, Finding 1 (review, Important): the naive `cands = h
+  // .candidates.filter((c) => c.evalCp !== null)` silently drops a
+  // mate-scored TOP line, so with candidates [mate-in-3, cp 300, cp 295]
+  // the old code named the two cp-scored runners-up "close" to each other
+  // -- while a mate sits on the board and neither of them is even the
+  // best move. The true best candidate (index 0 of the UNFILTERED array)
+  // not surviving the evalCp!==null filter is the signal that no
+  // candidate-vs-candidate cp comparison is meaningful here.
+  it("Fix 1: a mate-scored best candidate suppresses the close-call clause entirely, even when the cp-scored runners-up are close to each other", async () => {
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      {
+        fen: START_FEN,
+        facts: {
+          bestUci: "g1f3",
+          pv: ["g1f3"],
+          evalCp: null,
+          evalMate: 3,
+          trade: false,
+          escalated: false,
+          verified: true,
+          candidates: [
+            { uci: "g1f3", evalCp: null, evalMate: 3 }, // the true best: a mate, not cp-scored
+            { uci: "b1c3", evalCp: 300, evalMate: null },
+            { uci: "e2e4", evalCp: 295, evalMate: null }, // 5cp from b1c3 -- would wrongly read as "close"
+          ],
+        },
+      }
+    );
+    // Fixture sanity, matching the review's own described scenario exactly.
+    expect(facts.hintFindings?.bestSan).toBe("Nf3");
+
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "there's a forced mate here.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why this move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).toMatch(/verified forced mate in 3/i); // score is still the mate, unaffected
+    expect(capturedPrompt).not.toMatch(/close call/i);
+    expect(capturedPrompt).not.toMatch(/Nc3 and e4/);
+  });
+
+  // Fix round 1, Finding 2 (controller ruling, ledgered): the decidedness
+  // clause was nested inside `if (cands.length >= 2)`, so a decisively-
+  // ahead position with fewer than two cp-scored candidates emitted no
+  // humility sentence at all -- exactly the shape ("decided positions")
+  // this project keeps getting bitten by (winprob-delta-blind-to-decided-
+  // positions). Decidedness must be computed from h.evalCp alone.
+  it("Fix 2: a decisively-ahead position with only ONE cp-scored candidate still emits the decided-position sentence", async () => {
+    const singleCandidate = [{ uci: "g1f3", evalCp: 810, evalMate: null }];
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      hintCandidateFacts(singleCandidate, 810) // |evalCp| >= HINT_DECIDED_CP; only 1 candidate -- no close call possible
+    );
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "this keeps the win comfortably.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why this move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    const margin = extractMargin(capturedPrompt);
+    expect(margin).toBe(
+      'the position is already decisively ahead for the side to move; several moves keep the win, so which winning move is "best" matters much less than usual.'
+    );
+    expect(margin).not.toMatch(/close call/i);
+  });
 });
 
 // Round 3 (trace 126, old L2): the per-ply projection carries an explicit
