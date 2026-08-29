@@ -1526,7 +1526,7 @@ function hintFindingsForModel(hintFindings: ChatFactList["hintFindings"]) {
     const gap = bestCp - (cands[1].evalCp as number);
     if (gap <= HINT_CLOSE_CALL_CP) {
       const qualifying = cands.filter((c) => bestCp - (c.evalCp as number) <= HINT_CLOSE_CALL_CP);
-      closeCall = `close call: ${joinSans(qualifying.map((c) => c.san))} are about equally strong here. the engine's pick between near-equal moves can change between looks; that is search variance, not a contradiction.`;
+      closeCall = `close call: ${joinSans(qualifying.map((c) => c.san))} are about equally strong here. our chess brain's pick between near-equal moves can change between looks; that is search variance, not a contradiction.`;
     }
   }
   // Fix round 1, Finding 2 (controller ruling, ledgered): decidedness

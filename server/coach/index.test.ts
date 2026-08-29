@@ -321,7 +321,7 @@ describe("buildPrompt", () => {
     const parsed = JSON.parse(prompt.slice(jsonStart));
     expect(parsed.yourMove.confirmed).toBe(false);
     expect(parsed.yourMove.note).toBe(
-      "this move is only being considered -- picked up and set down, NOT played. currentFen shows the board from before it. speak of it in present or conditional tense, never past.",
+      "this move is only being considered -- picked up and set down, NOT played. speak of it in present or conditional tense, never past.",
     );
   });
 });
