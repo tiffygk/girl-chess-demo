@@ -47,6 +47,11 @@ const GAME192_SANS: SummaryMove[] = [
   "f4","d6","Qd1","Qe7","Nf3","b5","Ng5","Kd8","d3","Ng8","f5","d5","Nf3","Na6",
 ].map((san, i) => ({ ply: i + 1, san }));
 
+// Fix round 1, F2 (2026-08-29): same fixture, extended one more ply (29,
+// her reply) with the SAME quiet move ("Ne5") the line recommends -- so
+// followedBest reports followed === true. Verified legal via chess.js.
+const GAME192_SANS_FOLLOWED: SummaryMove[] = [...GAME192_SANS, { ply: 29, san: "Ne5" }];
+
 function tp(overrides: Partial<TurningPoint>): TurningPoint {
   return {
     rank: 1,
@@ -319,6 +324,40 @@ describe("couldImprove (part ii)", () => {
     );
   });
 
+  // Fix round 1, F4 (2026-08-29, ruled copy amendment): the original
+  // "opponent mistake" tail ("...moments like this are where a lead
+  // starts.") over-claims in an already-decided position -- a mistake in a
+  // position that's already lost/won starts no lead. New tail states only
+  // the magnitude, nothing about what it starts.
+  it("an opponent mistake with no recorded punish uses the amended (non-overclaiming) tail", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "opponent mistake", san: "Qh4", ply: 4, punishSan: null } as any),
+      undefined,
+      undefined
+    );
+    expect(note.couldImprove).toBe("her Qh4 on move 2 was a real slip. it handed you real ground.");
+  });
+
+  // Fix round 1, F2 (2026-08-29): OPPONENT_SLIP was reachable even when
+  // followedBest confirms she DID punish the slip (fb?.followed true) --
+  // a quiet best reply (no capture, so turningPoints.ts's own punishSan
+  // credit-assignment never sets tp.punishSan) produces punishSan null
+  // AND followed true at the same time. That rendered a contradictory
+  // card: didWell "you punished it. your ... made her pay." right next to
+  // couldImprove "...the game moved on without cashing it in." on the same
+  // point. The slip clause must only fire when she genuinely didn't punish.
+  it("does not render the opponent-slip couldImprove when she already punished it (fb.followed true), even with punishSan null", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "opponent inaccuracy", san: "Na6", ply: 28, kind: "swing", punishSan: null } as any),
+      undefined,
+      line({ ply: 28, pvSans: ["Ne5"], bestSan: "Ne5" }),
+      GAME192_SANS_FOLLOWED
+    );
+    expect(note.didWell).toBeTruthy();
+    expect(note.didWell).toContain("you punished it");
+    expect(note.couldImprove).toBeUndefined();
+  });
+
   // Task 7, Step 7: the dead-cell fixture run through the FULL note builder
   // and back through checkDebriefOutput -- the counterfactual-only-card
   // invariant from Step 1 must now be clean on the real pipeline. The
@@ -467,27 +506,27 @@ describe("whatMayHaveHappened (part iv)", () => {
       line({ ply: 6, pvSans: ["Qxf7#"], bestSan: "Qxf7#" }),
       SCHOLARS_MATE_SANS
     );
-    // Ply-parity ownership class (Task 7, game 192, 6th instance): line.ply
-    // 6 is even (mallow's ply), so the counterfactual names MALLOW's
-    // alternative -- "her", not "your". This pin used to assert "your" here,
-    // which was the bug itself (fixed alongside the dead-end card fix).
-    expect(note.whatMayHaveHappened).toBe("if instead her queen takes on f7, checkmate.");
+    expect(note.whatMayHaveHappened).toBe("if instead your queen takes on f7, checkmate.");
   });
 
-  // Task 7 (game 192, RC8): the pronoun fix, both parities pinned directly.
-  // Real game 192 bug: an opponent inaccuracy at ply 28 (even) rendered
-  // "if instead your knight to e5." -- wrong, since an even ply's
-  // counterfactual is mallow's own alternative, not the player's. Reads the
-  // side from line.ply itself (the ply-parity standing rule: never a
-  // helper, never re-derived).
-  it("names the alternative 'her' on an even (mallow) ply", () => {
+  // Fix round 1, F1 (2026-08-29): Task 7 briefly (and wrongly) keyed this
+  // pronoun off line.ply parity. The premise was false: a turning line's
+  // seed fen is always EVEN (seedPly = line.ply - (line.ply % 2)) and the
+  // player is always white, so the pv's first move is always HERS on both
+  // parities -- at an even tp.ply it is her REPLY at ply+1 (see
+  // buildCouldImprove's own "her own move at odd tp.ply, her REPLY at
+  // ply+1 for even tp.ply" comment, which was correct all along). Game
+  // 192's "Ne5" is her own f3 knight; "if instead your knight to e5." was
+  // true, and the shipped "her" was false. This pin (game-192 fixture, an
+  // even tp.ply) proves "your" is correct on BOTH parities, not just odd.
+  it("names the alternative 'your' even on an even (opponent) tp.ply -- the pv's first move is always hers", () => {
     const note = buildTurningPointNote(
       tp({ label: "opponent inaccuracy", san: "Na6", ply: 28, kind: "swing", punishSan: null } as any),
       undefined,
       line({ ply: 28, pvSans: ["Ne5"], bestSan: "Ne5" }),
       GAME192_SANS
     );
-    expect(note.whatMayHaveHappened).toBe("if instead her knight to e5.");
+    expect(note.whatMayHaveHappened).toBe("if instead your knight to e5.");
   });
 
   it("keeps 'your' on an odd (her own) ply", () => {
