@@ -240,6 +240,13 @@ export interface HintFindings {
   trade: boolean;
   escalated: boolean;
   recommendationSan?: string; // recommendation.san when present
+  // Task 2 (2026-08-28, game-192 RCA): the multipv search's own top
+  // candidates, san-converted at the matched fen the same way bestSan/
+  // pvSans above are -- lets hintFindingsForModel say "these moves are
+  // near-equal" instead of the model fabricating a reason for a close call.
+  // Always an array (possibly empty), never undefined -- same discipline as
+  // pvSans.
+  candidates: { san: string; evalCp: number | null }[];
   // Whole-branch review (2026-08-03, Important finding 1): PROVENANCE,
   // threaded straight through from HintFacts.verified (see that field's own
   // comment). true only for a real deep hint (computeHint); false for the
@@ -561,6 +568,11 @@ export function assembleChatFactList(
       // real producers (computeHint, computePositionView) always set this.
       verified: boolean;
       recommendation?: { san: string };
+      // Task 2 (2026-08-28, game-192 RCA): optional so every pre-this-task
+      // caller/fixture (which never set this) keeps compiling unchanged --
+      // the fold below treats an absent array the same as an empty one.
+      // manager.ts's real HintFacts always sets it (see hint.ts).
+      candidates?: { uci: string; evalCp: number | null; evalMate: number | null }[];
     };
   }
 ): ChatFactList {
@@ -737,6 +749,22 @@ export function assembleChatFactList(
         if (!mv) break;
         pvSans.push(mv.san);
       }
+      // Task 2 (2026-08-28, game-192 RCA): each candidate is an alternative
+      // FIRST move from matchFen (not a continuation like pv above), so each
+      // gets its own fresh Chess(matchFen) replay rather than sharing pvBoard's
+      // running position.
+      const candidateSans: { san: string; evalCp: number | null }[] = [];
+      for (const c of hc.facts.candidates ?? []) {
+        const cBoard = new Chess(matchFen);
+        const cMv = cBoard.move({
+          from: c.uci.slice(0, 2),
+          to: c.uci.slice(2, 4),
+          promotion: (c.uci.slice(4, 5) || undefined) as "q" | "r" | "b" | "n" | undefined,
+        });
+        if (!cMv) continue;
+        candidateSans.push({ san: cMv.san, evalCp: c.evalCp });
+        sans.add(cMv.san);
+      }
       hintFindings = {
         fen: matchFen,
         bestSan,
@@ -748,6 +776,7 @@ export function assembleChatFactList(
         escalated: hc.facts.escalated,
         verified: hc.facts.verified,
         recommendationSan: hc.facts.recommendation?.san,
+        candidates: candidateSans,
       };
       sans.add(bestSan);
       for (const s of pvSans) sans.add(s);
@@ -1409,6 +1438,23 @@ function pendingMoveForModel(pendingMove: ChatContext["pendingMove"]) {
 // unverified engine look to weigh, never as verified-best -- its bestSan is
 // still handed over (the fact itself is real and worth having), just never
 // narrated with a confidence the search never earned.
+// Task 2 (2026-08-28, game-192 RCA): the "genuinely comparable" bar for
+// naming a candidate in the close-call sentence below -- same "genuinely
+// comparable" value as hint.ts's own HINT_TRADE_MARGIN_CP, owner-
+// calibratable.
+const HINT_CLOSE_CALL_CP = 35;
+// Task 2: deliberately below the branch's LEAD_CP-based decided-position
+// wording elsewhere -- this is about hint humility (several moves keep a
+// decisive win), not lead cards. Owner-calibratable.
+const HINT_DECIDED_CP = 500;
+
+// Task 2: two-or-three-san join ("Kh1 and h4" / "Kh1, h4 and Nc5").
+function joinSans(sans: string[]): string {
+  if (sans.length <= 1) return sans.join("");
+  if (sans.length === 2) return `${sans[0]} and ${sans[1]}`;
+  return `${sans.slice(0, -1).join(", ")} and ${sans[sans.length - 1]}`;
+}
+
 function hintFindingsForModel(hintFindings: ChatFactList["hintFindings"]) {
   if (!hintFindings) return undefined;
   const h = hintFindings;
@@ -1427,6 +1473,31 @@ function hintFindingsForModel(hintFindings: ChatFactList["hintFindings"]) {
     : h.evalMate !== null
       ? `an unconfirmed quick read: mate in ${Math.abs(h.evalMate)}`
       : "an unconfirmed quick read (no mate)";
+  // Task 2 (2026-08-28, game-192 RCA): real game 192's coach fabricated a
+  // reason for its pick among the engine's own near-equal candidates,
+  // because nothing anywhere carried the fact that they were close. `margin`
+  // says that out loud, in words only -- never a raw eval number, per the
+  // branch's voice rule (mate distances are the one exception, and this
+  // string carries no mate distance either). Controller ruling (pre-flight):
+  // the close-call sentence names only the candidates within
+  // HINT_CLOSE_CALL_CP of the BEST candidate's own cp, not every candidate
+  // the shelf carries unconditionally.
+  const cands = h.candidates.filter((c) => c.evalCp !== null);
+  let margin: string | undefined;
+  if (cands.length >= 2) {
+    const bestCp = cands[0].evalCp as number;
+    const gap = bestCp - (cands[1].evalCp as number);
+    let closeCall: string | undefined;
+    if (gap <= HINT_CLOSE_CALL_CP) {
+      const qualifying = cands.filter((c) => bestCp - (c.evalCp as number) <= HINT_CLOSE_CALL_CP);
+      closeCall = `close call: ${joinSans(qualifying.map((c) => c.san))} are about equally strong here. the engine's pick between near-equal moves can change between looks; that is search variance, not a contradiction.`;
+    }
+    const decided =
+      h.evalCp !== null && Math.abs(h.evalCp) >= HINT_DECIDED_CP
+        ? `the position is already decisively ahead for the side to move; several moves keep the win, so which winning move is "best" matters much less than usual.`
+        : undefined;
+    margin = [closeCall, decided].filter(Boolean).join(" ") || undefined;
+  }
   return {
     note,
     bestSan: h.bestSan,
@@ -1434,6 +1505,7 @@ function hintFindingsForModel(hintFindings: ChatFactList["hintFindings"]) {
     score,
     ...(h.pvSans.length ? { line: h.pvSans.join(" ") } : {}),
     ...(h.recommendationSan ? { recommendationSan: h.recommendationSan } : {}),
+    ...(margin ? { margin } : {}),
   };
 }
 
