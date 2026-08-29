@@ -18,6 +18,12 @@ import { claudeCliBackend } from "../coach/backends/claude-cli";
 import { agentSdkBackend } from "../coach/backends/agent-sdk";
 import { moveEndpoints } from "../annotator/moveEndpoints";
 import type { ThreatFacts } from "../annotator/motifs";
+// Task 1 (RC1, game 192 fixes): the fen-keyed deep-hint reuse guard test
+// below needs to seed a well-typed HintFacts object without a real engine,
+// and a fake Evaluator to count engine consultations -- same "mock the
+// Evaluator interface" pattern hint.test.ts's ScriptedMultiEvaluator uses.
+import { computeHint as computeHintFacts } from "../annotator/hint";
+import type { Evaluator, Evaluation } from "../engines/types";
 
 // H3 fix, logic-only half (union review, 2026-07-31): pure, no real
 // evaluator or crafted mate position needed -- classify.ts already owns
@@ -575,6 +581,84 @@ describe("GameManager", () => {
     const live = (gm as any).games.get(gameId);
     expect(live.lastHint.facts.verified).toBe(true);
   }, 40000);
+
+  // Task 1 (RC1, game 192 fixes): real game 192, traces 296/298 -- two
+  // identically-configured deep hint searches at the SAME live position
+  // returned different best moves (Kh1 +810, then h4 +809), because the
+  // wall-clock-bounded deep search isn't deterministic run to run. The fast
+  // path a few hundred lines above (computePositionView's caller, ~:1320)
+  // has had a fen-keyed reuse guard since Q2; the deep path (computeHint)
+  // never did. These tests count engine consultations on a fake evaluator
+  // temporarily swapped onto the shared `gm`, so the assertion doesn't
+  // depend on hint.ts's own internal search+verify call shape (real
+  // computeHintFacts makes 2+ evaluator calls per invocation on its own).
+  describe("computeHint fen-keyed reuse guard (RC1, game 192)", () => {
+    // Bare K v K is an immediate isGameOver() draw in chess.js (insufficient
+    // material) and would make computeHint return null -- one rook each
+    // keeps real material on the board. White king g1, rook a1; black king
+    // e8, rook a8; g1h1 is a legal, unforced king move for white to move.
+    const fen = "r3k3/8/8/8/8/8/8/R5K1 w - - 0 1";
+
+    class CountingEvaluator implements Evaluator {
+      callCount = 0;
+      async init() {}
+      async evaluate(): Promise<Evaluation> {
+        this.callCount++;
+        return { cp: 810, mate: null, bestMove: "g1h1", pv: ["g1h1"] };
+      }
+      quit() {}
+    }
+
+    it("reuses the verified deep hint for an unchanged position instead of re-searching", async () => {
+      const { gameId } = await gm.newGame(sessionId, 1100);
+      (gm as any).games.get(gameId).chess.load(fen);
+      const fake = new CountingEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      try {
+        const first = await gm.computeHint(gameId);
+        expect(first.ok).toBe(true);
+        const callsAfterFirst = fake.callCount;
+
+        const second = await gm.computeHint(gameId);
+        expect(second.ok).toBe(true);
+        // No new engine consultation on the second, same-fen, no-move-in-
+        // between request.
+        expect(fake.callCount).toBe(callsAfterFirst);
+        expect(first.ok && second.ok && second.facts.bestUci).toBe(
+          first.ok && first.facts.bestUci
+        );
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 20000);
+
+    it("re-runs the deep search when the cached lastHint at the same fen is unverified (fast-path shape), and overwrites it with a verified entry", async () => {
+      const { gameId } = await gm.newGame(sessionId, 1100);
+      (gm as any).games.get(gameId).chess.load(fen);
+      const fake = new CountingEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      try {
+        // Seed an UNVERIFIED cache entry at this exact fen -- the shape
+        // computePositionView's fast path leaves on live.lastHint.
+        const seedFacts = await computeHintFacts(fen, fake);
+        expect(seedFacts).toBeTruthy();
+        const callsAfterSeed = fake.callCount;
+        const live = (gm as any).games.get(gameId);
+        live.lastHint = { fen, facts: { ...seedFacts!, verified: false }, at: Date.now() };
+
+        const result = await gm.computeHint(gameId);
+        expect(result.ok).toBe(true);
+        // An unverified cache entry never satisfies the guard -- the deep
+        // search must run again.
+        expect(fake.callCount).toBeGreaterThan(callsAfterSeed);
+        expect(live.lastHint.facts.verified).toBe(true);
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 20000);
+  });
 
   // Increment 3a Wave 2: narrate(). Uses setCoachBackendForTesting to inject
   // a fake — never probes or invokes the real claude CLI / ollama (brief:
