@@ -463,6 +463,11 @@ export async function narrate(
   let attemptOutput = "";
   let regenCount = 0;
   let modelText: string | null = null;
+  // Task 6 (game192-fixes round, RC4): one entry per generation attempt, in
+  // order -- what the row's own `output` column can never hold once a regen
+  // overwrites it. See EXPECTED_COLUMNS.advice_traces' `attempts_json`
+  // comment in server/store/db.ts for the shape and the NULL convention.
+  const attempts: { output: string; violations: string[]; validated: boolean }[] = [];
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -475,6 +480,7 @@ export async function narrate(
       // actually down, not just slow -- report it so the caller can skip it
       // for a cooldown instead of re-picking it on the very next call.
       if (!isTimeoutError(err)) opts?.onBackendFailure?.(backend.name);
+      attempts.push({ output: attemptOutput, violations: [], validated: false });
       break;
     }
 
@@ -482,12 +488,15 @@ export async function narrate(
     const result = trimmed.length > 0 ? validateNarration(attemptOutput, facts) : ({ ok: false, violations: [] } as const);
     if (result.ok) {
       modelText = trimmed;
+      attempts.push({ output: attemptOutput, violations: [], validated: true });
       break;
     }
+    const violations: string[] = "violations" in result ? [...result.violations] : [];
+    attempts.push({ output: attemptOutput, violations, validated: false });
     if (attempt === 0) {
       regenCount = 1;
-      const violations = "violations" in result && result.violations.length > 0 ? result.violations : ["the previous answer"];
-      attemptPrompt = basePrompt + correctiveSuffix(violations);
+      const suffixViolations = violations.length > 0 ? violations : ["the previous answer"];
+      attemptPrompt = basePrompt + correctiveSuffix(suffixViolations);
     }
   }
 
@@ -507,6 +516,10 @@ export async function narrate(
     validated: source === "model",
     regenCount,
     latencyMs,
+    // Task 6: NULL when there's only one attempt to record -- no
+    // information is lost then, because the row's own `output` above IS
+    // that attempt.
+    attemptsJson: attempts.length > 1 ? JSON.stringify(attempts) : null,
   });
 
   return {

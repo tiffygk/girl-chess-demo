@@ -97,6 +97,52 @@ describe("narrate", () => {
     expect(result.traceMeta.regenCount).toBe(1);
   });
 
+  // Task 6 (game192-fixes round, RC4): the validator caught a bad draft in
+  // real game 192 and the caught text was unrecoverable -- only the last
+  // attempt ever landed in the row. attempts_json is the fix: one entry per
+  // generation attempt, in order, so a regenerated-away draft survives.
+  it("invalid first output, valid second -> row has regen_count 1 and attempts_json with 2 entries, entry 0 carrying the violations and validated:false", async () => {
+    const facts = mkFacts();
+    let calls = 0;
+    const backend = fakeBackend({
+      async generate() {
+        calls += 1;
+        if (calls === 1) return "watch out for the threat on e5, totally made up.";
+        return "Rxd8 takes back, but Nxe4 wins the pawn instead.";
+      },
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    const result = await narrate(facts, backend, { gameId, ply: 3, kind: "warning" });
+
+    const row = getAdviceTraces(gameId).find((r) => r.id === result.traceId)!;
+    expect(row.regen_count).toBe(1);
+    expect(row.attempts_json).toBeTruthy();
+    const attempts = JSON.parse(row.attempts_json);
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0].output).toBe("watch out for the threat on e5, totally made up.");
+    expect(attempts[0].validated).toBe(false);
+    expect(attempts[0].violations).toEqual(expect.arrayContaining(["e5"]));
+    expect(attempts[1].output).toBe("Rxd8 takes back, but Nxe4 wins the pawn instead.");
+    expect(attempts[1].validated).toBe(true);
+    expect(attempts[1].violations).toEqual([]);
+  });
+
+  it("clean first attempt -> attempts_json is NULL (the row's own output IS attempt 0, nothing lost)", async () => {
+    const facts = mkFacts();
+    const backend = fakeBackend({
+      async generate() {
+        return "your rook hangs on d8, and Rxd8 just takes it. Nxe4 wins a pawn back instead.";
+      },
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    const result = await narrate(facts, backend, { gameId, ply: 3, kind: "warning" });
+
+    const row = getAdviceTraces(gameId).find((r) => r.id === result.traceId)!;
+    expect(row.attempts_json).toBeNull();
+  });
+
   it("both attempts invalid -> source template, and the template text passes validation against the fact list", async () => {
     const facts = mkFacts();
     const backend = fakeBackend({

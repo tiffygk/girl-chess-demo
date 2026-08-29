@@ -32,6 +32,13 @@ export function recordAdviceTrace(input: {
   // through without a second signature change, not because the
   // classification itself doesn't exist yet.
   cause?: string | null;
+  // Task 6 (game192-fixes round, RC4): threaded straight through to
+  // insertAdviceTrace's own optional `attemptsJson` -- additive/optional so
+  // every pre-this-task caller (existing tests) omits it and keeps writing
+  // NULL, exactly as before. See EXPECTED_COLUMNS.advice_traces'
+  // `attempts_json` comment in server/store/db.ts for the shape and the
+  // NULL convention.
+  attemptsJson?: string | null;
 }): number {
   return insertAdviceTrace({
     gameId: input.gameId,
@@ -46,5 +53,6 @@ export function recordAdviceTrace(input: {
     regenCount: input.regenCount,
     latencyMs: input.latencyMs,
     cause: input.cause,
+    attemptsJson: input.attemptsJson,
   });
 }
