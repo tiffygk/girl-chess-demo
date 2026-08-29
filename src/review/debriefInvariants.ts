@@ -737,6 +737,23 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
     }
   }
 
+  // Task 7 (game 192, RC8): counterfactual-only-card -- the dead-end card
+  // the owner called useless: an opponent inaccuracy with punish_san NULL
+  // rendered ONLY "what may have happened: if instead your knight to e5."
+  // and nothing else. Fires on any note whose whatMayHaveHappened is set
+  // but didWell/couldImprove/nextTime are all absent -- a counterfactual
+  // with no other content is a card that says nothing she can act on.
+  for (const note of output.notes ?? []) {
+    if (note.whatMayHaveHappened && !note.didWell && !note.couldImprove && !note.nextTime) {
+      violations.push({
+        kind: "silence",
+        rule: "counterfactual-only-card",
+        where: "debrief",
+        message: `note at ply ${note.ply} has only whatMayHaveHappened, no didWell/couldImprove/nextTime`,
+      });
+    }
+  }
+
   const tacticPoints = facts.turningPoints.filter((tp) => TACTIC_KINDS.includes(kindOf(tp)));
   if (tacticPoints.length > 0 && !bullets.some((b) => tacticPoints.some((tp) => tp.ply === b.ply))) {
     violations.push({

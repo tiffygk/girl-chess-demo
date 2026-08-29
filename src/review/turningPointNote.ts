@@ -328,6 +328,28 @@ const IMPROVE_NUDGE: Record<string, string> = {
   inaccuracy: "a small slip",
 };
 
+// Task 7 (game 192, RC8): the dead-end card fix -- an opponent slip
+// (label starts with "opponent") with punish_san NULL used to leave
+// couldImprove/didWell/nextTime all unset, so the card rendered ONLY the
+// counterfactual clause ("what may have happened: if instead..."), which
+// the owner called useless. Same honesty rule IMPROVE_NUDGE above already
+// documents: band-magnitude language only, no tactical story the eval
+// delta doesn't establish.
+const OPPONENT_SLIP: Record<string, { phrase: string; tail: string }> = {
+  "opponent blunder": {
+    phrase: "a real gift",
+    tail: "the game swung your way here whether or not you cashed it in on the spot.",
+  },
+  "opponent mistake": {
+    phrase: "a real slip",
+    tail: "it handed you ground; moments like this are where a lead starts.",
+  },
+  "opponent inaccuracy": {
+    phrase: "a small opening",
+    tail: "the door opened a little here, and the game moved on without cashing it in.",
+  },
+};
+
 function buildCouldImprove(
   tp: TurningPoint,
   cls: MoveClassification | undefined,
@@ -414,6 +436,16 @@ function buildCouldImprove(
       ? `from this move the win was on the board. a mate in ${numberWord(tp.mateIn)} was on record right there, and the game ended level instead.`
       : "from this move the win was on the board, and the game ended level from here. nothing hung; the finish just never came.";
   }
+  // RC6 (game 192, move-14 card): an opponent slip with no recorded punish
+  // used to render a counterfactual-only card she called useless. State the
+  // slip and its size honestly -- nothing more is in the fields.
+  if (tp.label.startsWith("opponent") && !tp.punishSan) {
+    const n = moveNumberForPly(tp.ply);
+    const band = OPPONENT_SLIP[tp.label];
+    if (band) {
+      return `her ${played} on move ${n} was ${band.phrase}. ${band.tail}`;
+    }
+  }
   const label = cls?.classification ?? tp.label;
   const nudge = IMPROVE_NUDGE[label];
   if (!nudge) return undefined;
@@ -471,7 +503,13 @@ function buildWhatMayHaveHappened(
   if (pv.length === 0) return undefined;
   const [first] = pv;
   const described = seedFen ? describeSanMove(first, seedFen) : null;
-  if (described) return `if instead your ${described}.`;
+  // Ply-parity ownership class (Task 7, game 192, 6th instance of this
+  // class): odd plies are hers, even are mallow's -- the counterfactual on
+  // an even ply names MALLOW's alternative, so it must say "her", not
+  // "your". Reads the side from the line's own ply field directly, per the
+  // standing rule: never a helper, never re-derived.
+  const owner = line.ply % 2 === 0 ? "her" : "your";
+  if (described) return `if instead ${owner} ${described}.`;
   return `if instead ${first} had been played here.`;
 }
 
