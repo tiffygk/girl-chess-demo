@@ -366,3 +366,41 @@ describe("persona voice rewrite (R2 Task 2)", () => {
     expect(persona.chatSystemPrompt).toContain("judged is false");
   });
 });
+
+// Task 4 (RC2 + the RC-timeline fabrication, game-192 fixes round, 2026-08-28):
+// real game 192 -- asked why Kh1 was best, the coach fabricated a
+// square-color tactical story, then invented a timeline for a changed hint
+// and denied the player's correct observation three times. This pins the
+// three load-bearing sentences of the honesty-rules paragraph added
+// immediately after the pendingMove paragraph: never invent chess reasoning
+// beyond the fact list (esp. square colors/diagonals), and never claim a
+// changed suggestion belonged to an earlier move unless recentHints itself
+// shows that.
+describe("chat system prompt: why-question and changed-hint honesty rules (Task 4)", () => {
+  function parseRealCoachMd() {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const md = fs.readFileSync(path.join(here, "personas/coach.md"), "utf-8");
+    return parsePersona(md);
+  }
+
+  it("states our chess brain reports moves and scores, never reasons", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain(
+      "our chess brain reports moves and scores, never reasons"
+    );
+  });
+
+  it("bans reasoning about square colors or diagonals", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain(
+      "never reason\nabout square colors or diagonals"
+    );
+  });
+
+  it("forbids claiming a suggestion belonged to an earlier move unless recentHints shows that", () => {
+    const persona = parseRealCoachMd();
+    expect(persona.chatSystemPrompt).toContain(
+      "never tell her a\nsuggestion belonged to an earlier move unless recentHints itself shows that"
+    );
+  });
+});

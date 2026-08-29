@@ -1480,7 +1480,13 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       await chat("why did the hint change?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
 
       expect(capturedPrompt).not.toContain('"recentHints"');
-      expect(capturedPrompt).not.toContain("only ground truth");
+      // Task 4 (game-192 fixes, 2026-08-28): the persona's chat system prompt
+      // now ALWAYS carries the phrase "the only ground truth" (its own
+      // always-on honesty-rules paragraph, not gated on hint history), so
+      // that substring alone no longer distinguishes "the note fired" from
+      // "the note didn't fire". Key on wording unique to RECENT_HINTS_NOTE
+      // itself instead -- still proves the note is gated on real data.
+      expect(capturedPrompt).not.toContain("never invent a timeline beyond it");
     });
 
     it("the model prompt carries recentHints and the verbatim recentHintsNote when hints were shown", async () => {
