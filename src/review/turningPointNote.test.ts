@@ -6,6 +6,10 @@
 import { describe, it, expect } from "vitest";
 import { buildTurningPointNote, opportunityForLine, NEXT_TIME_TIPS } from "./turningPointNote";
 import type { TurningPoint, MoveClassification, TurningLine, SummaryMove } from "../game/api";
+// Task 7 (game 192, RC8), Step 7: proves the enrichment actually clears the
+// counterfactual-only-card invariant on the real pipeline, not just on the
+// couldImprove string in isolation.
+import { checkDebriefOutput } from "./debriefInvariants";
 
 // Scholar's Mate up to black's losing 3rd move — a real, independently
 // checkable game (1.e4 e5 2.Qh5 Nc6 3.Bc4 Nf6??), used below as a genuine
@@ -31,6 +35,16 @@ const GAME150_SANS: SummaryMove[] = [
   "Nf7","Kg7","Nh6","e5","Qf8+","Kh7","Qh8+","Kg6","Ng8","exf4","g3","f3","Nd2","Kf7",
   "Qh7+","Ke6","Bd8","Ke5","Bxf5","Kd4","Rfe1","Kc3","Nxf3","Kc4","Rab1","Kd5","Qxh5","Kd6",
   "Qh6+","Kd5","Be7","Kc4","Qc6#",
+].map((san, i) => ({ ply: i + 1, san }));
+
+// Task 7 (game 192, RC8 fix round): a real, independently-legal 28-ply
+// game (verified via chess.js) reaching a position where "Ne5" is a legal
+// knight move -- the dead-end card fixture: an opponent inaccuracy at ply
+// 28 (even, mallow's move) with punish_san NULL. Used for both the
+// pronoun test (whatMayHaveHappened) and the enrichment test (couldImprove).
+const GAME192_SANS: SummaryMove[] = [
+  "c3","h5","b3","a6","a4","Rh7","Ra3","Ra7","Bb2","a5","Qc2","e6","Ba1","Nh6",
+  "f4","d6","Qd1","Qe7","Nf3","b5","Ng5","Kd8","d3","Ng8","f5","d5","Nf3","Na6",
 ].map((san, i) => ({ ply: i + 1, san }));
 
 function tp(overrides: Partial<TurningPoint>): TurningPoint {
@@ -286,6 +300,56 @@ describe("couldImprove (part ii)", () => {
     expect(note.couldImprove).toBeUndefined();
   });
 
+  // Task 7 (game 192, RC8): the dead-end card the owner called useless --
+  // an opponent inaccuracy (punish_san NULL, no missedPunish flag, no
+  // eval-band label match since "opponent inaccuracy" is never in
+  // IMPROVE_NUDGE) used to leave couldImprove/didWell/nextTime all unset,
+  // rendering ONLY the counterfactual clause. States the slip and its size
+  // honestly -- band-magnitude language only, nothing the fields don't
+  // establish.
+  it("an opponent slip with no recorded punish earns a couldImprove instead of going silent", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "opponent inaccuracy", san: "Na6", ply: 28, kind: "swing", punishSan: null } as any),
+      undefined,
+      line({ ply: 28, pvSans: ["Ne5"], bestSan: "Ne5" }),
+      GAME192_SANS
+    );
+    expect(note.couldImprove).toBe(
+      "her knight to a6 on move 14 was a small opening. the door opened a little here, and the game moved on without cashing it in."
+    );
+  });
+
+  // Task 7, Step 7: the dead-cell fixture run through the FULL note builder
+  // and back through checkDebriefOutput -- the counterfactual-only-card
+  // invariant from Step 1 must now be clean on the real pipeline. The
+  // detector itself stays red-capable independently: debriefInvariants.
+  // test.ts keeps its own hand-constructed fixture for
+  // counterfactual-only-card, so deleting the rule still fails a test even
+  // if this enrichment never regresses.
+  it("the dead-cell fixture, run through the real note builder, no longer trips counterfactual-only-card", () => {
+    const theTp = tp({ label: "opponent inaccuracy", san: "Na6", ply: 28, kind: "swing", punishSan: null } as any);
+    const note = buildTurningPointNote(
+      theTp,
+      undefined,
+      line({ ply: 28, pvSans: ["Ne5"], bestSan: "Ne5" }),
+      GAME192_SANS
+    );
+    expect(note.whatMayHaveHappened).toBeTruthy();
+    expect(note.couldImprove).toBeTruthy();
+    const facts = {
+      result: "1-0",
+      totalPlies: 28,
+      gameSans: GAME192_SANS,
+      turningPoints: [theTp],
+    } as any;
+    const output = {
+      bullets: [],
+      notes: [{ ply: 28, ...note }],
+    } as any;
+    const violations = checkDebriefOutput(output, facts);
+    expect(violations.some((v) => v.rule === "counterfactual-only-card")).toBe(false);
+  });
+
   // Debrief Plain-English Notation round (Task 2): with gameSans supplied,
   // both the played move (tp.san, from the position before its own ply) and
   // the stronger idea (line.bestSan, from the same seed position
@@ -403,7 +467,41 @@ describe("whatMayHaveHappened (part iv)", () => {
       line({ ply: 6, pvSans: ["Qxf7#"], bestSan: "Qxf7#" }),
       SCHOLARS_MATE_SANS
     );
-    expect(note.whatMayHaveHappened).toBe("if instead your queen takes on f7, checkmate.");
+    // Ply-parity ownership class (Task 7, game 192, 6th instance): line.ply
+    // 6 is even (mallow's ply), so the counterfactual names MALLOW's
+    // alternative -- "her", not "your". This pin used to assert "your" here,
+    // which was the bug itself (fixed alongside the dead-end card fix).
+    expect(note.whatMayHaveHappened).toBe("if instead her queen takes on f7, checkmate.");
+  });
+
+  // Task 7 (game 192, RC8): the pronoun fix, both parities pinned directly.
+  // Real game 192 bug: an opponent inaccuracy at ply 28 (even) rendered
+  // "if instead your knight to e5." -- wrong, since an even ply's
+  // counterfactual is mallow's own alternative, not the player's. Reads the
+  // side from line.ply itself (the ply-parity standing rule: never a
+  // helper, never re-derived).
+  it("names the alternative 'her' on an even (mallow) ply", () => {
+    const note = buildTurningPointNote(
+      tp({ label: "opponent inaccuracy", san: "Na6", ply: 28, kind: "swing", punishSan: null } as any),
+      undefined,
+      line({ ply: 28, pvSans: ["Ne5"], bestSan: "Ne5" }),
+      GAME192_SANS
+    );
+    expect(note.whatMayHaveHappened).toBe("if instead her knight to e5.");
+  });
+
+  it("keeps 'your' on an odd (her own) ply", () => {
+    // ply 3 (Qh5) is her own move; the pv recommends a DIFFERENT move
+    // (Nf3, also legal at the same seed position) so followedBest reports
+    // not-followed and whatMayHaveHappened actually renders (rather than
+    // going silent per the followedBest-congratulation path above).
+    const note = buildTurningPointNote(
+      tp({ label: "blunder", san: "Qh5", ply: 3 }),
+      undefined,
+      line({ ply: 3, pvSans: ["Nf3"], bestSan: "Nf3" }),
+      SCHOLARS_MATE_SANS
+    );
+    expect(note.whatMayHaveHappened).toBe("if instead your knight to f3.");
   });
 
   it("never adds an interpretive claim beyond the SAN moves themselves", () => {

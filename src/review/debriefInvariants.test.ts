@@ -282,6 +282,47 @@ describe("individual rules", () => {
     expect(v.some((x) => x.rule === "lead-change-silent")).toBe(false);
   });
 
+  // Task 7 (game 192, RC8): counterfactual-only-card -- the real move-14
+  // card the owner called useless: an opponent inaccuracy with punish_san
+  // NULL rendered ONLY "what may have happened: if instead your knight to
+  // e5." and nothing else (no didWell, no couldImprove, no nextTime). This
+  // fixture is hand-constructed (not routed through buildTurningPointNote),
+  // so it stays red-capable on its own if the RULE itself is ever deleted,
+  // independent of turningPointNote.ts's own enrichment fix (see that
+  // file's own "dead-cell fixture" test, which proves the real pipeline no
+  // longer produces this shape).
+  it("counterfactual-only-card: a note with only whatMayHaveHappened (no didWell/couldImprove/nextTime) is a silence violation", () => {
+    const factsWithOpponentSlip = {
+      ...g151Facts,
+      turningPoints: [
+        { rank: 1, ply: 28, san: "Na6", label: "opponent inaccuracy", deltaP: 0.05, lowConfidence: false,
+          kind: "swing", punishSan: null },
+      ],
+    } as any;
+    const v = checkDebriefOutput(
+      { bullets: [], notes: [{ ply: 28, whatMayHaveHappened: "if instead your knight to e5." }] } as any,
+      factsWithOpponentSlip
+    );
+    expect(v.some((x) => x.rule === "counterfactual-only-card")).toBe(true);
+  });
+
+  it("counterfactual-only-card does not fire when couldImprove is also present", () => {
+    const v = checkDebriefOutput(
+      {
+        bullets: [],
+        notes: [
+          {
+            ply: 28,
+            whatMayHaveHappened: "if instead her knight to e5.",
+            couldImprove: "her knight to a6 on move 14 was a small opening.",
+          },
+        ],
+      } as any,
+      g151Facts
+    );
+    expect(v.some((x) => x.rule === "counterfactual-only-card")).toBe(false);
+  });
+
   it("unknown-square: a bare square in bullet text that appears nowhere verifiable, only when turning lines are supplied", () => {
     const squareTestSans = [{ ply: 1, san: "e4" }];
     const out = {
@@ -413,7 +454,15 @@ describe("output.notes -- the module must check what DebriefPage actually render
     expect(rules).toContain("voice-emoji");
     expect(rules).toContain("voice-capital");
     // the spec'd where format for a note-scoped violation
-    expect(violations.every((v) => v.where === "note:43")).toBe(true);
+    const voiceRules = ["voice-em-dash", "voice-emoji", "voice-capital"];
+    expect(violations.filter((v) => voiceRules.includes(v.rule)).every((v) => v.where === "note:43")).toBe(true);
+    // Task 7 (game 192, RC8): this fixture's note carries ONLY
+    // whatMayHaveHappened (no didWell/couldImprove/nextTime) -- the same
+    // dead-cell shape counterfactual-only-card exists to catch. It
+    // legitimately also fires here, debrief-scoped rather than note-scoped
+    // (see the rule's own "where" -- it isn't per-note like the voice rules
+    // above).
+    expect(rules).toContain("counterfactual-only-card");
   });
   it("win-copy-on-non-win and reassurance-vs-detector fire on note prose, not just bullet text", () => {
     const facts = {
