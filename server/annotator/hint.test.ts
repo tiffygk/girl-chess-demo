@@ -235,3 +235,81 @@ describe("HintFacts.verified — provenance flag distinguishing the deep hint la
     expect(facts!.verified).toBe(false);
   });
 });
+
+// Task 2 (2026-08-28, game-192 RCA): computeHint runs MultiPV=3 but, before
+// this task, dropped candidates 2-3 on the floor -- nothing anywhere could
+// say "these moves are near-equal" so the coach model fabricated reasons for
+// its pick (real game 192). HintFacts.candidates is that fact: the ONE
+// multipv search's own top lines, best-first, uci-only.
+describe("HintFacts.candidates — the multipv search's own top lines ride through", () => {
+  // Custom minimal position (not from any real game) with three distinct,
+  // legal, non-capturing white moves so the scripted candidates thread
+  // through computeHint's trade-aware/verification machinery untouched by
+  // that machinery's own decisions -- this test is purely about whether the
+  // candidates array is carried onto HintFacts, not about selection.
+  const fen = "4k3/8/8/8/8/1N6/7P/6K1 w - - 0 1";
+
+  class ScriptedMultiEvaluator implements Evaluator {
+    constructor(
+      private candidates: Evaluation[],
+      private verify: Evaluation = { cp: -810, mate: null, bestMove: "e8e7", pv: [] }
+    ) {}
+    async init() {}
+    async evaluate(): Promise<Evaluation> {
+      return this.verify;
+    }
+    async evaluateMulti(): Promise<Evaluation[]> {
+      return this.candidates;
+    }
+    quit() {}
+  }
+
+  const candidates: Evaluation[] = [
+    { cp: 810, mate: null, bestMove: "g1h1", pv: ["g1h1"] },
+    { cp: 809, mate: null, bestMove: "h2h4", pv: ["h2h4"] },
+    { cp: 780, mate: null, bestMove: "b3c5", pv: ["b3c5"] },
+  ];
+
+  it("carries all multipv candidates, best-first, with their own cps -- non-escalated path", async () => {
+    // verify eval of -810 (from black's reply) makes hintHoldsUp's loss
+    // computation exactly 0 (<= HINT_MAX_LOSS_CP), so this never escalates.
+    const facts = await computeHint(fen, new ScriptedMultiEvaluator(candidates));
+    expect(facts).toBeTruthy();
+    expect(facts!.escalated).toBe(false);
+    expect(facts!.candidates).toEqual([
+      { uci: "g1h1", evalCp: 810, evalMate: null },
+      { uci: "h2h4", evalCp: 809, evalMate: null },
+      { uci: "b3c5", evalCp: 780, evalMate: null },
+    ]);
+  });
+
+  it("computePositionView's fast, single-PV read never carries candidates", async () => {
+    class FixedEvaluator implements Evaluator {
+      async init() {}
+      async evaluate(): Promise<Evaluation> {
+        return { cp: 100, mate: null, bestMove: "g1h1", pv: ["g1h1"] };
+      }
+      quit() {}
+    }
+    const facts = await computePositionView(fen, new FixedEvaluator());
+    expect(facts).toBeTruthy();
+    expect(facts!.candidates).toEqual([]);
+  });
+
+  it("drops candidates on the escalated retry path (a single-line re-search, no multipv)", async () => {
+    // Verify eval of 800 (same sign as the selected move's own 810, from
+    // black's reply) makes hintHoldsUp's loss computation 810 - (-800) =
+    // 1610, far past HINT_MAX_LOSS_CP -- forces the escalated retry, whose
+    // evaluate() call returns the same fixed 800/a2a3 value.
+    const escalatingEvaluator = new ScriptedMultiEvaluator(candidates, {
+      cp: 800,
+      mate: null,
+      bestMove: "h2h4",
+      pv: [],
+    });
+    const facts = await computeHint(fen, escalatingEvaluator);
+    expect(facts).toBeTruthy();
+    expect(facts!.escalated).toBe(true);
+    expect(facts!.candidates).toEqual([]);
+  });
+});
