@@ -896,6 +896,80 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
         "i can't reach my thinking right now. try me again in a moment."
       );
     });
+
+    // Task 6 (game192-fixes round, RC4): the validator caught a bad draft in
+    // real game 192 and the caught text was unrecoverable -- only the last
+    // attempt ever landed in the row. attempts_json is the fix: one entry
+    // per generation attempt, in order, so a regenerated-away draft
+    // survives in chat's loop too, same as narrate's.
+    it("invalid first output, valid second -> row has regen_count 1 and attempts_json with 2 entries, entry 0 carrying the violations and validated:false", async () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      let calls = 0;
+      const backend = fakeBackend(async () => {
+        calls += 1;
+        if (calls === 1) return "Qxh7 wins the game right now.";
+        return "e4 opens things up nicely for you.";
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      const result = await chat("what should I do next?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+      expect(calls).toBe(2);
+      expect(result.source).toBe("model");
+
+      const row = getAdviceTraces(gameId).find((r) => r.id === result.traceId)!;
+      expect(row.regen_count).toBe(1);
+      expect(row.attempts_json).toBeTruthy();
+      const attempts = JSON.parse(row.attempts_json);
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0].output).toBe("Qxh7 wins the game right now.");
+      expect(attempts[0].validated).toBe(false);
+      expect(attempts[0].violations.length).toBeGreaterThan(0);
+      expect(attempts[1].output).toBe("e4 opens things up nicely for you.");
+      expect(attempts[1].validated).toBe(true);
+      expect(attempts[1].violations).toEqual([]);
+    });
+
+    it("clean first attempt -> attempts_json is NULL (the row's own output IS attempt 0, nothing lost)", async () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      const backend = fakeBackend(async () => "e4 opens things up nicely for you.");
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      const result = await chat("what did I just play?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+      const row = getAdviceTraces(gameId).find((r) => r.id === result.traceId)!;
+      expect(row.attempts_json).toBeNull();
+    });
+
+    // Backend-error attempts must record with violations [] per the brief --
+    // this exercises the attempt-0-timeout-retry path (continue, not break),
+    // which is chat()'s own extra branch narrate() doesn't have: attempt 0
+    // times out (regenCount becomes 1, loop continues to attempt 1 with the
+    // SAME prompt), attempt 1 then validates clean.
+    it("attempt 0 times out (retried), attempt 1 succeeds -> attempts_json entry 0 is the backend-error text with empty violations", async () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      let calls = 0;
+      const backend = fakeBackend(async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("claude cli timed out after 20000ms");
+        return "e4 opens things up nicely for you.";
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      const result = await chat("what did I just play?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+      expect(calls).toBe(2);
+      expect(result.source).toBe("model");
+
+      const row = getAdviceTraces(gameId).find((r) => r.id === result.traceId)!;
+      const attempts = JSON.parse(row.attempts_json);
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0].output).toBe("[backend error] claude cli timed out after 20000ms");
+      expect(attempts[0].violations).toEqual([]);
+      expect(attempts[0].validated).toBe(false);
+      expect(attempts[1].validated).toBe(true);
+    });
   });
 
   // (b), (c), (f), (g), (h)

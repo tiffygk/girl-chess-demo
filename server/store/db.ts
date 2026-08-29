@@ -143,6 +143,20 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // nullable, no default, same convention as cause/rating/feedback_text
     // above.
     { name: "backfilled_at", addSql: "backfilled_at TEXT" },
+    // Task 6 (game192-fixes round, RC4): what the validator caught used to
+    // be unrecoverable -- only the LAST attempt's output ever landed in this
+    // row (the winning model answer, or the final template's triggering
+    // text). Game 192 caught a bad draft and the caught text itself was
+    // already gone. Her 2026-08-28 ask: "what text we keep losing in the
+    // regenerations." One JSON array entry per generation attempt, in
+    // order -- `[{ output, violations, validated }]` -- written by
+    // narrate()'s and chat()'s own attempt loops (server/coach/index.ts,
+    // server/coach/chat.ts). NULL when the first attempt validated clean
+    // (or errored straight to a template with no second attempt): no
+    // information is lost in that case, because the row's own `output`
+    // column already IS attempt 0. Additive/nullable, no default, same
+    // convention as cause/backfilled_at above.
+    { name: "attempts_json", addSql: "attempts_json TEXT" },
   ],
   // Increment 3b: panel-ruled turning points (server/annotator/turningPoints.ts),
   // up to 3 rows per game, written once at game end. Brand-new table (CREATE
@@ -286,7 +300,7 @@ export function openDb(path = "data/girlchess.db") {
       kind TEXT, facts_json TEXT, prompt TEXT, output TEXT, source TEXT,
       backend TEXT, validated INTEGER, regen_count INTEGER, latency_ms INTEGER,
       created_at TEXT DEFAULT (datetime('now')), rating INTEGER, feedback_text TEXT,
-      cause TEXT, backfilled_at TEXT);
+      cause TEXT, backfilled_at TEXT, attempts_json TEXT);
     CREATE TABLE IF NOT EXISTS turning_points(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), rank INTEGER,
       ply INTEGER, san TEXT, label TEXT, punish_san TEXT, delta_p REAL,
@@ -424,14 +438,20 @@ export const insertAdviceTrace = (t: {
   // Optional so every pre-Task-7 call site (narrate()'s recordAdviceTrace
   // wrapper, existing tests) keeps working unchanged and gets NULL.
   cause?: string | null;
+  // Task 6 (game192-fixes round, RC4): every generation attempt this row's
+  // caller made, JSON-stringified -- see EXPECTED_COLUMNS.advice_traces'
+  // `attempts_json` comment above for the shape and the NULL convention.
+  // Optional so every pre-this-task call site (existing tests, any future
+  // caller that never regenerates) keeps working unchanged and gets NULL.
+  attemptsJson?: string | null;
 }): number =>
   Number(
     db.prepare(
-      `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms, cause)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms, cause, attempts_json)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).run(
       t.gameId, t.ply, t.kind, t.factsJson, t.prompt, t.output, t.source, t.backend,
-      t.validated ? 1 : 0, t.regenCount, t.latencyMs, t.cause ?? null
+      t.validated ? 1 : 0, t.regenCount, t.latencyMs, t.cause ?? null, t.attemptsJson ?? null
     ).lastInsertRowid
   );
 export const getAdviceTraces = (gameId: number) =>
