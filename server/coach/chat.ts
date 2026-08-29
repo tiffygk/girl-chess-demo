@@ -374,6 +374,15 @@ export interface ChatFactList {
   // plies only. Absent when there is no matching hint, so ordinary chat is
   // untouched.
   hintFindings?: HintFindings;
+  // Task 3 (RC2, game 192): every deep hint actually shown THIS game, oldest
+  // first, cap 8 -- ground truth for "why did the hint change" (real game
+  // 192: the model had no record of what she'd been shown and fabricated a
+  // timeline). Deliberately just {moveNumber, bestSan}, never fen -- unlike
+  // hintFindings above, this is a historical record, not a position to
+  // re-derive facts from, so there is nothing for the model to do with a fen
+  // here. Absent when the live record carries no hints yet, so ordinary
+  // chat and every existing call site are untouched.
+  recentHints?: { moveNumber: number; bestSan: string }[];
 }
 
 // Every position-shaped fact the coach gets, derived from one chess.js
@@ -574,7 +583,16 @@ export function assembleChatFactList(
       // manager.ts's real HintFacts always sets it (see hint.ts).
       candidates?: { uci: string; evalCp: number | null; evalMate: number | null }[];
     };
-  }
+  },
+  // Task 3 (RC2, game 192): additive optional 8th param, same "caller
+  // derives, this function only carries it through" discipline as every
+  // other optional param here -- manager.ts passes live.hintHistory. Folded
+  // to ChatFactList.recentHints unconditionally (no fen-matching gate,
+  // unlike hintCandidate above -- these are a historical record of what she
+  // was actually shown, not a claim about the CURRENT position, so there is
+  // no staleness to check). fen is carried on this param only so the shape
+  // matches LiveGame.hintHistory byte-for-byte; the fold below drops it.
+  hintHistory?: { fen: string; bestSan: string; moveNumber: number }[]
 ): ChatFactList {
   const chess = new Chess();
   const ordered = [...gameMoves].sort((a, b) => a.ply - b.ply);
@@ -711,6 +729,11 @@ export function assembleChatFactList(
   // Task 1 fold (R2): the verified pending move's own san -- see the
   // legality check above. Only ever a real legal move by the time it's here.
   if (verifiedPendingMove?.san) sans.add(verifiedPendingMove.san);
+  // Task 3 (RC2, game 192): every hint she was actually shown must be
+  // speakable, same "the model's own true statement of what happened must
+  // not be rejected" reasoning as every other fold here -- if she asks "why
+  // did you say Kh1 earlier" the coach must be able to name Kh1.
+  for (const h of hintHistory ?? []) sans.add(h.bestSan);
 
   // Round 3 (Q2 step 3): fold the hint shelf into the fact list ONLY when
   // its fen matches the position actually in play -- live currentFen, or the
@@ -802,6 +825,11 @@ export function assembleChatFactList(
     perPlyAnalysis,
     highlightedPlies,
     hintFindings,
+    // Task 3 (RC2, game 192): drop fen at the fold -- ChatFactList.recentHints
+    // is a historical record (moveNumber + bestSan only), never a position to
+    // re-derive facts from. Undefined (not an empty array) when the caller
+    // passes nothing, same convention hintFindings just above follows.
+    recentHints: hintHistory?.map((h) => ({ moveNumber: h.moveNumber, bestSan: h.bestSan })),
   };
 }
 
@@ -1522,6 +1550,15 @@ function hintFindingsForModel(hintFindings: ChatFactList["hintFindings"]) {
   };
 }
 
+// Task 3 (RC2, game 192): verbatim from the plan -- accompanies
+// ChatFactList.recentHints in the model projection ONLY when there is at
+// least one entry to explain (see factsForModel below). Tells the model in
+// so many words that this list, not its own reasoning, is the ground truth
+// for "why did the hint change" -- real game 192's coach had no such record
+// and fabricated a timeline when asked exactly that.
+const RECENT_HINTS_NOTE =
+  "hints the player was actually shown this game, oldest first. two different bestSan entries for the same move number are search variance between looks, not a change in the position -- if she asks why a suggestion changed, this list is the only ground truth; never invent a timeline beyond it.";
+
 function factsForModel(facts: ChatFactList, mentioned: number[] = []) {
   const { allowedSans, context, focusPosition, perPlyAnalysis, hintFindings, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
@@ -1550,6 +1587,13 @@ function factsForModel(facts: ChatFactList, mentioned: number[] = []) {
     perPlyAnalysis: perPlyForModel(facts, mentioned),
     context: strippedContext,
     hintFindings: hintFindingsForModel(hintFindings),
+    // Task 3 (RC2, game 192): the note key is a LITERAL name Task 4's persona
+    // text references -- keep it exactly `recentHintsNote`. Emitted only
+    // alongside a non-empty recentHints (facts.recentHints already sits in
+    // `rest` above unchanged -- this only adds the explanatory note next to
+    // it, following hintFindingsForModel's own "note" field as the idiomatic
+    // shape for pairing a fact with how to read it).
+    ...(facts.recentHints?.length ? { recentHintsNote: RECENT_HINTS_NOTE } : {}),
   };
 }
 

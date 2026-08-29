@@ -660,6 +660,87 @@ describe("GameManager", () => {
     }, 20000);
   });
 
+  // Task 3 (RC2, game 192): the shown-hint history. Real game 192 -- the
+  // player asked why the hint changed, and the model had no record of what
+  // hints she was actually shown, so it fabricated a timeline. hintHistory
+  // is the ground truth that fixes that: every FRESH deep computeHint result
+  // gets appended, folded into chat's recentHints fact.
+  describe("computeHint records shown-hint history, folded to recentHints (Task 3, RC2)", () => {
+    it("two computeHint calls at two different fens (a move played in between) both land in hintHistory, in order, with correct move numbers -- and fold into recentHints/allowedSans/the model prompt", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const live = (gm as any).games.get(g.gameId);
+
+      // First deep hint at the starting position -- ply 0, so move number 1.
+      const first = await gm.computeHint(g.gameId);
+      expect(first.ok).toBe(true);
+      expect(live.hintHistory).toHaveLength(1);
+      expect(live.hintHistory[0].moveNumber).toBe(1);
+      expect(live.hintHistory[0].fen).toBe(new Chess().fen());
+      if (first.ok) {
+        expect(live.hintHistory[0].bestSan).toMatch(/^[a-zA-Z0-9+#=O-]+$/); // a real SAN, not a raw uci
+      }
+
+      // Advance a full move pair (player + maia reply) so the fen AND ply
+      // actually change -- the "advance a move between" step in the brief.
+      const moved = await gm.playerMove(g.gameId, "e2", "e4", undefined, 500);
+      expect(moved.ok).toBe(true);
+
+      // Second deep hint at the new position -- ply 2, so move number 2.
+      const second = await gm.computeHint(g.gameId);
+      expect(second.ok).toBe(true);
+      expect(live.hintHistory).toHaveLength(2);
+      expect(live.hintHistory[1].moveNumber).toBe(2);
+      expect(live.hintHistory[1].fen).toBe(live.chess.fen());
+
+      // Fold into chat's recentHints: capture the actual prompt sent to the
+      // backend (factsForModel is private -- same convention every other
+      // projection test in this suite/chat.test.ts uses).
+      let capturedPrompt = "";
+      gm.setCoachBackendForTesting({
+        name: "fake-recent-hints",
+        async available() {
+          return true;
+        },
+        async generate(prompt: string) {
+          capturedPrompt = prompt;
+          return "that keeps your development on track.";
+        },
+      });
+      const result = await gm.chat(g.gameId, { message: "why did the hint change?", context: { mode: "live" } });
+      expect(result.ok).toBe(true);
+      expect(capturedPrompt).toContain('"recentHints"');
+      expect(capturedPrompt).toContain(`"moveNumber":1,"bestSan":"${live.hintHistory[0].bestSan}"`);
+      expect(capturedPrompt).toContain(`"moveNumber":2,"bestSan":"${live.hintHistory[1].bestSan}"`);
+      // The note copy, verbatim from the plan.
+      expect(capturedPrompt).toContain(
+        "hints the player was actually shown this game, oldest first. two different bestSan entries for the same move number are search variance between looks, not a change in the position -- if she asks why a suggestion changed, this list is the only ground truth; never invent a timeline beyond it."
+      );
+      // Both shown-hint sans must be legally speakable by the model
+      // (validateChat's allow-list) -- not just present in the prompt JSON.
+      expect(capturedPrompt).toContain(live.hintHistory[0].bestSan);
+      expect(capturedPrompt).toContain(live.hintHistory[1].bestSan);
+    }, 60000);
+
+    // Companion to the fen-keyed reuse guard above: a reused (same-fen)
+    // verified hint must NOT append a second hintHistory entry -- she was
+    // only ever actually SHOWN that hint once, so a second identical entry
+    // would be a duplicate ground-truth record, not a second real event.
+    it("calling computeHint twice at the SAME fen (Task 1 reuse path) appends only ONE hintHistory entry", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const live = (gm as any).games.get(g.gameId);
+
+      const first = await gm.computeHint(g.gameId);
+      expect(first.ok).toBe(true);
+      expect(live.hintHistory).toHaveLength(1);
+
+      // Second call, no move played in between -- Task 1's fen-keyed guard
+      // returns the cached verified entry early, before hintHistory's push.
+      const second = await gm.computeHint(g.gameId);
+      expect(second.ok).toBe(true);
+      expect(live.hintHistory).toHaveLength(1);
+    }, 40000);
+  });
+
   // Increment 3a Wave 2: narrate(). Uses setCoachBackendForTesting to inject
   // a fake — never probes or invokes the real claude CLI / ollama (brief:
   // "do NOT invoke the real claude CLI in tests"). This also exercises the

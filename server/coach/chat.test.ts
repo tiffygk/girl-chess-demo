@@ -1413,6 +1413,107 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
+  // Task 3 (RC2, game 192): the shown-hint history fold. Real game 192 -- the
+  // player asked why the hint changed, and the coach had no record of what
+  // hints she was actually shown, so it invented a timeline. hintHistory
+  // (manager.ts's live record) is threaded through as the 8th arg, the same
+  // "caller derives, this function only carries it through" discipline as
+  // every other optional param -- folded to ChatFactList.recentHints
+  // unconditionally (no fen-matching gate, unlike the hint shelf above --
+  // this is a historical record of what happened, not a claim about the
+  // CURRENT position).
+  describe("assembleChatFactList: shown-hint history fold (Task 3, RC2)", () => {
+    const hintHistory = [
+      { fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", bestSan: "Nf3", moveNumber: 1 },
+      { fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", bestSan: "e5", moveNumber: 1 },
+    ];
+
+    it("folds hintHistory into recentHints (moveNumber + bestSan only, oldest first, fen dropped) when the 8th arg is passed", () => {
+      const facts = assembleChatFactList(
+        [],
+        { mode: "live" },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        hintHistory
+      );
+      expect(facts.recentHints).toEqual([
+        { moveNumber: 1, bestSan: "Nf3" },
+        { moveNumber: 1, bestSan: "e5" },
+      ]);
+      // fen must not leak into the projected field itself.
+      expect(facts.recentHints).not.toHaveProperty("0.fen");
+    });
+
+    it("adds every shown hint's bestSan to allowedSans", () => {
+      const facts = assembleChatFactList(
+        [],
+        { mode: "live" },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        hintHistory
+      );
+      expect(facts.allowedSans).toContain("Nf3");
+      expect(facts.allowedSans).toContain("e5");
+    });
+
+    it("every existing call site (no 8th arg) is unaffected -- recentHints stays undefined", () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      expect(facts.recentHints).toBeUndefined();
+    });
+
+    it("removing the fold (no hintHistory) never emits the note in the model-facing prompt -- proves the note is gated on real data, not always-on", async () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" }); // no 8th arg
+      let capturedPrompt = "";
+      const backend = fakeBackend(async (prompt) => {
+        capturedPrompt = prompt;
+        return "e4 is a fine start for you.";
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      await chat("why did the hint change?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+      expect(capturedPrompt).not.toContain('"recentHints"');
+      expect(capturedPrompt).not.toContain("only ground truth");
+    });
+
+    it("the model prompt carries recentHints and the verbatim recentHintsNote when hints were shown", async () => {
+      const facts = assembleChatFactList(
+        [{ ply: 1, san: "e4" }],
+        { mode: "live" },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        hintHistory
+      );
+      let capturedPrompt = "";
+      const backend = fakeBackend(async (prompt) => {
+        capturedPrompt = prompt;
+        return "e4 is a fine start for you.";
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      await chat("why did the hint change?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+      expect(capturedPrompt).toContain('"recentHints"');
+      expect(capturedPrompt).toContain('"moveNumber":1,"bestSan":"Nf3"');
+      expect(capturedPrompt).toContain('"moveNumber":1,"bestSan":"e5"');
+      expect(capturedPrompt).toContain('"recentHintsNote"');
+      expect(capturedPrompt).toContain(
+        "hints the player was actually shown this game, oldest first. two different bestSan entries for the same move number are search variance between looks, not a change in the position -- if she asks why a suggestion changed, this list is the only ground truth; never invent a timeline beyond it."
+      );
+    });
+  });
+
   // Task 3 (coach-truth round): the postgame incident -- the coach told the
   // player a bishop was on d6 while she was asking about a ply where it
   // stood on e7; it reached d6 three of mallow's moves later. The fact list

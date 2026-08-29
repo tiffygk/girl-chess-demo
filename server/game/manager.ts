@@ -56,7 +56,25 @@ interface LiveGame {
    *  onto the shelf when she asks about the same position. In-memory only,
    *  no schema change. */
   lastHint?: { fen: string; facts: HintFacts; at: number };
+  /** Task 3 (RC2, game 192): every deep hint actually shown this game, oldest
+   *  first, cap 8 -- the ground truth for "why did the hint change" (real
+   *  game 192: the coach had no record of what she'd been shown and
+   *  fabricated a timeline). Appended ONLY on a fresh deep result in
+   *  computeHint below, never on the Task 1 fen-keyed reuse early-return --
+   *  a reused hint was already recorded the first time it was computed, so
+   *  recording it again would be a duplicate entry for a hint she was only
+   *  ever shown once. fen is kept on this live record for completeness but
+   *  is dropped at the chat.ts fold (ChatFactList.recentHints carries only
+   *  moveNumber + bestSan). In-memory only, no schema change. */
+  hintHistory: { fen: string; bestSan: string; moveNumber: number }[];
 }
+
+// Task 3: cap on LiveGame.hintHistory -- owner-calibratable, mirrors the
+// "keep it small" discipline CHAT_HISTORY_WINDOW already applies to chat
+// messages. A whole game rarely asks for more than a handful of hints, and
+// the shelf exists to answer "why did the hint change" about RECENT hints,
+// not to be a full game log (perPlyAnalysis already carries the whole game).
+const HINT_HISTORY_CAP = 8;
 
 // Wave 4, item 3 (2026-08-01, game-164): the coach's acknowledgment for a
 // recorded note. A CODE constant, deterministically appended by chat() ONLY
@@ -431,7 +449,7 @@ export class GameManager {
   async newGame(sessionId: number, elo: number) {
     const opponent = await this.opponentFor(elo);
     const gameId = createGame(sessionId, (opponent.fallback ? "fallback-" : "maia-") + elo);
-    this.games.set(gameId, { chess: new Chess(), opponent, ply: 0, finished: false });
+    this.games.set(gameId, { chess: new Chess(), opponent, ply: 0, finished: false, hintHistory: [] });
     return { gameId, fen: new Chess().fen(), fallback: opponent.fallback, elo };
   }
 
@@ -1116,6 +1134,16 @@ export class GameManager {
     const facts = await computeHintFacts(fen, this.evaluator);
     if (!facts) return { ok: false };
     live.lastHint = { fen, facts, at: Date.now() };
+    // Task 3 (RC2, game 192): record what was actually shown -- a FRESH deep
+    // result only, never the Task 1 reuse early-return above (that fen
+    // already has an entry from the first time it was computed). bestSan is
+    // converted from facts.bestUci by replaying it from `fen` (pvLine, the
+    // same UCI-replay this file already uses for every other bestSan it
+    // derives) so hintHistory speaks SAN, not UCI, the same convention
+    // perPlyAnalysis and the hint shelf itself follow.
+    const { bestSan } = this.pvLine(fen, { bestMove: facts.bestUci, pv: null });
+    live.hintHistory.push({ fen, bestSan: bestSan ?? facts.bestUci, moveNumber: Math.floor(live.ply / 2) + 1 });
+    if (live.hintHistory.length > HINT_HISTORY_CAP) live.hintHistory.shift();
     logGameEvent(
       gameId,
       "hint_compute",
@@ -1342,7 +1370,13 @@ export class GameManager {
         outcome,
       },
       highlightedPlies.length > 0 ? highlightedPlies : undefined,
-      live?.lastHint ? { fen: live.lastHint.fen, facts: live.lastHint.facts } : undefined
+      live?.lastHint ? { fen: live.lastHint.fen, facts: live.lastHint.facts } : undefined,
+      // Task 3 (RC2, game 192): same "caller derives, this function only
+      // carries it through" discipline as every other optional param here --
+      // manager.ts is the one place that knows the live game's hint history.
+      // Undefined (not an empty array) when nothing has been shown yet, same
+      // convention highlightedPlies just above follows.
+      live?.hintHistory.length ? live.hintHistory : undefined
     );
 
     const historyRows = getChatMessages(gameId, CHAT_HISTORY_WINDOW);
