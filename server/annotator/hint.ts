@@ -61,6 +61,15 @@ export interface HintFacts extends MoveFacts {
    *  signed -- the fact that made trace-190's Ng5 a forced-mate hint. null
    *  when the score is a centipawn eval. */
   evalMate: number | null;
+  /** Task 2 (2026-08-28, game-192 RCA): the ONE multipv search's own top
+   *  candidates, best-first, uci-only (chat.ts's fold converts to SAN at
+   *  its own matched fen). Real game 192's coach fabricated reasons for a
+   *  choice among near-equal moves because nothing anywhere carried the
+   *  fact that candidates 2-3 were close -- this is that fact. `[]` when
+   *  escalated (the retry is a single-line re-search, no multipv to carry)
+   *  or for computePositionView's fast, single-line read -- never
+   *  undefined, so no consumer needs an extra guard. */
+  candidates: { uci: string; evalCp: number | null; evalMate: number | null }[];
   /** Whole-branch review (2026-08-03, Important finding 1): PROVENANCE --
    *  true only for computeHint's deep, multipv, verification-backed search;
    *  false for computePositionView's fast, single-PV, unverified bounded
@@ -208,6 +217,7 @@ export async function computeHint(fen: string, evaluator: Evaluator): Promise<Hi
     trade,
     evalCp: chosen.cp,
     evalMate: chosen.mate,
+    candidates: escalated ? [] : candidates.map((c) => ({ uci: c.bestMove, evalCp: c.cp, evalMate: c.mate })),
     verified: true,
   };
 }
@@ -244,6 +254,7 @@ export async function computePositionView(
     trade: false,
     evalCp: ev.cp,
     evalMate: ev.mate,
+    candidates: [],
     verified: false,
   };
 }
