@@ -866,7 +866,7 @@ describe("hintFindingsForModel — candidates and the margin projection (Task 2,
 
     const margin = extractMargin(capturedPrompt);
     expect(margin).toBe(
-      "close call: Nf3 and Nc3 are about equally strong here. the engine's pick between near-equal moves can change between looks; that is search variance, not a contradiction."
+      "close call: Nf3 and Nc3 are about equally strong here. our chess brain's pick between near-equal moves can change between looks; that is search variance, not a contradiction."
     );
     expect(capturedPrompt).not.toMatch(/decisively ahead/);
   });
@@ -889,7 +889,7 @@ describe("hintFindingsForModel — candidates and the margin projection (Task 2,
 
     const margin = extractMargin(capturedPrompt);
     expect(margin).toBe(
-      "close call: Nf3 and Nc3 are about equally strong here. the engine's pick between near-equal moves can change between looks; that is search variance, not a contradiction. " +
+      "close call: Nf3 and Nc3 are about equally strong here. our chess brain's pick between near-equal moves can change between looks; that is search variance, not a contradiction. " +
         'the position is already decisively ahead for the side to move; several moves keep the win, so which winning move is "best" matters much less than usual.'
     );
   });
@@ -923,6 +923,33 @@ describe("hintFindingsForModel — candidates and the margin projection (Task 2,
     for (const rawNumber of ["810", "809", "760", "35", "500"]) {
       expect(margin).not.toContain(rawNumber);
     }
+  });
+
+  // Final review Important 1 (2026-08-28): "engine" is voice-banned
+  // unconditionally (voiceRules.ts:31, chat.ts's VOICE_BANNED_WORDS_RE) and
+  // the persona instructs the model to lead with this string verbatim --
+  // a faithful echo used to burn a regen. Pin the voice seam directly with
+  // a word-boundary regex so a future rewrite can't reintroduce "engine"
+  // by accident (e.g. via a synonym that still contains the substring).
+  it("(e) the margin string never contains the standalone word 'engine' (voice seam)", async () => {
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      hintCandidateFacts(closeCallCandidates, 810)
+    );
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "either developing move works well here.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why this move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    const margin = extractMargin(capturedPrompt);
+    expect(margin).toBeTruthy();
+    expect(margin).not.toMatch(/\bengine\b/i);
   });
 
   it("(d) a wide gap in an undecided position never emits a margin at all", async () => {

@@ -227,9 +227,11 @@ line, the margin note); if hintFindings carries a margin note, lead with it.
 never construct a tactical story the facts do not spell out, and never reason
 about square colors or diagonals: no fact in the list states them. if she says
 a suggestion changed, recentHints is the only ground truth: when it shows two
-entries, agree it changed and say plainly that our chess brain's pick between
-near-equal moves can change between looks; when the facts cannot show why
-something changed, say you cannot tell from the facts. never tell her a
+entries for the same move number, agree it changed and say plainly that our
+chess brain's pick between near-equal moves can change between looks; two
+entries at different move numbers are simply different positions, each with
+its own answer. when the facts cannot show why something changed, say you
+cannot tell from the facts. never tell her a
 suggestion belonged to an earlier move unless recentHints itself shows that.
 
 every claim about what's best, what's risky, or who stands better comes from

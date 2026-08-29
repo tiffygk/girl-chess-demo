@@ -365,7 +365,7 @@ export function buildPrompt(facts: CoachFactList, persona: Persona): string {
     yourMove: {
       ...facts.herMove,
       confirmed: false,
-      note: "this move is only being considered -- picked up and set down, NOT played. currentFen shows the board from before it. speak of it in present or conditional tense, never past.",
+      note: "this move is only being considered -- picked up and set down, NOT played. speak of it in present or conditional tense, never past.",
     },
     tier: facts.tier,
     ...(hasMate ? { mateBefore: facts.mateBefore, mateAfter: facts.mateAfter } : { deltaCp: facts.deltaCp }),
