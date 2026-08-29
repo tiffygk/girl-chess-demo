@@ -1483,21 +1483,34 @@ function hintFindingsForModel(hintFindings: ChatFactList["hintFindings"]) {
   // HINT_CLOSE_CALL_CP of the BEST candidate's own cp, not every candidate
   // the shelf carries unconditionally.
   const cands = h.candidates.filter((c) => c.evalCp !== null);
-  let margin: string | undefined;
-  if (cands.length >= 2) {
+  // Fix round 1, Finding 1 (review): if the TRUE best candidate (index 0 of
+  // the unfiltered array) is a mate score, it doesn't survive the evalCp
+  // !== null filter above -- so `cands` would start at the second-best
+  // candidate instead. Naming cp-scored runners-up "close to each other" in
+  // that case names non-best moves as near-equal with a mate on the board,
+  // exactly backwards. HintFindings.candidates carries no evalMate, so this
+  // positional check on the unfiltered array is the only signal available;
+  // no shape change needed.
+  const bestIsMate = h.candidates.length > 0 && h.candidates[0].evalCp === null;
+  let closeCall: string | undefined;
+  if (!bestIsMate && cands.length >= 2) {
     const bestCp = cands[0].evalCp as number;
     const gap = bestCp - (cands[1].evalCp as number);
-    let closeCall: string | undefined;
     if (gap <= HINT_CLOSE_CALL_CP) {
       const qualifying = cands.filter((c) => bestCp - (c.evalCp as number) <= HINT_CLOSE_CALL_CP);
       closeCall = `close call: ${joinSans(qualifying.map((c) => c.san))} are about equally strong here. the engine's pick between near-equal moves can change between looks; that is search variance, not a contradiction.`;
     }
-    const decided =
-      h.evalCp !== null && Math.abs(h.evalCp) >= HINT_DECIDED_CP
-        ? `the position is already decisively ahead for the side to move; several moves keep the win, so which winning move is "best" matters much less than usual.`
-        : undefined;
-    margin = [closeCall, decided].filter(Boolean).join(" ") || undefined;
   }
+  // Fix round 1, Finding 2 (controller ruling, ledgered): decidedness
+  // depends only on h.evalCp, independent of candidate count -- a
+  // decisively-ahead position with fewer than two cp-scored candidates
+  // must still get the humility sentence (decided positions are exactly
+  // where this project keeps getting bitten).
+  const decided =
+    h.evalCp !== null && Math.abs(h.evalCp) >= HINT_DECIDED_CP
+      ? `the position is already decisively ahead for the side to move; several moves keep the win, so which winning move is "best" matters much less than usual.`
+      : undefined;
+  const margin = [closeCall, decided].filter(Boolean).join(" ") || undefined;
   return {
     note,
     bestSan: h.bestSan,
