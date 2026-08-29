@@ -741,15 +741,30 @@ export function checkDebriefOutput(output: DebriefOutput, facts: DebriefFacts): 
   // the owner called useless: an opponent inaccuracy with punish_san NULL
   // rendered ONLY "what may have happened: if instead your knight to e5."
   // and nothing else. Fires on any note whose whatMayHaveHappened is set
-  // but didWell/couldImprove/nextTime are all absent -- a counterfactual
-  // with no other content is a card that says nothing she can act on.
+  // but didWell/couldImprove/nextTime/opportunity are all absent -- a
+  // counterfactual with no other content is a card that says nothing she
+  // can act on.
+  //
+  // Fix round 1, F3 (2026-08-29): note.opportunity ("this opens up: ...")
+  // is real, actionable content too -- turningPointNote.ts's
+  // buildTurningPointNote populates it independently of
+  // didWell/couldImprove/nextTime whenever the line replays at all, which
+  // is reachable today on backfill labels like "the clincher" (no motif,
+  // so no nextTime; no eval-band/missedPunish match, so no couldImprove).
+  // Omitting it here falsely flagged that shape as the dead-end card.
   for (const note of output.notes ?? []) {
-    if (note.whatMayHaveHappened && !note.didWell && !note.couldImprove && !note.nextTime) {
+    if (
+      note.whatMayHaveHappened &&
+      !note.didWell &&
+      !note.couldImprove &&
+      !note.nextTime &&
+      !note.opportunity
+    ) {
       violations.push({
         kind: "silence",
         rule: "counterfactual-only-card",
         where: "debrief",
-        message: `note at ply ${note.ply} has only whatMayHaveHappened, no didWell/couldImprove/nextTime`,
+        message: `note at ply ${note.ply} has only whatMayHaveHappened, no didWell/couldImprove/nextTime/opportunity`,
       });
     }
   }

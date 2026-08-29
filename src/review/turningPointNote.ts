@@ -340,9 +340,14 @@ const OPPONENT_SLIP: Record<string, { phrase: string; tail: string }> = {
     phrase: "a real gift",
     tail: "the game swung your way here whether or not you cashed it in on the spot.",
   },
+  // Fix round 1, F4 (2026-08-29, ruled copy amendment): the original tail
+  // ("...moments like this are where a lead starts.") over-claims in an
+  // already-decided position -- a mistake in a position that's already
+  // lost or won starts no lead (the known decided-position class). States
+  // only the magnitude, nothing the eval delta alone doesn't establish.
   "opponent mistake": {
     phrase: "a real slip",
-    tail: "it handed you ground; moments like this are where a lead starts.",
+    tail: "it handed you real ground.",
   },
   "opponent inaccuracy": {
     phrase: "a small opening",
@@ -439,7 +444,17 @@ function buildCouldImprove(
   // RC6 (game 192, move-14 card): an opponent slip with no recorded punish
   // used to render a counterfactual-only card she called useless. State the
   // slip and its size honestly -- nothing more is in the fields.
-  if (tp.label.startsWith("opponent") && !tp.punishSan) {
+  //
+  // Fix round 1, F2 (2026-08-29): a quiet best reply (no capture) never
+  // gets tp.punishSan set by turningPoints.ts's own credit-assignment
+  // (attachPunishSuffix), even when she genuinely played it -- so
+  // punishSan null does NOT mean "she didn't punish it." followedBest is
+  // the independent, second confirmation of that fact (same one
+  // buildDidWell already reads a few lines up); when it says followed,
+  // this clause must stay silent, or the card contradicts its own didWell
+  // ("you punished it...made her pay." right next to "...moved on without
+  // cashing it in.").
+  if (tp.label.startsWith("opponent") && !tp.punishSan && !fb?.followed) {
     const n = moveNumberForPly(tp.ply);
     const band = OPPONENT_SLIP[tp.label];
     if (band) {
@@ -503,13 +518,18 @@ function buildWhatMayHaveHappened(
   if (pv.length === 0) return undefined;
   const [first] = pv;
   const described = seedFen ? describeSanMove(first, seedFen) : null;
-  // Ply-parity ownership class (Task 7, game 192, 6th instance of this
-  // class): odd plies are hers, even are mallow's -- the counterfactual on
-  // an even ply names MALLOW's alternative, so it must say "her", not
-  // "your". Reads the side from the line's own ply field directly, per the
-  // standing rule: never a helper, never re-derived.
-  const owner = line.ply % 2 === 0 ? "her" : "your";
-  if (described) return `if instead ${owner} ${described}.`;
+  // Fix round 1, F1 (2026-08-29): Task 7 briefly keyed this pronoun off
+  // line.ply parity ("her" on an even ply) -- wrong. A turning line's seed
+  // fen is always replayed at seedPly = line.ply - (line.ply % 2), i.e.
+  // always EVEN, and the player is always white -- so the pv's first move
+  // (pvSans[0]/bestSan, played from that seed fen) is ALWAYS hers, on both
+  // parities. At an even tp.ply it's specifically her REPLY at ply+1 (same
+  // fact buildCouldImprove's own comment already documents). "your" is
+  // therefore unconditional here. If black-play ever ships, the owner must
+  // be derived from the seed fen's side-to-move vs the player's actual
+  // colour -- never from line.ply parity, which carries no side-to-move
+  // information at all.
+  if (described) return `if instead your ${described}.`;
   return `if instead ${first} had been played here.`;
 }
 
