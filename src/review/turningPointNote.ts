@@ -581,12 +581,26 @@ export function buildTurningPointNote(
   // already exists (never a standalone lead-change point itself, see
   // leadClause's own guard), creating one when neither does so a flagged
   // point is never silent.
+  //
+  // Final review Minor 4 (2026-08-28): a leader-"her" clause is always good
+  // news, so it always belongs under didWell -- creating it when absent,
+  // appending when present -- regardless of whether Task 7's OPPONENT_SLIP
+  // couldImprove already exists on this point (an opponent slip is exactly
+  // where she crosses into a lead, so this collision is the common case,
+  // not an edge case). A leader-"mallow" clause is bad news and keeps
+  // today's behavior: append to didWell if present, else couldImprove if
+  // present, else create couldImprove.
   const clause = leadClause(tp);
   if (clause) {
-    if (note.didWell) note.didWell = `${note.didWell} ${clause}`;
-    else if (note.couldImprove) note.couldImprove = `${note.couldImprove} ${clause}`;
-    else if (tp.leader === "her") note.didWell = clause;
-    else note.couldImprove = clause;
+    if (tp.leader === "her") {
+      note.didWell = note.didWell ? `${note.didWell} ${clause}` : clause;
+    } else if (note.didWell) {
+      note.didWell = `${note.didWell} ${clause}`;
+    } else if (note.couldImprove) {
+      note.couldImprove = `${note.couldImprove} ${clause}`;
+    } else {
+      note.couldImprove = clause;
+    }
   }
   if (highlighted && !note.couldImprove) {
     const bestSan = line?.bestSan;

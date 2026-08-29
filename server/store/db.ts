@@ -154,8 +154,13 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // server/coach/chat.ts). NULL when the first attempt validated clean
     // (or errored straight to a template with no second attempt): no
     // information is lost in that case, because the row's own `output`
-    // column already IS attempt 0. Additive/nullable, no default, same
-    // convention as cause/backfilled_at above.
+    // column already IS attempt 0. A third NULL path exists on chat's
+    // budget-skip: attempt 0 fails validation but the deadline leaves no
+    // budget for a retry (chat.ts's MIN_ATTEMPT_MS floor), so the loop
+    // breaks with only that one attempt recorded and its `violations`
+    // array unpersisted -- re-derivable by re-validating `output` against
+    // `facts_json`, but not free to read back. Additive/nullable, no
+    // default, same convention as cause/backfilled_at above.
     { name: "attempts_json", addSql: "attempts_json TEXT" },
   ],
   // Increment 3b: panel-ruled turning points (server/annotator/turningPoints.ts),

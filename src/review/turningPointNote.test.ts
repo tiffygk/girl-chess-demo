@@ -969,6 +969,30 @@ describe("lead-change card copy (Wave E)", () => {
     expect(note.didWell).toBe("this was also the moment the game tipped: from here you were ahead by about a piece's worth.");
   });
 
+  // Final review Minor 4 (2026-08-28): Task 7's OPPONENT_SLIP couldImprove
+  // now exists on an opponent-slip ply, so the old flag-clause attachment
+  // ("append to didWell if present, else couldImprove if present, else
+  // fall back on leader") appended the good-news lead clause to
+  // couldImprove instead of creating didWell -- good news landing under
+  // the could-improve header. A leader-"her" clause must always go to
+  // didWell (creating it when absent, appending when present); the slip
+  // sentence must stay alone in couldImprove.
+  it("a leader-her flag clause goes to didWell even when an opponent-slip couldImprove already exists", () => {
+    const note = buildTurningPointNote(
+      { ...tp({ label: "opponent inaccuracy", san: "Na6", ply: 28, kind: "swing", punishSan: null } as any),
+        leader: "her", leadMarginCp: 514, leadNth: 1 } as TurningPoint,
+      undefined,
+      line({ ply: 28, pvSans: ["Ne5"], bestSan: "Ne5" }),
+      GAME192_SANS
+    );
+    expect(note.didWell).toBe(
+      "this was also the moment the game tipped: from here you were ahead by about a rook's worth."
+    );
+    expect(note.couldImprove).toBe(
+      "her knight to a6 on move 14 was a small opening. the door opened a little here, and the game moved on without cashing it in."
+    );
+  });
+
   // Retake: nth > 1 gets its own, shorter wording (design question 5's
   // "the lead changed hands again" template) rather than repeating the
   // first-establishment sentence, which would falsely claim this is the
