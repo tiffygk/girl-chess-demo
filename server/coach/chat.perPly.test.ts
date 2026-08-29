@@ -767,6 +767,186 @@ describe("factsForModel — the hint shelf renders as its own model-facing secti
   });
 });
 
+// Task 2 (2026-08-28, game-192 RCA): the deep hint runs MultiPV=3 but, before
+// this task, dropped candidates 2-3 on the floor entirely -- nothing in the
+// fact list could say "these moves are near-equal," so the coach model
+// fabricated reasons for its pick (real game 192). `margin` is that missing
+// fact, in words only (voice rule: no raw eval numbers reach the model).
+// Fixture cps 810/809/760 per the controller's pre-flight ruling: the
+// close-call sentence names only candidates within HINT_CLOSE_CALL_CP of the
+// BEST candidate's own cp (809 qualifies at a 1cp gap, 760 does not at a
+// 50cp gap), not every candidate the shelf happens to carry.
+describe("hintFindingsForModel — candidates and the margin projection (Task 2, game-192 RCA)", () => {
+  beforeEach(() => {
+    openDb(":memory:");
+  });
+
+  const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  // g1f3 (Nf3, 810) is best; b1c3 (Nc3, 809) is within HINT_CLOSE_CALL_CP
+  // (35) of it; e2e4 (e4, 760) is not (50cp away).
+  const closeCallCandidates = [
+    { uci: "g1f3", evalCp: 810, evalMate: null },
+    { uci: "b1c3", evalCp: 809, evalMate: null },
+    { uci: "e2e4", evalCp: 760, evalMate: null },
+  ];
+  // Same three moves, but spaced out (gap 110 between best and second) so
+  // no close call should ever fire.
+  const spreadCandidates = [
+    { uci: "g1f3", evalCp: 810, evalMate: null },
+    { uci: "b1c3", evalCp: 700, evalMate: null },
+    { uci: "e2e4", evalCp: 650, evalMate: null },
+  ];
+
+  // JSON.stringify escapes the literal `"` inside 'is "best"' as `\"`, so a
+  // naive `[^"]*` capture truncates at that escaped quote. Match escaped
+  // sequences too, then let JSON.parse do the real unescaping.
+  function extractMargin(prompt: string): string | undefined {
+    const m = prompt.match(/"margin":"((?:\\.|[^"\\])*)"/);
+    return m ? (JSON.parse(`"${m[1]}"`) as string) : undefined;
+  }
+
+  function hintCandidateFacts(candidates: typeof closeCallCandidates, evalCp: number) {
+    return {
+      fen: START_FEN,
+      facts: {
+        bestUci: "g1f3",
+        pv: ["g1f3"],
+        evalCp,
+        evalMate: null,
+        trade: false,
+        escalated: false,
+        verified: true,
+        candidates,
+      },
+    };
+  }
+
+  it("hintFindings.candidates is san-converted with each candidate's own cp, and each candidate san joins allowedSans", () => {
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      hintCandidateFacts(closeCallCandidates, 100)
+    );
+    expect(facts.hintFindings?.candidates).toEqual([
+      { san: "Nf3", evalCp: 810 },
+      { san: "Nc3", evalCp: 809 },
+      { san: "e4", evalCp: 760 },
+    ]);
+    // Requirement: candidate sans join the allowedSans set in the fold, so a
+    // model naming any of them is recognized as a real, legal move. Note:
+    // at this fen every candidate is ALSO already a member of currentFen's
+    // own legalSans (unconditionally folded in above, independent of any
+    // hint) -- this fold matters for the case a candidate's matchFen is a
+    // past FOCUS position instead, where the model may be discussing that
+    // moment specifically. Asserted here as a direct membership check
+    // (rather than through validateChat) because a separate, unrelated
+    // voice-notation rule bans ALL raw SAN tokens in a reply regardless of
+    // legality -- see checkVoice's own comment -- so a full validateChat()
+    // call against literal notation text can never return ok:true and would
+    // not isolate this fold's own contribution.
+    expect(facts.allowedSans).toEqual(expect.arrayContaining(["Nf3", "Nc3", "e4"]));
+  });
+
+  it('(a) a close call with an undecided position reads "close call: Nf3 and Nc3 are about equally strong here..." and nothing about the position being decided', async () => {
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      hintCandidateFacts(closeCallCandidates, 100) // |evalCp| well under HINT_DECIDED_CP
+    );
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "either developing move works well here.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why this move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    const margin = extractMargin(capturedPrompt);
+    expect(margin).toBe(
+      "close call: Nf3 and Nc3 are about equally strong here. the engine's pick between near-equal moves can change between looks; that is search variance, not a contradiction."
+    );
+    expect(capturedPrompt).not.toMatch(/decisively ahead/);
+  });
+
+  it('(b) a close call in an already-decided position ALSO includes the "decisively ahead" sentence', async () => {
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      hintCandidateFacts(closeCallCandidates, 810) // |evalCp| >= HINT_DECIDED_CP (500)
+    );
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "either developing move works well here.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why this move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    const margin = extractMargin(capturedPrompt);
+    expect(margin).toBe(
+      "close call: Nf3 and Nc3 are about equally strong here. the engine's pick between near-equal moves can change between looks; that is search variance, not a contradiction. " +
+        'the position is already decisively ahead for the side to move; several moves keep the win, so which winning move is "best" matters much less than usual.'
+    );
+  });
+
+  // Voice rule (binding): margin never leaks a raw eval/cp number (810,
+  // 809, 760, or the HINT_CLOSE_CALL_CP/HINT_DECIDED_CP thresholds
+  // themselves) -- words only. Candidate SANs (e.g. "Nf3") are chess
+  // notation, not eval numbers, and are the exact copy the brief itself
+  // prescribes -- so this checks for absence of the actual NUMERIC VALUES
+  // that could leak (an eval or a threshold), rather than a blanket
+  // "no digit anywhere" bar that no real SAN could ever pass (every
+  // non-castling SAN includes a destination rank digit).
+  it("(c) the margin string never leaks a raw eval/cp number (voice rule: words only)", async () => {
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      hintCandidateFacts(closeCallCandidates, 810)
+    );
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "either developing move works well here.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why this move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    const margin = extractMargin(capturedPrompt);
+    expect(margin).toBeTruthy();
+    for (const rawNumber of ["810", "809", "760", "35", "500"]) {
+      expect(margin).not.toContain(rawNumber);
+    }
+  });
+
+  it("(d) a wide gap in an undecided position never emits a margin at all", async () => {
+    const facts = assembleChatFactList(
+      [],
+      { mode: "live" },
+      undefined, undefined, undefined, undefined,
+      hintCandidateFacts(spreadCandidates, 100) // gap 110 > HINT_CLOSE_CALL_CP, |evalCp| < HINT_DECIDED_CP
+    );
+    let capturedPrompt = "";
+    const backend = fakeBackend(async (prompt) => {
+      capturedPrompt = prompt;
+      return "Nf3 develops nicely here.";
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    await chat("why this move?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+
+    expect(capturedPrompt).not.toContain('"margin"');
+    expect(capturedPrompt).not.toMatch(/close call/);
+    expect(capturedPrompt).not.toMatch(/decisively ahead/);
+  });
+});
+
 // Round 3 (trace 126, old L2): the per-ply projection carries an explicit
 // move-number fact alongside ply, so the coach can name "move 4" the way
 // she reads a game instead of computing (or worse, stating) a raw ply
