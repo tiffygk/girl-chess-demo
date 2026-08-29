@@ -1105,6 +1105,14 @@ export class GameManager {
     const live = this.games.get(gameId);
     if (!live || live.finished) return { ok: false };
     const fen = live.chess.fen();
+    // RC1 (game 192): the deep hint is wall-clock bounded, so two searches at
+    // the SAME fen can return different near-equal best moves (Kh1 +810 then
+    // h4 +809, traces 296/298). Reuse the verified entry for this fen instead
+    // of re-searching -- the fast path has had this exact guard since Q2
+    // (see the computePositionView site below); the deep path never did.
+    if (live.lastHint && live.lastHint.fen === fen && live.lastHint.facts.verified) {
+      return { ok: true, facts: live.lastHint.facts };
+    }
     const facts = await computeHintFacts(fen, this.evaluator);
     if (!facts) return { ok: false };
     live.lastHint = { fen, facts, at: Date.now() };
