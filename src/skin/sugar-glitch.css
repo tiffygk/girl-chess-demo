@@ -1592,6 +1592,50 @@
 }
 .gc-app .debrief-replay-btn { align-self: flex-start; }
 
+/* ---- D3 badge wave (owner approvals 2026-09-01, option 1a momentum words;
+   spec: vault component-library.html sec-d3-card-language rev 2). The badge
+   is a machine statement, so it is SHARP: the sq-chip's 4px chamfer at the
+   signal-register type size, hard 1px filter drop-shadow (box-shadow dies
+   under clip-path), never a candy pill. Four states: soft = the name
+   plate's resting tint, hard = the w5 badge's saturated pour; cyan family
+   her, rose family mallow, cookie's lavender in NO state. Every literal
+   below pre-exists in this file (the rev-2 audit table maps each one). ---- */
+.gc-app .tp-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.gc-app .tp-badge {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 8px;
+  border: 1.5px solid; border-radius: 0; white-space: nowrap;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .12em; text-transform: lowercase;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+.gc-app .tp-badge-her-soft { background: #E4F7FB; border-color: #23A8C7; color: #1A7A93; filter: drop-shadow(1px 1px 0 rgba(26,122,147,.4)); }
+.gc-app .tp-badge-her-hard { background: #23E5FF; border-color: #23A8C7; color: #1A7A93; filter: drop-shadow(1px 1px 0 rgba(26,122,147,.4)); }
+.gc-app .tp-badge-mallow-soft { background: #FFE9F4; border-color: #FF3DA6; color: #C22B7E; filter: drop-shadow(1px 1px 0 rgba(194,43,126,.45)); }
+.gc-app .tp-badge-mallow-hard { background: #FF3DA6; border-color: #C22B7E; color: #fff; filter: drop-shadow(1px 1px 0 rgba(194,43,126,.45)); }
+/* The card's 3px left tint follows its FIRST badge's family (law 1); inset
+   left-tint construction per the library's hl2-card, at the D3 spec's 3px. */
+.gc-app .debrief-card-side-her { box-shadow: inset 3px 0 0 #23E5FF; }
+.gc-app .debrief-card-side-mallow { box-shadow: inset 3px 0 0 #C22B7E; }
+/* The two-line side legend (position A, top of the cards column) -- the
+   shipped .legend-rail plate recipe verbatim, two rows in the signal
+   register, each row wearing its own side's existing ink (law 1 taught by
+   example). Owner copy of record: "Cyan is the player. Rose is the
+   opponent." */
+.gc-app .badge-side-rail {
+  width: 100%;
+  background: rgba(255,255,255,.94); border: 1.5px solid #9A8BC9;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  filter: drop-shadow(2px 2px 0 rgba(74,59,126,.45));
+  padding: 8px 16px 9px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.gc-app .badge-side-row {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10.5px;
+  letter-spacing: .03em; text-transform: lowercase;
+}
+.gc-app .badge-side-row-her { color: #23A8C7; }
+.gc-app .badge-side-row-mallow { color: #C22B7E; }
+
 /* Increment 3.95 (Task 10): the full-game move-list navigator — sits below
    the turning-point cards, prev/next scrub above a scrollable list of every
    move number. The list itself is a flat-tint bubble (same family as
