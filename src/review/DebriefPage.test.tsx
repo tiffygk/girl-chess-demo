@@ -960,6 +960,14 @@ describe("DebriefPage 1b: the full badge legend behind the '?' chip (owner corre
   });
 
   it("the superseded two-line rail css is deleted", () => {
+    // Guard (review finding 6): the two assertions below are both
+    // not.toContain -- if the `?raw` import ever resolved empty or the
+    // file went missing, cssSrc === "" and both would pass vacuously,
+    // reporting this deletion pin clean whether or not the css was ever
+    // deleted. Prove cssSrc is really the loaded stylesheet first, so a
+    // broken import fails loudly here instead of silently downstream.
+    expect(cssSrc.length).toBeGreaterThan(0);
+    expect(cssSrc).toContain(".gc-app");
     expect(cssSrc).not.toContain("badge-side-rail");
     expect(cssSrc).not.toContain("badge-side-row");
   });
