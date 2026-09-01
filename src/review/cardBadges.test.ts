@@ -93,6 +93,24 @@ describe("badgesForPoint: the finish (backfill + checkmate label)", () => {
     expect(badgesForPoint(G192_M29, { result: "1-0" })).toEqual([{ word: "the finish", side: "her", hard: true }]);
   });
 
+  it("falls back to the game result context (0-1 -> mallow) when no matching gameSans row exists: the guard that stops 'the finish' rendering in her cyan on a game mallow won (review finding 2)", () => {
+    // no gameSans at all -- the row lookup has nothing to find.
+    expect(badgesForPoint(G192_M29, { result: "0-1" })).toEqual([{ word: "the finish", side: "mallow", hard: true }]);
+    // gameSans present but with no row for this point's ply -- same fallback.
+    const sansWithoutThisPly: SummaryMove[] = [{ ply: 1, san: "e4", side: "her" }];
+    expect(badgesForPoint(G192_M29, { result: "0-1", gameSans: sansWithoutThisPly })).toEqual([
+      { word: "the finish", side: "mallow", hard: true },
+    ]);
+  });
+
+  it("the gameSans row's own side field wins even when it disagrees with the game result (data beats the result fallback, in the documented precedence order)", () => {
+    const sans: SummaryMove[] = [{ ply: G192_M29.ply, san: G192_M29.san, side: "mallow" }];
+    // result says "1-0" (would fall back to "her"), but the row says "mallow" -- the row wins.
+    expect(badgesForPoint(G192_M29, { result: "1-0", gameSans: sans })).toEqual([
+      { word: "the finish", side: "mallow", hard: true },
+    ]);
+  });
+
   it("falls back to label content alone with no context: the producer mints the checkmate label only on the she-won path (turningPoints.ts:698), so side her", () => {
     expect(badgesForPoint(G192_M29)).toEqual([{ word: "the finish", side: "her", hard: true }]);
   });
