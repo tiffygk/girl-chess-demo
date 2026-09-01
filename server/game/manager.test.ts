@@ -133,6 +133,22 @@ describe("GameManager", () => {
     expect(moves.length).toBe(2);
   }, 20000);
 
+  // Wave B (attribution round, 2026-09-01), Task B2: the party is read off
+  // chess.js's own move object (.color) at the moment the move is made,
+  // never derived from the ply. This test would ALSO pass under
+  // `ply % 2 === 1 ? "her" : "mallow"`, because she has always played white
+  // -- see this task's honesty demand: today's data cannot distinguish the
+  // two implementations from this test alone. The mutation check below (run
+  // manually, not committed) is what actually distinguishes them.
+  it("writes the party from the move object, so a recorded move never depends on ply arithmetic", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const r = await gm.playerMove(g.gameId, "e2", "e4", undefined, 3000);
+    expect(r.ok).toBe(true);
+    const moves = getGameMoves(g.gameId) as { ply: number; san: string; side: string }[];
+    expect(moves[0].side).toBe("her");
+    expect(moves[1].side).toBe("mallow"); // maia's reply
+  }, 20000);
+
   it("rejects an illegal move", async () => {
     const g = await gm.newGame(sessionId, 1100);
     const r = await gm.playerMove(g.gameId, "e2", "e5");
