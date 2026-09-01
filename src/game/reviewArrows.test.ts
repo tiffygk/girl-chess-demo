@@ -4,12 +4,7 @@
 // this round's behavior change answers.
 
 import { describe, it, expect } from "vitest";
-import {
-  turningLineArrows,
-  turningLineReplayArrows,
-  arrowsToHighlights,
-  reviewArrowsForMove,
-} from "./reviewArrows";
+import { turningLineArrows, arrowsToHighlights, reviewArrowsForMove } from "./reviewArrows";
 import type { TurningLine } from "./api";
 import type { FollowedBest } from "../review/followedBest";
 
@@ -208,100 +203,25 @@ describe("turningLineArrows", () => {
   });
 });
 
-// F4 replay off-by-one (owner ruling 2026-08-03, game 169): a REPLAY of an
-// opponent-inaccuracy card must make the inaccuracy itself the focus — the
-// board at the moment the inaccuracy is on the board, with mallow's move
-// (magenta, line.playedFromTo) as the sole highlighted move, NOT her punish.
-// The "ask about this" framing keeps the full context set (pinned below);
-// only the replay framing changes.
+// F4 replay off-by-one (owner ruling 2026-08-03, game 169) drove
+// turningLineReplayArrows: a REPLAY of an opponent-inaccuracy card drew
+// mallow's move (magenta, line.playedFromTo) as the SOLE highlighted arrow,
+// suppressing the punish/best arrows the owner read as "three arrows
+// competing for the subject" on her Bh6. A later owner ruling (2026-08-31,
+// D1 arrow-unification round -- verbatim: "for D1, the same rules as when i
+// click one of the debrief created cards applies... it should be similar
+// for the highlighted move cards as well") SUPERSEDES F4: replay now shows
+// the same four-arrow set as ask, on BOTH parities, via reviewArrowsForMove
+// (see that function's own header above, and arrowSelection.ts's header for
+// the routing history). turningLineReplayArrows is DELETED -- it had no
+// callers left and no owner ruling left to preserve; its pins (this
+// describe block, previously here) are deleted with it. Replay-vs-ask
+// parity on an even ply is now pinned in arrowSelection.test.ts instead,
+// the only file that ever branched on `intent`.
 //
-// Fixture = game 169's real data (read from a WAL-safe copy of the owner's
-// db, 2026-08-03): ply 18 Bh6 f8→h6 (mallow's inaccuracy), ply 19 Nxd5+
-// c3→d5 (her punish, which IS the stored best reply — the followed arm).
-describe("opponent-inaccuracy replay framing (game 169, F4)", () => {
-  const game169Line = () =>
-    line({
-      ply: 18, // even — mallow's ply
-      playedFromTo: { from: "f8", to: "h6" }, // Bh6, the inaccuracy
-      bestFromTo: { from: "c3", to: "d5" }, // the best punish
-    });
-  const followedPunish = () =>
-    fb({ seedPly: 17, playerPly: 19, playedFromTo: { from: "c3", to: "d5" }, followed: true });
-  const missedPunish = () =>
-    fb({ seedPly: 17, playerPly: 19, playedFromTo: { from: "d2", to: "d3" }, followed: false });
-
-  it("REPRODUCE the game-169 symptom: the current context framing draws her punish alongside the inaccuracy", () => {
-    // turningLineArrows is what handleRewind's replay path renders today —
-    // the punish arrow (here "found": she played the exact best reply)
-    // shares the board with mallow's Bh6, and the owner read the punish as
-    // the card's subject. This test PINS that full-context set for the
-    // "ask about this" path, which must not change.
-    const arrows = turningLineArrows(game169Line(), followedPunish());
-    expect(arrows).toContainEqual({ from: "f8", to: "h6", color: "mallow" });
-    expect(arrows).toContainEqual({ from: "c3", to: "d5", color: "found" }); // the punish — the symptom
-  });
-
-  it("replay framing: the inaccuracy is the SOLE arrow — no punish, no best, no clutter (followed arm)", () => {
-    const arrows = turningLineReplayArrows(game169Line(), followedPunish());
-    expect(arrows).toEqual([{ from: "f8", to: "h6", color: "mallow" }]);
-  });
-
-  it("replay framing: sole inaccuracy arrow in the not-followed arm too (no cyan played, no green best, no dashed mallow-best)", () => {
-    const l = line({
-      ply: 18,
-      playedFromTo: { from: "f8", to: "h6" },
-      bestFromTo: { from: "c3", to: "d5" },
-      threat: { from: "h5", to: "f7" }, // dashed hypothetical — clutter on a replay
-    });
-    const arrows = turningLineReplayArrows(l, missedPunish());
-    expect(arrows).toEqual([{ from: "f8", to: "h6", color: "mallow" }]);
-  });
-
-  it("HER-ply replay framing is BYTE-UNCHANGED from the context framing (regression pin)", () => {
-    // 1. e4 e5 2. g4 d5 — her inaccuracy at ply 3 (g4), the same real
-    // fixture the four-state describe above uses.
-    const sans = [
-      { ply: 1, san: "e4" },
-      { ply: 2, san: "e5" },
-      { ply: 3, san: "g4" },
-      { ply: 4, san: "d5" },
-    ];
-    const herLine = line({
-      ply: 3,
-      playedFromTo: { from: "g2", to: "g4" },
-      bestFromTo: { from: "d2", to: "d4" },
-      threat: { from: "d8", to: "h4" },
-    });
-    const herFb = fb({ seedPly: 2, playerPly: 3, playedFromTo: { from: "g2", to: "g4" }, followed: false });
-    expect(turningLineReplayArrows(herLine, herFb, sans)).toEqual(turningLineArrows(herLine, herFb, sans));
-    // and the followed her-ply arm too
-    const followedLine = line({
-      ply: 3,
-      playedFromTo: { from: "d1", to: "f3" },
-      bestFromTo: { from: "d1", to: "f3" },
-    });
-    const followedFb = fb({ playerPly: 3, playedFromTo: { from: "d1", to: "f3" }, followed: true });
-    expect(turningLineReplayArrows(followedLine, followedFb, sans)).toEqual(
-      turningLineArrows(followedLine, followedFb, sans)
-    );
-  });
-
-  it("opponent-ply line whose own playedFromTo never resolved falls back to the full context set (never an empty board)", () => {
-    const l = line({
-      ply: 18,
-      bestFromTo: { from: "c3", to: "d5" },
-    });
-    expect(turningLineReplayArrows(l, missedPunish())).toEqual(turningLineArrows(l, missedPunish()));
-  });
-
-  it("replay highlights follow the sole arrow: exactly the inaccuracy's two endpoints, kind 'mallow'", () => {
-    const highlights = arrowsToHighlights(turningLineReplayArrows(game169Line(), followedPunish()));
-    expect(highlights).toEqual([
-      { square: "f8", kind: "mallow" },
-      { square: "h6", kind: "mallow" },
-    ]);
-  });
-});
+// turningLineArrows itself is UNCHANGED and still the "ask"/context framing
+// single source of truth -- every test above this comment still exercises
+// it exactly as before.
 
 describe("arrowsToHighlights", () => {
   it("derives one highlight per arrow endpoint with no duplicate squares in the found (deduped) case", () => {
@@ -351,10 +271,12 @@ describe("arrowsToHighlights", () => {
 // owner-approved same date): reviewArrowsForMove is the new unified
 // three-arrow builder -- made move (mover's colour, PRIMARY) + the mover's
 // best (green, or deduped to solid "found" when made==best) + the OTHER
-// actor's actual reply (other actor's colour, SECONDARY). Purely additive:
-// turningLineArrows/turningLineReplayArrows above are untouched and still
-// exercised by every test in this file: Task 2 rewires callers onto this
-// function, this task only adds it.
+// actor's actual reply (other actor's colour, SECONDARY). Purely additive at
+// the time: turningLineArrows above was untouched, and Task 2 rewired
+// callers onto this function rather than this task doing so. (Its sibling
+// turningLineReplayArrows was deleted outright by a later owner ruling,
+// 2026-08-31 -- see the comment above the "arrowsToHighlights" describe
+// block below.)
 describe("reviewArrowsForMove", () => {
   it("opponent-ply (mallow's move): made(mallow, primary) + mallow-best(rose dashed, primary) + her reply(played, secondary)", () => {
     // game-169 Bh6 shape: mallow's inaccuracy at an even ply, her actual
