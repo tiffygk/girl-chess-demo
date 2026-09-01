@@ -6,7 +6,15 @@ import {
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
   insertVerdict, getAllChatMessages, listCoachNotes, setMoveHighlighted,
 } from "../store/db";
-import { GameManager, BACKEND_CACHE_TTL_MS, COACH_UNHEALTHY_COOLDOWN_MS, buildVerdictFactsJson, COACH_NOTE_ACK } from "./manager";
+// Task 9 (coach_notes capture gap round): the module namespace, so the
+// honest-failure test below can force insertCoachNote to throw without
+// touching the real db -- named import bindings are live references to
+// this same namespace object under Vitest's ESM transform.
+import * as dbModule from "../store/db";
+import {
+  GameManager, BACKEND_CACHE_TTL_MS, COACH_UNHEALTHY_COOLDOWN_MS, buildVerdictFactsJson,
+  COACH_NOTE_ACK, COACH_NOTE_SAVE_FAILED,
+} from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
 // Task 5 reviewer fix: the "ollama unavailable" test below spies on this
 // module's own available() rather than pre-seeding pickCoachBackend's cache,
@@ -1023,6 +1031,118 @@ describe("GameManager", () => {
       // voice convention: no em-dashes
       expect(COACH_NOTE_ACK).not.toMatch(/—|--/);
     });
+  });
+
+  // Task 9 (2026-09-01, coach_notes capture gap round). Condition A's
+  // "detected but failed" half of the invariant: "a record-shaped ask must
+  // either produce a coach_notes row, or produce a coach reply that says
+  // plainly it could not record it -- never 'noted' over a no-op." Before
+  // this fix, a failed insertCoachNote() call (the try/catch in chat())
+  // fell through SILENTLY to the model's own answer with no ack and no
+  // negative acknowledgment either -- the scout confirmed no negative
+  // acknowledgment string existed anywhere in the codebase.
+  describe("coach_notes: honest failure instead of a silent no-op (Task 9, condition A)", () => {
+    const ACK = COACH_NOTE_ACK;
+    function fakeAnswer(text: string) {
+      gm.setCoachBackendForTesting({
+        name: "fake",
+        async available() {
+          return true;
+        },
+        async generate() {
+          return text;
+        },
+      });
+    }
+
+    it("tells her plainly it could not save, rather than staying silent, when the write itself fails", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      await gm.playerMove(g.gameId, "e2", "e4", undefined, 500);
+      fakeAnswer("that's fine. keep developing.");
+
+      const spy = vi.spyOn(dbModule, "insertCoachNote").mockImplementation(() => {
+        throw new Error("disk full");
+      });
+      try {
+        const before = listCoachNotes().length;
+        const res = await gm.chat(g.gameId, {
+          message: "please record this because I keep hanging my queen",
+          context: { mode: "live" },
+        });
+        expect(res.ok).toBe(true);
+        expect(listCoachNotes().length).toBe(before); // no row -- the insert really failed
+        if (res.ok) {
+          expect(res.text).not.toContain(ACK); // never a false "noted"
+          expect(res.text.endsWith(COACH_NOTE_SAVE_FAILED)).toBe(true);
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    }, 20000);
+
+    it("the failure copy is honest, lowercase, and carries no em-dash (coach voice convention)", () => {
+      expect(COACH_NOTE_SAVE_FAILED).toBe(COACH_NOTE_SAVE_FAILED.toLowerCase());
+      expect(COACH_NOTE_SAVE_FAILED).not.toMatch(/—|--/);
+      expect(COACH_NOTE_SAVE_FAILED).toMatch(/couldn't save|could not save|didn't save/);
+    });
+  });
+
+  // Task 9, condition B: the ordering/consistency half. insertCoachNote
+  // fires before the `result.source === "model"` gate that decides whether
+  // a reply is persisted into chat_messages (B3b, 2026-07-27) -- so a
+  // template-fallback turn could write a real coach_notes row while the
+  // acknowledgment that goes with it never joins visible history. Game
+  // 167's coach_notes ids 2/3 are the real, controller-verified instance:
+  // the first insert succeeded silently on a template turn, she never saw
+  // it recorded in history, and repeated herself. The fix must NOT persist
+  // the risky template PROSE (that's exactly what B3b exists to prevent --
+  // game 146's doom loop, a failed reply's own text echoing back into a
+  // later prompt) -- only the deterministic, safe ack line.
+  describe("coach_notes: a successful write is never orphaned from visible history (Task 9, condition B)", () => {
+    const ACK = COACH_NOTE_ACK;
+
+    it("persists a coach turn carrying the ack even when the underlying reply is a template fallback", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      await gm.playerMove(g.gameId, "e2", "e4", undefined, 500);
+
+      const before = listCoachNotes().length;
+      const res = await gm.chat(g.gameId, {
+        message: "please record this because I keep hanging my queen",
+        context: { mode: "live" },
+        backendPref: "template",
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.source).toBe("template");
+      expect(listCoachNotes().length).toBe(before + 1); // the note itself is written either way
+
+      const history = getAllChatMessages(g.gameId) as any[];
+      const coachTurns = history.filter((m) => m.role === "coach");
+      // Review finding F3 (2026-09-01): .includes(ACK) stayed green even
+      // when the code under review persisted replyText (the template's own
+      // prose) instead of the deterministic ACK constant -- exactly the
+      // doom-loop leak B3b exists to prevent. Assert the persisted turn IS
+      // the ack, not merely that it contains it, so that mutation is
+      // actually caught.
+      expect(coachTurns.length).toBe(1);
+      expect(coachTurns[0].text).toBe(ACK);
+    }, 20000);
+
+    it("still never persists a template reply's own prose when NO note was recorded (B3b stays intact)", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      await gm.playerMove(g.gameId, "e2", "e4", undefined, 500);
+
+      const res = await gm.chat(g.gameId, {
+        message: "was my knight move okay?",
+        context: { mode: "live" },
+        backendPref: "template",
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.source).toBe("template");
+
+      const history = getAllChatMessages(g.gameId) as any[];
+      const coachTurns = history.filter((m) => m.role === "coach");
+      expect(coachTurns.length).toBe(0); // B3b: an ordinary template reply still never joins history
+    }, 20000);
   });
 
   // Task 8 (inc 3.95): coach-backend hardening bundle, three fixes.
