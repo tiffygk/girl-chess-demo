@@ -16,9 +16,10 @@
 // it comes only from moves.classification (MoveClassification), never
 // re-derived from deltaP -- classifications.ts alone owns those thresholds.
 
+import { Chess, type Square } from "chess.js";
 import type { SummaryMove, TurningLine, MoveClassification, TurningPoint } from "../game/api";
 import { fenAtPly } from "./Rewind";
-import { describeSanMove } from "../game/describeSanMove";
+import { describeSanMove, pieceName } from "../game/describeSanMove";
 import { followedBest } from "./followedBest";
 // C1 fix (union review, 2026-07-31): reuse the shared spelled-number
 // helper rather than a second number-to-word table. Imports from
@@ -149,6 +150,180 @@ function missedWinMateInAt(ply: number, turningPoints: TurningPoint[]): number |
   return turningPoints.find((t) => t.kind === "missed-win" && t.ply === ply)?.mateIn ?? undefined;
 }
 
+// D4 (done-well composer): the owner's complaint was that every highlighted
+// move judged fine renders the same constant DONE_WELL_NOTE sentence. This
+// composes a note from board facts already on hand -- capture target,
+// whether a recapture exists, what the move attacks, and whether it matched
+// the engine's own pick -- rather than a model pass (see the vault's
+// "D4 Done-Well Text, Options + Examples" doc, option 1). Deterministic, no
+// LLM, same trust class as the rest of this file.
+//
+// Severity stays owned by moves.classification (owner ruling 2026-07-28):
+// this only ever runs for the "done well" branch, and never re-derives a
+// grade -- it just describes a move already judged fine.
+
+const PIECE_VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: Infinity };
+
+function uciFromMove(mv: { from: string; to: string; promotion?: string }): string {
+  return `${mv.from}${mv.to}${mv.promotion ?? ""}`;
+}
+
+// Given a uci string, finds the matching legal move in `fenBefore` and
+// returns its SAN -- the reverse of uciFromMove, needed because SummaryMove
+// only ever stores bestUci (Task 1's raw field), never a SAN for the
+// engine's pick. Returns undefined (never throws) when fenBefore doesn't
+// parse or the uci isn't a legal move there -- same honesty-gate discipline
+// as describeSanMove.
+function sanForUci(fenBefore: string, uci: string): string | undefined {
+  let probe: Chess;
+  try {
+    probe = new Chess(fenBefore);
+  } catch {
+    return undefined;
+  }
+  const from = uci.slice(0, 2);
+  const to = uci.slice(2, 4);
+  const promotion = uci.length > 4 ? uci.slice(4) : undefined;
+  const moves = probe.moves({ verbose: true }) as { from: string; to: string; promotion?: string; san: string }[];
+  return moves.find((m) => m.from === from && m.to === to && (!promotion || m.promotion === promotion))?.san;
+}
+
+// Enemy pieces (relative to `moverColor`) attacked by whatever now sits on
+// `fromSquare`, in the position `chess` currently holds (called right after
+// the move that landed a piece there). Pure board geometry via chess.js's
+// attackers() -- not filtered by legality of a hypothetical recapture, same
+// as the recapture check below; a fixture-verified approximation the brief
+// accepts (see task-2-brief.md's own "chess.js via a local new Chess(fen)"
+// framing).
+function attackedEnemyTargets(
+  chess: Chess,
+  fromSquare: Square,
+  moverColor: "w" | "b"
+): { square: Square; piece: string; value: number }[] {
+  const opponentColor = moverColor === "w" ? "b" : "w";
+  const targets: { square: Square; piece: string; value: number }[] = [];
+  for (const row of chess.board()) {
+    for (const cell of row) {
+      if (!cell || cell.color !== opponentColor) continue;
+      if (chess.attackers(cell.square, moverColor).includes(fromSquare)) {
+        targets.push({ square: cell.square, piece: cell.type, value: PIECE_VALUE[cell.type] ?? 0 });
+      }
+    }
+  }
+  return targets;
+}
+
+function heaviestTarget(targets: { square: Square; piece: string; value: number }[]) {
+  return targets.slice().sort((a, b) => b.value - a.value)[0];
+}
+
+function bandSentenceFor(evalCpHerPerspective: number): string {
+  if (evalCpHerPerspective >= 500) return "you stayed completely winning.";
+  if (evalCpHerPerspective >= 150) return "you kept a clear edge.";
+  if (evalCpHerPerspective >= -149) return "the game stayed level.";
+  return "you held your ground in a hard spot.";
+}
+
+/**
+ * Composes a done-well note from board facts for `ply`/`played`, falling
+ * back to the constant DONE_WELL_NOTE when there's nothing to say. Exported
+ * for tests only -- buildHighlightedRows is the one production call site.
+ *
+ * THE OFFSET (bit this project before): `gameSans` rows carry Task 1's RAW
+ * per-row engine facts -- row P's own bestUci describes the REPLY side's
+ * best after ply P, so the MOVER's best at ply P lives on row P-1's
+ * bestUci (see server/game/manager.ts's attachEval doc comment). This reads
+ * `gameSans` at `ply - 1` for the pick slot, never `played`'s own bestUci.
+ */
+export function composeDoneWellNote(ply: number, played: SummaryMove, gameSans: SummaryMove[]): string {
+  const fenBefore = fenBeforePly(gameSans, ply);
+  if (!fenBefore) return DONE_WELL_NOTE;
+
+  let chess: Chess;
+  let mv: ReturnType<Chess["move"]>;
+  try {
+    chess = new Chess(fenBefore);
+    mv = chess.move(played.san);
+  } catch {
+    return DONE_WELL_NOTE;
+  }
+  if (!mv) return DONE_WELL_NOTE;
+
+  const playedUci = uciFromMove(mv);
+  const movePhrase = describedOrRaw(played.san, fenBefore);
+  const moverColor = mv.color;
+
+  // pick slot -- THE OFFSET: row ply-1, never `played`'s own bestUci.
+  const moverBestUci = gameSans.find((m) => m.ply === ply - 1)?.bestUci ?? undefined;
+  let pickClause: string | undefined;
+  let isDeviation = false;
+  if (moverBestUci) {
+    if (moverBestUci === playedUci) {
+      pickClause = `${movePhrase} was our chess brain's own pick.`;
+    } else {
+      const bestSan = sanForUci(fenBefore, moverBestUci);
+      const bestPhrase = bestSan ? describedOrRaw(bestSan, fenBefore) : undefined;
+      if (bestPhrase) {
+        pickClause = `our chess brain's pick was ${bestPhrase}, and your ${movePhrase} gave up nothing:`;
+        isDeviation = true;
+      }
+    }
+  }
+
+  // tactics slot
+  const isCapture = (mv.flags.includes("c") || mv.flags.includes("e")) && !!mv.captured;
+  let tacticsClause: string | undefined;
+  if (isCapture) {
+    const capturedWord = pieceName(mv.captured!);
+    const opponentColor = moverColor === "w" ? "b" : "w";
+    const recaptureAvailable = chess.isAttacked(mv.to, opponentColor);
+    if (!recaptureAvailable) {
+      let clause = `it wins the ${capturedWord} clean: nothing could take back on ${mv.to}`;
+      const heavier = heaviestTarget(
+        attackedEnemyTargets(chess, mv.to, moverColor).filter((t) => t.value > PIECE_VALUE[mv.piece])
+      );
+      clause += heavier
+        ? `, and from ${mv.to} your ${pieceName(mv.piece)} hit her ${pieceName(heavier.piece)} on ${heavier.square}.`
+        : ".";
+      tacticsClause = clause;
+    } else {
+      tacticsClause = `she could take back on ${mv.to}, and the trade was fine for you.`;
+    }
+  } else {
+    const target = heaviestTarget(
+      attackedEnemyTargets(chess, mv.to, moverColor).filter((t) => t.value >= PIECE_VALUE[mv.piece])
+    );
+    if (target) {
+      tacticsClause = `it attacks her ${pieceName(target.piece)} on ${target.square}, forcing her to answer you.`;
+    }
+  }
+
+  // band slot -- this row's OWN evalCp (Task 1's raw field), negated for
+  // odd (her) plies to her perspective.
+  let bandSentence: string | undefined;
+  if (played.evalCp != null) {
+    const herPerspective = ply % 2 === 1 ? -played.evalCp : played.evalCp;
+    bandSentence = bandSentenceFor(herPerspective);
+  }
+
+  const clauses: string[] = [];
+  if (isDeviation && pickClause) {
+    clauses.push(pickClause);
+    if (bandSentence) clauses.push(bandSentence); // mandatory for this branch
+  } else {
+    if (pickClause) clauses.push(pickClause);
+    if (tacticsClause) {
+      clauses.push(tacticsClause);
+    } else if (bandSentence) {
+      // Only when no tactics clause fired -- a clean grab doesn't also get
+      // a tacked-on band sentence.
+      clauses.push(bandSentence);
+    }
+  }
+
+  return clauses.length > 0 ? clauses.join(" ") : DONE_WELL_NOTE;
+}
+
 export function buildHighlightedRows(input: BuildHighlightedRowsInput): HighlightedRow[] {
   const { highlightedPlies, gameSans, turningLines, classifications = [], turningPoints = [] } = input;
   const rows: HighlightedRow[] = [];
@@ -193,7 +368,9 @@ export function buildHighlightedRows(input: BuildHighlightedRowsInput): Highligh
       // without naming a move we cannot prove.
       note = "you had checkmate here and the game went on without it.";
     } else {
-      note = DONE_WELL_NOTE;
+      // D4: was the constant DONE_WELL_NOTE for every done-well move --
+      // now composed from board facts when there are any to state.
+      note = composeDoneWellNote(ply, played, gameSans);
     }
 
     rows.push({
