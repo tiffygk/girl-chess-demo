@@ -386,6 +386,66 @@ const GAME190_MOVES = withFacts(GAME190_SANS, {
   37: { evalCp: 623 }, // real (classification supplied separately)
 });
 
+// Fix round 2 (re-review): Stockfish emits `score mate 0` at an
+// already-mated position -- her db has 38 her-ply rows shaped exactly like
+// this (eval_cp NULL, eval_mate 0, san ending "#"). Real rows read via
+// readonly SELECT, independently replayed/verified with chess.js.
+
+// Game 24, plies 1-41: 41.Qf7# (own pick -- row 40's best_move "d7f7"
+// equals the played uci exactly), no capture, no qualifying no-capture
+// target (the only piece near f7 is her own queen/bishop; no black queen
+// remains on the board to trigger the equal-or-higher clause). The named
+// bug: eval_cp NULL, eval_mate 0 -- the OLD bandSentenceForRow computed
+// herPerspective = -0 = 0, failed the `> 0` gate, and rendered "you held
+// your ground in a hard spot." on a move that just won the game.
+const GAME24_SANS = [
+  "d4", "Nc6", "c3", "Nf6", "Bf4", "e6", "e3", "g5", "Bxg5", "h6",
+  "Bf4", "d5", "Bd3", "Ne4", "Nf3", "Ne7", "O-O", "b6", "Ne5", "c5",
+  "Bb5+", "Bd7", "Nxd7", "Nf5", "Ne5+", "Ke7", "Nc6+", "Kd7", "Nxd8+", "Kc8",
+  "Nxf7", "Rg8", "Ba6+", "Kd7", "Qa4+", "Ke7", "Ne5", "Nh4", "Qd7+", "Kf6",
+  "Qf7#",
+];
+const GAME24_MOVES = withFacts(GAME24_SANS, {
+  40: { bestUci: "d7f7" }, // real db value -- THE OFFSET: row 40 is where ply-41's mover-best lives
+  41: { evalCp: null, evalMate: 0 }, // real: the mate-0 shape this fix round exists for
+});
+
+// Game 191 (same game as the ply-13 fixture above, a much later point),
+// plies 1-50: 51.Qf6# is a genuine DEVIATION -- row 50's best_move
+// ("e6g8", i.e. Qg8#, also a legal mate from the same square) differs from
+// the played uci ("e6f6"). evalCp is null on both rows 50 and 51 (mate-only
+// rows), so the F1 gap machinery is INCOMPUTABLE here -- this lands in the
+// "gap incomputable, band optional" bucket, and the band it finds is this
+// fix's new terminal copy. Proves the deviation branch uses the same
+// terminal copy as its band and never ends bare.
+const GAME191_MATE_SANS = [
+  "d4", "e6", "e4", "Nf6", "Nc3", "d5", "f3", "Bb4", "a3", "Bxc3+",
+  "bxc3", "O-O", "e5", "Nc6", "exf6", "Qxf6", "Bd3", "a5", "Ne2", "b5",
+  "a4", "bxa4", "Ba3", "Bd7", "Bxf8", "Kxf8", "O-O", "Rb8", "Ng3", "Qh4",
+  "Qe2", "a3", "Rxa3", "e5", "dxe5", "Ke7", "e6", "Rb2", "Nf5+", "Kf8",
+  "Nxh4", "Bxe6", "Bxh7", "g6", "Nxg6+", "fxg6", "Qxe6", "Rb6", "Re1", "Rb8",
+  "Qf6#",
+];
+const GAME191_MATE_MOVES = withFacts(GAME191_MATE_SANS, {
+  50: { bestUci: "e6g8" }, // real db value, differs from ply-51's played uci -- a genuine deviation
+  51: { evalCp: null, evalMate: 0 }, // real
+});
+
+// Game 131, plies 1-29: 29.Kxf3 -- her KING recaptures a knight (own pick,
+// row 28's best_move "f2f3" equals the played uci). Real-corpus regression
+// pin for the hardening fix: PIECE_VALUE has no "k" entry, and the king CAN
+// be a mover -- confirms a king capture still renders the plain clean-grab
+// clause (no false heavier-target claim) with the comparison made
+// explicit rather than relying on `undefined` comparing false by accident.
+const GAME131_SANS = [
+  "c4", "e6", "b3", "Nf6", "a4", "b6", "d3", "Bc5", "e4", "Bd4",
+  "Ra2", "Bc5", "e5", "Ng4", "Be2", "Nxf2", "Qd2", "Nxh1", "Nf3", "Ba6",
+  "Qf4", "Nc6", "Na3", "Nf2", "d4", "Nxd4", "Kxf2", "Nxf3+", "Kxf3",
+];
+const GAME131_MOVES = withFacts(GAME131_SANS, {
+  28: { bestUci: "f2f3" }, // real db value -- THE OFFSET: row 28 is where ply-29's mover-best lives
+});
+
 describe("composeDoneWellNote (D4)", () => {
   it("game 188 ply 19 (Bxb7): own pick, clean capture, no recapture, hits the rook", () => {
     const note = composeDoneWellNote(19, GAME188_MOVES[18], GAME188_MOVES);
@@ -542,6 +602,43 @@ describe("composeDoneWellNote (D4)", () => {
     expect(note).toBe("nothing here was a mistake. trust the instinct that made you pause.");
   });
 
+  // Fix round 2 CRITICAL, real row game 24 ply 41 (Qf7#): eval_cp NULL,
+  // eval_mate 0 -- Stockfish's "already mated" score. On her (odd) ply this
+  // means MALLOW is mated: she won. Before this fix, bandSentenceForRow
+  // computed herPerspective = -(0) = 0, failed the `> 0` gate, and rendered
+  // "you held your ground in a hard spot." on the checkmating move itself.
+  it("fix round 2: a mate-0 row on her own-pick checkmate earns terminal copy, never the hard-spot band (game 24 ply 41, Qf7#)", () => {
+    const note = composeDoneWellNote(41, GAME24_MOVES[40], GAME24_MOVES);
+    expect(note).toBe("queen to f7 was our chess brain's own pick. checkmate: it won the game on the spot.");
+    expect(note).not.toMatch(/hard spot/);
+  });
+
+  // Fix round 2, real row game 191 ply 51 (Qf6#, a genuine deviation from
+  // the recorded Qg8#, another legal mate from the same square): evalCp is
+  // null on both the before/after rows, so the F1 gap is incomputable and
+  // this lands in the "pick-mention-only, band if available" bucket -- the
+  // band it finds is the same mate-0 terminal copy, proving the deviation
+  // branch never ends bare on a mate-0 row either.
+  it("fix round 2: the deviation branch on a mate-0 row uses the same terminal copy as its band, never a bare colon (game 191 ply 51, Qf6#)", () => {
+    const note = composeDoneWellNote(51, GAME191_MATE_MOVES[50], GAME191_MATE_MOVES);
+    expect(note).toBe("our chess brain's pick was queen to g8. checkmate: it won the game on the spot.");
+    expect(note.endsWith(":")).toBe(false);
+  });
+
+  // Fix round 2 hardening, real row game 131 ply 29 (Kxf3): her KING
+  // recaptures a knight (own pick). PIECE_VALUE has no "k" entry -- this
+  // pins that a king capture still renders the plain clean-grab clause with
+  // no false heavier-target claim, now via the explicit
+  // moverValueOrNeverHeavier guard rather than an undefined-comparison
+  // accident (no black piece happens to be adjacent to f3 in this real
+  // position, so this doesn't discriminate the guard's exact fallback value
+  // -- see the fix report for why no such real row exists in the corpus).
+  it("fix round 2 hardening: a king capture never claims a false heavier-target hit (game 131 ply 29, Kxf3)", () => {
+    const note = composeDoneWellNote(29, GAME131_MOVES[28], GAME131_MOVES);
+    expect(note).toBe("king takes on f3 was our chess brain's own pick. it wins the knight clean: nothing could take back on f3.");
+    expect(note).not.toMatch(/hit her/);
+  });
+
   // Voice test over every composed string pinned in this suite: lowercase
   // copy, no raw eval numbers outside square names, no em-dash, never
   // "engine" (say "our chess brain"), and -- fix round 1 (F2) -- never a
@@ -560,6 +657,9 @@ describe("composeDoneWellNote (D4)", () => {
       composeDoneWellNote(35, GAME190_MOVES[34], GAME190_MOVES, []),
       composeDoneWellNote(25, GAME188_FULL_MOVES_OWN_PICK[24], GAME188_FULL_MOVES_OWN_PICK),
       composeDoneWellNote(25, GAME188_FULL_MOVES_BIG_DROP[24], GAME188_FULL_MOVES_BIG_DROP),
+      composeDoneWellNote(41, GAME24_MOVES[40], GAME24_MOVES),
+      composeDoneWellNote(51, GAME191_MATE_MOVES[50], GAME191_MATE_MOVES),
+      composeDoneWellNote(29, GAME131_MOVES[28], GAME131_MOVES),
     ];
     for (const note of notes) {
       expect(note).not.toContain("—");
