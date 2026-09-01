@@ -367,10 +367,9 @@ export function TurningPointsHeader({ open, onToggle }: { open: boolean; onToggl
 }
 
 // The seven approved word rows (owner's seven, verbatim from the library's
-// rev-2c opened frame). "the siege" is deliberately NOT here -- it is not
-// in her seven; an episode card's siege badge therefore goes unexplained
-// by this key (reported to the controller rather than adding an eighth
-// row).
+// rev-2c opened frame). "the siege" is not in her seven and no longer
+// exists as a badge (ruled a hallucination and deleted 2026-09-01), so
+// every badge production can mint is explained by this key.
 const BADGE_LEGEND_ROWS: { word: string; meaning: string }[] = [
   { word: "the crack", meaning: "mallow's door-opening bad move" },
   { word: "the slip", meaning: "your own bad move" },
