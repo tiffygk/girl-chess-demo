@@ -1457,6 +1457,33 @@ describe("GameManager", () => {
     expect(gm.getSummary(g).moves.find((m) => m.ply === 1)?.highlighted).toBe(false);
   });
 
+  // D4 Task 1: summary rows carry raw per-row engine facts (evalCp/evalMate/
+  // bestUci) so the done-well composer (Task 2) can apply the mover offset
+  // at its own read site. These are RAW values straight off the moves row —
+  // no offset applied here, see manager.ts's attachEval doc comment and
+  // src/game/api.ts's SummaryMove comment. A row with no attached eval at
+  // all must carry null/undefined, never a fabricated zero.
+  it("summary rows carry raw evalCp/evalMate/bestUci off the db row, verbatim", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    attachEval(g, 1, { cp: 35, mate: null, bestMove: "g1f3", pv: ["g1f3"] });
+    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    // ply 2 gets no attachEval at all -- its row must come back with
+    // null/undefined evalCp/evalMate/bestUci, not zeroes.
+
+    const moves = gm.getSummary(g).moves;
+    const row1 = moves.find((m) => m.ply === 1) as any;
+    const row2 = moves.find((m) => m.ply === 2) as any;
+
+    expect(row1.evalCp).toBe(35);
+    expect(row1.evalMate).toBe(null);
+    expect(row1.bestUci).toBe("g1f3");
+
+    expect(row2.evalCp == null).toBe(true);
+    expect(row2.evalMate == null).toBe(true);
+    expect(row2.bestUci == null).toBe(true);
+  });
+
   // debrief-v2: algo versioning self-heal. A game finished under the OLD
   // algorithm (dedup-swallows-her-swings, no episode detector) has a stale
   // algo_version=1 row set — getSummary must recompute under the current
