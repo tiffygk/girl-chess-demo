@@ -51,6 +51,13 @@ interface LiveGame {
   opponent: MaiaOpponent;
   ply: number;
   finished: boolean;
+  /** Wave B (attribution round, 2026-09-01): the recorded colour she is
+   *  playing this game, set once in newGame and read by partyFor below to
+   *  turn a move's chess.js .color into "her" | "mallow" -- a comparison of
+   *  two recorded facts, never ply arithmetic. Always "w" today (every game
+   *  in her history has been white), but the field exists so that stops
+   *  being an assumption baked into the code. */
+  playerColor: "w" | "b";
   /** Round 3 (Q2 step 2): the last hint computed for THIS game, keyed to the
    *  fen it was computed for, so chat can fold the hint's verified findings
    *  onto the shelf when she asks about the same position. In-memory only,
@@ -238,6 +245,17 @@ export function buildVerdictFactsJson(
   // `JSON.stringify(verdict.threat)` shape — no migration, no reader change
   // needed for the common (non-conversion) case.
   return JSON.stringify({ ...(threat ?? {}), conversionCopy });
+}
+
+// Wave B (attribution round, 2026-09-01), Task B2: the party is read off
+// the chess engine's own move object, never computed from the ply.
+// `live.playerColor` is the game's recorded colour for her (always "w" for
+// every game played so far), so this is a comparison of two recorded
+// facts, not arithmetic. See
+// ply-parity-encode-in-types-not-helpers: seven bugs in this project have
+// come from re-deriving a seat from ply % 2.
+function partyFor(live: LiveGame, moveColor: "w" | "b"): "her" | "mallow" {
+  return moveColor === live.playerColor ? "her" : "mallow";
 }
 
 export class GameManager {
@@ -458,16 +476,20 @@ export class GameManager {
 
   async newGame(sessionId: number, elo: number) {
     const opponent = await this.opponentFor(elo);
-    const gameId = createGame(sessionId, (opponent.fallback ? "fallback-" : "maia-") + elo);
-    this.games.set(gameId, { chess: new Chess(), opponent, ply: 0, finished: false, hintHistory: [] });
+    // "w" passed explicitly (Wave B, B2) so player_color is written on
+    // purpose, not inherited from createGame's default -- every game today
+    // is her as white, but this is the one place that fact gets recorded
+    // rather than assumed.
+    const gameId = createGame(sessionId, (opponent.fallback ? "fallback-" : "maia-") + elo, "w");
+    this.games.set(gameId, { chess: new Chess(), opponent, ply: 0, finished: false, playerColor: "w", hintHistory: [] });
     return { gameId, fen: new Chess().fen(), fallback: opponent.fallback, elo };
   }
 
-  private record(gameId: number, live: LiveGame, san: string, uci: string, timeSpentMs: number) {
+  private record(gameId: number, live: LiveGame, san: string, uci: string, timeSpentMs: number, side: "her" | "mallow") {
     live.ply += 1;
     const ply = live.ply;
     const fenAfter = live.chess.fen();
-    recordMove({ gameId, ply, san, uci, fenAfter, timeSpentMs });
+    recordMove({ gameId, ply, san, uci, fenAfter, timeSpentMs, side });
     // async eval; never awaited on the move path (latency rule)
     this.evaluator.evaluate(fenAfter, 600)
       .then((ev) => attachEval(gameId, ply, ev))
@@ -967,7 +989,7 @@ export class GameManager {
       return { ok: false, fen: live.chess.fen() };
     }
     const playerCapture = mv.flags.includes("c") || mv.flags.includes("e");
-    this.record(gameId, live, mv.san, mv.from + mv.to + (mv.promotion ?? ""), timeSpentMs);
+    this.record(gameId, live, mv.san, mv.from + mv.to + (mv.promotion ?? ""), timeSpentMs, partyFor(live, mv.color));
 
     if (override) {
       // ply here is the ply this player move just occupied (this.record()
@@ -991,7 +1013,7 @@ export class GameManager {
     const replyUci = await live.opponent.pickMove(live.chess.fen());
     const reply = live.chess.move({ from: replyUci.slice(0, 2), to: replyUci.slice(2, 4), promotion: (replyUci[4] as any) ?? undefined });
     const replyCapture = reply.flags.includes("c") || reply.flags.includes("e");
-    this.record(gameId, live, reply.san, replyUci, 0);
+    this.record(gameId, live, reply.san, replyUci, 0, partyFor(live, reply.color));
 
     over = this.gameOver(live.chess);
     if (over) { finishGame(gameId, over.result); live.finished = true; this.persistGameSummary(gameId, over.result); }
