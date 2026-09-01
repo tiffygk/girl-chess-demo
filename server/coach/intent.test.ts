@@ -251,7 +251,12 @@ describe("isRecordRequest (Task 9, coach_notes capture gap): verb-form and 'want
   });
 
   it("fires on the colloquial 'wanna note', same family as the existing 'wanna make a note'", () => {
-    expect(isRecordRequest("wanna note this for later")).toBe(true);
+    // Review finding F4 (2026-09-01): "wanna note this for later" is
+    // already satisfied by the pre-existing "\bnote this\b" branch, so this
+    // fixture stayed green even with the new "\bwanna note\b" branch
+    // deleted -- the branch it claims to cover was untested. Use a fixture
+    // that only the new branch can match.
+    expect(isRecordRequest("wanna note that the arrows are wrong")).toBe(true);
   });
 
   it("does NOT fire on a negated or retrospective-question form of the new phrasings", () => {
@@ -276,6 +281,32 @@ describe("isRecordRequest (Task 9, coach_notes capture gap): verb-form and 'want
         "For the notes for the rest of the game, opponent inaccuracy on move 4 and move 13: bishop takes on h2, check."
       )
     ).toBe(false);
+  });
+});
+
+// Review finding F2 (2026-09-01): the progressive/"want to" widenings above
+// sit behind NOTE_QUESTION_GUARD, which only knew the auxiliaries
+// did|have|has|does -- written for the bare infinitive. The progressive
+// ("making") takes is/are/was/were/am, and "want to" takes do. The
+// negation guard knew no prohibitives (stop/quit). None of the strings
+// below is a request to record anything; all newly matched before the
+// guards were widened.
+describe("isRecordRequest (review finding F2): question/negation guards must cover the new verb forms", () => {
+  it("does NOT fire on a progressive-form retrospective question with is/are/was/were/am", () => {
+    expect(isRecordRequest("are you making a note of this?")).toBe(false);
+    expect(isRecordRequest("is the coach making a note of that automatically?")).toBe(false);
+    expect(isRecordRequest("was it making a note the whole time?")).toBe(false);
+    expect(isRecordRequest("am I making a note every time I say that?")).toBe(false);
+  });
+
+  it("does NOT fire on a 'want to note' retrospective question with do", () => {
+    expect(isRecordRequest("do you want to note that?")).toBe(false);
+    expect(isRecordRequest("what happens if I want to note something later?")).toBe(false);
+  });
+
+  it("does NOT fire on a prohibitive ('stop'/'quit') negation of the progressive form", () => {
+    expect(isRecordRequest("stop making a note of everything")).toBe(false);
+    expect(isRecordRequest("quit making a note of my blunders")).toBe(false);
   });
 });
 
