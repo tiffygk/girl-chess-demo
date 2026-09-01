@@ -319,6 +319,45 @@ describe("computeShowAllowedRow card-scope fix (union-review finding 1, feedback
     expect(computeShowAllowedRow([suppressedLine, drawsLine], gameSans50, null)).toBe(true);
     expect(computeShowAllowedRow([suppressedLine, drawsLine], gameSans50)).toBe(true); // rewindPly omitted entirely too
   });
+
+  // D1 arrow-unification (owner ruling 2026-08-31, review follow-up item 1):
+  // every fixture above this test is an ODD-ply (her) line -- 5, 9, 13, 49 --
+  // because under F4 (pre-amendment), the landing-state loop's `buildArrowsForPly(l,
+  // l.ply, gameSans, highlightLines, "replay")` call routed an EVEN-ply
+  // (mallow's) line through turningLineReplayArrows, which returned ONLY the
+  // sole `{ playedFromTo, color: "mallow" }` arrow (or the full context set
+  // if playedFromTo didn't resolve) -- it never read moverBestFromTo or
+  // line.threat at all under that framing. So 'mallow-best' could never
+  // appear in this landing-state loop for an even-ply line pre-amendment: an
+  // even-ply fixture here would have been a silent false negative, proving
+  // nothing about this function. (Not runnable directly against the deleted
+  // code -- turningLineReplayArrows no longer exists in this tree -- so this
+  // is stated as the reasoning, not re-executed.)
+  //
+  // Owner ruling 2026-08-31 deletes that carve-out (arrowSelection.ts,
+  // reviewArrows.ts): "replay" now calls reviewArrowsForMove identically to
+  // "ask" on BOTH parities, so mallow's own alternative (moverBestFromTo)
+  // legitimately surfaces as the SUBJECT's "mallow-best" arrow on an even
+  // card too -- exactly the R2 four-arrow-model channel "ask" already used.
+  // This is the "likely-correct consequence of the owner's ruling" the
+  // review flagged as untested; this test closes that gap without touching
+  // computeShowAllowedRow itself.
+  it("NEW (owner ruling 2026-08-31 supersedes F4): landing state now shows the row for an EVEN-ply line whose own alternative move is a real mallow-best -- unreachable pre-amendment", () => {
+    // ply 6 in the knight-shuffle fixture is mallow's (black's) move --
+    // Nf6, g8->f6 (see knightShuffleGameSans's own header comment).
+    // moverBestFromTo is a different, hypothetical alternative so made !==
+    // moverBest and the "mallow-best" dashed arrow is genuinely emitted
+    // rather than deduped away.
+    const evenLine: TurningLine = {
+      ply: 6,
+      playedFromTo: { from: "g8", to: "f6" }, // mallow's actual Nf6
+      moverBestFromTo: { from: "b8", to: "c6" }, // a different alternative -- must draw its own dashed arrow
+      pvSans: [],
+    };
+    const arrows = buildArrowsForPly(evenLine, 6, gameSans50, [], "replay");
+    expect(arrows).toContainEqual({ from: "b8", to: "c6", color: "mallow-best" });
+    expect(computeShowAllowedRow([evenLine], gameSans50, null)).toBe(true);
+  });
 });
 
 describe("AnalysisLegendRail wiring for the conditional row (A6)", () => {

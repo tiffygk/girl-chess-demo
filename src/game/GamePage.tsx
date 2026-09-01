@@ -1559,33 +1559,38 @@ export function GamePage() {
   // resolved). Centralized so the "found" dedup case (which legitimately has
   // no "played"-coloured arrow at all — see reviewArrows.ts) doesn't
   // re-trigger the fallback and double up on the same move.
-  // F4 (owner ruling 2026-08-03, game 169): `intent` splits the two framings
-  // this helper serves. "ask" (the default — handleAskAboutTurningPoint/
-  // handleAskAboutPly) keeps the full-context arrow set; "replay"
-  // (handleRewind only) routes through turningLineReplayArrows, which for an
-  // OPPONENT-ply line focuses the inaccuracy itself as the sole magenta
-  // arrow and is byte-identical to the context framing for everything else —
-  // see that function's header and reviewArrows.test.ts's regression pins.
+  // F4 (owner ruling 2026-08-03, game 169) used to split this helper's two
+  // framings by `intent`: "ask" (the default — handleAskAboutTurningPoint/
+  // handleAskAboutPly) kept the full-context arrow set; "replay"
+  // (handleRewind only) routed an OPPONENT-ply line through
+  // turningLineReplayArrows, focusing the inaccuracy itself as the sole
+  // magenta arrow. Owner ruling 2026-08-31 (D1 arrow-unification round,
+  // verbatim: "for D1, the same rules as when i click one of the debrief
+  // created cards applies... it should be similar for the highlighted move
+  // cards as well.") SUPERSEDES F4: replay now shows the same four-arrow set
+  // as ask, on BOTH parities. turningLineReplayArrows is deleted from
+  // reviewArrows.ts, and arrowSelection.ts's buildArrowsForPly no longer
+  // branches on `intent` at all for a TurningLine-bearing ply — see that
+  // file's own header for the full history and the owner's verbatim ruling.
   //
   // Postgame arrow redesign, Task 2 (2026-08-04, conservative-scope
   // override owner-approved same date): the branch on whether a
   // HighlightLine exists for `ply` -- and therefore whether this ply routes
-  // through the new reviewArrowsForMove three-arrow model instead of the
-  // paragraph above's pre-existing framing -- now lives in arrowSelection.ts
-  // (extracted so it's unit-testable without a GamePage render harness; see
-  // that file's own header for the full rationale). This is a thin wrapper
-  // over it so every existing call site (handleRewind,
-  // handleAskAboutTurningPoint, handleAskAboutPly) is unchanged.
+  // through the reviewArrowsForMove four-arrow model instead of the
+  // paragraph above's framing -- lives in arrowSelection.ts (extracted so
+  // it's unit-testable without a GamePage render harness; see that file's
+  // own header for the full rationale). This is a thin wrapper over it so
+  // every existing call site (handleRewind, handleAskAboutTurningPoint,
+  // handleAskAboutPly) is unchanged.
   //
-  // Turning-Card Arrow Extension (2026-08-05, fix-round-1): the
-  // conservative scope above is now narrower than "no HighlightLine ->
-  // always the F4 paragraph's framing." A non-highlighted ply that DOES
-  // carry a TurningLine now also routes through reviewArrowsForMove, but
-  // ONLY for `intent === "ask"` -- `intent === "replay"` still keeps the F4
-  // paragraph's sole-inaccuracy framing exactly as ruled. So `intent` is
-  // live again for this call site's third argument (handleRewind passes
-  // "replay", the other two callers take the "ask" default) -- see
-  // arrowSelection.ts's own header for the full current routing table.
+  // Turning-Card Arrow Extension (2026-08-05, fix-round-1) narrowed "no
+  // HighlightLine" further: a non-highlighted ply that DOES carry a
+  // TurningLine also routes through reviewArrowsForMove. `intent` is still
+  // threaded through as this call site's third argument (handleRewind
+  // passes "replay", the other two callers take the "ask" default) purely
+  // for call-site compatibility — as of the 2026-08-31 amendment above,
+  // arrowSelection.ts no longer reads the value for anything. See that
+  // file's own header for the full current routing table.
   const buildArrowsForPly = useCallback(
     (line: TurningLine | undefined, ply: number, intent: ArrowIntent = "ask"): ReviewArrow[] =>
       buildArrowsForPlyPure(line, ply, activeReviewMoves ?? undefined, highlightLines, intent),
