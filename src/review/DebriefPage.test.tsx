@@ -779,6 +779,21 @@ describe("DebriefPage D3: badges, chronological ordering, side tint, two-line le
     expect(cards).not.toContain("debrief-card-side-");
   });
 
+  it("an episode card degrades to the zero-badge path: no chips row, no side tint (the siege deleted, owner ruling 2026-09-01 -- the games 127/149/180 shape)", () => {
+    const episode: TurningPoint = {
+      rank: 1, ply: 20, plyEnd: 30, san: "Qh5", label: "king pressure", deltaP: 0,
+      lowConfidence: false, kind: "episode",
+    };
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: [episode] })} />
+    );
+    const cards = cardsSectionOf(html);
+    // the card itself still renders, with its episode framing
+    expect(cards).toContain("king pressure");
+    expect(cards).not.toContain("tp-badge");
+    expect(cards).not.toContain("debrief-card-side-");
+  });
+
   // FLIPPED (owner correction 2026-09-01, task 1b): the always-visible
   // two-line rail is superseded -- "We should do the full Legend ... The
   // Legend can come up if there's an icon of a question mark next to any

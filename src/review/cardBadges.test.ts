@@ -182,10 +182,17 @@ describe("badgesForPoint: the slip (her eval-band labels)", () => {
   });
 });
 
-describe("badgesForPoint: the siege (episode kind)", () => {
-  it("kind episode -> the siege, mallow side, soft (the card keeps its existing king-pressure framing)", () => {
-    const point = tp({ ply: 20, plyEnd: 30, label: "king pressure", kind: "episode", deltaP: 0 });
-    expect(badgesForPoint(point)).toEqual([{ word: "the siege", side: "mallow", hard: false }]);
+describe("badgesForPoint: an episode point (the siege deleted)", () => {
+  it("an episode point earns no badge: the approved vocabulary has seven words and the siege is not one of them (owner ruling 2026-09-01)", () => {
+    const episode = tp({
+      rank: 3,
+      ply: 18,
+      plyEnd: 24,
+      label: "king pressure",
+      kind: "episode",
+      deltaP: 0,
+    });
+    expect(badgesForPoint(episode)).toEqual([]);
   });
 });
 
