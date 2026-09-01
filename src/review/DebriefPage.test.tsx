@@ -16,7 +16,7 @@
 // unit test would not.
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DebriefPage, PastGamesDrawer, type DebriefPageProps } from "./DebriefPage";
+import { DebriefPage, PastGamesDrawer, TurningPointsHeader, BadgeLegend, type DebriefPageProps } from "./DebriefPage";
 import type { TurningPoint, TurningLine, SummaryMove, GameListEntry, HighlightLine } from "../game/api";
 // Source pin follows postgame.test.ts/endCopy.test.ts's established
 // pattern: a bundler-safe `?raw` import (vite.config.ts's test.css: true)
@@ -779,32 +779,61 @@ describe("DebriefPage D3: badges, chronological ordering, side tint, two-line le
     expect(cards).not.toContain("debrief-card-side-");
   });
 
-  it("the two-line side legend renders at the top of the cards column with the exact approved copy", () => {
+  // FLIPPED (owner correction 2026-09-01, task 1b): the always-visible
+  // two-line rail is superseded -- "We should do the full Legend ... The
+  // Legend can come up if there's an icon of a question mark next to any
+  // of the cards." The `cyan · you` / `rose · mallow` strings survive, but
+  // only inside the opened legend; the closed default renders the header
+  // row and the "?" chip and nothing else (the dead-chrome ruling: closed
+  // draws zero legend pixels).
+  it("the two-line rail is gone; closed default renders the header + '?' chip and zero legend pixels", () => {
     const html = renderToStaticMarkup(
       <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
     );
+    expect(html).not.toContain("badge-side-rail");
     const cards = cardsSectionOf(html);
-    const railIdx = cards.indexOf("badge-side-rail");
-    expect(railIdx).toBeGreaterThan(-1);
-    // Before the first CARD open tag (the slice starts at the
-    // .debrief-cards container itself, whose class name shares the prefix).
-    const firstCardIdx = cards.search(/<div class="debrief-card( [^"]*)?">/);
-    expect(firstCardIdx).toBeGreaterThan(-1);
-    expect(railIdx).toBeLessThan(firstCardIdx);
-    expect(cards).toContain("cyan · you");
-    expect(cards).toContain("rose · mallow");
-    // never the seven-definition legend, never cookie's surface
-    expect(cards).not.toContain("what the badges mean");
+    // the header row at the axis-head register, then the chip
+    expect(cards).toContain(">turning points<");
+    expect(cards).toContain("tp-qchip");
+    expect(cards).toContain('aria-label="what do the badge words mean?"');
+    expect(cards).toContain('aria-expanded="false"');
+    // header row before the first card
+    const headIdx = cards.indexOf("tp-cards-head");
+    const firstCardIdx = cards.search(/<div class="debrief-card( [^"]*)?"/);
+    expect(headIdx).toBeGreaterThan(-1);
+    expect(headIdx).toBeLessThan(firstCardIdx);
+    // closed: no legend content at all
+    expect(html).not.toContain("badge legend");
+    expect(html).not.toContain("cyan");
     expect(html).not.toContain("cookie");
   });
 
-  it("empty state: zero turning points -> no badges, no legend rail (nothing renders that says nothing)", () => {
-    const html = renderToStaticMarkup(<DebriefPage {...baseProps({ turningPoints: [] })} />);
-    expect(html).not.toContain("badge-side-rail");
-    expect(html).not.toContain("tp-badge");
+  it("the '?' chip is a real button (type=button) gated on the same badge computation the cards read", () => {
+    const withBadges = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
+    );
+    expect(withBadges).toMatch(/<button type="button"[^>]*class="tp-qchip"/);
+    const unconverted: TurningPoint = {
+      rank: 1, ply: 3, san: "Qh5", label: "unconverted", deltaP: 0,
+      lowConfidence: false, kind: "unconverted", endKind: "repetition",
+    };
+    const noBadges = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: [unconverted] })} />
+    );
+    expect(noBadges).not.toContain("tp-qchip");
+    expect(noBadges).not.toContain(">turning points<");
   });
 
-  it("a game whose points earn zero badges also renders no legend rail (the legend reads the rendered badge list, never a re-derived rule)", () => {
+  it("empty state: zero turning points -> no badges, no header, no chip, no legend, no rail (nothing renders that says nothing)", () => {
+    const html = renderToStaticMarkup(<DebriefPage {...baseProps({ turningPoints: [] })} />);
+    expect(html).not.toContain("tp-badge");
+    expect(html).not.toContain("tp-qchip");
+    expect(html).not.toContain(">turning points<");
+    expect(html).not.toContain("badge legend");
+    expect(html).not.toContain("tp-rail");
+  });
+
+  it("a game whose points earn zero badges also renders no header/chip/legend/rail (gated on the real producer, never a re-derived rule)", () => {
     const unconverted: TurningPoint = {
       rank: 1, ply: 3, san: "Qh5", label: "unconverted", deltaP: 0,
       lowConfidence: false, kind: "unconverted", endKind: "repetition",
@@ -812,7 +841,9 @@ describe("DebriefPage D3: badges, chronological ordering, side tint, two-line le
     const html = renderToStaticMarkup(
       <DebriefPage {...baseProps({ turningPoints: [unconverted] })} />
     );
-    expect(html).not.toContain("badge-side-rail");
+    expect(html).not.toContain("tp-qchip");
+    expect(html).not.toContain("badge legend");
+    expect(html).not.toContain("tp-rail");
   });
 
   // Source pins on the recipe itself (same cssSrc pattern the armed-delete
@@ -826,5 +857,110 @@ describe("DebriefPage D3: badges, chronological ordering, side tint, two-line le
     expect(cssSrc).toMatch(/\.gc-app \.tp-badge-mallow-hard \{[^}]*background: #FF3DA6;[^}]*\}/);
     expect(cssSrc).toMatch(/\.gc-app \.debrief-card-side-her \{ box-shadow: inset 3px 0 0 #23E5FF; \}/);
     expect(cssSrc).toMatch(/\.gc-app \.debrief-card-side-mallow \{ box-shadow: inset 3px 0 0 #C22B7E; \}/);
+  });
+});
+
+// Task 1b (owner corrections 2026-09-01): the full badge legend behind the
+// "?" chip, sized to the arrow legend. renderToStaticMarkup never fires an
+// onClick (this file's own header note), so the open/closed CONTENT is
+// pinned through the exported controlled pieces (TurningPointsHeader takes
+// `open`, BadgeLegend is the plate itself); DebriefPage's own one-line
+// useState flip is the only untested wiring, same split deleteArm.test.ts
+// already documents for the drawer.
+describe("DebriefPage 1b: the full badge legend behind the '?' chip (owner correction 2026-09-01)", () => {
+  it("the header chip's aria-expanded follows the open state", () => {
+    const closed = renderToStaticMarkup(<TurningPointsHeader open={false} onToggle={noop} />);
+    expect(closed).toContain('aria-expanded="false"');
+    const open = renderToStaticMarkup(<TurningPointsHeader open={true} onToggle={noop} />);
+    expect(open).toContain('aria-expanded="true"');
+  });
+
+  it("the opened legend is the shipped cipher-rail plate with the 'badge legend' kicker", () => {
+    const html = renderToStaticMarkup(<BadgeLegend />);
+    expect(html).toContain('class="legend-rail"');
+    expect(html).toContain("legend-kicker");
+    expect(html).toContain(">badge legend<");
+  });
+
+  it("two color rows first, swatched with the rail's own 7px dots, cyan/rose bolded (amendment ii)", () => {
+    const html = renderToStaticMarkup(<BadgeLegend />);
+    const cyanIdx = html.indexOf("<strong>cyan</strong> · you");
+    const roseIdx = html.indexOf("<strong>rose</strong> · mallow");
+    expect(cyanIdx).toBeGreaterThan(-1);
+    expect(roseIdx).toBeGreaterThan(cyanIdx);
+    // the swatches are the rail's own dots, her side then mallow's
+    const herDotIdx = html.indexOf("tp-rail-dot rd-her");
+    const mallowDotIdx = html.indexOf("tp-rail-dot rd-mallow");
+    expect(herDotIdx).toBeGreaterThan(-1);
+    expect(herDotIdx).toBeLessThan(cyanIdx);
+    expect(mallowDotIdx).toBeGreaterThan(cyanIdx);
+    expect(mallowDotIdx).toBeLessThan(roseIdx);
+    // both rows precede the seven word rows
+    expect(roseIdx).toBeLessThan(html.indexOf("<strong>the crack</strong>"));
+  });
+
+  it("exactly the seven approved word rows, in order, each word bolded (amendment ii); the siege is NOT among them", () => {
+    const html = renderToStaticMarkup(<BadgeLegend />);
+    // React SSR escapes apostrophes: "mallow's" -> "mallow&#x27;s".
+    const rows = [
+      "<strong>the crack</strong> · mallow&#x27;s door-opening bad move",
+      "<strong>the slip</strong> · your own bad move",
+      "<strong>the punish</strong> · the reply that cashed a crack in",
+      "<strong>the miss</strong> · a win was there and went by",
+      "<strong>the swing</strong> · the biggest change in winning chances",
+      "<strong>the takeover</strong> · from here one side really led",
+      "<strong>the finish</strong> · the mating sequence that ended it",
+    ];
+    let last = -1;
+    for (const row of rows) {
+      const idx = html.indexOf(row);
+      expect(idx).toBeGreaterThan(last);
+      last = idx;
+    }
+    // her seven only -- no eighth row, whatever badges production can mint
+    expect(html).not.toContain("the siege");
+    // exactly nine legend rows total (2 color + 7 words)
+    expect(html.match(/class="legend-row"/g)?.length).toBe(9);
+  });
+
+  it("DebriefPage renders the legend inline beneath the header row when open (controlled render of the exported pieces stands in for the click)", () => {
+    // The page's own closed default is pinned in the block above; here the
+    // plate's placement contract: header first, then the legend plate,
+    // then the cards -- proven on the open component order DebriefPage
+    // composes (header -> legend -> cards body), via a direct render of
+    // the same children in that order.
+    const html = renderToStaticMarkup(
+      <>
+        <TurningPointsHeader open={true} onToggle={noop} />
+        <BadgeLegend />
+      </>
+    );
+    const headIdx = html.indexOf("tp-cards-head");
+    const plateIdx = html.indexOf(">badge legend<");
+    expect(headIdx).toBeGreaterThan(-1);
+    expect(plateIdx).toBeGreaterThan(headIdx);
+  });
+
+  // Source pins (cssSrc pattern, same as the armed-delete pin): the header
+  // word at the axis-head register (amendment i), the chip recipe verbatim,
+  // the strong rule, and the deleted two-line rail rules actually deleted.
+  it("the 'turning points' header renders at the axis-head-word register: Chakra Petch 700 12px .1em #4A3B7E (amendment i)", () => {
+    expect(cssSrc).toMatch(
+      /\.gc-app \.tp-cards-head-word \{[^}]*'Chakra Petch'[^}]*font-weight: 700; font-size: 12px;[^}]*letter-spacing: \.1em; text-transform: lowercase; color: #4A3B7E;[^}]*\}/
+    );
+  });
+
+  it("the '?' chip recipe is the mock's, literal for literal (sharp register, 4px chamfer, no candy lift)", () => {
+    expect(cssSrc).toMatch(/\.gc-app button\.tp-qchip \{[^}]*width: 20px; height: 20px;[^}]*border: 1\.5px solid #23A8C7;[^}]*background: #E4F7FB; color: #1A7A93;[^}]*clip-path: polygon\(4px 0,[^}]*\}/);
+    expect(cssSrc).toMatch(/\.gc-app button\.tp-qchip:hover[^{]*\{[^}]*transform: none;[^}]*\}/);
+  });
+
+  it("strong inside .legend-label renders at the family's existing bold (700), no new weight", () => {
+    expect(cssSrc).toMatch(/\.gc-app \.legend-label strong \{ font-weight: 700; \}/);
+  });
+
+  it("the superseded two-line rail css is deleted", () => {
+    expect(cssSrc).not.toContain("badge-side-rail");
+    expect(cssSrc).not.toContain("badge-side-row");
   });
 });
