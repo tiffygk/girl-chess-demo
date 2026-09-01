@@ -306,18 +306,37 @@ const NOTE_NEGATION_GUARD =
 // letting the lookbehind run unbounded.
 const NOTE_QUESTION_GUARD = String.raw`(?<!\b(?:did|have|has|does)\s+\w+(?:\s+\w+){0,3}\s)`;
 
+// Task 9 (2026-09-01, coach_notes capture gap round): two more widenings,
+// each controller-verified against a real, directly-evidenced silent miss
+// in her chat_messages (sqlite3 "file:data/girlchess.db?mode=ro", read-only)
+// and checked by hand against ALL 150 of her real user messages containing
+// "note" -- zero false positives found.
+//   - "mak(?:e|ing) a note" -- game 172, msg 203: "Just making a note here
+//     that..." is the present-participle inflection of the existing "make a
+//     note" branch, not a new phrase; the bare verb never matched it.
+//   - "want(?:s)? to note" / "wanna note" -- game 189, msg 247: "Something
+//     else that I want to note is..." is a distinct phrase from every
+//     existing alternative. "wanna note" is added for symmetry with the
+//     colloquial "wanna make a note" phrasing already seen in her data
+//     (game 189, msg 245), same as "make a note" tolerates it.
+// Same guard philosophy as the rest of this family: false negatives fall
+// through harmlessly to an ordinary reply; a false positive costs a real
+// question a spurious "noted" line -- so both new branches keep the
+// negation and retrospective-question guards.
 const RECORD_REQUEST_RE = new RegExp(
   [
     String.raw`please\s+record\b`,
     String.raw`\brecord this\b`,
     String.raw`\bmark this\b`,
     NOTE_NEGATION_GUARD + String.raw`\bremember this\b`,
-    NOTE_NEGATION_GUARD + NOTE_QUESTION_GUARD + String.raw`\bmake a note\b`,
+    NOTE_NEGATION_GUARD + NOTE_QUESTION_GUARD + String.raw`\bmak(?:e|ing) a note\b`,
     NOTE_NEGATION_GUARD + NOTE_QUESTION_GUARD + String.raw`\btake a note\b`,
     NOTE_NEGATION_GUARD + NOTE_QUESTION_GUARD + String.raw`\bnote this\b`,
     NOTE_NEGATION_GUARD + String.raw`\bjot (?:this|that) down\b`,
     NOTE_NEGATION_GUARD + String.raw`\bwrite (?:this|that) down\b`,
     NOTE_NEGATION_GUARD + NOTE_QUESTION_GUARD + String.raw`\badd a note\b`,
+    NOTE_NEGATION_GUARD + NOTE_QUESTION_GUARD + String.raw`\bwant(?:s)? to note\b`,
+    NOTE_NEGATION_GUARD + NOTE_QUESTION_GUARD + String.raw`\bwanna note\b`,
   ].join("|"),
   "i"
 );
