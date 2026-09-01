@@ -1592,6 +1592,104 @@
 }
 .gc-app .debrief-replay-btn { align-self: flex-start; }
 
+/* ---- D3 badge wave (owner approvals 2026-09-01, option 1a momentum words;
+   spec: vault component-library.html sec-d3-card-language rev 2). The badge
+   is a machine statement, so it is SHARP: the sq-chip's 4px chamfer at the
+   signal-register type size, hard 1px filter drop-shadow (box-shadow dies
+   under clip-path), never a candy pill. Four states: soft = the name
+   plate's resting tint, hard = the w5 badge's saturated pour; cyan family
+   her, rose family mallow, cookie's lavender in NO state. Every literal
+   below pre-exists in this file (the rev-2 audit table maps each one). ---- */
+.gc-app .tp-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.gc-app .tp-badge {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 8px;
+  border: 1.5px solid; border-radius: 0; white-space: nowrap;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .12em; text-transform: lowercase;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+.gc-app .tp-badge-her-soft { background: #E4F7FB; border-color: #23A8C7; color: #1A7A93; filter: drop-shadow(1px 1px 0 rgba(26,122,147,.4)); }
+.gc-app .tp-badge-her-hard { background: #23E5FF; border-color: #23A8C7; color: #1A7A93; filter: drop-shadow(1px 1px 0 rgba(26,122,147,.4)); }
+.gc-app .tp-badge-mallow-soft { background: #FFE9F4; border-color: #FF3DA6; color: #C22B7E; filter: drop-shadow(1px 1px 0 rgba(194,43,126,.45)); }
+.gc-app .tp-badge-mallow-hard { background: #FF3DA6; border-color: #C22B7E; color: #fff; filter: drop-shadow(1px 1px 0 rgba(194,43,126,.45)); }
+/* The card's 3px left tint follows its FIRST badge's family (law 1); inset
+   left-tint construction per the library's hl2-card, at the D3 spec's 3px. */
+.gc-app .debrief-card-side-her { box-shadow: inset 3px 0 0 #23E5FF; }
+.gc-app .debrief-card-side-mallow { box-shadow: inset 3px 0 0 #C22B7E; }
+/* Task 1b (owner correction 2026-09-01): the position-A two-line rail is
+   DELETED, superseded by the full badge legend behind the "?" chip. The
+   header row renders "turning points" at the arrow legend's own
+   section-header register (amendment i: the .legend-rail .axis-head .word
+   recipe -- a proper header, not the 9px kicker); the chip is the approved
+   mock's d3r-qchip recipe literal for literal (rev-2c audit: chamfer +
+   colors + drop-shadow from .sq-chip's family, 20px from .tp-badge's
+   height, 10.5px from .legend-label) -- sharp register, a machine control,
+   so the global candy button hover/active lift is neutralized (transform:
+   none per the disabled-button precedent at line ~182). The opened plate
+   itself is the shipped .legend-rail recipe reused verbatim (see
+   BadgeLegend in DebriefPage.tsx); the only new rule it needs is <strong>
+   at the family's existing bold (amendment ii). Zero new hex. */
+.gc-app .tp-cards-head { display: flex; align-items: center; gap: 8px; }
+.gc-app .tp-cards-head-word {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 12px;
+  letter-spacing: .1em; text-transform: lowercase; color: #4A3B7E;
+}
+.gc-app button.tp-qchip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0; border: 1.5px solid #23A8C7; border-radius: 0;
+  background: #E4F7FB; color: #1A7A93; box-shadow: none;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10.5px;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+  filter: drop-shadow(1px 1px 0 rgba(26,122,147,.4)); cursor: pointer;
+}
+.gc-app button.tp-qchip:hover, .gc-app button.tp-qchip:active {
+  transform: none; box-shadow: none;
+}
+.gc-app .legend-label strong { font-weight: 700; }
+/* The 2b rail's 7px side dots (also the badge legend's color-row swatches,
+   rendered position:static there per the mock's own inline style). The
+   ledger-dot recipe: 7px round, hard white ring, the shipped side inks. */
+.gc-app .tp-rail-dot {
+  position: absolute; left: -19px; top: 9px; width: 7px; height: 7px;
+  border-radius: 50%; box-shadow: 0 0 0 1.5px #FFF;
+}
+.gc-app .tp-rail-dot.rd-her { background: #23E5FF; }
+.gc-app .tp-rail-dot.rd-mallow { background: #C22B7E; }
+/* Task 1b, section D: the 2b vertical dot rail left of the cards (owner
+   pick 2026-09-01). The brief's recipe verbatim: 1.5px lavender rule
+   (#C9BFEF, the shipped button-shadow ink), dots hanging into the gutter,
+   Fredoka underlined word (link affordance) + Chakra move number. Layout
+   glue from the approved mock's own inline styles: rail flex:0 0 auto,
+   cards column flex:1 1 auto min-width:0 with the 10px gutter. Below the
+   file's existing narrow breakpoint (the 480px family) the rail HIDES --
+   2a's one-line fallback lost and is not built, and the cards never
+   reflow. All rules additive; .postgame / --board-size / .action-slot /
+   .coach-hint-band / .status-line untouched (protected-fold rule). */
+.gc-app .tp-cards-body { display: flex; align-items: flex-start; }
+.gc-app .tp-rail {
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  border-left: 1.5px solid #C9BFEF; padding-left: 14px; margin-left: 3px;
+}
+.gc-app .tp-rail:empty { display: none; }
+.gc-app .tp-rail-row {
+  position: relative; display: flex; align-items: baseline; gap: 7px;
+  padding: 5px 0; text-decoration: none;
+}
+.gc-app .tp-rail-word { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13px; color: #6952C4; text-decoration: underline; }
+.gc-app .tp-rail-num { font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px; letter-spacing: .04em; color: #9C8FC7; }
+.gc-app .tp-cards-col {
+  flex: 1 1 auto; min-width: 0; margin-left: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+/* <=480 (the protected narrow fold): the rail spends width the fold does
+   not have -- it hides entirely (controller ruling; no 2a fallback), and
+   the cards column drops the rail gutter. After the base rules -- equal
+   specificity, source order decides (the chat-corner precedent's rule). */
+@media (max-width: 480px) {
+  .gc-app .tp-rail { display: none; }
+  .gc-app .tp-cards-col { margin-left: 0; }
+}
+
 /* Increment 3.95 (Task 10): the full-game move-list navigator — sits below
    the turning-point cards, prev/next scrub above a scrollable list of every
    move number. The list itself is a flat-tint bubble (same family as
