@@ -296,15 +296,29 @@ export function isOffTopic(message: string): boolean {
 //
 // The two guards are named fragments, not hand-copied into every
 // alternative, so the list can't silently drift out of sync with itself.
+// Review finding F2 (2026-09-01): "stop"/"quit" added alongside the
+// original prohibitives -- "stop making a note of everything" and "quit
+// making a note of my blunders" are prohibitive negations of the new
+// progressive-form branch, same family as "don't make a note of this".
 const NOTE_NEGATION_GUARD =
-  String.raw`(?<!\b(?:don't|do not|didn't|doesn't|cannot|can't|not|never|won't|wouldn't|haven't|hasn't)\s)`;
-// "did/have/has/does <1-4 words> ___" immediately before the phrase --
-// catches "did you make a note", "have you noted this", "does the coach
-// note this automatically" style retrospective checks about a note that
-// may already exist, as distinct from a fresh imperative request. The
-// bounded {0,3} lets the subject be more than one word ("the coach") without
+  String.raw`(?<!\b(?:don't|do not|didn't|doesn't|cannot|can't|not|never|won't|wouldn't|haven't|hasn't|stop|quit)\s)`;
+// "did/have/has/does/is/are/was/were/am/do/if <1-4 words> ___" immediately
+// before the phrase -- catches "did you make a note", "have you noted
+// this", "does the coach note this automatically" style retrospective
+// checks about a note that may already exist, as distinct from a fresh
+// imperative request. Review finding F2 (2026-09-01): the progressive
+// ("is/are/was/were/am ... making a note") and "want to note" ("do you
+// want to note that?") phrasings take different auxiliaries than the bare
+// infinitive this guard was originally written for, so both were newly
+// matched as false positives until is|are|was|were|am|do were added here.
+// "if" covers the hypothetical/conditional form of the same "want to
+// note" phrasing ("what happens if I want to note something later?") --
+// not a retrospective question, but the same non-request shape: "if" turns
+// "want to note" into a conditional clause, not an imperative. The bounded
+// {0,3} lets the subject be more than one word ("the coach") without
 // letting the lookbehind run unbounded.
-const NOTE_QUESTION_GUARD = String.raw`(?<!\b(?:did|have|has|does)\s+\w+(?:\s+\w+){0,3}\s)`;
+const NOTE_QUESTION_GUARD =
+  String.raw`(?<!\b(?:did|have|has|does|is|are|was|were|am|do|if)\s+\w+(?:\s+\w+){0,3}\s)`;
 
 // Task 9 (2026-09-01, coach_notes capture gap round): two more widenings,
 // each controller-verified against a real, directly-evidenced silent miss
