@@ -1117,7 +1117,14 @@ describe("GameManager", () => {
 
       const history = getAllChatMessages(g.gameId) as any[];
       const coachTurns = history.filter((m) => m.role === "coach");
-      expect(coachTurns.some((m) => m.text.includes(ACK))).toBe(true);
+      // Review finding F3 (2026-09-01): .includes(ACK) stayed green even
+      // when the code under review persisted replyText (the template's own
+      // prose) instead of the deterministic ACK constant -- exactly the
+      // doom-loop leak B3b exists to prevent. Assert the persisted turn IS
+      // the ack, not merely that it contains it, so that mutation is
+      // actually caught.
+      expect(coachTurns.length).toBe(1);
+      expect(coachTurns[0].text).toBe(ACK);
     }, 20000);
 
     it("still never persists a template reply's own prose when NO note was recorded (B3b stays intact)", async () => {
