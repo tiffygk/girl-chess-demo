@@ -332,20 +332,82 @@ function TurningPointCard({
   );
 }
 
-// D3 badge wave (2026-09-01), position A: the two-line side legend at the
-// top of the cards column, exact owner-approved copy ("Cyan is the player.
-// Rose is the opponent." -> `cyan · you` / `rose · mallow`). The shipped
-// cipher-rail recipe register (chamfered plate, hard flat shadow, signal
-// type -- .legend-rail's own literals), never the seven-definition legend
-// (owner: two-line version only). One component, reversible. This is an
-// analysis surface, so mallow's name is allowed. Rendered ONLY when the
-// computed badge list actually put a chip on some card (caller's gate) --
-// nothing renders that says nothing.
-function BadgeSideLegend() {
+// Task 1b (owner correction 2026-09-01, superseding position A's two-line
+// rail): "We should do the full Legend but it should be sized to be similar
+// dimensions to the Legend for the arrows ... The Legend can come up if
+// there's an icon of a question mark next to any of the cards." The header
+// row: "turning points" at the arrow legend's own section-header register
+// (amendment i -- the axis-head word recipe, a proper header, not the 9px
+// kicker), beside a real "?" button in the sharp chip register. Exported
+// (with BadgeLegend below) so the static test harness can pin the open
+// state -- renderToStaticMarkup never fires an onClick (the deleteArm.ts
+// precedent), so DebriefPage's own one-line useState flip is the only
+// untested wiring.
+export function TurningPointsHeader({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
-    <div className="badge-side-rail">
-      <span className="badge-side-row badge-side-row-her">cyan · you</span>
-      <span className="badge-side-row badge-side-row-mallow">rose · mallow</span>
+    <div className="tp-cards-head">
+      <span className="tp-cards-head-word">turning points</span>
+      <button
+        type="button"
+        className="tp-qchip"
+        aria-label="what do the badge words mean?"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        ?
+      </button>
+    </div>
+  );
+}
+
+// The seven approved word rows (owner's seven, verbatim from the library's
+// rev-2c opened frame). "the siege" is deliberately NOT here -- it is not
+// in her seven; an episode card's siege badge therefore goes unexplained
+// by this key (reported to the controller rather than adding an eighth
+// row).
+const BADGE_LEGEND_ROWS: { word: string; meaning: string }[] = [
+  { word: "the crack", meaning: "mallow's door-opening bad move" },
+  { word: "the slip", meaning: "your own bad move" },
+  { word: "the punish", meaning: "the reply that cashed a crack in" },
+  { word: "the miss", meaning: "a win was there and went by" },
+  { word: "the swing", meaning: "the biggest change in winning chances" },
+  { word: "the takeover", meaning: "from here one side really led" },
+  { word: "the finish", meaning: "the mating sequence that ended it" },
+];
+
+// The full badge legend, opened from the "?" chip: the shipped cipher-rail
+// plate verbatim (.legend-rail / .legend-row / .legend-label), a "badge
+// legend" kicker, two color rows swatched with the 2b rail's own 7px dots
+// (position:static per the mock, exactly as the library frame inlines it),
+// then the seven word rows. `cyan`/`rose` and the seven words are <strong>
+// (amendment ii -- the family's existing bold, Chakra Petch 700, via the
+// one .legend-label strong rule). Closed draws zero pixels: the caller
+// simply doesn't render this (the 2026-07-22 dead-chrome ruling).
+export function BadgeLegend() {
+  return (
+    <div className="legend-rail">
+      <span className="legend-kicker">badge legend</span>
+      <div className="cluster-rows stack" style={{ marginTop: 7 }}>
+        <div className="legend-row">
+          <span className="tp-rail-dot rd-her" style={{ position: "static" }} aria-hidden="true" />
+          <span className="legend-label">
+            <strong>cyan</strong> · you
+          </span>
+        </div>
+        <div className="legend-row">
+          <span className="tp-rail-dot rd-mallow" style={{ position: "static" }} aria-hidden="true" />
+          <span className="legend-label">
+            <strong>rose</strong> · mallow
+          </span>
+        </div>
+        {BADGE_LEGEND_ROWS.map((r) => (
+          <div className="legend-row" key={r.word}>
+            <span className="legend-label">
+              <strong>{r.word}</strong> · {r.meaning}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -696,6 +758,10 @@ export function DebriefPage({
     ])
   );
   const anyBadges = Array.from(badgesByRank.values()).some((b) => b.length > 0);
+  // Task 1b: the badge legend's open state. Closed by default -- closed
+  // draws zero legend pixels (dead-chrome ruling); the "?" chip is the only
+  // legend chrome on the page until clicked.
+  const [legendOpen, setLegendOpen] = useState(false);
   return (
     <div className="debrief pop-in">
       <AnalysisLegend
@@ -767,7 +833,16 @@ export function DebriefPage({
       )}
       {turningPoints.length > 0 && (
         <div className="debrief-cards">
-          {anyBadges && <BadgeSideLegend />}
+          {/* Header + "?" chip render ONLY when some card actually carries
+              a badge -- the same anyBadges gate the old rail used, computed
+              from badgesByRank (the real producer), never re-derived. The
+              opened plate renders INLINE directly beneath the header row at
+              the cards column's width (controller ruling: the library's
+              side-by-side frame is a dimension comparison, not placement). */}
+          {anyBadges && (
+            <TurningPointsHeader open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
+          )}
+          {anyBadges && legendOpen && <BadgeLegend />}
           {orderedPoints.map((point) => (
             <TurningPointCard
               key={point.rank}

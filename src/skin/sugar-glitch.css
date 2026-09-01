@@ -1616,25 +1616,45 @@
    left-tint construction per the library's hl2-card, at the D3 spec's 3px. */
 .gc-app .debrief-card-side-her { box-shadow: inset 3px 0 0 #23E5FF; }
 .gc-app .debrief-card-side-mallow { box-shadow: inset 3px 0 0 #C22B7E; }
-/* The two-line side legend (position A, top of the cards column) -- the
-   shipped .legend-rail plate recipe verbatim, two rows in the signal
-   register, each row wearing its own side's existing ink (law 1 taught by
-   example). Owner copy of record: "Cyan is the player. Rose is the
-   opponent." */
-.gc-app .badge-side-rail {
-  width: 100%;
-  background: rgba(255,255,255,.94); border: 1.5px solid #9A8BC9;
-  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
-  filter: drop-shadow(2px 2px 0 rgba(74,59,126,.45));
-  padding: 8px 16px 9px;
-  display: flex; flex-direction: column; gap: 2px;
+/* Task 1b (owner correction 2026-09-01): the position-A two-line rail is
+   DELETED, superseded by the full badge legend behind the "?" chip. The
+   header row renders "turning points" at the arrow legend's own
+   section-header register (amendment i: the .legend-rail .axis-head .word
+   recipe -- a proper header, not the 9px kicker); the chip is the approved
+   mock's d3r-qchip recipe literal for literal (rev-2c audit: chamfer +
+   colors + drop-shadow from .sq-chip's family, 20px from .tp-badge's
+   height, 10.5px from .legend-label) -- sharp register, a machine control,
+   so the global candy button hover/active lift is neutralized (transform:
+   none per the disabled-button precedent at line ~182). The opened plate
+   itself is the shipped .legend-rail recipe reused verbatim (see
+   BadgeLegend in DebriefPage.tsx); the only new rule it needs is <strong>
+   at the family's existing bold (amendment ii). Zero new hex. */
+.gc-app .tp-cards-head { display: flex; align-items: center; gap: 8px; }
+.gc-app .tp-cards-head-word {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 12px;
+  letter-spacing: .1em; text-transform: lowercase; color: #4A3B7E;
 }
-.gc-app .badge-side-row {
+.gc-app button.tp-qchip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0; border: 1.5px solid #23A8C7; border-radius: 0;
+  background: #E4F7FB; color: #1A7A93; box-shadow: none;
   font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10.5px;
-  letter-spacing: .03em; text-transform: lowercase;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+  filter: drop-shadow(1px 1px 0 rgba(26,122,147,.4)); cursor: pointer;
 }
-.gc-app .badge-side-row-her { color: #23A8C7; }
-.gc-app .badge-side-row-mallow { color: #C22B7E; }
+.gc-app button.tp-qchip:hover, .gc-app button.tp-qchip:active {
+  transform: none; box-shadow: none;
+}
+.gc-app .legend-label strong { font-weight: 700; }
+/* The 2b rail's 7px side dots (also the badge legend's color-row swatches,
+   rendered position:static there per the mock's own inline style). The
+   ledger-dot recipe: 7px round, hard white ring, the shipped side inks. */
+.gc-app .tp-rail-dot {
+  position: absolute; left: -19px; top: 9px; width: 7px; height: 7px;
+  border-radius: 50%; box-shadow: 0 0 0 1.5px #FFF;
+}
+.gc-app .tp-rail-dot.rd-her { background: #23E5FF; }
+.gc-app .tp-rail-dot.rd-mallow { background: #C22B7E; }
 
 /* Increment 3.95 (Task 10): the full-game move-list navigator — sits below
    the turning-point cards, prev/next scrub above a scrollable list of every
