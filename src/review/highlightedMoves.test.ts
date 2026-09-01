@@ -272,7 +272,7 @@ const GAME188_SANS = [
 ];
 const GAME188_MOVES = withFacts(GAME188_SANS, {
   18: { bestUci: "f3b7" }, // THE OFFSET: row 18 (ply-1) is where ply-19's mover-best lives
-  19: { evalCp: -228, evalMate: null, bestUci: "a7a7" }, // ply19's own row -- reply-side facts, must NOT be read as the mover's pick
+  19: { evalCp: -228, evalMate: null, bestUci: "a8a7" }, // ply19's own row, real db value (F5 fix: was mistranscribed "a7a7") -- reply-side facts, must NOT be read as the mover's pick
 });
 
 // Game 191, plies 1-13: real moves. 13.e5 is a pawn push (no capture) that
@@ -301,8 +301,89 @@ const GAME192_SANS = [
   "Qxc7", "Bd5", "Qxe7", "a5", "Qf6", "Rf8", "h4",
 ];
 const GAME192_MOVES = withFacts(GAME192_SANS, {
-  46: { bestUci: "g1h1" }, // THE OFFSET: row 46 (ply-1) holds ply-47's mover-best
-  47: { evalCp: -809, evalMate: null, bestUci: "h6h6" }, // ply47's own row -- irrelevant reply-side value
+  // F1 fix: the gap machinery needs BOTH rows' own evalCp (798 real, her
+  // perspective as-is since ply46 is even) to confirm the real gap here is
+  // tiny (|809-798|=11, well inside DONE_WELL_NO_GAP_CP) -- this is what
+  // makes "gave up nothing" true, not an assumption.
+  46: { bestUci: "g1h1", evalCp: 798 }, // THE OFFSET: row 46 (ply-1) holds ply-47's mover-best
+  47: { evalCp: -809, evalMate: null, bestUci: "h7h6" }, // ply47's own row, real db value (F5 fix: was mistranscribed "h6h6") -- irrelevant reply-side value
+});
+
+// Fix round 1 (2026-08-31 review). Real rows read via readonly SELECT off
+// data/girlchess.db (game_id 169, 188 extended past ply 19, 190) and
+// independently replayed/verified with chess.js -- same discipline as the
+// three fixtures above.
+
+// Game 188, plies 20-43 appended to the array above (the game continues
+// past the Bxb7 fixture ply 19 used earlier). Row 42's best_move ("g4c8")
+// equals ply 43's played uci exactly (own pick); row 24's best_move
+// ("c6d7") equals ply 25's played uci exactly (own pick).
+const GAME188_FULL_SANS = [
+  ...GAME188_SANS,
+  "a5", "Bxa8", "Ng4", "Bc6+", "Bd7", "Bxd7+", "Qxd7", "O-O", "Qf5", "Bb2",
+  "h5", "Nf3", "g5", "Bxh8", "h4", "h3", "Nxe3", "fxe3", "Qh7", "Nxg5",
+  "Qg6", "Qg4", "Be7", "Qc8+",
+];
+
+// Game 169, plies 1-19: 19.Nxd5+ is a capturing check (verified via chess.js
+// no legal recapture on d5 -- both `.moves({verbose:true})` filtered to d5
+// and the king-inclusive geometric attackers agree it's empty). From d5 the
+// knight also attacks the black king on e7 (giving check) AND the black
+// queen on c7 (value 9, heavier than the knight's 3) -- before the F3 fix,
+// heaviestTarget's Infinity-valued king would win that sort every time and
+// render "hit her king on e7" instead of the real, more dangerous fact.
+const GAME169_SANS = [
+  "d4", "d5", "Bd2", "f6", "e3", "Nd7", "Bd3", "c5", "c4", "e5",
+  "Qh5+", "g6", "Bxg6+", "Ke7", "Bf7", "Qc7", "Nc3", "Bh6", "Nxd5+",
+];
+
+// Game 190, plies 1-40: the round's F1/F2/F4 anchor game.
+//   ply 5  (b3):  unclassified, row 4's best_move ("g1f3") differs from the
+//                 played uci -- a genuine deviation with a LARGE her-
+//                 perspective gap (|2-53|=51, over DONE_WELL_NO_GAP_CP).
+//   ply 33 (Qg3): classification "inaccuracy" on record, no TurningLine at
+//                 this ply -- the exact shape that fell through to
+//                 "...gave up nothing" under the old code.
+//   ply 35 (Bxh6): captures a pawn; the g7 pawn geometrically attacks h6
+//                 but is absolutely pinned to the black king by the white
+//                 queen down the g-file -- `.moves({verbose:true})`
+//                 filtered to h6 is empty, `.isAttacked("h6","b")` (the OLD,
+//                 wrong check) is true. Real case for F4.
+//   ply 37 (Qe3): classification "mistake" on record (her-perspective eval
+//                 swings -271 -> -623 across the move), same shape as ply 33.
+const GAME190_SANS = [
+  "d4", "e6", "c4", "Nf6", "b3", "d5", "e3", "Be7", "Bd3", "h6",
+  "Nf3", "c6", "O-O", "O-O", "Nc3", "c5", "dxc5", "Bxc5", "cxd5", "exd5",
+  "Na4", "Bg4", "h3", "Bxf3", "Qxf3", "Be7", "Bd2", "Nbd7", "e4", "d4",
+  "e5", "Nxe5", "Qg3", "Bd6", "Bxh6", "Ng6", "Qe3", "dxe3", "Bxe3", "Nf4",
+];
+
+const GAME188_FULL_MOVES_OWN_PICK = withFacts(GAME188_FULL_SANS, {
+  24: { bestUci: "c6d7", evalCp: 632 }, // real db values -- THE OFFSET: row 24 is where ply-25's mover-best/eval-before live
+  25: { evalCp: -627 }, // real; her-perspective gap vs row 24 is -5, well inside DONE_WELL_NO_GAP_CP
+  42: { bestUci: "g4c8" }, // THE OFFSET: row 42 is where ply-43's mover-best lives
+  43: { evalCp: null, evalMate: -4 }, // real: eval_cp NULL, eval_mate set (F2's mate-row shape)
+});
+
+// F4's negative case: same real Bxd7+ position, but the eval facts are
+// synthetic (overriding the real, small gap with a large one) to isolate
+// the numeric gate itself -- same "overlay synthetic facts on a real,
+// replayable position" technique as THE OFFSET test above.
+const GAME188_FULL_MOVES_BIG_DROP = withFacts(GAME188_FULL_SANS, {
+  24: { bestUci: "c6d7", evalCp: 700 }, // synthetic: her perspective as-is (even ply) = 700
+  25: { evalCp: 300 }, // synthetic: her perspective negated (odd ply) = -300 -- gap = -300-700 = -1000, far past -35
+});
+
+const GAME169_MOVES = withFacts(GAME169_SANS, {
+  18: { bestUci: "c3d5" }, // real db value -- THE OFFSET: row 18 is where ply-19's mover-best lives
+});
+
+const GAME190_MOVES = withFacts(GAME190_SANS, {
+  4: { bestUci: "g1f3", evalCp: 53 }, // real -- THE OFFSET: row 4 is where ply-5's mover-best/eval-before live
+  5: { evalCp: -2 }, // real, unclassified; her-perspective gap vs row 4 is -51, past DONE_WELL_NO_GAP_CP
+  33: { evalCp: 325 }, // real (classification supplied separately, per MoveClassification's own shape)
+  35: { evalCp: 458 }, // real; unused by the clean-grab assertion (no bestUci set here on purpose -- isolates the tactics slot from the pick slot)
+  37: { evalCp: 623 }, // real (classification supplied separately)
 });
 
 describe("composeDoneWellNote (D4)", () => {
@@ -313,10 +394,14 @@ describe("composeDoneWellNote (D4)", () => {
     );
   });
 
-  it("game 192 ply 47 (h4, deviated from king to h1): deviation clause + mandatory band", () => {
+  // Fix round 1 (F1): restored to the spec doc's full string -- the real
+  // gap here (|809-798|=11, well inside DONE_WELL_NO_GAP_CP=35) is what
+  // makes "gave up nothing" true, and the warrant clause states that basis
+  // instead of asserting it bare.
+  it("game 192 ply 47 (h4, deviated from king to h1): deviation clause + warrant + mandatory band", () => {
     const note = composeDoneWellNote(47, GAME192_MOVES[46], GAME192_MOVES);
     expect(note).toBe(
-      "our chess brain's pick was king to h1, and your pawn to h4 gave up nothing: you stayed completely winning."
+      "our chess brain's pick was king to h1, and your pawn to h4 gave up nothing: the gap between them is no real gap. you stayed completely winning."
     );
   });
 
@@ -350,21 +435,139 @@ describe("composeDoneWellNote (D4)", () => {
     expect(note).toBe("nothing here was a mistake. trust the instinct that made you pause.");
   });
 
+  // F1(a) CRITICAL, real row game 190 ply 33 (Qg3): classified "inaccuracy"
+  // with no TurningLine at this ply, so buildHighlightedRows' own
+  // could-be-better gate never saw it -- this is the shape that rendered
+  // "...gave up nothing" under the old code. Severity stays owned by
+  // moves.classification (owner ruling 2026-07-28): the composer never
+  // re-derives a grade, it just states the one already on record instead of
+  // any done-well prose.
+  it("F1(a): a classified row (game 190 ply 33, inaccuracy) gets a graded note, never done-well prose", () => {
+    const classifications: MoveClassification[] = [{ ply: 33, classification: "inaccuracy" }];
+    const note = composeDoneWellNote(33, GAME190_MOVES[32], GAME190_MOVES, classifications);
+    expect(note).toBe("our chess brain graded this an inaccuracy. you held your ground in a hard spot.");
+    expect(note).not.toMatch(/gave up nothing/);
+  });
+
+  // Same shape, real row game 190 ply 37 (Qe3, mistake) -- the review's
+  // named example, her-perspective eval swinging -271 -> -623 across the
+  // move (row 36 even -> as-is -271; row 37 odd -> negate(623) = -623).
+  it("F1(a): a classified row (game 190 ply 37, mistake, eval -271 -> -623) gets a graded note, never done-well prose", () => {
+    const classifications: MoveClassification[] = [{ ply: 37, classification: "mistake" }];
+    const note = composeDoneWellNote(37, GAME190_MOVES[36], GAME190_MOVES, classifications);
+    expect(note).toBe("our chess brain graded this a mistake. you held your ground in a hard spot.");
+    expect(note).not.toMatch(/gave up nothing/);
+  });
+
+  // F1(b), real row game 190 ply 5 (b3): row 4's best_move ("g1f3") differs
+  // from the played uci, but the her-perspective gap across the move is -51
+  // (past DONE_WELL_NO_GAP_CP=35) and the row carries no classification --
+  // never "gave up nothing", only the pick itself plus the band.
+  it("F1(b): an unclassified deviation with a gap > 35 states only the pick, never the nothing-claim", () => {
+    const note = composeDoneWellNote(5, GAME190_MOVES[4], GAME190_MOVES, []);
+    expect(note).toBe("our chess brain's pick was knight to f3. the game stayed level.");
+    expect(note).not.toMatch(/gave up nothing/);
+  });
+
+  // F2 CRITICAL, real row game 188 ply 43 (Qc8+): eval_cp is NULL, eval_mate
+  // is -4 -- 23% of rows carry exactly this shape. Also doubles as an F3
+  // fixture: Qc8+ is a plain check with no capture, and the only
+  // equal-or-higher-value target it geometrically touches besides the
+  // (excluded) king is a pawn on c5, which doesn't qualify -- so no tactics
+  // clause fires and the band is the whole second sentence, sourced from
+  // evalMate since evalCp is null.
+  it("F2: a mate-row (evalCp null, evalMate set) still gets a complete, non-bare-colon sentence", () => {
+    const note = composeDoneWellNote(43, GAME188_FULL_MOVES_OWN_PICK[42], GAME188_FULL_MOVES_OWN_PICK);
+    expect(note).toBe("queen to c8 was our chess brain's own pick. you stayed completely winning.");
+    expect(note.endsWith(":")).toBe(false);
+  });
+
+  // F3, real row game 169 ply 19 (Nxd5+): a capturing check. From d5 the
+  // knight also attacks the black king (must be excluded) and the black
+  // queen on c7 (heavier than the knight) -- before the fix, the
+  // Infinity-valued king would win heaviestTarget's sort and render "hit
+  // her king on e7" instead. Also proves the check-suffix strip: the pick
+  // clause must not read "...d5, check was our chess brain's own pick."
+  it("F3: excludes the king as a target and strips the check suffix from an embedded phrase (game 169 ply 19, Nxd5+)", () => {
+    const note = composeDoneWellNote(19, GAME169_MOVES[18], GAME169_MOVES);
+    expect(note).toBe(
+      "knight takes on d5 was our chess brain's own pick. it wins the pawn clean: nothing could take back on d5, and from d5 your knight hit her queen on c7."
+    );
+    expect(note).not.toMatch(/, check was/);
+    expect(note).not.toMatch(/king/);
+  });
+
+  // F4 CRITICAL, real row game 190 ply 35 (Bxh6): the g7 pawn geometrically
+  // attacks h6 (the OLD isAttacked-based check would report a recapture)
+  // but is absolutely pinned to the black king by the white queen down the
+  // g-file, so no LEGAL recapture exists. No bestUci set on this fixture on
+  // purpose, isolating the tactics slot from the pick slot.
+  it("F4: a geometrically-attacked-but-pinned square is a clean grab, not a contested one (game 190 ply 35, Bxh6)", () => {
+    const note = composeDoneWellNote(35, GAME190_MOVES[34], GAME190_MOVES, []);
+    expect(note).toBe("it wins the pawn clean: nothing could take back on h6.");
+  });
+
+  // F4, real row game 188 ply 25 (Bxd7+): a genuine capture-with-recapture
+  // (black played Qxd7 the very next move) -- her-perspective gap across
+  // the move is -5 (>= -35), so the clause fires with the rephrased tail.
+  // Also an F3 regression: Bxd7+ is a check, and the pick clause must not
+  // carry it mid-sentence.
+  it("F4: recapture-available clause fires with the rephrased tail when the gap is fine (game 188 ply 25, Bxd7+)", () => {
+    const note = composeDoneWellNote(25, GAME188_FULL_MOVES_OWN_PICK[24], GAME188_FULL_MOVES_OWN_PICK);
+    expect(note).toBe(
+      "bishop takes on d7 was our chess brain's own pick. she could take back on d7, and it cost you nothing."
+    );
+    expect(note).not.toMatch(/, check was/);
+    expect(note).not.toMatch(/the trade was fine for you/);
+  });
+
+  // F4, same real position, synthetic eval override: when the gap machinery
+  // shows a large drop across the move, the recapture-available clause is
+  // omitted entirely (never assert "it cost you nothing" un-evidenced) --
+  // the band takes over instead, sourced from this row's own (synthetic)
+  // evalCp.
+  it("F4: recapture-available clause is omitted when the gap machinery shows a large drop", () => {
+    const note = composeDoneWellNote(25, GAME188_FULL_MOVES_BIG_DROP[24], GAME188_FULL_MOVES_BIG_DROP);
+    expect(note).toBe("bishop takes on d7 was our chess brain's own pick. you held your ground in a hard spot.");
+    expect(note).not.toMatch(/take back/);
+  });
+
+  // F5(a): production only ever calls this for a "done well" verdict on HER
+  // move (buildHighlightedRows filters upstream), but the function itself
+  // must not lie if ever called on a proven mallow row -- side is data
+  // (Task 1/W5), never re-derived here from ply parity.
+  it("F5(a): never composes done-well prose for a row proven to be mallow's move", () => {
+    const moves = GAME188_MOVES.map((m) => (m.ply === 19 ? { ...m, side: "mallow" as const } : m));
+    const note = composeDoneWellNote(19, moves[18], moves);
+    expect(note).toBe("nothing here was a mistake. trust the instinct that made you pause.");
+  });
+
   // Voice test over every composed string pinned in this suite: lowercase
   // copy, no raw eval numbers outside square names, no em-dash, never
-  // "engine" (say "our chess brain").
+  // "engine" (say "our chess brain"), and -- fix round 1 (F2) -- never a
+  // bare trailing colon.
   it("every composed note in this suite passes voice rules", () => {
     const notes = [
       composeDoneWellNote(19, GAME188_MOVES[18], GAME188_MOVES),
       composeDoneWellNote(47, GAME192_MOVES[46], GAME192_MOVES),
       composeDoneWellNote(13, GAME191_MOVES[12], GAME191_MOVES),
       composeDoneWellNote(11, sansWhere(11, "Qd2")[10], sansWhere(11, "Qd2")),
+      composeDoneWellNote(33, GAME190_MOVES[32], GAME190_MOVES, [{ ply: 33, classification: "inaccuracy" }]),
+      composeDoneWellNote(37, GAME190_MOVES[36], GAME190_MOVES, [{ ply: 37, classification: "mistake" }]),
+      composeDoneWellNote(5, GAME190_MOVES[4], GAME190_MOVES, []),
+      composeDoneWellNote(43, GAME188_FULL_MOVES_OWN_PICK[42], GAME188_FULL_MOVES_OWN_PICK),
+      composeDoneWellNote(19, GAME169_MOVES[18], GAME169_MOVES),
+      composeDoneWellNote(35, GAME190_MOVES[34], GAME190_MOVES, []),
+      composeDoneWellNote(25, GAME188_FULL_MOVES_OWN_PICK[24], GAME188_FULL_MOVES_OWN_PICK),
+      composeDoneWellNote(25, GAME188_FULL_MOVES_BIG_DROP[24], GAME188_FULL_MOVES_BIG_DROP),
     ];
     for (const note of notes) {
       expect(note).not.toContain("—");
       expect(note.toLowerCase()).not.toContain("engine");
       // No digit outside an [a-h][1-8] square token.
       expect(note.replace(/[a-h][1-8]/g, "")).not.toMatch(/\d/);
+      // F2: never a bare trailing colon.
+      expect(note.endsWith(":")).toBe(false);
     }
   });
 });
