@@ -101,6 +101,13 @@ import { HighlightedMovesSection } from "./HighlightedMovesSection";
 // mallow's highlighted moves, graded from Wave A's HighlightLine facts.
 import { buildMallowHighlightedRows } from "./mallowHighlightedMoves";
 import { MallowHighlightedSection } from "./MallowHighlightedSection";
+// D3 badge wave (owner approvals 2026-09-01, option 1a momentum words):
+// the pure render-layer badge mapper. Every card's chips and its 3px
+// side tint, and the two-line legend's visibility, all read the SAME
+// per-point mapper output computed once below -- the legend never
+// re-derives its own rule (the legend-gated-on-the-real-producer rule).
+import { badgesForPoint } from "./cardBadges";
+import type { CardBadge } from "./cardBadges";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -189,6 +196,10 @@ interface TurningPointCardProps {
   // matching TurningLine itself (it already holds turningLines), so this
   // component only ever hands back the point, never a pre-built context.
   onAskAboutThis: (point: TurningPoint) => void;
+  // D3 badge wave (2026-09-01): this card's badge chips, computed ONCE by
+  // DebriefPage from badgesForPoint (the same list the legend rail reads)
+  // and passed down -- the card never re-derives its own badges.
+  badges: CardBadge[];
 }
 
 function TurningPointCard({
@@ -201,6 +212,7 @@ function TurningPointCard({
   onTryLine,
   exploring,
   onAskAboutThis,
+  badges,
 }: TurningPointCardProps) {
   // debrief-v2: an episode card is a warning-class fact by construction (a
   // sustained king-pressure run), so it always gets the magenta tint —
@@ -239,11 +251,19 @@ function TurningPointCard({
     !!mateOutcomeForCard &&
     (mateOutcomeForCard.outcome === "faster" || mateOutcomeForCard.outcome === "matched") &&
     !mateOutcomeHasUnmeasuredRepeat;
-  // Wave E (2026-08-27): a lead-change card whose leader is mallow is a
-  // warning-class fact by construction (the lead tipped away from her) --
-  // same flat-tint family as an episode card, just a different reason.
-  const isMallowLead = point.kind === "lead-change" && point.leader === "mallow";
-  const negative = (NEGATIVE_CARD_LABELS.has(point.label) && !mateOutcomeIsHonestlyPositive) || isEpisode || isMallowLead;
+  // Wave E (2026-08-27) gave a mallow lead-change card the pink alarm wash.
+  // D3 badge wave (owner approval 2026-09-01): RECONCILED -- the approved
+  // g147 library specimen (sec-d3-card-language rev 2) renders that card on
+  // the ordinary lavender shell with the rose 3px left tint and a hard rose
+  // takeover badge, so the badge family now carries the warning and the
+  // pink wash would double the same statement (the brief's "must not double
+  // up" rule). isMallowLead is therefore gone from the negative set; the
+  // side tint below (first badge's family) is what says "mallow's moment".
+  const negative = (NEGATIVE_CARD_LABELS.has(point.label) && !mateOutcomeIsHonestlyPositive) || isEpisode;
+  // D3: the card's 3px left tint follows the FIRST badge's side (library
+  // law 1 bullet: "the card's 3px left tint agrees with its lead badge's
+  // family"). No badges, no tint.
+  const sideClass = badges.length > 0 ? ` debrief-card-side-${badges[0].side}` : "";
   const startMove = moveNumberForPly(point.ply);
   const endMove = point.plyEnd != null ? moveNumberForPly(point.plyEnd) : startMove;
   const note = active ? buildTurningPointNote(point, classification, line, gameSans) : null;
@@ -260,7 +280,24 @@ function TurningPointCard({
   const describedPunish =
     point.punishSan && punishFen ? describeSanMove(point.punishSan, punishFen) : null;
   return (
-    <div className={"debrief-card" + (negative ? " debrief-card-negative" : "")}>
+    // Task 1b: the stable id the 2b rail's anchor rows target. rank is
+    // unique by construction (turningPoints.ts mints rank = i + 1), so the
+    // id survives the chronological re-sort unchanged.
+    <div
+      className={"debrief-card" + (negative ? " debrief-card-negative" : "") + sideClass}
+      id={`tp-card-${point.rank}`}
+    >
+      {/* D3: badge chips above the card title, per the library geometry --
+          machine statements in the sharp register, never candy pills. */}
+      {badges.length > 0 && (
+        <div className="tp-badges">
+          {badges.map((b) => (
+            <span key={b.word} className={`tp-badge tp-badge-${b.side}-${b.hard ? "hard" : "soft"}`}>
+              {b.word}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="debrief-card-head">
         <span className="debrief-card-kicker">{isEpisode ? `moves ${startMove}-${endMove}` : `move ${startMove}`}</span>
         {point.lowConfidence && <span className="debrief-card-lowconf">(eval gap here)</span>}
@@ -297,6 +334,86 @@ function TurningPointCard({
           {note.opportunity && <p className="debrief-card-punish">this opens up: {note.opportunity}.</p>}
         </>
       )}
+    </div>
+  );
+}
+
+// Task 1b (owner correction 2026-09-01, superseding position A's two-line
+// rail): "We should do the full Legend but it should be sized to be similar
+// dimensions to the Legend for the arrows ... The Legend can come up if
+// there's an icon of a question mark next to any of the cards." The header
+// row: "turning points" at the arrow legend's own section-header register
+// (amendment i -- the axis-head word recipe, a proper header, not the 9px
+// kicker), beside a real "?" button in the sharp chip register. Exported
+// (with BadgeLegend below) so the static test harness can pin the open
+// state -- renderToStaticMarkup never fires an onClick (the deleteArm.ts
+// precedent), so DebriefPage's own one-line useState flip is the only
+// untested wiring.
+export function TurningPointsHeader({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <div className="tp-cards-head">
+      <span className="tp-cards-head-word">turning points</span>
+      <button
+        type="button"
+        className="tp-qchip"
+        aria-label="what do the badge words mean?"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        ?
+      </button>
+    </div>
+  );
+}
+
+// The seven approved word rows (owner's seven, verbatim from the library's
+// rev-2c opened frame). "the siege" is deliberately NOT here -- it is not
+// in her seven; an episode card's siege badge therefore goes unexplained
+// by this key (reported to the controller rather than adding an eighth
+// row).
+const BADGE_LEGEND_ROWS: { word: string; meaning: string }[] = [
+  { word: "the crack", meaning: "mallow's door-opening bad move" },
+  { word: "the slip", meaning: "your own bad move" },
+  { word: "the punish", meaning: "the reply that cashed a crack in" },
+  { word: "the miss", meaning: "a win was there and went by" },
+  { word: "the swing", meaning: "the biggest change in winning chances" },
+  { word: "the takeover", meaning: "from here one side really led" },
+  { word: "the finish", meaning: "the mating sequence that ended it" },
+];
+
+// The full badge legend, opened from the "?" chip: the shipped cipher-rail
+// plate verbatim (.legend-rail / .legend-row / .legend-label), a "badge
+// legend" kicker, two color rows swatched with the 2b rail's own 7px dots
+// (position:static per the mock, exactly as the library frame inlines it),
+// then the seven word rows. `cyan`/`rose` and the seven words are <strong>
+// (amendment ii -- the family's existing bold, Chakra Petch 700, via the
+// one .legend-label strong rule). Closed draws zero pixels: the caller
+// simply doesn't render this (the 2026-07-22 dead-chrome ruling).
+export function BadgeLegend() {
+  return (
+    <div className="legend-rail">
+      <span className="legend-kicker">badge legend</span>
+      <div className="cluster-rows stack" style={{ marginTop: 7 }}>
+        <div className="legend-row">
+          <span className="tp-rail-dot rd-her" style={{ position: "static" }} aria-hidden="true" />
+          <span className="legend-label">
+            <strong>cyan</strong> · you
+          </span>
+        </div>
+        <div className="legend-row">
+          <span className="tp-rail-dot rd-mallow" style={{ position: "static" }} aria-hidden="true" />
+          <span className="legend-label">
+            <strong>rose</strong> · mallow
+          </span>
+        </div>
+        {BADGE_LEGEND_ROWS.map((r) => (
+          <div className="legend-row" key={r.word}>
+            <span className="legend-label">
+              <strong>{r.word}</strong> · {r.meaning}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -630,6 +747,27 @@ export function DebriefPage({
   // (side filter is the builder's own, on the row's `side` field). Zero
   // mallow rows renders nothing at all -- the dead-chrome ruling.
   const mallowHighlightedRows = buildMallowHighlightedRows(highlightLines ?? [], gameSans);
+  // D3 badge wave (2026-09-01). Chronological ordering, owner verbatim:
+  // "For component 3 the ordering should be chronological order." Cards
+  // sort by ply ascending (rank as a stable tiebreak; rank stays the key,
+  // unique by construction -- turningPoints.ts mints rank = i + 1).
+  // Severity is no longer implied by position: law 2's hard/soft fill
+  // carries it (the library's component-3 bullet).
+  const orderedPoints = [...turningPoints].sort((a, b) => a.ply - b.ply || a.rank - b.rank);
+  // Badges computed ONCE per point; the cards and the legend rail both read
+  // this same structure (a key must be gated on the real producer -- the
+  // legend can never claim a chip no card rendered).
+  const badgesByRank = new Map<number, CardBadge[]>(
+    turningPoints.map((p) => [
+      p.rank,
+      badgesForPoint(p, { result, line: turningLines.find((l) => l.ply === p.ply), gameSans }),
+    ])
+  );
+  const anyBadges = Array.from(badgesByRank.values()).some((b) => b.length > 0);
+  // Task 1b: the badge legend's open state. Closed by default -- closed
+  // draws zero legend pixels (dead-chrome ruling); the "?" chip is the only
+  // legend chrome on the page until clicked.
+  const [legendOpen, setLegendOpen] = useState(false);
   return (
     <div className="debrief pop-in">
       <AnalysisLegend
@@ -701,20 +839,65 @@ export function DebriefPage({
       )}
       {turningPoints.length > 0 && (
         <div className="debrief-cards">
-          {turningPoints.map((point) => (
-            <TurningPointCard
-              key={point.rank}
-              point={point}
-              onRewind={onRewind}
-              classification={classifications.find((c) => c.ply === point.ply)}
-              line={turningLines.find((l) => l.ply === point.ply)}
-              gameSans={gameSans}
-              active={rewindPly === point.ply}
-              onTryLine={onTryLine}
-              exploring={!!exploring}
-              onAskAboutThis={onAskAboutTurningPoint}
-            />
-          ))}
+          {/* Header + "?" chip render ONLY when some card actually carries
+              a badge -- the same anyBadges gate the old rail used, computed
+              from badgesByRank (the real producer), never re-derived. The
+              opened plate renders INLINE directly beneath the header row at
+              the cards column's width (controller ruling: the library's
+              side-by-side frame is a dimension comparison, not placement). */}
+          {anyBadges && (
+            <TurningPointsHeader open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
+          )}
+          {anyBadges && legendOpen && <BadgeLegend />}
+          {/* Task 1b, section D: the 2b dot rail left of the cards (owner
+              pick 2026-09-01; 2a lost and is not built). One anchor row per
+              badged card, in the SAME orderedPoints order the cards use
+              (never re-sorted); dot + word come from the card's FIRST badge
+              in badgesByRank -- the one producer the card and its 3px tint
+              already read. A badge-less card contributes no row (it has no
+              side and no word -- never guess one). No badges at all: no
+              rail, no wrapper (the dead-chrome ruling), the cards render
+              bare exactly as before. */}
+          {(() => {
+            const cards = orderedPoints.map((point) => (
+              <TurningPointCard
+                key={point.rank}
+                point={point}
+                onRewind={onRewind}
+                classification={classifications.find((c) => c.ply === point.ply)}
+                line={turningLines.find((l) => l.ply === point.ply)}
+                gameSans={gameSans}
+                active={rewindPly === point.ply}
+                onTryLine={onTryLine}
+                exploring={!!exploring}
+                onAskAboutThis={onAskAboutTurningPoint}
+                badges={badgesByRank.get(point.rank) ?? []}
+              />
+            ));
+            if (!anyBadges) return cards;
+            return (
+              <div className="tp-cards-body">
+                <div className="tp-rail">
+                  {orderedPoints.map((point) => {
+                    const badges = badgesByRank.get(point.rank) ?? [];
+                    if (badges.length === 0) return null;
+                    return (
+                      // A native anchor, exactly the library 2b specimen's
+                      // own mechanism -- free scroll + keyboard behavior,
+                      // no candy-button chrome to neutralize, and nothing
+                      // in this app reads location.hash.
+                      <a key={point.rank} className="tp-rail-row" href={`#tp-card-${point.rank}`}>
+                        <span className={`tp-rail-dot rd-${badges[0].side}`} aria-hidden="true" />
+                        <span className="tp-rail-word">{badges[0].word}</span>
+                        <span className="tp-rail-num">move {moveNumberForPly(point.ply)}</span>
+                      </a>
+                    );
+                  })}
+                </div>
+                <div className="tp-cards-col">{cards}</div>
+              </div>
+            );
+          })()}
         </div>
       )}
       <MoveList
