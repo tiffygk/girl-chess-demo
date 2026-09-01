@@ -4,7 +4,7 @@
 // MoveClassification facts, same discipline as turningPointNote.test.ts).
 
 import { describe, it, expect } from "vitest";
-import { buildHighlightedRows } from "./highlightedMoves";
+import { buildHighlightedRows, composeDoneWellNote } from "./highlightedMoves";
 import type { SummaryMove, TurningLine, MoveClassification } from "../game/api";
 
 // Two real, independently legal-checkable games (verified via chess.js) so
@@ -237,5 +237,134 @@ describe("buildHighlightedRows", () => {
     });
     const row = rows.find((r) => r.ply === 89)!;
     expect(row.note).toMatch(/what you did still ended in mate in two/);
+  });
+});
+
+// D4 (done-well composer): three real games the owner reviewed and approved
+// the option-1 copy for (vault "Girl Chess -- D4 Done-Well Text, Options +
+// Examples (2026-08-31).md"). Every SAN and eval fact below was read
+// directly off `data/girlchess.db` (readonly SELECT, game_id 188/191/192)
+// and independently replayed/verified with chess.js -- these are not
+// synthetic positions. THE OFFSET is load-bearing here: db row P's own
+// best_move describes the REPLY side's best after ply P, so the mover's own
+// best AT ply P lives on row P-1 -- attaching bestUci to the wrong row is
+// exactly the historic bug (see manager.ts's attachEval doc comment).
+function withFacts(
+  sans: string[],
+  facts: Record<number, { evalCp?: number | null; evalMate?: number | null; bestUci?: string | null }>
+): SummaryMove[] {
+  return sans.map((san, i) => {
+    const ply = i + 1;
+    return facts[ply] ? { ply, san, ...facts[ply] } : { ply, san };
+  });
+}
+
+// Game 188, plies 1-19: real moves, verified via chess.js that 19.Bxb7
+// captures a pawn with NO recapture available on b7 (`c.moves()` filtered to
+// b7 is empty; `c.isAttacked("b7","b")` is false) and the bishop, from b7,
+// attacks the still-unmoved rook on a8 (`c.isAttacked("a8","w")` true, its
+// only attacker b7) -- two moves later (21.Bxa8) the game bears this out.
+// Row 18's best_move ("f3b7") equals the played uci exactly: this was the
+// engine's own pick.
+const GAME188_SANS = [
+  "d4", "Nf6", "c4", "e5", "e3", "Nc6", "dxe5", "Nxe5", "Nd2", "a6",
+  "Be2", "d6", "Ngf3", "Be6", "b3", "Nxf3+", "Bxf3", "c5", "Bxb7",
+];
+const GAME188_MOVES = withFacts(GAME188_SANS, {
+  18: { bestUci: "f3b7" }, // THE OFFSET: row 18 (ply-1) is where ply-19's mover-best lives
+  19: { evalCp: -228, evalMate: null, bestUci: "a7a7" }, // ply19's own row -- reply-side facts, must NOT be read as the mover's pick
+});
+
+// Game 191, plies 1-13: real moves. 13.e5 is a pawn push (no capture) that
+// attacks the black knight on f6 (`c.attackers("f6","w")` = ["e5"] after the
+// move) -- verified via chess.js. Row 12's best_move ("e4e5") equals the
+// played uci: the engine's own pick.
+const GAME191_SANS = [
+  "d4", "e6", "e4", "Nf6", "Nc3", "d5", "f3", "Bb4", "a3", "Bxc3+",
+  "bxc3", "O-O", "e5",
+];
+const GAME191_MOVES = withFacts(GAME191_SANS, {
+  12: { bestUci: "e4e5" },
+  13: { evalCp: -141, evalMate: null },
+});
+
+// Game 192, plies 1-47: real moves. Row 46's best_move ("g1h1", i.e. Kh1) is
+// the mover's best AT ply 47 (THE OFFSET again) and differs from the played
+// h4 (uci h2h4) -- a genuine deviation. Ply 47's own eval_cp is -809 (raw,
+// side-to-move signed at fen_after); ply 47 is odd (her move), so her
+// perspective is +809, solidly inside the ">= 500" band.
+const GAME192_SANS = [
+  "d4", "d5", "e3", "Nf6", "Bb5+", "c6", "Bd3", "e6", "c4", "Be7",
+  "Bd2", "dxc4", "Bxc4", "O-O", "b3", "Ne4", "Nc3", "Nxd2", "Qxd2", "b5",
+  "Bd3", "Qa5", "Nf3", "Rd8", "O-O", "b4", "Na4", "Na6", "Qc2", "g6",
+  "Qxc6", "Rb8", "Rac1", "Bb7", "Qb5", "Qc7", "Rxc7", "Nxc7", "Qa5", "Bxf3",
+  "Qxc7", "Bd5", "Qxe7", "a5", "Qf6", "Rf8", "h4",
+];
+const GAME192_MOVES = withFacts(GAME192_SANS, {
+  46: { bestUci: "g1h1" }, // THE OFFSET: row 46 (ply-1) holds ply-47's mover-best
+  47: { evalCp: -809, evalMate: null, bestUci: "h6h6" }, // ply47's own row -- irrelevant reply-side value
+});
+
+describe("composeDoneWellNote (D4)", () => {
+  it("game 188 ply 19 (Bxb7): own pick, clean capture, no recapture, hits the rook", () => {
+    const note = composeDoneWellNote(19, GAME188_MOVES[18], GAME188_MOVES);
+    expect(note).toBe(
+      "bishop takes on b7 was our chess brain's own pick. it wins the pawn clean: nothing could take back on b7, and from b7 your bishop hit her rook on a8."
+    );
+  });
+
+  it("game 192 ply 47 (h4, deviated from king to h1): deviation clause + mandatory band", () => {
+    const note = composeDoneWellNote(47, GAME192_MOVES[46], GAME192_MOVES);
+    expect(note).toBe(
+      "our chess brain's pick was king to h1, and your pawn to h4 gave up nothing: you stayed completely winning."
+    );
+  });
+
+  it("game 191 ply 13 (e5): own pick, no capture, attacks the knight", () => {
+    const note = composeDoneWellNote(13, GAME191_MOVES[12], GAME191_MOVES);
+    expect(note).toBe(
+      "pawn to e5 was our chess brain's own pick. it attacks her knight on f6, forcing her to answer you."
+    );
+  });
+
+  // THE OFFSET, pinned directly: row P's own bestUci happens to equal the
+  // played uci (the wrong-row trap that bit this project before), but row
+  // P-1's bestUci differs -- this must never be read as "own pick". Built on
+  // the same real, replayable game (188) as above, ply 18 (c5) rather than
+  // 19, isolating the offset from the rest of that fixture's tactics.
+  it("THE OFFSET: this row's own bestUci matching the played move is never read as the mover's pick", () => {
+    const moves = withFacts(GAME188_SANS, {
+      17: { bestUci: "c7c6" }, // real db value: ply-17's row is where ply-18's mover-best lives (c6), differing from what was actually played (c5)
+      18: { bestUci: "c7c5" }, // wrong-row trap: THIS row's own bestUci equals ply-18's played uci
+    });
+    const note = composeDoneWellNote(18, moves[17], moves);
+    expect(note).not.toMatch(/own pick/);
+  });
+
+  it("fallback: no engine facts and no tactics clause -> exactly DONE_WELL_NOTE", () => {
+    // Ply 11 (Qd2) from the shared quiet-development fixture above: no
+    // capture, and verified via chess.js the queen attacks nothing of
+    // consequence (the only equal-or-higher-value target would be the enemy
+    // queen on d8, and Qd2 does not attack d8). No evalCp/bestUci on any row.
+    const note = composeDoneWellNote(11, sansWhere(11, "Qd2")[10], sansWhere(11, "Qd2"));
+    expect(note).toBe("nothing here was a mistake. trust the instinct that made you pause.");
+  });
+
+  // Voice test over every composed string pinned in this suite: lowercase
+  // copy, no raw eval numbers outside square names, no em-dash, never
+  // "engine" (say "our chess brain").
+  it("every composed note in this suite passes voice rules", () => {
+    const notes = [
+      composeDoneWellNote(19, GAME188_MOVES[18], GAME188_MOVES),
+      composeDoneWellNote(47, GAME192_MOVES[46], GAME192_MOVES),
+      composeDoneWellNote(13, GAME191_MOVES[12], GAME191_MOVES),
+      composeDoneWellNote(11, sansWhere(11, "Qd2")[10], sansWhere(11, "Qd2")),
+    ];
+    for (const note of notes) {
+      expect(note).not.toContain("—");
+      expect(note.toLowerCase()).not.toContain("engine");
+      // No digit outside an [a-h][1-8] square token.
+      expect(note.replace(/[a-h][1-8]/g, "")).not.toMatch(/\d/);
+    }
   });
 });
