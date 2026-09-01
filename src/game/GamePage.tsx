@@ -2105,6 +2105,16 @@ export function GamePage() {
     if (!takedownMove || replayingRef.current) return;
     replayingRef.current = true;
     setCinematicActive(true);
+    // Task 8 fix (owner report, coach_notes id 4): a debrief card's replay
+    // (handleRewind) leaves its arrows/highlights in reviewArrows/
+    // reviewHighlights -- correct there, since the next card replay
+    // replaces that state. This path never touched it at all, so the prior
+    // card's arrows stayed drawn over the whole takedown cinematic. Cleared
+    // here, before replayCinematic is awaited (not in the finally below --
+    // that would only clear them after the cinematic finishes, which is
+    // the exact bug she reported).
+    setReviewArrows([]);
+    setReviewHighlights([]);
     try {
       const history = mirrorRef.current.history({ verbose: true });
       const plan = replayPlan(history, 4);
