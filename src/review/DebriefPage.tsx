@@ -280,9 +280,12 @@ function TurningPointCard({
   const describedPunish =
     point.punishSan && punishFen ? describeSanMove(point.punishSan, punishFen) : null;
   return (
-    // Task 1b: the stable id the 2b rail's anchor rows target. rank is
-    // unique by construction (turningPoints.ts mints rank = i + 1), so the
-    // id survives the chronological re-sort unchanged.
+    // The stable per-card anchor id. The 2b dot rail that targeted it was
+    // withdrawn (owner ruling 2026-09-01) and nothing links to it today,
+    // but it STAYS: reintroducing 2b from the component library would need
+    // it, it is one attribute, and removing it churns five test regexes
+    // for no gain. rank is unique by construction (turningPoints.ts mints
+    // rank = i + 1), so the id survives the chronological re-sort unchanged.
     <div
       className={"debrief-card" + (negative ? " debrief-card-negative" : "") + sideClass}
       id={`tp-card-${point.rank}`}
@@ -848,55 +851,26 @@ export function DebriefPage({
             <TurningPointsHeader open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
           )}
           {anyBadges && legendOpen && <BadgeLegend />}
-          {/* Task 1b, section D: the 2b dot rail left of the cards (owner
-              pick 2026-09-01; 2a lost and is not built). One anchor row per
-              badged card, in the SAME orderedPoints order the cards use
-              (never re-sorted); dot + word come from the card's FIRST badge
-              in badgesByRank -- the one producer the card and its 3px tint
-              already read. A badge-less card contributes no row (it has no
-              side and no word -- never guess one). No badges at all: no
-              rail, no wrapper (the dead-chrome ruling), the cards render
-              bare exactly as before. */}
-          {(() => {
-            const cards = orderedPoints.map((point) => (
-              <TurningPointCard
-                key={point.rank}
-                point={point}
-                onRewind={onRewind}
-                classification={classifications.find((c) => c.ply === point.ply)}
-                line={turningLines.find((l) => l.ply === point.ply)}
-                gameSans={gameSans}
-                active={rewindPly === point.ply}
-                onTryLine={onTryLine}
-                exploring={!!exploring}
-                onAskAboutThis={onAskAboutTurningPoint}
-                badges={badgesByRank.get(point.rank) ?? []}
-              />
-            ));
-            if (!anyBadges) return cards;
-            return (
-              <div className="tp-cards-body">
-                <div className="tp-rail">
-                  {orderedPoints.map((point) => {
-                    const badges = badgesByRank.get(point.rank) ?? [];
-                    if (badges.length === 0) return null;
-                    return (
-                      // A native anchor, exactly the library 2b specimen's
-                      // own mechanism -- free scroll + keyboard behavior,
-                      // no candy-button chrome to neutralize, and nothing
-                      // in this app reads location.hash.
-                      <a key={point.rank} className="tp-rail-row" href={`#tp-card-${point.rank}`}>
-                        <span className={`tp-rail-dot rd-${badges[0].side}`} aria-hidden="true" />
-                        <span className="tp-rail-word">{badges[0].word}</span>
-                        <span className="tp-rail-num">move {moveNumberForPly(point.ply)}</span>
-                      </a>
-                    );
-                  })}
-                </div>
-                <div className="tp-cards-col">{cards}</div>
-              </div>
-            );
-          })()}
+          {/* The 2b dot rail that stood left of the cards was WITHDRAWN
+              (owner ruling 2026-09-01: at three to six cards it "is really
+              just messing up the UI"). It lives on in the component library
+              only; the cards render bare, in the same orderedPoints
+              chronological order. */}
+          {orderedPoints.map((point) => (
+            <TurningPointCard
+              key={point.rank}
+              point={point}
+              onRewind={onRewind}
+              classification={classifications.find((c) => c.ply === point.ply)}
+              line={turningLines.find((l) => l.ply === point.ply)}
+              gameSans={gameSans}
+              active={rewindPly === point.ply}
+              onTryLine={onTryLine}
+              exploring={!!exploring}
+              onAskAboutThis={onAskAboutTurningPoint}
+              badges={badgesByRank.get(point.rank) ?? []}
+            />
+          ))}
         </div>
       )}
       <MoveList

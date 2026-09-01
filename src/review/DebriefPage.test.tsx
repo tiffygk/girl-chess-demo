@@ -988,13 +988,12 @@ describe("DebriefPage 1b: the full badge legend behind the '?' chip (owner corre
   });
 });
 
-// Task 1b, section D: the 2b vertical dot rail left of the cards (owner
-// pick 2026-09-01; 2a lost and is not built). One row per RENDERED badged
-// card, chronological (the cards' own orderedPoints order), dot = the
-// card's FIRST badge's side (same badgesByRank entry the card and its 3px
-// tint read -- one producer, three readers), word = that badge's word,
-// number = move number. Rows are anchors to stable per-card ids.
-describe("DebriefPage 1b: the 2b dot rail (owner pick 2026-09-01)", () => {
+// FLIPPED (owner ruling 2026-09-01): the 2b dot rail is WITHDRAWN from the
+// build. Her words: at three to six cards the timeline "is really just
+// messing up the UI"; it lives on in the component library only, as the
+// option to reintroduce if debrief cards ever become numerous. The per-card
+// `tp-card-{rank}` anchor ids STAY (reintroducing 2b would need them).
+describe("DebriefPage: the 2b dot rail is withdrawn (owner ruling 2026-09-01)", () => {
   const M14_CRACK: TurningPoint = {
     rank: 2, ply: 28, san: "Na6", label: "opponent inaccuracy", deltaP: 0.09,
     lowConfidence: false, kind: "swing",
@@ -1007,88 +1006,40 @@ describe("DebriefPage 1b: the 2b dot rail (owner pick 2026-09-01)", () => {
     rank: 3, ply: 57, san: "Qxf7#", label: "checkmate", deltaP: 0,
     lowConfidence: false, kind: "backfill",
   };
-  // a badge-less point mixed in: it renders a card but NO rail row (it has
-  // no side and no word -- never guess one)
-  const UNBADGED: TurningPoint = {
-    rank: 4, ply: 11, san: "Bc4", label: "unconverted", deltaP: 0,
-    lowConfidence: false, kind: "unconverted", endKind: "repetition",
-  };
   const G192 = [M18_PUNISH_FLAGGED, M14_CRACK, M29_FINISH];
 
-  function railOf(html: string): string {
-    const start = html.indexOf('class="tp-rail"');
-    expect(start).toBeGreaterThan(-1);
-    const end = html.indexOf('class="tp-cards-col"');
-    expect(end).toBeGreaterThan(start);
-    return html.slice(start, end);
-  }
-
-  it("one rail row per badged card, in the cards' own chronological order, word + move number per row", () => {
+  it("renders no dot rail: 2b was built then withdrawn (owner ruling 2026-09-01), and lives on in the component library only", () => {
     const html = renderToStaticMarkup(
       <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
     );
-    const rail = railOf(html);
-    expect(rail.match(/class="tp-rail-row"/g)?.length).toBe(3);
-    const iCrack = rail.indexOf(">the crack<");
-    const iPunish = rail.indexOf(">the punish<");
-    const iFinish = rail.indexOf(">the finish<");
-    expect(iCrack).toBeGreaterThan(-1);
-    expect(iPunish).toBeGreaterThan(iCrack);
-    expect(iFinish).toBeGreaterThan(iPunish);
-    expect(rail.indexOf(">move 14<")).toBeLessThan(rail.indexOf(">move 18<"));
-    expect(rail.indexOf(">move 18<")).toBeLessThan(rail.indexOf(">move 29<"));
-  });
-
-  it("each dot wears the card's FIRST badge's side: rose crack, cyan punish-led card, cyan finish", () => {
-    const html = renderToStaticMarkup(
-      <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
-    );
-    const rail = railOf(html);
-    const dots = rail.match(/tp-rail-dot rd-(her|mallow)/g);
-    expect(dots).toEqual([
-      "tp-rail-dot rd-mallow", // ply 28, the crack
-      "tp-rail-dot rd-her", // ply 36, the punish leads
-      "tp-rail-dot rd-her", // ply 57, the finish
-    ]);
-  });
-
-  it("a badge-less card renders NO rail row, while its card still renders", () => {
-    const html = renderToStaticMarkup(
-      <DebriefPage {...baseProps({ turningPoints: [...G192, UNBADGED], result: "1-0" })} />
-    );
-    const rail = railOf(html);
-    expect(rail.match(/class="tp-rail-row"/g)?.length).toBe(3); // not 4
-    // the unbadged card itself is still on the page (4 cards)
-    const cards = html.slice(html.indexOf('class="tp-cards-col"'));
-    expect(cards.match(/<div class="debrief-card( [^"]*)?" id=/g)?.length).toBe(4);
-  });
-
-  it("rows are anchors targeting each card's stable rank-derived id, in card order", () => {
-    const html = renderToStaticMarkup(
-      <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
-    );
-    const rail = railOf(html);
-    const hrefs = rail.match(/href="#tp-card-\d+"/g);
-    // chronological: rank 2 (ply 28), rank 1 (ply 36), rank 3 (ply 57)
-    expect(hrefs).toEqual(['href="#tp-card-2"', 'href="#tp-card-1"', 'href="#tp-card-3"']);
-    // and every card carries its own matching id
+    expect(html).not.toContain("tp-rail");
+    // the cards still render, badged, with their stable anchor ids intact
     expect(html).toContain('id="tp-card-1"');
     expect(html).toContain('id="tp-card-2"');
     expect(html).toContain('id="tp-card-3"');
+    expect(html).toContain(">the punish<");
   });
 
-  // Source pins: the brief's rail recipe, and the protected-fold rule --
-  // below the file's existing narrow breakpoint (the 480px family) the rail
-  // HIDES; no 2a fallback (2a lost), no reflow of the cards.
-  it("the rail recipe matches the mock: 1.5px #C9BFEF left rule, 7px white-ringed dots, Fredoka word, Chakra num", () => {
-    expect(cssSrc).toMatch(/\.gc-app \.tp-rail \{[^}]*border-left: 1\.5px solid #C9BFEF; padding-left: 14px; margin-left: 3px;[^}]*\}/);
-    expect(cssSrc).toMatch(/\.gc-app \.tp-rail:empty \{ display: none; \}/);
+  // Source pins (the same cssSrc deletion-pin pattern the superseded
+  // two-line rail uses above, vacuity-guarded the same way): the rail's own
+  // css is deleted, but the legend's colour-row swatches REUSE .tp-rail-dot
+  // (BadgeLegend renders it position:static), so the dot recipe and both
+  // side inks must survive the rail's deletion.
+  it("the rail layout css is deleted; the legend's swatch dot rules survive", () => {
+    expect(cssSrc.length).toBeGreaterThan(0);
+    expect(cssSrc).toContain(".gc-app");
+    // rail-specific rules gone (the trailing space/colon in the needles
+    // keeps them from matching the surviving .tp-rail-dot rules)
+    expect(cssSrc).not.toContain(".tp-rail {");
+    expect(cssSrc).not.toContain(".tp-rail:empty");
+    expect(cssSrc).not.toContain(".tp-rail-row");
+    expect(cssSrc).not.toContain(".tp-rail-word");
+    expect(cssSrc).not.toContain(".tp-rail-num");
+    expect(cssSrc).not.toContain(".tp-cards-body");
+    expect(cssSrc).not.toContain(".tp-cards-col");
+    // the legend's swatches stay: 7px white-ringed dot, both side inks
     expect(cssSrc).toMatch(/\.gc-app \.tp-rail-dot \{[^}]*width: 7px; height: 7px;[^}]*box-shadow: 0 0 0 1\.5px #FFF;[^}]*\}/);
-    expect(cssSrc).toMatch(/\.gc-app \.tp-rail-word \{[^}]*'Fredoka'[^}]*font-size: 13px; color: #6952C4; text-decoration: underline; \}/);
-    expect(cssSrc).toMatch(/\.gc-app \.tp-rail-num \{[^}]*'Chakra Petch'[^}]*font-size: 10px;[^}]*color: #9C8FC7; \}/);
-  });
-
-  it("below the narrow breakpoint the rail hides (display:none) and the cards column loses its rail indent", () => {
-    expect(cssSrc).toMatch(/@media \(max-width: 480px\) \{\n  \.gc-app \.tp-rail \{ display: none; \}\n  \.gc-app \.tp-cards-col \{ margin-left: 0; \}\n\}/);
+    expect(cssSrc).toMatch(/\.gc-app \.tp-rail-dot\.rd-her \{ background: #23E5FF; \}/);
+    expect(cssSrc).toMatch(/\.gc-app \.tp-rail-dot\.rd-mallow \{ background: #C22B7E; \}/);
   });
 });
