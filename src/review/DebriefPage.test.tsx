@@ -314,7 +314,7 @@ describe("DebriefPage: the conversion card gets the negative tint (union review 
   // "debrief-card-kicker", "debrief-card-prose"...), which sit between the
   // real card's opening tag and its text and would silently return the
   // wrong (always non-negative) element.
-  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?">/g; // D3 badge wave 2026-09-01: cards may now also carry a side-tint class
+  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?" id="tp-card-\d+">/g; // D3 badge wave 2026-09-01: cards carry a side-tint class; task 1b adds the rail anchor id
 
   // Scoped to the "study ledger" turning-point CARD list (wrapped in
   // `<div class="debrief-cards">`), never the whole page -- debriefBullets'
@@ -370,7 +370,7 @@ describe("DebriefPage: the conversion card gets the negative tint (union review 
 // the lead is a warning-class fact (pink alarm), same family as an episode
 // card.
 describe("DebriefPage: a lead-change card's tint depends on leader (Wave E)", () => {
-  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?">/g; // D3 badge wave 2026-09-01: cards may now also carry a side-tint class
+  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?" id="tp-card-\d+">/g; // D3 badge wave 2026-09-01: cards carry a side-tint class; task 1b adds the rail anchor id
 
   function negativeClassOnCardContaining(html: string, needle: string): boolean {
     const cardsSection = html.slice(html.indexOf('class="debrief-cards"'));
@@ -438,7 +438,7 @@ describe("DebriefPage: a missed-mate card that finished faster loses the negativ
     "Qh6+","Kd5","Be7","Kc4","Qc6#",
   ].map((san, i) => ({ ply: i + 1, san }));
 
-  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?">/g; // D3 badge wave 2026-09-01: cards may now also carry a side-tint class
+  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?" id="tp-card-\d+">/g; // D3 badge wave 2026-09-01: cards carry a side-tint class; task 1b adds the rail anchor id
 
   function negativeClassOnCardContaining(html: string, needle: string): boolean {
     const cardsSection = html.slice(html.indexOf('class="debrief-cards"'));
@@ -535,7 +535,7 @@ describe("DebriefPage: a conversion card that finished faster loses the negative
     "Qh6+","Kd5","Be7","Kc4","Qc6#",
   ].map((san, i) => ({ ply: i + 1, san }));
 
-  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?">/g; // D3 badge wave 2026-09-01: cards may now also carry a side-tint class
+  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?" id="tp-card-\d+">/g; // D3 badge wave 2026-09-01: cards carry a side-tint class; task 1b adds the rail anchor id
 
   function negativeClassOnCardContaining(html: string, needle: string): boolean {
     const cardsSection = html.slice(html.indexOf('class="debrief-cards"'));
@@ -760,7 +760,7 @@ describe("DebriefPage D3: badges, chronological ordering, side tint, two-line le
     // The card's OWN open tag only: "debrief-card" alone or followed by
     // space-separated modifier classes -- never "debrief-card-head"/"-prose"
     // (the same nested-sibling trap the tint helpers up top document).
-    const openTags = cards.match(/<div class="debrief-card( [^"]*)?">/g) ?? [];
+    const openTags = cards.match(/<div class="debrief-card( [^"]*)?" id="tp-card-\d+">/g) ?? []; // task 1b: cards carry the rail anchor id
     expect(openTags[0]).toContain("debrief-card-side-mallow"); // ply 28, the crack
     expect(openTags[1]).toContain("debrief-card-side-her"); // ply 36, the punish leads
     expect(openTags[2]).toContain("debrief-card-side-her"); // ply 57, the finish
@@ -962,5 +962,110 @@ describe("DebriefPage 1b: the full badge legend behind the '?' chip (owner corre
   it("the superseded two-line rail css is deleted", () => {
     expect(cssSrc).not.toContain("badge-side-rail");
     expect(cssSrc).not.toContain("badge-side-row");
+  });
+});
+
+// Task 1b, section D: the 2b vertical dot rail left of the cards (owner
+// pick 2026-09-01; 2a lost and is not built). One row per RENDERED badged
+// card, chronological (the cards' own orderedPoints order), dot = the
+// card's FIRST badge's side (same badgesByRank entry the card and its 3px
+// tint read -- one producer, three readers), word = that badge's word,
+// number = move number. Rows are anchors to stable per-card ids.
+describe("DebriefPage 1b: the 2b dot rail (owner pick 2026-09-01)", () => {
+  const M14_CRACK: TurningPoint = {
+    rank: 2, ply: 28, san: "Na6", label: "opponent inaccuracy", deltaP: 0.09,
+    lowConfidence: false, kind: "swing",
+  };
+  const M18_PUNISH_FLAGGED: TurningPoint = {
+    rank: 1, ply: 36, san: "Qc7", label: "opponent mistake", punishSan: "Rxc7", deltaP: 0.24,
+    lowConfidence: false, kind: "swing", leader: "her", leadMarginCp: 520, leadNth: 1,
+  };
+  const M29_FINISH: TurningPoint = {
+    rank: 3, ply: 57, san: "Qxf7#", label: "checkmate", deltaP: 0,
+    lowConfidence: false, kind: "backfill",
+  };
+  // a badge-less point mixed in: it renders a card but NO rail row (it has
+  // no side and no word -- never guess one)
+  const UNBADGED: TurningPoint = {
+    rank: 4, ply: 11, san: "Bc4", label: "unconverted", deltaP: 0,
+    lowConfidence: false, kind: "unconverted", endKind: "repetition",
+  };
+  const G192 = [M18_PUNISH_FLAGGED, M14_CRACK, M29_FINISH];
+
+  function railOf(html: string): string {
+    const start = html.indexOf('class="tp-rail"');
+    expect(start).toBeGreaterThan(-1);
+    const end = html.indexOf('class="tp-cards-col"');
+    expect(end).toBeGreaterThan(start);
+    return html.slice(start, end);
+  }
+
+  it("one rail row per badged card, in the cards' own chronological order, word + move number per row", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
+    );
+    const rail = railOf(html);
+    expect(rail.match(/class="tp-rail-row"/g)?.length).toBe(3);
+    const iCrack = rail.indexOf(">the crack<");
+    const iPunish = rail.indexOf(">the punish<");
+    const iFinish = rail.indexOf(">the finish<");
+    expect(iCrack).toBeGreaterThan(-1);
+    expect(iPunish).toBeGreaterThan(iCrack);
+    expect(iFinish).toBeGreaterThan(iPunish);
+    expect(rail.indexOf(">move 14<")).toBeLessThan(rail.indexOf(">move 18<"));
+    expect(rail.indexOf(">move 18<")).toBeLessThan(rail.indexOf(">move 29<"));
+  });
+
+  it("each dot wears the card's FIRST badge's side: rose crack, cyan punish-led card, cyan finish", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
+    );
+    const rail = railOf(html);
+    const dots = rail.match(/tp-rail-dot rd-(her|mallow)/g);
+    expect(dots).toEqual([
+      "tp-rail-dot rd-mallow", // ply 28, the crack
+      "tp-rail-dot rd-her", // ply 36, the punish leads
+      "tp-rail-dot rd-her", // ply 57, the finish
+    ]);
+  });
+
+  it("a badge-less card renders NO rail row, while its card still renders", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: [...G192, UNBADGED], result: "1-0" })} />
+    );
+    const rail = railOf(html);
+    expect(rail.match(/class="tp-rail-row"/g)?.length).toBe(3); // not 4
+    // the unbadged card itself is still on the page (4 cards)
+    const cards = html.slice(html.indexOf('class="tp-cards-col"'));
+    expect(cards.match(/<div class="debrief-card( [^"]*)?" id=/g)?.length).toBe(4);
+  });
+
+  it("rows are anchors targeting each card's stable rank-derived id, in card order", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
+    );
+    const rail = railOf(html);
+    const hrefs = rail.match(/href="#tp-card-\d+"/g);
+    // chronological: rank 2 (ply 28), rank 1 (ply 36), rank 3 (ply 57)
+    expect(hrefs).toEqual(['href="#tp-card-2"', 'href="#tp-card-1"', 'href="#tp-card-3"']);
+    // and every card carries its own matching id
+    expect(html).toContain('id="tp-card-1"');
+    expect(html).toContain('id="tp-card-2"');
+    expect(html).toContain('id="tp-card-3"');
+  });
+
+  // Source pins: the brief's rail recipe, and the protected-fold rule --
+  // below the file's existing narrow breakpoint (the 480px family) the rail
+  // HIDES; no 2a fallback (2a lost), no reflow of the cards.
+  it("the rail recipe matches the mock: 1.5px #C9BFEF left rule, 7px white-ringed dots, Fredoka word, Chakra num", () => {
+    expect(cssSrc).toMatch(/\.gc-app \.tp-rail \{[^}]*border-left: 1\.5px solid #C9BFEF; padding-left: 14px; margin-left: 3px;[^}]*\}/);
+    expect(cssSrc).toMatch(/\.gc-app \.tp-rail:empty \{ display: none; \}/);
+    expect(cssSrc).toMatch(/\.gc-app \.tp-rail-dot \{[^}]*width: 7px; height: 7px;[^}]*box-shadow: 0 0 0 1\.5px #FFF;[^}]*\}/);
+    expect(cssSrc).toMatch(/\.gc-app \.tp-rail-word \{[^}]*'Fredoka'[^}]*font-size: 13px; color: #6952C4; text-decoration: underline; \}/);
+    expect(cssSrc).toMatch(/\.gc-app \.tp-rail-num \{[^}]*'Chakra Petch'[^}]*font-size: 10px;[^}]*color: #9C8FC7; \}/);
+  });
+
+  it("below the narrow breakpoint the rail hides (display:none) and the cards column loses its rail indent", () => {
+    expect(cssSrc).toMatch(/@media \(max-width: 480px\) \{\n  \.gc-app \.tp-rail \{ display: none; \}\n  \.gc-app \.tp-cards-col \{ margin-left: 0; \}\n\}/);
   });
 });

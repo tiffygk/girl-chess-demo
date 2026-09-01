@@ -1655,6 +1655,40 @@
 }
 .gc-app .tp-rail-dot.rd-her { background: #23E5FF; }
 .gc-app .tp-rail-dot.rd-mallow { background: #C22B7E; }
+/* Task 1b, section D: the 2b vertical dot rail left of the cards (owner
+   pick 2026-09-01). The brief's recipe verbatim: 1.5px lavender rule
+   (#C9BFEF, the shipped button-shadow ink), dots hanging into the gutter,
+   Fredoka underlined word (link affordance) + Chakra move number. Layout
+   glue from the approved mock's own inline styles: rail flex:0 0 auto,
+   cards column flex:1 1 auto min-width:0 with the 10px gutter. Below the
+   file's existing narrow breakpoint (the 480px family) the rail HIDES --
+   2a's one-line fallback lost and is not built, and the cards never
+   reflow. All rules additive; .postgame / --board-size / .action-slot /
+   .coach-hint-band / .status-line untouched (protected-fold rule). */
+.gc-app .tp-cards-body { display: flex; align-items: flex-start; }
+.gc-app .tp-rail {
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  border-left: 1.5px solid #C9BFEF; padding-left: 14px; margin-left: 3px;
+}
+.gc-app .tp-rail:empty { display: none; }
+.gc-app .tp-rail-row {
+  position: relative; display: flex; align-items: baseline; gap: 7px;
+  padding: 5px 0; text-decoration: none;
+}
+.gc-app .tp-rail-word { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13px; color: #6952C4; text-decoration: underline; }
+.gc-app .tp-rail-num { font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px; letter-spacing: .04em; color: #9C8FC7; }
+.gc-app .tp-cards-col {
+  flex: 1 1 auto; min-width: 0; margin-left: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+/* <=480 (the protected narrow fold): the rail spends width the fold does
+   not have -- it hides entirely (controller ruling; no 2a fallback), and
+   the cards column drops the rail gutter. After the base rules -- equal
+   specificity, source order decides (the chat-corner precedent's rule). */
+@media (max-width: 480px) {
+  .gc-app .tp-rail { display: none; }
+  .gc-app .tp-cards-col { margin-left: 0; }
+}
 
 /* Increment 3.95 (Task 10): the full-game move-list navigator — sits below
    the turning-point cards, prev/next scrub above a scrollable list of every
