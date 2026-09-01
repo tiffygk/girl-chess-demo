@@ -98,6 +98,16 @@ const HINT_HISTORY_CAP = 8;
 // what the note was FOR. Exported so manager.test.ts asserts against the
 // real constant instead of a hand-copied literal that could drift from it.
 export const COACH_NOTE_ACK = "noted, and it's saved for good. i'll have it next game.";
+// Task 9 (2026-09-01, coach_notes capture gap round), the invariant's other
+// half: "a record-shaped ask must either produce a coach_notes row, or
+// produce a coach reply that says plainly it could not record it -- never
+// 'noted' over a no-op." Before this, a failed insertCoachNote() call fell
+// through SILENTLY to the model's own answer -- no ack, no negative
+// acknowledgment either, exactly the gap the scout confirmed (grepped for
+// "can't record" / "cannot record" / "couldn't save" / "didn't catch that"
+// across server/ and src/ -- zero hits). This is the one negative
+// acknowledgment string in the codebase.
+export const COACH_NOTE_SAVE_FAILED = "i couldn't save that note just now, try asking again in a bit.";
 
 // Increment 3.91 (Task 2): the turning-lines endpoint's per-point shape —
 // mirrored (hand-mirroring, same convention as TurningPoint's own
@@ -1451,17 +1461,25 @@ export class GameManager {
     // came from) -- never from result.text, so the model can never launder its
     // own words into her memory. The acknowledgment is appended ONLY when the
     // insert actually succeeded, so the coach never claims a memory it doesn't
-    // have (game-164's exact failure). A failed insert falls through silently to
-    // the model's own answer, with no false promise.
+    // have (game-164's exact failure).
+    // Task 9 (condition A): a DETECTED record request whose insert actually
+    // throws now gets the honest negative ack instead of falling through
+    // silently to the model's own answer -- the model's own reply can carry
+    // incidental confirmation-shaped language ("noted, thanks...") that reads
+    // exactly like a save happened when it didn't (game 189, msg 248's real
+    // collision). `recorded` also gates whether condition B's history fix
+    // below needs to run for this turn.
     let replyText = result.text;
+    let recorded = false;
     if (isRecordRequest(message)) {
-      let recorded = false;
       try {
         recorded = insertCoachNote(`from game ${gameId}: ${message}`, gameId) > 0;
       } catch {
         recorded = false;
       }
-      if (recorded) replyText = `${result.text}\n\n${COACH_NOTE_ACK}`;
+      replyText = recorded
+        ? `${result.text}\n\n${COACH_NOTE_ACK}`
+        : `${result.text}\n\n${COACH_NOTE_SAVE_FAILED}`;
     }
 
     // B3b (2026-07-27, coach-truth-speed round): a failed (template) reply
@@ -1475,12 +1493,25 @@ export class GameManager {
     // later prompt ("that one took me longer than i had", trace 98) because
     // the coach's own apology was persisted as a real coach turn -- this is
     // the fix for that doom loop, not just tidiness.
+    // Task 9 (condition B): B3b's gate ran BEFORE the write above existed
+    // and never accounted for it -- a coach_notes row could be written on a
+    // template-fallback turn (`recorded` true, `result.source !== "model"`)
+    // while nothing ever joined visible history to say so. Game 167's
+    // coach_notes ids 2/3 are the real instance: the first insert succeeded
+    // silently on a template turn, she never saw it acknowledged, and
+    // repeated herself a minute later. The fix persists ONLY the
+    // deterministic ack line in that case -- never the template's own
+    // prose, which is exactly what B3b exists to keep out of history (the
+    // doom-loop risk above). A history row now exists precisely when a
+    // coach_notes row exists, so the two can never disagree.
     if (result.source === "model") {
       // Wave 4, item 3: persist the acknowledged text (replyText), so a
       // remembered "noted..." reply reads back the same next turn as the client
       // saw it. The note itself is already in coach_notes regardless of this
       // source gate.
       insertChatMessage({ gameId, role: "coach", text: replyText, traceId: result.traceId });
+    } else if (recorded) {
+      insertChatMessage({ gameId, role: "coach", text: COACH_NOTE_ACK, traceId: result.traceId });
     }
 
     // Task 8 (inc 3.95, Fix 1), owner-ruled: chat.ts's own cause is always
