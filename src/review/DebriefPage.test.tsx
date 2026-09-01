@@ -314,7 +314,7 @@ describe("DebriefPage: the conversion card gets the negative tint (union review 
   // "debrief-card-kicker", "debrief-card-prose"...), which sit between the
   // real card's opening tag and its text and would silently return the
   // wrong (always non-negative) element.
-  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?">/g;
+  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?">/g; // D3 badge wave 2026-09-01: cards may now also carry a side-tint class
 
   // Scoped to the "study ledger" turning-point CARD list (wrapped in
   // `<div class="debrief-cards">`), never the whole page -- debriefBullets'
@@ -370,7 +370,7 @@ describe("DebriefPage: the conversion card gets the negative tint (union review 
 // the lead is a warning-class fact (pink alarm), same family as an episode
 // card.
 describe("DebriefPage: a lead-change card's tint depends on leader (Wave E)", () => {
-  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?">/g;
+  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?">/g; // D3 badge wave 2026-09-01: cards may now also carry a side-tint class
 
   function negativeClassOnCardContaining(html: string, needle: string): boolean {
     const cardsSection = html.slice(html.indexOf('class="debrief-cards"'));
@@ -395,13 +395,25 @@ describe("DebriefPage: a lead-change card's tint depends on leader (Wave E)", ()
     expect(negativeClassOnCardContaining(html, "· lead change<")).toBe(false);
   });
 
-  it("leader mallow: gets the negative (pink alarm) tint", () => {
+  // FLIPPED by the D3 badge wave (owner approval 2026-09-01, option 1a +
+  // library sec-d3-card-language rev 2): the approved g147 specimen renders
+  // a mallow lead-change card on the ordinary lavender shell with the rose
+  // 3px left tint and a hard rose takeover badge -- the badge family now
+  // carries the warning, and keeping Wave E's pink alarm wash as well would
+  // double the same statement (the brief's "must not double up" rule). The
+  // OLD pin here asserted the pink tint; it now asserts the rose side tint
+  // instead.
+  it("leader mallow: no pink alarm wash -- the rose side tint + takeover badge carry it (D3, 2026-09-01)", () => {
     const mallowLeadPoint: TurningPoint = {
       rank: 1, ply: 4, san: "Nc6", label: "lead change", deltaP: 0, lowConfidence: false,
       kind: "lead-change", leader: "mallow", leadMarginCp: 388, leadNth: 1,
     };
     const html = renderToStaticMarkup(<DebriefPage {...baseProps({ turningPoints: [mallowLeadPoint] })} />);
-    expect(negativeClassOnCardContaining(html, "· lead change<")).toBe(true);
+    expect(negativeClassOnCardContaining(html, "· lead change<")).toBe(false);
+    const cardsSection = html.slice(html.indexOf('class="debrief-cards"'));
+    expect(cardsSection).toContain('class="debrief-card debrief-card-side-mallow"');
+    expect(cardsSection).toContain(">the takeover<");
+    expect(cardsSection).toContain("tp-badge-mallow-hard");
   });
 });
 
@@ -426,7 +438,7 @@ describe("DebriefPage: a missed-mate card that finished faster loses the negativ
     "Qh6+","Kd5","Be7","Kc4","Qc6#",
   ].map((san, i) => ({ ply: i + 1, san }));
 
-  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?">/g;
+  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?">/g; // D3 badge wave 2026-09-01: cards may now also carry a side-tint class
 
   function negativeClassOnCardContaining(html: string, needle: string): boolean {
     const cardsSection = html.slice(html.indexOf('class="debrief-cards"'));
@@ -523,7 +535,7 @@ describe("DebriefPage: a conversion card that finished faster loses the negative
     "Qh6+","Kd5","Be7","Kc4","Qc6#",
   ].map((san, i) => ({ ply: i + 1, san }));
 
-  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?">/g;
+  const CARD_OPEN_TAG_RE = /<div class="debrief-card( debrief-card-negative)?( debrief-card-side-(?:her|mallow))?">/g; // D3 badge wave 2026-09-01: cards may now also carry a side-tint class
 
   function negativeClassOnCardContaining(html: string, needle: string): boolean {
     const cardsSection = html.slice(html.indexOf('class="debrief-cards"'));
@@ -674,5 +686,145 @@ describe("PastGamesDrawer (Wave 3.5, item 2): row restructure for the delete X",
   // guaranteed regardless of which rule a future edit touches.
   it("the armed 'sure?' state's own rule sets font-weight: 700 (owner: keep the armed state as is)", () => {
     expect(cssSrc).toMatch(/\.gc-app button\.past-games-delete\.armed \{[^}]*font-weight: 700;[^}]*\}/);
+  });
+});
+
+// D3 badge wave (owner approvals 2026-09-01, verbatim in the round brief:
+// option 1a momentum words for the logic; "For component 3 the ordering
+// should be chronological order"; the in-app legend is the TWO-LINE side
+// version only -- "Cyan is the player. Rose is the opponent."). Spec of
+// record: vault "3 visual/component-library.html" anchor
+// sec-d3-card-language rev 2. These render the REAL DebriefPage (same
+// discipline as the Wave F block up top: unit tests on badgesForPoint alone
+// cannot catch a card that never passes real data to it -- the
+// never-connected bug class in CLAUDE.md's Invariant rule).
+describe("DebriefPage D3: badges, chronological ordering, side tint, two-line legend (2026-09-01)", () => {
+  // Game-192-shaped points against the shared Scholar's fixture (fenAtPly
+  // clamps past the end, and describeSanMove degrades to raw SAN -- the
+  // needles below match on the label suffix, which never depends on that).
+  const M14_CRACK: TurningPoint = {
+    rank: 2, ply: 28, san: "Na6", label: "opponent inaccuracy", deltaP: 0.09,
+    lowConfidence: false, kind: "swing",
+  };
+  const M18_PUNISH_FLAGGED: TurningPoint = {
+    rank: 1, ply: 36, san: "Qc7", label: "opponent mistake", punishSan: "Rxc7", deltaP: 0.24,
+    lowConfidence: false, kind: "swing", leader: "her", leadMarginCp: 520, leadNth: 1,
+  };
+  const M29_FINISH: TurningPoint = {
+    rank: 3, ply: 57, san: "Qxf7#", label: "checkmate", deltaP: 0,
+    lowConfidence: false, kind: "backfill",
+  };
+  const G192 = [M18_PUNISH_FLAGGED, M14_CRACK, M29_FINISH]; // server rank order, deliberately NOT ply order
+
+  function cardsSectionOf(html: string): string {
+    const idx = html.indexOf('class="debrief-cards"');
+    expect(idx).toBeGreaterThan(-1);
+    return html.slice(idx);
+  }
+
+  it("renders turning-point cards in chronological (ply-ascending) order, not rank order -- owner decision 2026-09-01", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
+    );
+    const cards = cardsSectionOf(html);
+    const iCrack = cards.indexOf("· opponent inaccuracy<");
+    const iPunish = cards.indexOf("· opponent mistake<");
+    const iFinish = cards.indexOf("· checkmate<");
+    expect(iCrack).toBeGreaterThan(-1);
+    expect(iPunish).toBeGreaterThan(iCrack);
+    expect(iFinish).toBeGreaterThan(iPunish);
+  });
+
+  it("badge chips render above the card title, from the same mapper the legend reads", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
+    );
+    const cards = cardsSectionOf(html);
+    // m14: the crack alone, soft rose chip, before its own title.
+    expect(cards.indexOf(">the crack<")).toBeGreaterThan(-1);
+    expect(cards.indexOf(">the crack<")).toBeLessThan(cards.indexOf("· opponent inaccuracy<"));
+    expect(cards).toContain("tp-badge tp-badge-mallow-soft");
+    // m18: punish + crack + takeover (the three-badge flag shape).
+    expect(cards).toContain(">the punish<");
+    expect(cards).toContain(">the takeover<");
+    // m29: the finish, hard cyan.
+    expect(cards).toContain(">the finish<");
+    expect(cards).toContain("tp-badge tp-badge-her-hard");
+  });
+
+  it("the 3px left tint follows the FIRST badge's side: m14 rose, m18 cyan (punish leads), m29 cyan", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
+    );
+    const cards = cardsSectionOf(html);
+    // The card's OWN open tag only: "debrief-card" alone or followed by
+    // space-separated modifier classes -- never "debrief-card-head"/"-prose"
+    // (the same nested-sibling trap the tint helpers up top document).
+    const openTags = cards.match(/<div class="debrief-card( [^"]*)?">/g) ?? [];
+    expect(openTags[0]).toContain("debrief-card-side-mallow"); // ply 28, the crack
+    expect(openTags[1]).toContain("debrief-card-side-her"); // ply 36, the punish leads
+    expect(openTags[2]).toContain("debrief-card-side-her"); // ply 57, the finish
+  });
+
+  it("a card whose point earns no badge gets no chips row and no side tint", () => {
+    const unconverted: TurningPoint = {
+      rank: 1, ply: 3, san: "Qh5", label: "unconverted", deltaP: 0,
+      lowConfidence: false, kind: "unconverted", endKind: "repetition",
+    };
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: [unconverted] })} />
+    );
+    const cards = cardsSectionOf(html);
+    expect(cards).not.toContain("tp-badge");
+    expect(cards).not.toContain("debrief-card-side-");
+  });
+
+  it("the two-line side legend renders at the top of the cards column with the exact approved copy", () => {
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: G192, result: "1-0" })} />
+    );
+    const cards = cardsSectionOf(html);
+    const railIdx = cards.indexOf("badge-side-rail");
+    expect(railIdx).toBeGreaterThan(-1);
+    // Before the first CARD open tag (the slice starts at the
+    // .debrief-cards container itself, whose class name shares the prefix).
+    const firstCardIdx = cards.search(/<div class="debrief-card( [^"]*)?">/);
+    expect(firstCardIdx).toBeGreaterThan(-1);
+    expect(railIdx).toBeLessThan(firstCardIdx);
+    expect(cards).toContain("cyan · you");
+    expect(cards).toContain("rose · mallow");
+    // never the seven-definition legend, never cookie's surface
+    expect(cards).not.toContain("what the badges mean");
+    expect(html).not.toContain("cookie");
+  });
+
+  it("empty state: zero turning points -> no badges, no legend rail (nothing renders that says nothing)", () => {
+    const html = renderToStaticMarkup(<DebriefPage {...baseProps({ turningPoints: [] })} />);
+    expect(html).not.toContain("badge-side-rail");
+    expect(html).not.toContain("tp-badge");
+  });
+
+  it("a game whose points earn zero badges also renders no legend rail (the legend reads the rendered badge list, never a re-derived rule)", () => {
+    const unconverted: TurningPoint = {
+      rank: 1, ply: 3, san: "Qh5", label: "unconverted", deltaP: 0,
+      lowConfidence: false, kind: "unconverted", endKind: "repetition",
+    };
+    const html = renderToStaticMarkup(
+      <DebriefPage {...baseProps({ turningPoints: [unconverted] })} />
+    );
+    expect(html).not.toContain("badge-side-rail");
+  });
+
+  // Source pins on the recipe itself (same cssSrc pattern the armed-delete
+  // pin uses): sharp register, existing literals only.
+  it("the chip recipe is sharp (Chakra Petch 700 9px, 4px chamfer) and the four states use the approved existing color triples", () => {
+    expect(cssSrc).toMatch(/\.gc-app \.tp-badge \{[^}]*clip-path: polygon\(4px 0,[^}]*\}/);
+    expect(cssSrc).toMatch(/\.gc-app \.tp-badge \{[^}]*'Chakra Petch'[^}]*font-size: 9px;[^}]*\}/);
+    expect(cssSrc).toMatch(/\.gc-app \.tp-badge-her-soft \{[^}]*background: #E4F7FB;[^}]*\}/);
+    expect(cssSrc).toMatch(/\.gc-app \.tp-badge-her-hard \{[^}]*background: #23E5FF;[^}]*\}/);
+    expect(cssSrc).toMatch(/\.gc-app \.tp-badge-mallow-soft \{[^}]*background: #FFE9F4;[^}]*\}/);
+    expect(cssSrc).toMatch(/\.gc-app \.tp-badge-mallow-hard \{[^}]*background: #FF3DA6;[^}]*\}/);
+    expect(cssSrc).toMatch(/\.gc-app \.debrief-card-side-her \{ box-shadow: inset 3px 0 0 #23E5FF; \}/);
+    expect(cssSrc).toMatch(/\.gc-app \.debrief-card-side-mallow \{ box-shadow: inset 3px 0 0 #C22B7E; \}/);
   });
 });

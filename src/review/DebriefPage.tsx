@@ -101,6 +101,13 @@ import { HighlightedMovesSection } from "./HighlightedMovesSection";
 // mallow's highlighted moves, graded from Wave A's HighlightLine facts.
 import { buildMallowHighlightedRows } from "./mallowHighlightedMoves";
 import { MallowHighlightedSection } from "./MallowHighlightedSection";
+// D3 badge wave (owner approvals 2026-09-01, option 1a momentum words):
+// the pure render-layer badge mapper. Every card's chips and its 3px
+// side tint, and the two-line legend's visibility, all read the SAME
+// per-point mapper output computed once below -- the legend never
+// re-derives its own rule (the legend-gated-on-the-real-producer rule).
+import { badgesForPoint } from "./cardBadges";
+import type { CardBadge } from "./cardBadges";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -189,6 +196,10 @@ interface TurningPointCardProps {
   // matching TurningLine itself (it already holds turningLines), so this
   // component only ever hands back the point, never a pre-built context.
   onAskAboutThis: (point: TurningPoint) => void;
+  // D3 badge wave (2026-09-01): this card's badge chips, computed ONCE by
+  // DebriefPage from badgesForPoint (the same list the legend rail reads)
+  // and passed down -- the card never re-derives its own badges.
+  badges: CardBadge[];
 }
 
 function TurningPointCard({
@@ -201,6 +212,7 @@ function TurningPointCard({
   onTryLine,
   exploring,
   onAskAboutThis,
+  badges,
 }: TurningPointCardProps) {
   // debrief-v2: an episode card is a warning-class fact by construction (a
   // sustained king-pressure run), so it always gets the magenta tint —
@@ -239,11 +251,19 @@ function TurningPointCard({
     !!mateOutcomeForCard &&
     (mateOutcomeForCard.outcome === "faster" || mateOutcomeForCard.outcome === "matched") &&
     !mateOutcomeHasUnmeasuredRepeat;
-  // Wave E (2026-08-27): a lead-change card whose leader is mallow is a
-  // warning-class fact by construction (the lead tipped away from her) --
-  // same flat-tint family as an episode card, just a different reason.
-  const isMallowLead = point.kind === "lead-change" && point.leader === "mallow";
-  const negative = (NEGATIVE_CARD_LABELS.has(point.label) && !mateOutcomeIsHonestlyPositive) || isEpisode || isMallowLead;
+  // Wave E (2026-08-27) gave a mallow lead-change card the pink alarm wash.
+  // D3 badge wave (owner approval 2026-09-01): RECONCILED -- the approved
+  // g147 library specimen (sec-d3-card-language rev 2) renders that card on
+  // the ordinary lavender shell with the rose 3px left tint and a hard rose
+  // takeover badge, so the badge family now carries the warning and the
+  // pink wash would double the same statement (the brief's "must not double
+  // up" rule). isMallowLead is therefore gone from the negative set; the
+  // side tint below (first badge's family) is what says "mallow's moment".
+  const negative = (NEGATIVE_CARD_LABELS.has(point.label) && !mateOutcomeIsHonestlyPositive) || isEpisode;
+  // D3: the card's 3px left tint follows the FIRST badge's side (library
+  // law 1 bullet: "the card's 3px left tint agrees with its lead badge's
+  // family"). No badges, no tint.
+  const sideClass = badges.length > 0 ? ` debrief-card-side-${badges[0].side}` : "";
   const startMove = moveNumberForPly(point.ply);
   const endMove = point.plyEnd != null ? moveNumberForPly(point.plyEnd) : startMove;
   const note = active ? buildTurningPointNote(point, classification, line, gameSans) : null;
@@ -260,7 +280,18 @@ function TurningPointCard({
   const describedPunish =
     point.punishSan && punishFen ? describeSanMove(point.punishSan, punishFen) : null;
   return (
-    <div className={"debrief-card" + (negative ? " debrief-card-negative" : "")}>
+    <div className={"debrief-card" + (negative ? " debrief-card-negative" : "") + sideClass}>
+      {/* D3: badge chips above the card title, per the library geometry --
+          machine statements in the sharp register, never candy pills. */}
+      {badges.length > 0 && (
+        <div className="tp-badges">
+          {badges.map((b) => (
+            <span key={b.word} className={`tp-badge tp-badge-${b.side}-${b.hard ? "hard" : "soft"}`}>
+              {b.word}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="debrief-card-head">
         <span className="debrief-card-kicker">{isEpisode ? `moves ${startMove}-${endMove}` : `move ${startMove}`}</span>
         {point.lowConfidence && <span className="debrief-card-lowconf">(eval gap here)</span>}
@@ -297,6 +328,24 @@ function TurningPointCard({
           {note.opportunity && <p className="debrief-card-punish">this opens up: {note.opportunity}.</p>}
         </>
       )}
+    </div>
+  );
+}
+
+// D3 badge wave (2026-09-01), position A: the two-line side legend at the
+// top of the cards column, exact owner-approved copy ("Cyan is the player.
+// Rose is the opponent." -> `cyan · you` / `rose · mallow`). The shipped
+// cipher-rail recipe register (chamfered plate, hard flat shadow, signal
+// type -- .legend-rail's own literals), never the seven-definition legend
+// (owner: two-line version only). One component, reversible. This is an
+// analysis surface, so mallow's name is allowed. Rendered ONLY when the
+// computed badge list actually put a chip on some card (caller's gate) --
+// nothing renders that says nothing.
+function BadgeSideLegend() {
+  return (
+    <div className="badge-side-rail">
+      <span className="badge-side-row badge-side-row-her">cyan · you</span>
+      <span className="badge-side-row badge-side-row-mallow">rose · mallow</span>
     </div>
   );
 }
@@ -630,6 +679,23 @@ export function DebriefPage({
   // (side filter is the builder's own, on the row's `side` field). Zero
   // mallow rows renders nothing at all -- the dead-chrome ruling.
   const mallowHighlightedRows = buildMallowHighlightedRows(highlightLines ?? [], gameSans);
+  // D3 badge wave (2026-09-01). Chronological ordering, owner verbatim:
+  // "For component 3 the ordering should be chronological order." Cards
+  // sort by ply ascending (rank as a stable tiebreak; rank stays the key,
+  // unique by construction -- turningPoints.ts mints rank = i + 1).
+  // Severity is no longer implied by position: law 2's hard/soft fill
+  // carries it (the library's component-3 bullet).
+  const orderedPoints = [...turningPoints].sort((a, b) => a.ply - b.ply || a.rank - b.rank);
+  // Badges computed ONCE per point; the cards and the legend rail both read
+  // this same structure (a key must be gated on the real producer -- the
+  // legend can never claim a chip no card rendered).
+  const badgesByRank = new Map<number, CardBadge[]>(
+    turningPoints.map((p) => [
+      p.rank,
+      badgesForPoint(p, { result, line: turningLines.find((l) => l.ply === p.ply), gameSans }),
+    ])
+  );
+  const anyBadges = Array.from(badgesByRank.values()).some((b) => b.length > 0);
   return (
     <div className="debrief pop-in">
       <AnalysisLegend
@@ -701,7 +767,8 @@ export function DebriefPage({
       )}
       {turningPoints.length > 0 && (
         <div className="debrief-cards">
-          {turningPoints.map((point) => (
+          {anyBadges && <BadgeSideLegend />}
+          {orderedPoints.map((point) => (
             <TurningPointCard
               key={point.rank}
               point={point}
@@ -713,6 +780,7 @@ export function DebriefPage({
               onTryLine={onTryLine}
               exploring={!!exploring}
               onAskAboutThis={onAskAboutTurningPoint}
+              badges={badgesByRank.get(point.rank) ?? []}
             />
           ))}
         </div>
