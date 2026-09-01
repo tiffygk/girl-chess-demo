@@ -11,7 +11,8 @@
 // ply+1 reply for real.
 import { describe, it, expect } from "vitest";
 import { buildArrowsForPly } from "./arrowSelection";
-import { turningLineReplayArrows } from "./reviewArrows";
+import { reviewArrowsForMove } from "./reviewArrows";
+import { followedBest } from "../review/followedBest";
 import type { TurningLine, HighlightLine, SummaryMove } from "./api";
 
 // 1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 -- ply4 (Nc6, b8->c6) is mallow's (black's)
@@ -143,6 +144,19 @@ describe("buildArrowsForPly -- highlighted ply routes through reviewArrowsForMov
     expect(herBestReply).toEqual({ from: "b1", to: "c3", color: "best", secondary: true });
   });
 
+  it("VERIFICATION (owner ruling 2026-08-31, no code change expected): a highlighted MALLOW ply (even) already yields the four-arrow shape under 'replay' intent too -- her 'it should be similar for the highlighted move cards as well' clause, asserted not assumed", () => {
+    // The highlight-line branch has ignored `intent` since it was written
+    // (see this file's own header and the UNION invariant test above) --
+    // this pins that fact explicitly against the exact four-arrow fixture
+    // above, rather than relying on readers to infer it from "intent is
+    // ignored" plus "ask yields four arrows" separately.
+    const line = highlightLine({ replyBestFromTo: { from: "b1", to: "c3" } });
+    const viaAsk = buildArrowsForPly(undefined, 4, sans, [line], "ask");
+    const viaReplay = buildArrowsForPly(undefined, 4, sans, [line], "replay");
+    expect(viaReplay).toEqual(viaAsk);
+    expect(viaReplay).toHaveLength(4);
+  });
+
   it("a highlighted HER ply (odd) now yields FOUR arrows: made+best (primary) and mallow's reply+mallow's best-reply (secondary, rose dashed)", () => {
     const herLine = highlightLine({
       ply: 5,
@@ -245,8 +259,9 @@ describe("buildArrowsForPly -- non-highlighted TurningLine ply routes through re
     // (no secondary flags at all) -- a real regression: pressing replay then
     // ask on the same her-ply card visibly changed arrow weight on an
     // unchanged board. Fix: route odd-ply replay through reviewArrowsForMove
-    // too, same as ask -- F4 (2026-08-03, pinned in the very next test) only
-    // ever governed the EVEN arm.
+    // too, same as ask -- F4 (2026-08-03) only ever governed the EVEN arm,
+    // and owner ruling 2026-08-31 (next test) supersedes that arm too, so
+    // ask and replay now call the identical function on BOTH parities.
     const line: TurningLine = {
       ply: 5,
       playedFromTo: { from: "f1", to: "b5" },
@@ -259,14 +274,18 @@ describe("buildArrowsForPly -- non-highlighted TurningLine ply routes through re
     expect(viaReplay).toContainEqual({ from: "a7", to: "a6", color: "mallow", secondary: true });
   });
 
-  it("'replay' intent on an OPPONENT (even) turning ply restores owner ruling F4 (2026-08-03): the sole magenta inaccuracy arrow, byte-identical to turningLineReplayArrows -- NOT the new three-arrow model", () => {
-    // Fix-round-1 (2026-08-05), FIX 2: an earlier draft of this task made
-    // `intent` inert for a TurningLine-bearing ply, which silently reverted
-    // F4 (game 169: replay must show ONLY her Bh6 inaccuracy, never the
-    // punish/best arrows the owner explicitly rejected as "three arrows
-    // competing for the subject"). This pins that "replay" is genuinely
-    // different from "ask" again for the exact opponent-ply shape the
-    // reviewer reproduced the regression on.
+  it("'replay' intent on an OPPONENT (even) turning ply now matches 'ask' exactly -- owner ruling 2026-08-31 SUPERSEDES F4 (2026-08-03): replay shows the same four-arrow set as ask, on BOTH parities", () => {
+    // Owner's verbatim ruling (2026-08-31, D1 arrow-unification round): "for
+    // D1, the same rules as when i click one of the debrief created cards
+    // applies. on the board there are 4 arrows- my move and my best move
+    // available, and the same for mallow." This AMENDS her own 2026-08-03
+    // F4 ruling (game 169), which had carved an opponent-ply (even) REPLAY
+    // out as the sole magenta inaccuracy arrow via turningLineReplayArrows
+    // (now deleted from reviewArrows.ts), suppressing the punish/best arrows
+    // she'd read as "three arrows competing for the subject". This test used
+    // to pin that carve-out; it now pins its removal -- the exact opponent-
+    // ply shape the F4 fix-round reproduced the original regression on now
+    // gets the identical four-arrow treatment under both intents.
     const game169Sans: SummaryMove[] = [
       ...Array.from({ length: 16 }, (_, i) => ({ ply: i + 1, san: i % 2 === 0 ? "a3" : "a6" })),
       { ply: 17, san: "Bg2" },
@@ -276,21 +295,41 @@ describe("buildArrowsForPly -- non-highlighted TurningLine ply routes through re
       ply: 18,
       playedFromTo: { from: "f8", to: "h6" },
       bestFromTo: { from: "c3", to: "d5" },
-      moverBestFromTo: { from: "d7", to: "b6" }, // mallow's own best -- present, but replay must suppress it
+      moverBestFromTo: { from: "d7", to: "b6" }, // mallow's own best -- must now surface under replay too
       pvSans: [],
     };
-    const viaReplay = buildArrowsForPly(line, 18, game169Sans, [], "replay");
-    expect(viaReplay).toEqual(turningLineReplayArrows(line, undefined, game169Sans));
-    expect(viaReplay).toEqual([{ from: "f8", to: "h6", color: "mallow" }]);
-
-    // "ask" on the exact same line produces the new four-arrow set instead
-    // -- proves intent genuinely branches again, not just that replay alone
-    // happens to look old. Colour is "mallow-best" (2026-08-05, R2) -- mallow
-    // is the SUBJECT on this even ply, so her own alternative is no longer
-    // coloured "best" (HER voice).
     const viaAsk = buildArrowsForPly(line, 18, game169Sans, [], "ask");
-    expect(viaAsk).not.toEqual(viaReplay);
-    expect(viaAsk).toContainEqual({ from: "d7", to: "b6", color: "mallow-best" });
+    const viaReplay = buildArrowsForPly(line, 18, game169Sans, [], "replay");
+    expect(viaReplay).toEqual(viaAsk);
+    // Colour is "mallow-best" (2026-08-05, R2) -- mallow is the SUBJECT on
+    // this even ply, so her own alternative is no longer coloured "best"
+    // (HER voice). This is exactly the arrow F4 used to suppress on replay.
+    expect(viaReplay).toContainEqual({ from: "d7", to: "b6", color: "mallow-best" });
+    // The old F4 single-arrow shape is no longer what replay produces.
+    expect(viaReplay).not.toEqual([{ from: "f8", to: "h6", color: "mallow" }]);
+  });
+
+  it("NEW (owner ruling 2026-08-31): 'replay' intent on a non-highlighted EVEN ply equals a direct reviewArrowsForMove call for the identical inputs -- so the two paths can never drift apart again", () => {
+    // Same 1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 fixture as the rest of this file --
+    // real, legal chess.js-replayable moves (unlike the game169Sans filler
+    // fixture above, which is deliberately unparseable past ply 16 and so
+    // can never resolve a reply -- this test needs one to resolve so `fb`
+    // actually carries a played reply, per the brief).
+    const line: TurningLine = {
+      ply: 4,
+      playedFromTo: { from: "b8", to: "c6" }, // mallow's Nc6
+      bestFromTo: { from: "b1", to: "c3" }, // her best reply
+      moverBestFromTo: { from: "g8", to: "f6" }, // mallow's own best
+      threat: { from: "d7", to: "d6" }, // unused on an even card (otherBest reads bestFromTo, not threat) -- present anyway per the brief's fixture shape
+      bestSan: "Bb5",
+      pvSans: ["Bb5"],
+    };
+    const viaReplay = buildArrowsForPly(line, 4, sans, [], "replay");
+    const fb = followedBest(line, sans);
+    expect(fb?.playedFromTo).toEqual({ from: "f1", to: "b5" }); // her actual reply DID resolve -- the premise this test needs
+    const direct = reviewArrowsForMove(line, { fb, gameSans: sans, moverBest: line.moverBestFromTo });
+    expect(viaReplay).toEqual(direct);
+    expect(viaReplay.length).toBeGreaterThan(1); // the assertion is meaningless if both sides are trivially empty
   });
 
   it("moverBestFromTo absent (older/unparseable rows): no 'mallow-best' is drawn at all -- but bestFromTo (her own best reply) still legitimately surfaces as 'best', never substituted into mallow's slot", () => {

@@ -294,37 +294,35 @@ export function reviewArrowsForMove(
   return arrows;
 }
 
-// F4 replay off-by-one (owner ruling 2026-08-03, game 169): the REPLAY of an
-// opponent-inaccuracy card must make the inaccuracy itself the focus. The
-// full-context set above (mallow's slip + the best punish + her actual
-// punish, three arrows at once) is right for "ask about this", but on a
-// replay click the owner read her own cyan/green punish as the card's
-// subject and expected the bishop the card is about (game 169, her Bh6 at
-// ply 18 vs Nxd5+ at ply 19). So the replay framing for an opponent-ply
-// line is the SOLE magenta arrow for mallow's own move (line.playedFromTo),
-// on the same post-inaccuracy board handleRewind already sets
-// (fenAtPly(line.ply)) — the punish/best/mallow-best clutter is suppressed,
-// never re-coloured (de-emphasis would still leave three arrows competing
-// for "the subject").
+// F4 replay off-by-one (owner ruling 2026-08-03, game 169) — AMENDED,
+// function DELETED (owner ruling 2026-08-31, D1 arrow-unification round).
+// F4 had made the REPLAY of an opponent-inaccuracy card focus the inaccuracy
+// itself alone: the full-context set above (mallow's slip + the best punish
+// + her actual punish, three arrows at once) is right for "ask about this",
+// but on a replay click the owner read her own cyan/green punish as the
+// card's subject and expected the bishop the card is about (game 169, her
+// Bh6 at ply 18 vs Nxd5+ at ply 19) — so the replay framing for an
+// opponent-ply line used to be the SOLE magenta arrow for mallow's own move
+// (line.playedFromTo), suppressing the punish/best/mallow-best arrows
+// entirely (turningLineReplayArrows, formerly here).
 //
-// A her-ply line's replay framing is BYTE-UNCHANGED — it delegates straight
-// to turningLineArrows (regression pin in reviewArrows.test.ts). So does an
-// opponent-ply line whose own playedFromTo never resolved: full context
-// beats an arrowless board, and it keeps GamePage's played-arrow fallback
-// (keyed on played/found/mallow colours) from unshifting a cyan arrow onto
-// mallow's own endpoints — exactly the mislabel this ruling exists to stop.
-export function turningLineReplayArrows(
-  line: TurningLine,
-  fb?: FollowedBest,
-  gameSans?: SummaryMove[]
-): ReviewArrow[] {
-  const isOpponentPly = line.ply % 2 === 0;
-  if (isOpponentPly && line.playedFromTo) {
-    return [{ ...line.playedFromTo, color: "mallow" }];
-  }
-  return turningLineArrows(line, fb, gameSans);
-}
-
+// Owner's verbatim ruling, 2026-08-31: "for D1, the same rules as when i
+// click one of the debrief created cards applies. on the board there are 4
+// arrows- my move and my best move available, and the same for mallow. it
+// should be similar for the highlited move cards as well." This SUPERSEDES
+// F4: a replay click on an opponent-ply card now shows the same four-arrow
+// set as an ask click (arrowSelection.ts's buildArrowsForPly routes both
+// through reviewArrowsForMove, on both parities, unconditionally). Do not
+// soften this back toward F4's single-arrow framing and do not widen it
+// beyond what the ruling covers.
+//
+// turningLineReplayArrows is deleted outright, not just unrouted: it has no
+// callers left (arrowSelection.ts's only call site is gone) and no owner
+// ruling left to preserve. turningLineArrows itself is UNCHANGED — it
+// remains the "ask"/context framing single source of truth, and a her-ply
+// line's framing was always byte-identical to it anyway (the deleted
+// function's her-ply arm was a pure passthrough).
+//
 // Increment 3.95 (Task 4, Part 2): highlights are always just the arrows'
 // own endpoints, so deriving them FROM whatever arrows array actually ends
 // up on screen (rather than re-deriving separately from `line`) keeps the
