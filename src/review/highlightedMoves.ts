@@ -287,6 +287,20 @@ function heaviestTarget(targets: { square: Square; piece: string; value: number 
   return targets.slice().sort((a, b) => b.value - a.value)[0];
 }
 
+// Fix round 2 (hardening, re-review observation 3): PIECE_VALUE has no "k"
+// entry (F3 -- the king is never a describable TARGET), but `mv.piece` here
+// is the MOVER's own piece, and the king CAN be a mover (a plain king step,
+// or a king capture). `t.value > PIECE_VALUE["k"]` degrades to `t.value >
+// undefined`, which is `NaN`, always false -- correct today only by
+// accident of that comparison rule, and it silently inverts if anyone ever
+// adds a `?? 0` fallback to PIECE_VALUE's lookups. Made explicit: Infinity
+// as an unrecognized piece's own value makes both `t.value > X` and
+// `t.value >= X` false for every real target, i.e. "never heavier, never
+// equal-or-higher" -- a king mover never earns either tactics sub-clause.
+function moverValueOrNeverHeavier(piece: string): number {
+  return PIECE_VALUE[piece] ?? Infinity;
+}
+
 function bandSentenceFor(evalCpHerPerspective: number): string {
   if (evalCpHerPerspective >= 500) return "you stayed completely winning.";
   if (evalCpHerPerspective >= 150) return "you kept a clear edge.";
@@ -306,6 +320,17 @@ function bandSentenceForRow(row: SummaryMove | undefined): string | undefined {
     return bandSentenceFor(row.ply % 2 === 1 ? -row.evalCp : row.evalCp);
   }
   if (row.evalMate != null) {
+    // Fix round 2 (F2 hardening): Stockfish emits `score mate 0` at an
+    // already-mated position. On her (odd) rows that means MALLOW is the
+    // side to move and mated -- she just delivered mate, unambiguously a
+    // win, never a "hard spot". `-0 === 0`, so the naive `herPerspective >
+    // 0` gate below silently fails this exact case and rendered a losing
+    // sentence on a checkmating move (real row game 24 ply 41, Qf7#: evalCp
+    // null, evalMate 0). Earns its own terminal copy instead of a band --
+    // the claim is fully grounded, mate 0 means the game is over right now.
+    if (row.evalMate === 0 && row.ply % 2 === 1) {
+      return "checkmate: it won the game on the spot.";
+    }
     const herPerspective = row.ply % 2 === 1 ? -row.evalMate : row.evalMate;
     return herPerspective > 0 ? "you stayed completely winning." : "you held your ground in a hard spot.";
   }
@@ -437,7 +462,7 @@ export function composeDoneWellNote(
     if (!recaptureAvailable) {
       let clause = `it wins the ${capturedWord} clean: nothing could take back on ${mv.to}`;
       const heavier = heaviestTarget(
-        attackedEnemyTargets(chess, mv.to, moverColor).filter((t) => t.value > PIECE_VALUE[mv.piece])
+        attackedEnemyTargets(chess, mv.to, moverColor).filter((t) => t.value > moverValueOrNeverHeavier(mv.piece))
       );
       clause += heavier
         ? `, and from ${mv.to} your ${pieceName(mv.piece)} hit her ${pieceName(heavier.piece)} on ${heavier.square}.`
@@ -455,7 +480,7 @@ export function composeDoneWellNote(
     }
   } else {
     const target = heaviestTarget(
-      attackedEnemyTargets(chess, mv.to, moverColor).filter((t) => t.value >= PIECE_VALUE[mv.piece])
+      attackedEnemyTargets(chess, mv.to, moverColor).filter((t) => t.value >= moverValueOrNeverHeavier(mv.piece))
     );
     if (target) {
       tacticsClause = `it attacks her ${pieceName(target.piece)} on ${target.square}, forcing her to answer you.`;
