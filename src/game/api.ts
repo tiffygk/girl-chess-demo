@@ -658,6 +658,17 @@ export interface SummaryMove {
   // (see liveMoves.ts's liveMovesFromSummary) and never re-derive it from
   // the ply index in a view.
   side?: "her" | "mallow";
+  // D4 (done-well composer): raw per-row engine facts, straight off the
+  // moves row -- row P's evalCp/evalMate/bestUci describe the position
+  // AFTER ply P, untransformed. Consumers apply the mover offset themselves
+  // (the mover's best at ply P lives on row P-1's bestUci; evalCp is
+  // side-to-move signed at fen_after, negate odd plies for her perspective)
+  // -- see attachEval's doc comment in server/game/manager.ts. Optional and
+  // absent/null on rows with no attached eval, same compiling-fixture
+  // reasoning as `side` above.
+  evalCp?: number | null;
+  evalMate?: number | null;
+  bestUci?: string | null;
 }
 
 export interface SummaryResponse {
