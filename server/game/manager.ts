@@ -527,7 +527,10 @@ export class GameManager {
     ok: true;
     turningPoints: TurningPoint[];
     classifications: { ply: number; classification: string }[];
-    moves: { ply: number; san: string; highlighted: boolean; side: "her" | "mallow" }[];
+    moves: {
+      ply: number; san: string; highlighted: boolean; side: "her" | "mallow";
+      evalCp?: number | null; evalMate?: number | null; bestUci?: string | null;
+    }[];
   } {
     let persisted = getTurningPoints(gameId);
     const rows = getGameMoves(gameId);
@@ -535,11 +538,21 @@ export class GameManager {
     // ONCE here at the data load (the conversion.ts rule: odd plies hers,
     // even mallow's, encoded as data so no view ever re-derives it from a
     // ply index).
+    // D4 (done-well composer): evalCp/evalMate/bestUci ride every summary
+    // row as RAW per-row engine facts, straight off the moves row -- no
+    // offset applied here (row P describes the position AFTER ply P; see
+    // attachEval's doc comment above and src/game/api.ts's SummaryMove
+    // comment). The composer (src/review/highlightedMoves.ts) applies the
+    // mover offset at its own read site. null/undefined on rows with no
+    // attached eval, never a fabricated zero.
     const moves = rows.map((r: any) => ({
       ply: r.ply,
       san: r.san,
       highlighted: r.highlighted === 1,
       side: (r.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
+      evalCp: r.eval_cp ?? null,
+      evalMate: r.eval_mate ?? null,
+      bestUci: r.best_move ?? null,
     }));
 
     const persistedVersion = persisted.length > 0 ? (persisted[0].algo_version ?? 1) : TP_ALGO_VERSION;
