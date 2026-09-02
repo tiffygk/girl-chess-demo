@@ -64,6 +64,7 @@ import {
   computeTurningPoints,
   buildDeltaSeries,
   detectLeadChanges,
+  sideCoverage,
   type MoveEval,
 } from "../server/annotator/turningPoints";
 // M2 fix (union review, 2026-07-31): this used to import MISSED_MATE_DEPTH
@@ -355,6 +356,39 @@ export function missedMateInvariant(moves: MoveEval[], events: { ply: number }[]
   return null;
 }
 
+// -- HARD invariant (Wave B5, CRITICAL finding against Wave B4) -------------
+// Wave B4 made computeTurningPoints' conversion/missed-win detection OMIT
+// any row with no recorded `side` rather than guess one from ply parity --
+// correct, but her real database has moves.side all-NULL until the
+// owner-approved backfill runs (migrateSchema adds the column all-NULL the
+// first time new code opens a pre-migration db). Before this invariant
+// existed, replay-check could not see the difference: every violation
+// counter above reads 0 whether the corpus genuinely has zero
+// conversion/missed-win stories, OR the detectors could not run on ANY row
+// because every side is unrecorded -- a total detector collapse looked
+// exactly like a healthy baseline.
+//
+// This closes that hole directly, using the SAME sideCoverage function the
+// consumer (turningPoints.ts) now exposes -- never a second, independently
+// drifting count, and never a parity guess of its own. A finished game
+// with any move rows at all (more than one -- computeTurningPoints itself
+// declines to do anything below that) but ANY of them missing a recorded
+// side is a violation: the migration state must be loud here too, not
+// just in the consumer's own log line. Silent (null) once every row of
+// the game carries a recorded side -- the fully-backfilled state behaves
+// exactly as before this wave, by design (requirement 4: side-less loud,
+// backfilled normal).
+export function sideCoverageInvariant(gameId: number, moves: MoveEval[]): string | null {
+  if (moves.length <= 1) return null; // computeTurningPoints itself no-ops below this
+  const cov = sideCoverage(moves);
+  if (cov.missing === 0) return null;
+  return (
+    `game ${gameId}: ${cov.missing}/${cov.total} move rows carry no recorded side -- ` +
+    `conversion/missed-win detection could not run on them (this is NOT "detectors ran and found ` +
+    `nothing", it is "detectors could not run"); pending the owner-approved side backfill`
+  );
+}
+
 // -- RATCHETS: per-trace-id allowlists, never counts ------------------------
 // History is history -- these named traces shipped before their fix and
 // stay in the db (data rule). Any trace NOT listed that violates is a NEW
@@ -565,6 +599,12 @@ async function main() {
   const unconvertedAnchorViolations: string[] = [];
   const plyCollisionViolations: string[] = [];
   const missedMateViolations: string[] = [];
+  // Wave B5 (2026-09-01, CRITICAL finding): always checked, never
+  // allowlisted -- a game whose rows are missing sides is exactly the
+  // silent-collapse shape this invariant exists to make loud, and an
+  // allowlist entry here would be hiding the very thing it detects.
+  const sideCoverageViolations: string[] = [];
+  let sideCoverageMissingRows = 0;
   const debriefViolations: string[] = [];
   const debriefViolationsByGame = new Map<number, string[]>();
   // Wave E (2026-08-27): the lead-change corpus check -- the bidirectional
@@ -640,6 +680,15 @@ async function main() {
       const v = unconvertedInvariant(moves, result, tps);
       if (v) unconvertedViolations.push(`game ${gameId}: ${v}`);
     }
+
+    // Wave B5 (2026-09-01, CRITICAL finding): the migration-state check --
+    // must be able to FAIL the moment a game's rows are missing sides,
+    // distinguishing "detectors could not run" from "ran and found
+    // nothing". Uses the SAME sideCoverage function the consumer
+    // (computeTurningPoints, above) reads internally.
+    sideCoverageMissingRows += sideCoverage(moves).missing;
+    const sideViolation = sideCoverageInvariant(gameId, moves);
+    if (sideViolation) sideCoverageViolations.push(sideViolation);
     // F4 (review-2.md): always checked, never allowlisted -- the anchor
     // being right is exactly what a listed game would be hiding.
     const anchorViolation = unconvertedAnchorInvariant(gameId, tps);
@@ -855,6 +904,13 @@ async function main() {
   console.log(`\nmissed-mate violations: ${missedMateViolations.length} (must be 0)`);
   for (const v of missedMateViolations) console.log(`  ${v}`);
 
+  console.log(
+    `\nside-coverage violations: ${sideCoverageViolations.length} (must be 0, never allowlisted -- Wave B5, ` +
+    `CRITICAL finding) -- ${sideCoverageMissingRows} move row(s) missing a recorded side across ${replayedCount} ` +
+    `games examined (nonzero here means the pre-backfill migration state, not a real detector result)`
+  );
+  for (const v of sideCoverageViolations) console.log(`  ${v}`);
+
   console.log(`\nlead-change coverage violations: ${leadChangeViolations.length} (must be 0, never allowlisted -- Wave E)`);
   for (const v of leadChangeViolations) console.log(`  ${v}`);
   console.log(`\nlead-change pinned-game violations: ${leadChangePinnedViolations.length} (must be 0, named games 189/131/147/180/75/127/140)`);
@@ -899,6 +955,7 @@ async function main() {
     unconvertedAnchorViolations.length === 0 &&
     plyCollisionViolations.length === 0 &&
     missedMateViolations.length === 0 &&
+    sideCoverageViolations.length === 0 &&
     leadChangeViolations.length === 0 &&
     leadChangePinnedViolations.length === 0 &&
     emDashViolations.length === 0 &&
