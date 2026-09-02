@@ -17,6 +17,7 @@ import {
   TP_K,
   TP_ALGO_VERSION,
   winProb,
+  sideCoverage,
   type MoveEval,
 } from "./turningPoints";
 
@@ -36,10 +37,16 @@ function parseFixture(text: string): MoveEval[] {
       const ply = parseInt(m[1], 10);
       const san = m[2];
       const evalStr = m[3].trim();
+      // Wave B4 (2026-09-01 attribution round): `side` follows this
+      // fixture's own ply-parity convention (odd = her) -- these are real
+      // games (eval-data.md) she played as white throughout, a TEST fixture
+      // choice, never a production derivation (computeTurningPoints reads
+      // m.side directly now).
+      const side: "her" | "mallow" = ply % 2 === 1 ? "her" : "mallow";
       if (evalStr.startsWith("M")) {
-        return { ply, san, evalCp: null, evalMate: parseInt(evalStr.slice(1), 10) };
+        return { ply, san, evalCp: null, evalMate: parseInt(evalStr.slice(1), 10), side };
       }
-      return { ply, san, evalCp: parseInt(evalStr, 10), evalMate: null };
+      return { ply, san, evalCp: parseInt(evalStr, 10), evalMate: null, side };
     });
 }
 
@@ -861,8 +868,17 @@ describe("missed-win turning point", () => {
   // Game 150's shape: she is completely winning, faces mate-in-1 twice,
   // declines both, later mates. Evals below keep every swing under
   // TP_FLOOR so the missed win is the only her-side story.
+  // `side` follows this fixture's own ply-parity convention (odd = her) --
+  // matching game 150's real shape, a TEST fixture choice, never a
+  // production derivation (Wave B4, 2026-09-01).
   const mvs = (r: [number, string, number | null, number | null][]) =>
-    r.map(([ply, san, evalCp, evalMate]) => ({ ply, san, evalCp, evalMate }));
+    r.map(([ply, san, evalCp, evalMate]) => ({
+      ply,
+      san,
+      evalCp,
+      evalMate,
+      side: (ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
+    }));
 
   it("emits one 'missed mate' point at the earliest miss, counting all of them", () => {
     const points = computeTurningPoints(
@@ -900,6 +916,35 @@ describe("missed-win turning point", () => {
     // comment here used to describe.
     expect(missed[0].rank).toBe(points.length);
     expect(points.some((p) => p.kind === "conversion")).toBe(false);
+  });
+
+  // Wave B4 (2026-09-01 attribution round): the ONLY fixture shape that can
+  // tell "reads m.side" apart from "recomputes ply % 2" -- every other
+  // assertion in this file passes either way because her real data always
+  // agrees with parity (odd = her). Ply 55 is odd (her, by parity) but this
+  // fixture RECORDS it as mallow's -- the shape a game where she plays
+  // black would produce. If computeTurningPoints ever regresses to
+  // recomputing parity instead of reading the recorded side, this test
+  // starts failing for the wrong reason (it would find the ply-55
+  // missed-win again).
+  it("reads the recorded side, not ply parity, when the two disagree", () => {
+    const points = computeTurningPoints(
+      [
+        { ply: 53, san: "h4", evalCp: null, evalMate: -2, side: "her" },
+        { ply: 54, san: "Kh6", evalCp: null, evalMate: 1, side: "mallow" },
+        { ply: 55, san: "Nf7+", evalCp: null, evalMate: -3, side: "mallow" }, // recorded mallow despite odd ply
+        { ply: 56, san: "Kg6", evalCp: null, evalMate: 1, side: "mallow" },
+        { ply: 57, san: "Nh8+", evalCp: null, evalMate: -3, side: "mallow" },
+        { ply: 58, san: "Kh7", evalCp: null, evalMate: -2, side: "her" },
+        { ply: 59, san: "Qh8#", evalCp: null, evalMate: null, side: "mallow" },
+      ],
+      "1-0"
+    );
+    // Under naive ply-parity, ply 55 is odd -- "her" -- and the position
+    // she faced (ply 54, mate-in-1) would flag it as a missed win, exactly
+    // as the previous test's ply-55 case does. The recorded side says this
+    // ply was mallow's, so no missed-win event should exist for her at all.
+    expect(points.some((p) => p.kind === "missed-win")).toBe(false);
   });
 
   it("emits nothing when no mate was missed", () => {
@@ -953,12 +998,15 @@ describe("conversion turning point parity (H2, union review)", () => {
   // contradict the missed-win bullet, which is untouched (it comes from
   // mateEvents over every row, not from episode formation).
   it("a 5-ply mate-reading flicker (game 144's shape) never mints a conversion point", () => {
+    // `side` follows this fixture's own ply-parity convention (odd = her),
+    // a TEST fixture choice, never a production derivation (Wave B4,
+    // 2026-09-01).
     const moves: MoveEval[] = [
-      { ply: 40, san: "Qh5+", evalCp: null, evalMate: -5 },
-      { ply: 41, san: "Kg8", evalCp: null, evalMate: 5 },
-      { ply: 42, san: "Rd7", evalCp: null, evalMate: -5 },
-      { ply: 43, san: "Kf8", evalCp: null, evalMate: 5 },
-      { ply: 44, san: "Rb7", evalCp: null, evalMate: -4 },
+      { ply: 40, san: "Qh5+", evalCp: null, evalMate: -5, side: "mallow" },
+      { ply: 41, san: "Kg8", evalCp: null, evalMate: 5, side: "her" },
+      { ply: 42, san: "Rd7", evalCp: null, evalMate: -5, side: "mallow" },
+      { ply: 43, san: "Kf8", evalCp: null, evalMate: 5, side: "her" },
+      { ply: 44, san: "Rb7", evalCp: null, evalMate: -4, side: "mallow" },
     ];
     const tps = computeTurningPoints(moves, "1-0");
     expect(tps.some((t) => t.kind === "conversion")).toBe(false);
@@ -966,12 +1014,12 @@ describe("conversion turning point parity (H2, union review)", () => {
 
   it("anchors on her ply even when the mate run's first ply (fromPly) is mallow's", () => {
     const moves: MoveEval[] = [
-      { ply: 60, san: "Kg8", evalCp: null, evalMate: 6 },
-      { ply: 61, san: "Qh5+", evalCp: null, evalMate: -8 },
-      { ply: 62, san: "Kf8", evalCp: null, evalMate: 8 },
-      { ply: 63, san: "Rd7", evalCp: null, evalMate: -8 },
-      { ply: 64, san: "Ke8", evalCp: null, evalMate: 8 },
-      { ply: 65, san: "Rb7", evalCp: null, evalMate: -9 },
+      { ply: 60, san: "Kg8", evalCp: null, evalMate: 6, side: "mallow" },
+      { ply: 61, san: "Qh5+", evalCp: null, evalMate: -8, side: "her" },
+      { ply: 62, san: "Kf8", evalCp: null, evalMate: 8, side: "mallow" },
+      { ply: 63, san: "Rd7", evalCp: null, evalMate: -8, side: "her" },
+      { ply: 64, san: "Ke8", evalCp: null, evalMate: 8, side: "mallow" },
+      { ply: 65, san: "Rb7", evalCp: null, evalMate: -9, side: "her" },
     ];
     const tps = computeTurningPoints(moves, "1-0");
     const conv = tps.find((t) => t.kind === "conversion");
@@ -995,11 +1043,15 @@ describe("computeTurningPoints — game 160 (real data, K1 conversion round)", (
   const raw = JSON.parse(
     fs.readFileSync(path.join(__dirname, "__fixtures__", "game160-evals.json"), "utf-8")
   ) as { ply: number; san: string; eval_cp: number | null; eval_mate: number | null }[];
+  // `side` follows this fixture's own ply-parity convention (odd = her) --
+  // real game 160 was played entirely with her as white, a TEST fixture
+  // choice, never a production derivation (Wave B4, 2026-09-01).
   const moves160: MoveEval[] = raw.map((r) => ({
     ply: r.ply,
     san: r.san,
     evalCp: r.eval_cp,
     evalMate: r.eval_mate,
+    side: (r.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
   }));
 
   it("yields exactly 1 conversion TP plus the missed-mate-derived missed-win TP", () => {
@@ -1025,5 +1077,76 @@ describe("computeTurningPoints — game 160 (real data, K1 conversion round)", (
     const first = computeTurningPoints(moves160, "1-0");
     const second = computeTurningPoints(moves160, "1-0");
     expect(second).toEqual(first);
+  });
+});
+
+// Wave B5 (2026-09-01, CRITICAL finding against Wave B4): B4 made every
+// attribution consumer OMIT a move row that carries no recorded `side`
+// rather than guess one from ply parity -- correct, but her real database
+// has moves.side all-NULL until the owner-approved backfill runs
+// (migrateSchema adds the column all-NULL the first time new code opens
+// it). Measured over her 25 most recent finished games: sides ABSENT
+// yields missed-win 0 / conversion 0 across the whole sample; sides PRESENT
+// yields missed-win 7 / conversion 4 on the exact same games. Nothing
+// anywhere recorded that difference -- a total collapse of two detectors
+// read identically to "this corpus genuinely has none." This suite proves
+// the collapse directly (reusing the game 160 fixture above, which is
+// PROVEN to produce both kinds when sided) and then proves the fix: the
+// missing-side state becomes independently, loudly observable via
+// `sideCoverage`, never by reintroducing a parity guess.
+describe("sideCoverage — the migration state must be loud, not silently reduce results", () => {
+  // Reloads the same real game-160 fixture the describe block above uses
+  // (proven there to yield exactly 1 conversion TP + missed-win TPs when
+  // sided) at this block's own scope, rather than reaching into the other
+  // describe's closure -- an independent fixture load, not a second
+  // detector implementation.
+  const raw160 = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "__fixtures__", "game160-evals.json"), "utf-8")
+  ) as { ply: number; san: string; eval_cp: number | null; eval_mate: number | null }[];
+  const moves160: MoveEval[] = raw160.map((r) => ({
+    ply: r.ply,
+    san: r.san,
+    evalCp: r.eval_cp,
+    evalMate: r.eval_mate,
+    side: (r.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
+  }));
+  // Strips every recorded side -- reproduces the pre-backfill shape of her
+  // real database (moves.side all-NULL) on data already proven to contain
+  // both kinds when the side column is present.
+  const sideless: MoveEval[] = moves160.map((m) => ({ ...m, side: undefined }));
+
+  it("documents the regression: the identical game silently loses BOTH the conversion and missed-win kinds when side is unrecorded", () => {
+    const sidedKinds = new Set(computeTurningPoints(moves160, "1-0").map((t) => t.kind));
+    const silentKinds = new Set(computeTurningPoints(sideless, "1-0").map((t) => t.kind));
+    expect(sidedKinds.has("conversion")).toBe(true);
+    expect(sidedKinds.has("missed-win")).toBe(true);
+    // The exact silent-collapse shape the CRITICAL finding is about: never
+    // "fixed" by guessing a party from ply parity (that reintroduces the
+    // bug Wave B4 removed) -- the fix is that this difference stops being
+    // invisible (see the sideCoverage assertions below).
+    expect(silentKinds.has("conversion")).toBe(false);
+    expect(silentKinds.has("missed-win")).toBe(false);
+  });
+
+  it("sideCoverage distinguishes 'detectors ran and found nothing' from 'detectors could not run' -- fully backfilled data reads clean", () => {
+    const cov = sideCoverage(moves160);
+    expect(cov.total).toBe(moves160.length);
+    expect(cov.missing).toBe(0);
+    expect(cov.withSide).toBe(cov.total);
+  });
+
+  it("sideCoverage reports every row missing a side -- the pre-backfill migration state, made observable", () => {
+    const cov = sideCoverage(sideless);
+    expect(cov.total).toBe(sideless.length);
+    expect(cov.missing).toBe(cov.total);
+    expect(cov.missing).toBeGreaterThan(0);
+    expect(cov.withSide).toBe(0);
+  });
+
+  it("a partially-backfilled game (some rows missing side) is also observable, not just the all-or-nothing case", () => {
+    const partial = moves160.map((m, i) => (i % 3 === 0 ? { ...m, side: undefined } : m));
+    const cov = sideCoverage(partial);
+    expect(cov.missing).toBeGreaterThan(0);
+    expect(cov.missing).toBeLessThan(cov.total);
   });
 });

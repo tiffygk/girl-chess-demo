@@ -48,6 +48,7 @@ export function seedMinimalGame(opponent = "mallow"): { sessionId: number; gameI
     uci: "e2e4",
     fenAfter: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
     timeSpentMs: 100,
+    side: "her",
   });
   recordMove({
     gameId,
@@ -56,6 +57,7 @@ export function seedMinimalGame(opponent = "mallow"): { sessionId: number; gameI
     uci: "e7e5",
     fenAfter: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
     timeSpentMs: 100,
+    side: "mallow",
   });
   return { sessionId, gameId };
 }

@@ -214,6 +214,102 @@ describe("isRecordRequest (Round 2, item 8): the 'make a note' family", () => {
   });
 });
 
+// Task 9 (2026-09-01, coach_notes capture gap round): the controller
+// re-verified two real, directly-evidenced silent misses against her actual
+// chat_messages (sqlite3 "file:data/girlchess.db?mode=ro", read-only) that
+// the family above still doesn't cover:
+//   - game 172, msg 203: "Just making a note here that..." -- the
+//     present-participle inflection of "make a note", not the bare verb.
+//   - game 189, msg 247: "Something else that I want to note is..." -- a
+//     distinct phrase, not a form of any of the ten existing alternatives.
+// Both messages produced zero coach_notes rows even though they read as
+// plain record requests to a human. Grepped ALL 150 of her real user
+// chat_messages containing the substring "note" (the widened patterns below
+// can only ever match a message containing "note", so that superset is
+// exhaustive) and reviewed every one by hand: the two widenings below match
+// exactly these two real asks and NOTHING else in her history -- her other
+// "note" messages (game 146, ids 63/65/67/69) all use "note"/"notes" as a
+// noun referring to an EXISTING debrief annotation ("the note that is the
+// piece of advice", "the notes literally say", "for the notes for the rest
+// of the game") and none contain "making a note" or "want to note" as a
+// substring. Zero measured false positives.
+describe("isRecordRequest (Task 9, coach_notes capture gap): verb-form and 'want to note' misses", () => {
+  it("fires on the present-participle 'making a note' (real miss, game 172 msg 203)", () => {
+    expect(
+      isRecordRequest(
+        "Just making a note here that we should see in green the recommended dotted move for Mallow"
+      )
+    ).toBe(true);
+  });
+
+  it("fires on 'want to note' (real miss, game 189 msg 247)", () => {
+    expect(
+      isRecordRequest(
+        "Something else that I want to note is that I am often not highlighting the turning point"
+      )
+    ).toBe(true);
+  });
+
+  it("fires on the colloquial 'wanna note', same family as the existing 'wanna make a note'", () => {
+    // Review finding F4 (2026-09-01): "wanna note this for later" is
+    // already satisfied by the pre-existing "\bnote this\b" branch, so this
+    // fixture stayed green even with the new "\bwanna note\b" branch
+    // deleted -- the branch it claims to cover was untested. Use a fixture
+    // that only the new branch can match.
+    expect(isRecordRequest("wanna note that the arrows are wrong")).toBe(true);
+  });
+
+  it("does NOT fire on a negated or retrospective-question form of the new phrasings", () => {
+    expect(isRecordRequest("don't want to note that, forget it")).toBe(false);
+    expect(isRecordRequest("did you want to note that already?")).toBe(false);
+    expect(isRecordRequest("I didn't want to note that, ignore it")).toBe(false);
+  });
+
+  it("still does NOT fire on her real non-record uses of 'note' from game 146", () => {
+    expect(
+      isRecordRequest(
+        "Then why is this the note that is the piece of advice if I actually did this exact move?"
+      )
+    ).toBe(false);
+    expect(
+      isRecordRequest(
+        "Okay, I think this is a bug that we need to correct because the notes literally say what may have happened if instead."
+      )
+    ).toBe(false);
+    expect(
+      isRecordRequest(
+        "For the notes for the rest of the game, opponent inaccuracy on move 4 and move 13: bishop takes on h2, check."
+      )
+    ).toBe(false);
+  });
+});
+
+// Review finding F2 (2026-09-01): the progressive/"want to" widenings above
+// sit behind NOTE_QUESTION_GUARD, which only knew the auxiliaries
+// did|have|has|does -- written for the bare infinitive. The progressive
+// ("making") takes is/are/was/were/am, and "want to" takes do. The
+// negation guard knew no prohibitives (stop/quit). None of the strings
+// below is a request to record anything; all newly matched before the
+// guards were widened.
+describe("isRecordRequest (review finding F2): question/negation guards must cover the new verb forms", () => {
+  it("does NOT fire on a progressive-form retrospective question with is/are/was/were/am", () => {
+    expect(isRecordRequest("are you making a note of this?")).toBe(false);
+    expect(isRecordRequest("is the coach making a note of that automatically?")).toBe(false);
+    expect(isRecordRequest("was it making a note the whole time?")).toBe(false);
+    expect(isRecordRequest("am I making a note every time I say that?")).toBe(false);
+  });
+
+  it("does NOT fire on a 'want to note' retrospective question with do", () => {
+    expect(isRecordRequest("do you want to note that?")).toBe(false);
+    expect(isRecordRequest("what happens if I want to note something later?")).toBe(false);
+  });
+
+  it("does NOT fire on a prohibitive ('stop'/'quit') negation of the progressive form", () => {
+    expect(isRecordRequest("stop making a note of everything")).toBe(false);
+    expect(isRecordRequest("quit making a note of my blunders")).toBe(false);
+  });
+});
+
 // Router-fix round (2026-08-03): tier-2 abstract-theory markers
 // (ABSTRACT_THEORY_RE), gated on !hasBoardSignal. Positives are the 5
 // owner-verbatim general-theory questions that mis-routed to board under

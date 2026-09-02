@@ -51,6 +51,13 @@ interface LiveGame {
   opponent: MaiaOpponent;
   ply: number;
   finished: boolean;
+  /** Wave B (attribution round, 2026-09-01): the recorded colour she is
+   *  playing this game, set once in newGame and read by partyFor below to
+   *  turn a move's chess.js .color into "her" | "mallow" -- a comparison of
+   *  two recorded facts, never ply arithmetic. Always "w" today (every game
+   *  in her history has been white), but the field exists so that stops
+   *  being an assumption baked into the code. */
+  playerColor: "w" | "b";
   /** Round 3 (Q2 step 2): the last hint computed for THIS game, keyed to the
    *  fen it was computed for, so chat can fold the hint's verified findings
    *  onto the shelf when she asks about the same position. In-memory only,
@@ -98,6 +105,16 @@ const HINT_HISTORY_CAP = 8;
 // what the note was FOR. Exported so manager.test.ts asserts against the
 // real constant instead of a hand-copied literal that could drift from it.
 export const COACH_NOTE_ACK = "noted, and it's saved for good. i'll have it next game.";
+// Task 9 (2026-09-01, coach_notes capture gap round), the invariant's other
+// half: "a record-shaped ask must either produce a coach_notes row, or
+// produce a coach reply that says plainly it could not record it -- never
+// 'noted' over a no-op." Before this, a failed insertCoachNote() call fell
+// through SILENTLY to the model's own answer -- no ack, no negative
+// acknowledgment either, exactly the gap the scout confirmed (grepped for
+// "can't record" / "cannot record" / "couldn't save" / "didn't catch that"
+// across server/ and src/ -- zero hits). This is the one negative
+// acknowledgment string in the codebase.
+export const COACH_NOTE_SAVE_FAILED = "i couldn't save that note just now, try asking again in a bit.";
 
 // Increment 3.91 (Task 2): the turning-lines endpoint's per-point shape —
 // mirrored (hand-mirroring, same convention as TurningPoint's own
@@ -228,6 +245,17 @@ export function buildVerdictFactsJson(
   // `JSON.stringify(verdict.threat)` shape — no migration, no reader change
   // needed for the common (non-conversion) case.
   return JSON.stringify({ ...(threat ?? {}), conversionCopy });
+}
+
+// Wave B (attribution round, 2026-09-01), Task B2: the party is read off
+// the chess engine's own move object, never computed from the ply.
+// `live.playerColor` is the game's recorded colour for her (always "w" for
+// every game played so far), so this is a comparison of two recorded
+// facts, not arithmetic. See
+// ply-parity-encode-in-types-not-helpers: seven bugs in this project have
+// come from re-deriving a seat from ply % 2.
+function partyFor(live: LiveGame, moveColor: "w" | "b"): "her" | "mallow" {
+  return moveColor === live.playerColor ? "her" : "mallow";
 }
 
 export class GameManager {
@@ -448,16 +476,20 @@ export class GameManager {
 
   async newGame(sessionId: number, elo: number) {
     const opponent = await this.opponentFor(elo);
-    const gameId = createGame(sessionId, (opponent.fallback ? "fallback-" : "maia-") + elo);
-    this.games.set(gameId, { chess: new Chess(), opponent, ply: 0, finished: false, hintHistory: [] });
+    // "w" passed explicitly (Wave B, B2) so player_color is written on
+    // purpose, not inherited from createGame's default -- every game today
+    // is her as white, but this is the one place that fact gets recorded
+    // rather than assumed.
+    const gameId = createGame(sessionId, (opponent.fallback ? "fallback-" : "maia-") + elo, "w");
+    this.games.set(gameId, { chess: new Chess(), opponent, ply: 0, finished: false, playerColor: "w", hintHistory: [] });
     return { gameId, fen: new Chess().fen(), fallback: opponent.fallback, elo };
   }
 
-  private record(gameId: number, live: LiveGame, san: string, uci: string, timeSpentMs: number) {
+  private record(gameId: number, live: LiveGame, san: string, uci: string, timeSpentMs: number, side: "her" | "mallow") {
     live.ply += 1;
     const ply = live.ply;
     const fenAfter = live.chess.fen();
-    recordMove({ gameId, ply, san, uci, fenAfter, timeSpentMs });
+    recordMove({ gameId, ply, san, uci, fenAfter, timeSpentMs, side });
     // async eval; never awaited on the move path (latency rule)
     this.evaluator.evaluate(fenAfter, 600)
       .then((ev) => attachEval(gameId, ply, ev))
@@ -478,7 +510,15 @@ export class GameManager {
   private persistGameSummary(gameId: number, result: string) {
     try {
       const rows = getGameMoves(gameId);
-      const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null }));
+      // Wave B4 (2026-09-01 attribution round): `side` threaded straight off
+      // the moves.side column (same rows getSummary/getHighlightLines read)
+      // so computeTurningPoints' own missed-win/conversion detection reads
+      // the recorded party rather than recomputing it from ply % 2 -- see
+      // turningPoints.ts's MoveEval.side comment. `r.side` is `null` only
+      // for a pre-backfill row on a fresh dev database; `?? undefined` lets
+      // that row fall through to computeTurningPoints' own omission path
+      // rather than guessing a party for it here.
+      const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null, side: r.side ?? undefined }));
       const turningPoints = computeTurningPoints(moves, result);
       insertTurningPoints(
         gameId,
@@ -527,24 +567,41 @@ export class GameManager {
     ok: true;
     turningPoints: TurningPoint[];
     classifications: { ply: number; classification: string }[];
-    moves: { ply: number; san: string; highlighted: boolean; side: "her" | "mallow" }[];
+    moves: {
+      ply: number; san: string; highlighted: boolean; side?: "her" | "mallow";
+      evalCp?: number | null; evalMate?: number | null; bestUci?: string | null;
+    }[];
   } {
     let persisted = getTurningPoints(gameId);
     const rows = getGameMoves(gameId);
-    // W5 (opponent-move highlight): `side` rides every summary row, derived
-    // ONCE here at the data load (the conversion.ts rule: odd plies hers,
-    // even mallow's, encoded as data so no view ever re-derives it from a
-    // ply index).
+    // W5 (opponent-move highlight): `side` rides every summary row, READ
+    // once here off the moves.side column (Wave B4, 2026-09-01 attribution
+    // round: this used to derive it from ply parity -- odd hers, even
+    // mallow's -- which assumed she is always white; now it reads the party
+    // chess.js actually recorded at move time, so no view ever re-derives
+    // it from a ply index). A row with no recorded side -- there should be
+    // none after the controller's backfill, only a fresh dev database --
+    // omits `side` entirely rather than guessing it from parity.
+    // D4 (done-well composer): evalCp/evalMate/bestUci ride every summary
+    // row as RAW per-row engine facts, straight off the moves row -- no
+    // offset applied here (row P describes the position AFTER ply P; see
+    // attachEval's doc comment above and src/game/api.ts's SummaryMove
+    // comment). The composer (src/review/highlightedMoves.ts) applies the
+    // mover offset at its own read site. null/undefined on rows with no
+    // attached eval, never a fabricated zero.
     const moves = rows.map((r: any) => ({
       ply: r.ply,
       san: r.san,
       highlighted: r.highlighted === 1,
-      side: (r.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
+      side: (r.side ?? undefined) as "her" | "mallow" | undefined,
+      evalCp: r.eval_cp ?? null,
+      evalMate: r.eval_mate ?? null,
+      bestUci: r.best_move ?? null,
     }));
 
     const persistedVersion = persisted.length > 0 ? (persisted[0].algo_version ?? 1) : TP_ALGO_VERSION;
     if (persisted.length > 0 && persistedVersion < TP_ALGO_VERSION) {
-      const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null }));
+      const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null, side: r.side ?? undefined })); // Wave B4: side threaded from moves.side, see persistGameSummary's comment above
       const game = getGame(gameId);
       const healed = computeTurningPoints(evalMoves, game?.result ?? "");
       insertTurningPoints(
@@ -607,7 +664,7 @@ export class GameManager {
     // computes zero turning points (computeTurningPoints's all-null
     // short-circuit), and the `computed.length > 0` guard below means
     // nothing is ever written for it (graceful no-op).
-    const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null }));
+    const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null, side: r.side ?? undefined })); // Wave B4: side threaded from moves.side, see persistGameSummary's comment above
     const game = getGame(gameId);
     const computed = computeTurningPoints(evalMoves, game?.result ?? "");
     if (game?.result && computed.length > 0) {
@@ -750,10 +807,13 @@ export class GameManager {
   // only (mirrors getTurningLines' never-writes rule): getGameMoves is the
   // same pure SELECT accessor getTurningLines/getSummary already use, and
   // this method never calls insertTurningPoints or any other write. `side`
-  // is derived ONCE here, at this data-load remap -- the same
-  // getSummary/conversion.ts precedent buildHighlightLines' own header
-  // documents -- and threaded through as a required field rather than
-  // re-derived anywhere downstream.
+  // is READ ONCE here, at this data-load remap, off the moves.side column
+  // (Wave B4, 2026-09-01 attribution round -- this used to derive it from
+  // ply parity) -- the same getSummary/conversion.ts precedent
+  // buildHighlightLines' own header documents -- and threaded through
+  // rather than re-derived anywhere downstream. A row with no recorded side
+  // stays `undefined`; buildHighlightLines omits it from the output rather
+  // than guessing.
   getHighlightLines(gameId: number): { ok: boolean; lines: HighlightLine[] } {
     try {
       const rows: HighlightMoveRow[] = getGameMoves(gameId).map((r: any) => ({
@@ -765,7 +825,7 @@ export class GameManager {
         bestMove: r.best_move ?? null,
         pv: r.pv ?? null,
         highlighted: r.highlighted === 1,
-        side: (r.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
+        side: (r.side ?? undefined) as "her" | "mallow" | undefined,
       }));
       const lines = buildHighlightLines(rows, (fen, ev) => this.pvLine(fen, ev));
       return { ok: true, lines };
@@ -944,7 +1004,7 @@ export class GameManager {
       return { ok: false, fen: live.chess.fen() };
     }
     const playerCapture = mv.flags.includes("c") || mv.flags.includes("e");
-    this.record(gameId, live, mv.san, mv.from + mv.to + (mv.promotion ?? ""), timeSpentMs);
+    this.record(gameId, live, mv.san, mv.from + mv.to + (mv.promotion ?? ""), timeSpentMs, partyFor(live, mv.color));
 
     if (override) {
       // ply here is the ply this player move just occupied (this.record()
@@ -968,7 +1028,7 @@ export class GameManager {
     const replyUci = await live.opponent.pickMove(live.chess.fen());
     const reply = live.chess.move({ from: replyUci.slice(0, 2), to: replyUci.slice(2, 4), promotion: (replyUci[4] as any) ?? undefined });
     const replyCapture = reply.flags.includes("c") || reply.flags.includes("e");
-    this.record(gameId, live, reply.san, replyUci, 0);
+    this.record(gameId, live, reply.san, replyUci, 0, partyFor(live, reply.color));
 
     over = this.gameOver(live.chess);
     if (over) { finishGame(gameId, over.result); live.finished = true; this.persistGameSummary(gameId, over.result); }
@@ -1334,6 +1394,12 @@ export class GameManager {
         // exact fenBefore + pvSans pair pvLine just replayed. undefined when
         // nothing is provable; JSON.stringify drops the key entirely then.
         then: deriveContinuation(fenBefore, pvSans),
+        // Wave B4 (2026-09-01 attribution round): the recorded party, off
+        // moves.side -- chat.ts's readForPly/sideLabel/focusPosition.side
+        // all read this rather than recomputing from ply % 2. `?? undefined`
+        // lets a pre-backfill row (fresh dev database only) fall through to
+        // chat.ts's own omission path.
+        side: (r.side ?? undefined) as "her" | "mallow" | undefined,
       };
     });
     // Highlight-a-move (Task 8): straight off the same moveRows Task 1
@@ -1438,17 +1504,25 @@ export class GameManager {
     // came from) -- never from result.text, so the model can never launder its
     // own words into her memory. The acknowledgment is appended ONLY when the
     // insert actually succeeded, so the coach never claims a memory it doesn't
-    // have (game-164's exact failure). A failed insert falls through silently to
-    // the model's own answer, with no false promise.
+    // have (game-164's exact failure).
+    // Task 9 (condition A): a DETECTED record request whose insert actually
+    // throws now gets the honest negative ack instead of falling through
+    // silently to the model's own answer -- the model's own reply can carry
+    // incidental confirmation-shaped language ("noted, thanks...") that reads
+    // exactly like a save happened when it didn't (game 189, msg 248's real
+    // collision). `recorded` also gates whether condition B's history fix
+    // below needs to run for this turn.
     let replyText = result.text;
+    let recorded = false;
     if (isRecordRequest(message)) {
-      let recorded = false;
       try {
         recorded = insertCoachNote(`from game ${gameId}: ${message}`, gameId) > 0;
       } catch {
         recorded = false;
       }
-      if (recorded) replyText = `${result.text}\n\n${COACH_NOTE_ACK}`;
+      replyText = recorded
+        ? `${result.text}\n\n${COACH_NOTE_ACK}`
+        : `${result.text}\n\n${COACH_NOTE_SAVE_FAILED}`;
     }
 
     // B3b (2026-07-27, coach-truth-speed round): a failed (template) reply
@@ -1462,12 +1536,25 @@ export class GameManager {
     // later prompt ("that one took me longer than i had", trace 98) because
     // the coach's own apology was persisted as a real coach turn -- this is
     // the fix for that doom loop, not just tidiness.
+    // Task 9 (condition B): B3b's gate ran BEFORE the write above existed
+    // and never accounted for it -- a coach_notes row could be written on a
+    // template-fallback turn (`recorded` true, `result.source !== "model"`)
+    // while nothing ever joined visible history to say so. Game 167's
+    // coach_notes ids 2/3 are the real instance: the first insert succeeded
+    // silently on a template turn, she never saw it acknowledged, and
+    // repeated herself a minute later. The fix persists ONLY the
+    // deterministic ack line in that case -- never the template's own
+    // prose, which is exactly what B3b exists to keep out of history (the
+    // doom-loop risk above). A history row now exists precisely when a
+    // coach_notes row exists, so the two can never disagree.
     if (result.source === "model") {
       // Wave 4, item 3: persist the acknowledged text (replyText), so a
       // remembered "noted..." reply reads back the same next turn as the client
       // saw it. The note itself is already in coach_notes regardless of this
       // source gate.
       insertChatMessage({ gameId, role: "coach", text: replyText, traceId: result.traceId });
+    } else if (recorded) {
+      insertChatMessage({ gameId, role: "coach", text: COACH_NOTE_ACK, traceId: result.traceId });
     }
 
     // Task 8 (inc 3.95, Fix 1), owner-ruled: chat.ts's own cause is always

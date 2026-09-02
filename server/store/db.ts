@@ -32,6 +32,14 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // that predates it (including the still-live /resign and /draw-offer
     // endpoints, which don't set this).
     { name: "end_reason", addSql: "end_reason TEXT" },
+    // Wave B (attribution round, 2026-09-01), Task B1: the recorded source
+    // for colour-dependent logic (evaluation signs -- a chess fact, not an
+    // attribution fact) that used to assume she is white. Every existing
+    // game has her as white, hence the default; newGame passes "w"
+    // explicitly going forward so the value is written on purpose. Not the
+    // party column -- that's moves.side below, which is what "whose move
+    // was this" actually reads.
+    { name: "player_color", addSql: "player_color TEXT DEFAULT 'w'" },
   ],
   moves: [
     { name: "game_id", addSql: "game_id INTEGER REFERENCES games(id)" },
@@ -57,6 +65,16 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // matches every other flag column in this table (e.g. mate_against
     // over in verdicts).
     { name: "highlighted", addSql: "highlighted INTEGER" },
+    // Wave B (attribution round, 2026-09-01), Task B1: the acting PARTY,
+    // recorded at write time from the chess engine's own move object
+    // (server/game/manager.ts's partyFor), never computed from ply parity.
+    // `ply % 2 === 1 ? "her" : "mallow"` has been the direct cause of seven
+    // separate bugs in this project -- this column exists so nothing has to
+    // re-derive that fact ever again. NULL on every row written before this
+    // column existed; Task B3 (controller-run, not this wave) backfills
+    // those 3018 rows once, using the one historical fact that makes that
+    // safe: every game in her history was played with her as white.
+    { name: "side", addSql: "side TEXT" },
   ],
   mode_timers: [
     { name: "session_id", addSql: "session_id INTEGER REFERENCES sessions(id)" },
@@ -328,8 +346,15 @@ export const createSession = () =>
   Number(db.prepare("INSERT INTO sessions DEFAULT VALUES").run().lastInsertRowid);
 export const endSession = (id: number) =>
   db.prepare("UPDATE sessions SET ended_at = datetime('now') WHERE id = ?").run(id);
-export const createGame = (sessionId: number, opponent: string) =>
-  Number(db.prepare("INSERT INTO games(session_id, opponent) VALUES(?, ?)").run(sessionId, opponent).lastInsertRowid);
+// `playerColor` (Wave B, B2): defaulted so every existing call site keeps
+// compiling unchanged; newGame (server/game/manager.ts) passes "w"
+// explicitly so the value is written on purpose rather than inherited.
+export const createGame = (sessionId: number, opponent: string, playerColor: "w" | "b" = "w") =>
+  Number(
+    db
+      .prepare("INSERT INTO games(session_id, opponent, player_color) VALUES(?, ?, ?)")
+      .run(sessionId, opponent, playerColor).lastInsertRowid
+  );
 // `reason` (Wave C, C-A): the new /adjudicate endpoint passes "adjudicated"
 // | "resigned" | "draw-adjudicated"; every pre-existing call site (resign,
 // offerDraw) omits it, which stores NULL — those endpoints stay API-compat
@@ -338,10 +363,21 @@ export const finishGame = (id: number, result: string, reason?: string) =>
   db.prepare("UPDATE games SET result = ?, end_reason = ?, ended_at = datetime('now') WHERE id = ?").run(result, reason ?? null, id);
 export const getGame = (id: number) =>
   db.prepare("SELECT * FROM games WHERE id = ?").get(id) as any;
-export const recordMove = (m: { gameId: number; ply: number; san: string; uci: string; fenAfter: string; timeSpentMs: number }) =>
+// `side` is REQUIRED, not optional (Wave B, B1) -- that turns every existing
+// call site into a compile error until it supplies a real value, which is
+// how the seven ply-parity bugs' call sites all got found and fixed.
+export const recordMove = (m: {
+  gameId: number;
+  ply: number;
+  san: string;
+  uci: string;
+  fenAfter: string;
+  timeSpentMs: number;
+  side: "her" | "mallow";
+}) =>
   db.prepare(
-    "INSERT INTO moves(game_id, ply, san, uci, fen_after, time_spent_ms) VALUES(?,?,?,?,?,?)"
-  ).run(m.gameId, m.ply, m.san, m.uci, m.fenAfter, m.timeSpentMs);
+    "INSERT INTO moves(game_id, ply, san, uci, fen_after, time_spent_ms, side) VALUES(?,?,?,?,?,?,?)"
+  ).run(m.gameId, m.ply, m.san, m.uci, m.fenAfter, m.timeSpentMs, m.side);
 export const attachEval = (gameId: number, ply: number, ev: Evaluation) =>
   db.prepare(
     "UPDATE moves SET eval_cp = ?, eval_mate = ?, best_move = ?, pv = ? WHERE game_id = ? AND ply = ?"

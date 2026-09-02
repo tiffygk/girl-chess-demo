@@ -9,10 +9,20 @@
 //
 // ST-01 (template-path variant) / ST-03 / ST-04 run for real, always, with
 // zero model calls (noBackend forces the deterministic template path).
-// ST-02 and ST-01's MODEL variant need a real backend and are gated behind
-// `live: true`, which the controller passes only when announced and the
-// machine is quiet (spec: "6-8 model calls plus template turns, about 5
-// minutes ... needs the machine QUIET").
+// ST-02 needs a real backend and is gated behind `live: true`, which the
+// controller passes only when announced and the machine is quiet. It makes
+// exactly ONE model request and finishes in seconds -- there is no ST-01
+// model variant: st01Template() takes no `live` parameter and runStSuite
+// never passes one to it, so that variant does not exist in this file.
+//
+// ST-02's pass condition used to be `deltas.length === 0 || concatenated
+// === doneText` -- a run where the coach failed validation on every attempt
+// produces zero deltas (they are buffered in server/coach/chat.ts and only
+// flushed on a validated attempt) and that OR made a total failure read as
+// pass. evaluateStreamConsistency below reads the done frame's own
+// `source`/`cause` first: no model answer survived -> did-not-run, naming
+// the cause; a model answer with zero deltas -> red (the stream was lost,
+// not merely short); only a genuine model-sourced comparison can pass.
 import request from "supertest";
 import { createChatTestApp, parseSseFrames } from "../lib/chatServer";
 import { seedScratchDb, seedMinimalGame } from "../lib/scenarioDb";
@@ -52,7 +62,7 @@ async function st01Template(): Promise<EvalResult> {
     return {
       id: "ST-01",
       verdict: "pass",
-      detail: `template-path variant: done frame matches the JSON route's envelope on ${fields.join(", ")}; both carry a numeric traceId. (model variant gated behind --live, not run.)`,
+      detail: `template-path variant: done frame matches the JSON route's envelope on ${fields.join(", ")}; both carry a numeric traceId. (this suite has no ST-01 model variant.)`,
     };
   }
   return {
@@ -62,12 +72,47 @@ async function st01Template(): Promise<EvalResult> {
   };
 }
 
+// ST-02's pass condition, pulled out of st02Model so it can be exercised
+// directly against constructed frames rather than only through a live
+// model call. Reads the done frame's own source/cause BEFORE looking at
+// deltas at all: a rejected draft's buffer is discarded unread (chat.ts
+// only flushes deltas inside the result.ok branch), so zero deltas is
+// ambiguous on its own -- it means either "nothing survived validation" or
+// "a validated answer's stream was lost", and those are different verdicts.
+export function evaluateStreamConsistency(deltas: string[], doneBody: DoneEnvelope | undefined): EvalResult {
+  const source = doneBody?.source;
+  if (source !== "model") {
+    return {
+      id: "ST-02",
+      verdict: "did-not-run",
+      detail: `no model answer survived (source=${source}, cause=${doneBody?.cause}) -- streaming consistency is undefined with nothing to compare, so this arm measured nothing. The rejected drafts and their violations are in the scratch db's advice_traces.`,
+    };
+  }
+  if (deltas.length === 0) {
+    return {
+      id: "ST-02",
+      verdict: "red",
+      detail: "a validated model answer arrived with zero delta frames -- the backend implements generateStream, so the stream was lost.",
+    };
+  }
+  const doneText = doneBody?.text ?? "";
+  const concatenated = deltas.join("");
+  const pass = concatenated === doneText;
+  return {
+    id: "ST-02",
+    verdict: pass ? "pass" : "red",
+    detail: pass
+      ? `concatenated deltas equal the done frame's text (${deltas.length} delta frame(s)).`
+      : `deltas concatenated ("${concatenated}") DO NOT equal the done frame's text ("${doneText}").`,
+  };
+}
+
 async function st02Model(live: boolean): Promise<EvalResult> {
   if (!live) {
     return {
       id: "ST-02",
       verdict: "did-not-run",
-      detail: "model-dependent (6 real-model probes, ~5 min, needs the machine quiet) -- run with --live once announced.",
+      detail: "model-dependent (1 real-model request, seconds not minutes) -- run with --live once announced, machine quiet.",
     };
   }
   // --live implementation: reuses the real agentSdkBackend, dynamically
@@ -82,16 +127,7 @@ async function st02Model(live: boolean): Promise<EvalResult> {
   const frames = parseSseFrames(streamRes.text);
   const deltas = frames.filter((f) => f.event === "delta").map((f) => (f.data as { text: string }).text);
   const doneFrame = frames.find((f) => f.event === "done");
-  const doneText = (doneFrame?.data as DoneEnvelope | undefined)?.text ?? "";
-  const concatenated = deltas.join("");
-  const pass = deltas.length === 0 || concatenated === doneText;
-  return {
-    id: "ST-02",
-    verdict: pass ? "pass" : "red",
-    detail: pass
-      ? `concatenated deltas equal the done frame's text (${deltas.length} delta frame(s)).`
-      : `deltas concatenated ("${concatenated}") DO NOT equal the done frame's text ("${doneText}").`,
-  };
+  return evaluateStreamConsistency(deltas, doneFrame?.data as DoneEnvelope | undefined);
 }
 
 async function st03ForcedTemplateStream(): Promise<EvalResult> {
@@ -134,6 +170,6 @@ export async function runStSuite(live: boolean): Promise<SuiteResult> {
     ranAt: new Date().toISOString(),
     notes: live
       ? ["--live: ST-02 called the real model backend (subscription usage, machine load)."]
-      : ["ST-01 (template variant)/ST-03/ST-04 ran for real, zero model calls. ST-02 (and ST-01's model variant) gated behind --live -- not run."],
+      : ["ST-01/ST-03/ST-04 ran for real, zero model calls. ST-02 gated behind --live -- not run. (No ST-01 model variant exists in this suite.)"],
   };
 }
