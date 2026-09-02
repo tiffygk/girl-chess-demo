@@ -12,7 +12,11 @@
 //   ply-parity-encode-in-types-not-helpers).
 //   law 2 -- fill is magnitude. hard = mistake/blunder grade or a
 //   game-decider (the takeover, the finish, the miss); soft = inaccuracy
-//   grade or informational (the siege, a lesser swing).
+//   grade or informational (a lesser swing).
+//
+// The vocabulary is exactly her seven approved words. "the siege" was an
+// eighth word that entered through a false brief citation and was ruled a
+// hallucination (owner, 2026-09-01) -- an episode point earns no badge.
 
 import type { TurningPoint, TurningLine, SummaryMove } from "../game/api";
 import { followedBest } from "./followedBest";
@@ -24,8 +28,7 @@ export type BadgeWord =
   | "the miss"
   | "the swing"
   | "the takeover"
-  | "the finish"
-  | "the siege";
+  | "the finish";
 
 export interface CardBadge {
   word: BadgeWord;
@@ -106,11 +109,6 @@ export function badgesForPoint(tp: TurningPoint, ctx: BadgeContext = {}): CardBa
     if (tp.label === "checkmate") {
       badges.push({ word: "the finish", side: finishSide(tp, ctx), hard: true });
     }
-  } else if (tp.kind === "episode") {
-    // The card keeps its existing king-pressure framing (the library's
-    // definitions row: the siege keeps its existing name); informational,
-    // so soft, and mallow's pressure, so mallow's side.
-    badges.push({ word: "the siege", side: "mallow", hard: false });
   } else if (tp.label.startsWith("opponent")) {
     const hard = labelIsHard(tp.label);
     // The punish leads when confirmed -- grounded on the library's own m18
