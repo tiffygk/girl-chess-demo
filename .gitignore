@@ -76,3 +76,6 @@ backup-*.git/
 # out of the tracked tree is the whole point; a guard that spells out what it
 # guards against reintroduces the leak in its own body (2026-08-26).
 .claude/hooks/.push-guard-patterns
+
+# db backups taken before a sanctioned write (her history; never versioned)
+backups/
