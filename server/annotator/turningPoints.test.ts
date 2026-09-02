@@ -17,6 +17,7 @@ import {
   TP_K,
   TP_ALGO_VERSION,
   winProb,
+  sideCoverage,
   type MoveEval,
 } from "./turningPoints";
 
@@ -1076,5 +1077,76 @@ describe("computeTurningPoints — game 160 (real data, K1 conversion round)", (
     const first = computeTurningPoints(moves160, "1-0");
     const second = computeTurningPoints(moves160, "1-0");
     expect(second).toEqual(first);
+  });
+});
+
+// Wave B5 (2026-09-01, CRITICAL finding against Wave B4): B4 made every
+// attribution consumer OMIT a move row that carries no recorded `side`
+// rather than guess one from ply parity -- correct, but her real database
+// has moves.side all-NULL until the owner-approved backfill runs
+// (migrateSchema adds the column all-NULL the first time new code opens
+// it). Measured over her 25 most recent finished games: sides ABSENT
+// yields missed-win 0 / conversion 0 across the whole sample; sides PRESENT
+// yields missed-win 7 / conversion 4 on the exact same games. Nothing
+// anywhere recorded that difference -- a total collapse of two detectors
+// read identically to "this corpus genuinely has none." This suite proves
+// the collapse directly (reusing the game 160 fixture above, which is
+// PROVEN to produce both kinds when sided) and then proves the fix: the
+// missing-side state becomes independently, loudly observable via
+// `sideCoverage`, never by reintroducing a parity guess.
+describe("sideCoverage — the migration state must be loud, not silently reduce results", () => {
+  // Reloads the same real game-160 fixture the describe block above uses
+  // (proven there to yield exactly 1 conversion TP + missed-win TPs when
+  // sided) at this block's own scope, rather than reaching into the other
+  // describe's closure -- an independent fixture load, not a second
+  // detector implementation.
+  const raw160 = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "__fixtures__", "game160-evals.json"), "utf-8")
+  ) as { ply: number; san: string; eval_cp: number | null; eval_mate: number | null }[];
+  const moves160: MoveEval[] = raw160.map((r) => ({
+    ply: r.ply,
+    san: r.san,
+    evalCp: r.eval_cp,
+    evalMate: r.eval_mate,
+    side: (r.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
+  }));
+  // Strips every recorded side -- reproduces the pre-backfill shape of her
+  // real database (moves.side all-NULL) on data already proven to contain
+  // both kinds when the side column is present.
+  const sideless: MoveEval[] = moves160.map((m) => ({ ...m, side: undefined }));
+
+  it("documents the regression: the identical game silently loses BOTH the conversion and missed-win kinds when side is unrecorded", () => {
+    const sidedKinds = new Set(computeTurningPoints(moves160, "1-0").map((t) => t.kind));
+    const silentKinds = new Set(computeTurningPoints(sideless, "1-0").map((t) => t.kind));
+    expect(sidedKinds.has("conversion")).toBe(true);
+    expect(sidedKinds.has("missed-win")).toBe(true);
+    // The exact silent-collapse shape the CRITICAL finding is about: never
+    // "fixed" by guessing a party from ply parity (that reintroduces the
+    // bug Wave B4 removed) -- the fix is that this difference stops being
+    // invisible (see the sideCoverage assertions below).
+    expect(silentKinds.has("conversion")).toBe(false);
+    expect(silentKinds.has("missed-win")).toBe(false);
+  });
+
+  it("sideCoverage distinguishes 'detectors ran and found nothing' from 'detectors could not run' -- fully backfilled data reads clean", () => {
+    const cov = sideCoverage(moves160);
+    expect(cov.total).toBe(moves160.length);
+    expect(cov.missing).toBe(0);
+    expect(cov.withSide).toBe(cov.total);
+  });
+
+  it("sideCoverage reports every row missing a side -- the pre-backfill migration state, made observable", () => {
+    const cov = sideCoverage(sideless);
+    expect(cov.total).toBe(sideless.length);
+    expect(cov.missing).toBe(cov.total);
+    expect(cov.missing).toBeGreaterThan(0);
+    expect(cov.withSide).toBe(0);
+  });
+
+  it("a partially-backfilled game (some rows missing side) is also observable, not just the all-or-nothing case", () => {
+    const partial = moves160.map((m, i) => (i % 3 === 0 ? { ...m, side: undefined } : m));
+    const cov = sideCoverage(partial);
+    expect(cov.missing).toBeGreaterThan(0);
+    expect(cov.missing).toBeLessThan(cov.total);
   });
 });
