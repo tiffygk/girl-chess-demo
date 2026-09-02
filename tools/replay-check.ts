@@ -600,6 +600,7 @@ async function main() {
       best_move: string | null;
       classification: string | null;
       highlighted: number | null;
+      side: "her" | "mallow" | null;
     }[];
     if (movesRows.length === 0) {
       skippedZeroMoveCount++;
@@ -612,12 +613,18 @@ async function main() {
     // stored alternative to check the owner's repetition-entry anchor;
     // without it here the gate would replay every game through the SAME
     // blind spot the anchor fix exists to close.
+    //
+    // side: Wave B4 (2026-09-01 attribution round) -- threaded through so
+    // computeTurningPoints reads the recorded party rather than
+    // recomputing it from ply % 2. `?? undefined` lets a pre-backfill row
+    // fall through to computeTurningPoints' own omission path.
     const moves: MoveEval[] = movesRows.map((r) => ({
       ply: r.ply,
       san: r.san,
       evalCp: r.eval_cp,
       evalMate: r.eval_mate,
       bestMove: r.best_move ?? null,
+      side: r.side ?? undefined,
     }));
     const gameSans: SummaryMove[] = movesRows.map((r) => ({ ply: r.ply, san: r.san }));
     const result = game.result ?? "";

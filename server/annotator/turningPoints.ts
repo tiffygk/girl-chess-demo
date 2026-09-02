@@ -223,6 +223,16 @@ export interface MoveEval {
   // alternative to a repetition-entering move exists -- never a fresh
   // evaluator call.
   bestMove?: string | null;
+  // Wave B4 (2026-09-01 attribution round): the recorded party for this
+  // ply (moves.side column -- see conversion.ts's MoveEvalRow comment for
+  // the write-once, read-only contract). Optional so every existing
+  // MoveEval literal in this codebase keeps compiling; a MISSING side means
+  // the evalRows mapping below OMITS the row from conversion/missed-mate
+  // detection entirely rather than guessing it from ply % 2 -- exactly the
+  // silent fallback this wave exists to remove. There should be no missing
+  // side once the controller's backfill has run; only a fresh dev database
+  // (or a test fixture that never set it) will ever hit the omission path.
+  side?: "her" | "mallow";
 }
 
 // Mate cap: M±n -> wcp ±(3000 - 10*min(n,20)), so a fast forced mate scores
@@ -788,11 +798,17 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   // not ask for and the corpus-wide replay-check gate would catch as silent
   // detector fire the moment more than 2 such points existed for one game
   // (buildCouldBeBetter/buildWatchNextTime each cap at 2 bullets).
+  // Wave B4 (2026-09-01 attribution round): reads m.side, the party
+  // recorded once at load (moves.side column) -- never ply % 2. A move with
+  // no recorded side is OMITTED here rather than guessed from parity (the
+  // fallback rule this wave exists to remove); this only ever happens for a
+  // pre-backfill row on a fresh dev database.
   const evalRows: MoveEvalRow[] = [...moves]
     .sort((a, b) => a.ply - b.ply)
+    .filter((m) => m.side != null)
     .map((m) => ({
       ply: m.ply,
-      side: m.ply % 2 === 1 ? "her" : "mallow",
+      side: m.side as "her" | "mallow",
       san: m.san,
       evalCp: m.evalCp,
       evalMate: m.evalMate,

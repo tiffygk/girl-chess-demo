@@ -74,9 +74,12 @@ describe("replay-check invariants", () => {
     expect(unconvertedInvariant(game113Shape, "1/2-1/2", [])).toBeNull();
   });
   it("missed mate: an m1 walked past with no detector event is a violation; the real detector satisfies it", () => {
+    // `side` follows this fixture's own ply-parity convention (odd = her),
+    // a TEST fixture choice, never a production derivation (Wave B4,
+    // 2026-09-01: detectMissedWins reads m.side directly now).
     const moves: MoveEval[] = [
-      { ply: 2, san: "Kg8", evalCp: null, evalMate: 1 },
-      { ply: 3, san: "Qd2", evalCp: 300, evalMate: null },
+      { ply: 2, san: "Kg8", evalCp: null, evalMate: 1, side: "mallow" },
+      { ply: 3, san: "Qd2", evalCp: 300, evalMate: null, side: "her" },
     ];
     expect(missedMateInvariant(moves, [])).toMatch(/blind/);
     expect(missedMateInvariant(moves, detectMissedWins(moves))).toBeNull();

@@ -63,17 +63,25 @@ export function pairWindow(list: LiveMove[], limit = 3): MovePair[] {
 
 /**
  * The resume/load boundary: server summary rows -> LiveMoves. The server
- * sends `side` on every row (manager.getSummary derives it once at its own
- * data load, the conversion.ts precedent); it is carried through as DATA.
- * The parity fallback exists ONLY for a payload that predates the field
- * (same once-at-load derivation the data layer itself uses) -- it is not a
- * license for any view/component to recompute side from a ply index.
+ * sends `side` on every row, READ off the recorded moves.side column
+ * (manager.getSummary's own data load -- Wave B4, 2026-09-01 attribution
+ * round; see conversion.ts's MoveEvalRow comment for the read-not-derive
+ * contract this satisfies); it is carried through as DATA. A row with no
+ * recorded side -- there should be none after the controller's backfill,
+ * only a pre-backfill row on a fresh dev database -- is OMITTED from the
+ * result entirely. This used to fall back to `ply % 2` for that case; that
+ * fallback is deleted, not just unreachable, because a silent parity guess
+ * is exactly what LiveMove.side's REQUIRED-field contract (this file's own
+ * header) exists to prevent -- it is not a license for any view/component
+ * to recompute side from a ply index.
  */
 export function liveMovesFromSummary(moves: SummaryMove[]): LiveMove[] {
-  return moves.map((m) => ({
-    ply: m.ply,
-    san: m.san,
-    highlighted: !!m.highlighted,
-    side: m.side ?? (m.ply % 2 === 1 ? "her" : "mallow"),
-  }));
+  return moves
+    .filter((m) => m.side != null)
+    .map((m) => ({
+      ply: m.ply,
+      san: m.san,
+      highlighted: !!m.highlighted,
+      side: m.side as "her" | "mallow",
+    }));
 }

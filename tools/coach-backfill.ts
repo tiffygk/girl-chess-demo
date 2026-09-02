@@ -189,6 +189,11 @@ interface MoveRow {
   pv: string | null;
   eval_cp: number | null;
   eval_mate: number | null;
+  // Wave B4 (2026-09-01 attribution round): the recorded party, read
+  // straight off getGameMoves' `SELECT *` (moves.side). Nullable for a
+  // pre-backfill row -- there should be none on her real db, only a fresh
+  // dev database.
+  side: "her" | "mallow" | null;
 }
 
 // F2 fix (fix wave, 2026-08-27, review finding HIGH-2): this used to mirror
@@ -277,12 +282,18 @@ function healedTurningPoints(gameId: number): any[] {
   const persistedVersion = persisted.length > 0 ? (persisted[0].algo_version ?? 1) : TP_ALGO_VERSION;
   if (persisted.length > 0 && persistedVersion < TP_ALGO_VERSION) {
     const rows = getGameMoves(gameId) as MoveRow[];
+    // Wave B4 (2026-09-01 attribution round): `side` threaded through so
+    // computeTurningPoints reads the recorded party rather than
+    // recomputing it from ply % 2 -- same fix as manager.ts's own heal
+    // paths. `?? undefined` lets a pre-backfill row fall through to
+    // computeTurningPoints' own omission path rather than guessing here.
     const evalMoves: MoveEval[] = rows.map((r) => ({
       ply: r.ply,
       san: r.san,
       evalCp: r.eval_cp,
       evalMate: r.eval_mate,
       bestMove: r.best_move ?? null,
+      side: r.side ?? undefined,
     }));
     const game = getGame(gameId) as { result: string | null } | undefined;
     const healed = computeTurningPoints(evalMoves, game?.result ?? "");
