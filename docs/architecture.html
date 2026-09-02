@@ -215,6 +215,7 @@
     <div class="fcard"><h3>Move</h3><ul>
       <li><code>gameSans</code> every move played</li>
       <li><code>allowedSans</code> what may be named</li>
+      <li><code>side</code> on each ply, read off the row, never guessed from its position in the list</li>
     </ul></div>
     <div class="fcard"><h3>Engine</h3><ul>
       <li><code>perPlyAnalysis</code> eval, best, line, phase</li>
@@ -513,8 +514,8 @@
     <thead><tr><th>Table</th><th class="n">Rows</th><th>What it records</th></tr></thead>
     <tbody>
       <tr><td><code>sessions</code></td><td class="n">875</td><td>one per sitting</td></tr>
-      <tr><td><code>games</code></td><td class="n">190</td><td>opponent, result</td></tr>
-      <tr><td><code>moves</code></td><td class="n">2,961</td><td>both sides, with the engine's eval attached</td></tr>
+      <tr><td><code>games</code></td><td class="n">190</td><td>opponent, result, which colour I played (<code>player_color</code>)</td></tr>
+      <tr><td><code>moves</code></td><td class="n">2,961</td><td>both sides, with the engine's eval attached and whose move it was (<code>side</code>)</td></tr>
       <tr><td><code>verdicts</code></td><td class="n">3,653</td><td>every judged move, including retracted ones</td></tr>
       <tr><td><code>advice_traces</code></td><td class="n">284</td><td>every coach call, prompt and output</td></tr>
       <tr><td><code>turning_points</code></td><td class="n">139</td><td>what actually swung each game</td></tr>
@@ -525,6 +526,7 @@
     </tbody>
   </table>
   <p style="margin-top:12px"><strong>Verdicts outnumber moves</strong>, because every move I considered and retracted was judged and recorded too. <strong>Chat stores only validated coach replies</strong>, so the gap between my 138 messages and cookie's 117 is literally the count of answers that failed a check and got pulled. And <strong>there is no migration folder and no version number</strong>. The code carries a declared list of every column each table should have. At startup it diffs that against the live database and adds what is missing.</p>
+  <p><strong>Whose move it was is recorded, not computed.</strong> The party that made a move (me or mallow) is written onto its row the moment the move is made, read straight off the chess engine's own move object; nothing downstream ever derives whose move it was from a ply number.</p>
 </div>
 
 <p class="foot">Girl Chess. Built 0-to-1 by directing Claude Code. Counts verified read-only against the live database, 2026-08-26. They are a snapshot: I still play into this database, so the live figures move with every game.</p>

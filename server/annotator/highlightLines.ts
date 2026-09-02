@@ -16,12 +16,16 @@
 //
 // Ply parity (CLAUDE.md, "encode in types, not helpers" rule -- bitten five
 // times by a shared helper re-deriving parity instead of reading a stored
-// field): `side` is a REQUIRED field on every HighlightMoveRow, derived
-// ONCE by the caller (manager.ts's getHighlightLines, at the getGameMoves
-// read site -- the same place getSummary/conversion.ts already do this).
-// Nothing in this file ever computes `ply % 2` to decide a seat; the one
-// exception is `decided`'s white-perspective conversion below, which reads
-// `current.side` rather than re-deriving it from `current.ply`.
+// field): `side` on every HighlightMoveRow is READ ONCE by the caller
+// (manager.ts's getHighlightLines, off the moves.side column at the
+// getGameMoves read site -- the same place getSummary/conversion.ts already
+// do this). Wave B4 (2026-09-01 attribution round): optional, because a row
+// with no recorded side -- there should be none after the controller's
+// backfill, only a fresh dev database -- must be OMITTED from the
+// highlighted-line output below rather than have its side guessed from
+// ply % 2. Nothing in this file ever computes `ply % 2` to decide a seat;
+// the one exception is `decided`'s white-perspective conversion below,
+// which reads `current.side` rather than re-deriving it from `current.ply`.
 import { Chess } from "chess.js";
 import { toMoverCp, DECIDED_BAND_CP } from "./classify";
 
@@ -63,7 +67,10 @@ export interface HighlightMoveRow {
   bestMove: string | null;
   pv: string | null;
   highlighted: boolean;
-  side: "her" | "mallow";
+  // Optional (Wave B4, 2026-09-01): a row missing the recorded side is kept
+  // for its san (other highlighted plies replay through it as context) but
+  // is never itself promoted to a HighlightLine -- see the filter below.
+  side?: "her" | "mallow";
 }
 
 // Injected rather than imported: manager.ts's `pvLine` is a private class
@@ -160,7 +167,13 @@ export function buildHighlightLines(rows: HighlightMoveRow[], pvLine: PvLineFn):
   const byPly = new Map(rows.map((r) => [r.ply, r]));
 
   return rows
-    .filter((r) => r.highlighted)
+    // Wave B4 (2026-09-01 attribution round): a highlighted row with no
+    // recorded side is omitted from the output rather than guessed --
+    // never a fallback to `ply % 2`. Non-highlighted rows never reach
+    // `.side` (only `computeHighlightFacts`/the line assembly below read
+    // it, both gated on `highlighted`), so their own missing side is
+    // harmless; they still serve as seed/context rows via `sans`/`byPly`.
+    .filter((r): r is HighlightMoveRow & { side: "her" | "mallow" } => r.highlighted && r.side != null)
     .map((r) => {
       const p = r.ply;
       const seedPly = p - 1;

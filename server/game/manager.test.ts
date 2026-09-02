@@ -1605,6 +1605,21 @@ describe("GameManager", () => {
     expect(gm.getSummary(g).moves.find((m) => m.ply === 1)?.highlighted).toBe(false);
   });
 
+  // Wave B4 (2026-09-01 attribution round): the ONLY fixture shape that can
+  // tell "getSummary reads moves.side" apart from "getSummary recomputes
+  // ply % 2" -- every other test in this file passes either way, because
+  // every game in her data was played with her as white, so the recorded
+  // column and naive parity always agree. Ply 1 is odd (her, by parity) but
+  // this row is RECORDED as mallow's, the shape a black-player game
+  // produces (partyFor compares chess.js's move.color to the game's real
+  // player_color, not to ply parity).
+  it("getSummary reads the recorded side, not ply parity, when the two disagree", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, side: "mallow", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+
+    expect(gm.getSummary(g).moves.find((m) => m.ply === 1)?.side).toBe("mallow");
+  });
+
   // D4 Task 1: summary rows carry raw per-row engine facts (evalCp/evalMate/
   // bestUci) so the done-well composer (Task 2) can apply the mover offset
   // at its own read site. These are RAW values straight off the moves row —
@@ -2177,6 +2192,20 @@ describe("GameManager", () => {
       expect(line.pvSans).toEqual(["Nf3", "Nc6", "Bc4"]);
       expect(line.matchedBest).toBe(true);
       expect(line.quality).toBe("best");
+    });
+
+    // Wave B4 (2026-09-01 attribution round): the ONLY fixture shape that
+    // can tell "getHighlightLines reads moves.side" apart from "recomputes
+    // ply % 2" -- every other test in this describe block passes either
+    // way, because every game in her data agrees with parity. Ply 1 is odd
+    // (her, by parity) but this row is RECORDED as mallow's.
+    it("reads the recorded side, not ply parity, when the two disagree", () => {
+      const g = createGame(sessionId, "maia-1100");
+      recordMove({ gameId: g, ply: 1, side: "mallow", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      setMoveHighlighted(g, 1, true);
+
+      const result = gm.getHighlightLines(g);
+      expect(result.lines[0]?.side).toBe("mallow");
     });
 
     it("returns a line for a highlighted MALLOW ply, side='mallow', seeded at p-1 -- the case getTurningLines cannot serve", () => {

@@ -197,6 +197,7 @@ describe("detectConversion — parity/guard fixtures", () => {
       san: r.san,
       evalCp: r.evalCp,
       evalMate: r.evalMate,
+      side: r.side,
     }));
     const shipped = detectMissedWins(moves150);
     expect(shipped.map((e) => e.ply)).toEqual([55, 57, 65, 67, 75]);

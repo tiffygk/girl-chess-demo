@@ -510,7 +510,15 @@ export class GameManager {
   private persistGameSummary(gameId: number, result: string) {
     try {
       const rows = getGameMoves(gameId);
-      const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null }));
+      // Wave B4 (2026-09-01 attribution round): `side` threaded straight off
+      // the moves.side column (same rows getSummary/getHighlightLines read)
+      // so computeTurningPoints' own missed-win/conversion detection reads
+      // the recorded party rather than recomputing it from ply % 2 -- see
+      // turningPoints.ts's MoveEval.side comment. `r.side` is `null` only
+      // for a pre-backfill row on a fresh dev database; `?? undefined` lets
+      // that row fall through to computeTurningPoints' own omission path
+      // rather than guessing a party for it here.
+      const moves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null, side: r.side ?? undefined }));
       const turningPoints = computeTurningPoints(moves, result);
       insertTurningPoints(
         gameId,
@@ -560,16 +568,20 @@ export class GameManager {
     turningPoints: TurningPoint[];
     classifications: { ply: number; classification: string }[];
     moves: {
-      ply: number; san: string; highlighted: boolean; side: "her" | "mallow";
+      ply: number; san: string; highlighted: boolean; side?: "her" | "mallow";
       evalCp?: number | null; evalMate?: number | null; bestUci?: string | null;
     }[];
   } {
     let persisted = getTurningPoints(gameId);
     const rows = getGameMoves(gameId);
-    // W5 (opponent-move highlight): `side` rides every summary row, derived
-    // ONCE here at the data load (the conversion.ts rule: odd plies hers,
-    // even mallow's, encoded as data so no view ever re-derives it from a
-    // ply index).
+    // W5 (opponent-move highlight): `side` rides every summary row, READ
+    // once here off the moves.side column (Wave B4, 2026-09-01 attribution
+    // round: this used to derive it from ply parity -- odd hers, even
+    // mallow's -- which assumed she is always white; now it reads the party
+    // chess.js actually recorded at move time, so no view ever re-derives
+    // it from a ply index). A row with no recorded side -- there should be
+    // none after the controller's backfill, only a fresh dev database --
+    // omits `side` entirely rather than guessing it from parity.
     // D4 (done-well composer): evalCp/evalMate/bestUci ride every summary
     // row as RAW per-row engine facts, straight off the moves row -- no
     // offset applied here (row P describes the position AFTER ply P; see
@@ -581,7 +593,7 @@ export class GameManager {
       ply: r.ply,
       san: r.san,
       highlighted: r.highlighted === 1,
-      side: (r.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
+      side: (r.side ?? undefined) as "her" | "mallow" | undefined,
       evalCp: r.eval_cp ?? null,
       evalMate: r.eval_mate ?? null,
       bestUci: r.best_move ?? null,
@@ -589,7 +601,7 @@ export class GameManager {
 
     const persistedVersion = persisted.length > 0 ? (persisted[0].algo_version ?? 1) : TP_ALGO_VERSION;
     if (persisted.length > 0 && persistedVersion < TP_ALGO_VERSION) {
-      const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null }));
+      const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null, side: r.side ?? undefined })); // Wave B4: side threaded from moves.side, see persistGameSummary's comment above
       const game = getGame(gameId);
       const healed = computeTurningPoints(evalMoves, game?.result ?? "");
       insertTurningPoints(
@@ -652,7 +664,7 @@ export class GameManager {
     // computes zero turning points (computeTurningPoints's all-null
     // short-circuit), and the `computed.length > 0` guard below means
     // nothing is ever written for it (graceful no-op).
-    const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null }));
+    const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null, side: r.side ?? undefined })); // Wave B4: side threaded from moves.side, see persistGameSummary's comment above
     const game = getGame(gameId);
     const computed = computeTurningPoints(evalMoves, game?.result ?? "");
     if (game?.result && computed.length > 0) {
@@ -795,10 +807,13 @@ export class GameManager {
   // only (mirrors getTurningLines' never-writes rule): getGameMoves is the
   // same pure SELECT accessor getTurningLines/getSummary already use, and
   // this method never calls insertTurningPoints or any other write. `side`
-  // is derived ONCE here, at this data-load remap -- the same
-  // getSummary/conversion.ts precedent buildHighlightLines' own header
-  // documents -- and threaded through as a required field rather than
-  // re-derived anywhere downstream.
+  // is READ ONCE here, at this data-load remap, off the moves.side column
+  // (Wave B4, 2026-09-01 attribution round -- this used to derive it from
+  // ply parity) -- the same getSummary/conversion.ts precedent
+  // buildHighlightLines' own header documents -- and threaded through
+  // rather than re-derived anywhere downstream. A row with no recorded side
+  // stays `undefined`; buildHighlightLines omits it from the output rather
+  // than guessing.
   getHighlightLines(gameId: number): { ok: boolean; lines: HighlightLine[] } {
     try {
       const rows: HighlightMoveRow[] = getGameMoves(gameId).map((r: any) => ({
@@ -810,7 +825,7 @@ export class GameManager {
         bestMove: r.best_move ?? null,
         pv: r.pv ?? null,
         highlighted: r.highlighted === 1,
-        side: (r.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
+        side: (r.side ?? undefined) as "her" | "mallow" | undefined,
       }));
       const lines = buildHighlightLines(rows, (fen, ev) => this.pvLine(fen, ev));
       return { ok: true, lines };
@@ -1379,6 +1394,12 @@ export class GameManager {
         // exact fenBefore + pvSans pair pvLine just replayed. undefined when
         // nothing is provable; JSON.stringify drops the key entirely then.
         then: deriveContinuation(fenBefore, pvSans),
+        // Wave B4 (2026-09-01 attribution round): the recorded party, off
+        // moves.side -- chat.ts's readForPly/sideLabel/focusPosition.side
+        // all read this rather than recomputing from ply % 2. `?? undefined`
+        // lets a pre-backfill row (fresh dev database only) fall through to
+        // chat.ts's own omission path.
+        side: (r.side ?? undefined) as "her" | "mallow" | undefined,
       };
     });
     // Highlight-a-move (Task 8): straight off the same moveRows Task 1
