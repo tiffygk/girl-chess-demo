@@ -1,4 +1,16 @@
 // server/game/manager.test.ts
+//
+// Wave B (attribution round, 2026-09-01): recordMove's `side` is now
+// required. Every recordMove(...) fixture call below passes `side` computed
+// from that fixture's own ply parity (odd = "her", even = "mallow") --
+// these are fixtures asserting a KNOWN shape they themselves construct, not
+// a derivation the production code performs. Every game these fixtures
+// stand in for was in fact played with her as white, so the parity happens
+// to be correct here; production code (server/game/manager.ts's partyFor)
+// never computes it this way -- it reads the party off the chess.js move
+// object's own .color at write time. See B2's "honesty demand": this test
+// data cannot, by itself, distinguish a recorded-column implementation from
+// a parity one.
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { Chess } from "chess.js";
 import {
@@ -6,7 +18,15 @@ import {
   createGame, recordMove, attachEval, finishGame, insertTurningPoints, getTurningPoints, getTurningPointsAllVersions,
   insertVerdict, getAllChatMessages, listCoachNotes, setMoveHighlighted,
 } from "../store/db";
-import { GameManager, BACKEND_CACHE_TTL_MS, COACH_UNHEALTHY_COOLDOWN_MS, buildVerdictFactsJson, COACH_NOTE_ACK } from "./manager";
+// Task 9 (coach_notes capture gap round): the module namespace, so the
+// honest-failure test below can force insertCoachNote to throw without
+// touching the real db -- named import bindings are live references to
+// this same namespace object under Vitest's ESM transform.
+import * as dbModule from "../store/db";
+import {
+  GameManager, BACKEND_CACHE_TTL_MS, COACH_UNHEALTHY_COOLDOWN_MS, buildVerdictFactsJson,
+  COACH_NOTE_ACK, COACH_NOTE_SAVE_FAILED,
+} from "./manager";
 import { TP_ALGO_VERSION } from "../annotator/turningPoints";
 // Task 5 reviewer fix: the "ollama unavailable" test below spies on this
 // module's own available() rather than pre-seeding pickCoachBackend's cache,
@@ -111,6 +131,22 @@ describe("GameManager", () => {
     expect(r.reply?.san).toBeTruthy();
     const moves = getGameMoves(g.gameId);
     expect(moves.length).toBe(2);
+  }, 20000);
+
+  // Wave B (attribution round, 2026-09-01), Task B2: the party is read off
+  // chess.js's own move object (.color) at the moment the move is made,
+  // never derived from the ply. This test would ALSO pass under
+  // `ply % 2 === 1 ? "her" : "mallow"`, because she has always played white
+  // -- see this task's honesty demand: today's data cannot distinguish the
+  // two implementations from this test alone. The mutation check below (run
+  // manually, not committed) is what actually distinguishes them.
+  it("writes the party from the move object, so a recorded move never depends on ply arithmetic", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const r = await gm.playerMove(g.gameId, "e2", "e4", undefined, 3000);
+    expect(r.ok).toBe(true);
+    const moves = getGameMoves(g.gameId) as { ply: number; san: string; side: string }[];
+    expect(moves[0].side).toBe("her");
+    expect(moves[1].side).toBe("mallow"); // maia's reply
   }, 20000);
 
   it("rejects an illegal move", async () => {
@@ -1025,6 +1061,118 @@ describe("GameManager", () => {
     });
   });
 
+  // Task 9 (2026-09-01, coach_notes capture gap round). Condition A's
+  // "detected but failed" half of the invariant: "a record-shaped ask must
+  // either produce a coach_notes row, or produce a coach reply that says
+  // plainly it could not record it -- never 'noted' over a no-op." Before
+  // this fix, a failed insertCoachNote() call (the try/catch in chat())
+  // fell through SILENTLY to the model's own answer with no ack and no
+  // negative acknowledgment either -- the scout confirmed no negative
+  // acknowledgment string existed anywhere in the codebase.
+  describe("coach_notes: honest failure instead of a silent no-op (Task 9, condition A)", () => {
+    const ACK = COACH_NOTE_ACK;
+    function fakeAnswer(text: string) {
+      gm.setCoachBackendForTesting({
+        name: "fake",
+        async available() {
+          return true;
+        },
+        async generate() {
+          return text;
+        },
+      });
+    }
+
+    it("tells her plainly it could not save, rather than staying silent, when the write itself fails", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      await gm.playerMove(g.gameId, "e2", "e4", undefined, 500);
+      fakeAnswer("that's fine. keep developing.");
+
+      const spy = vi.spyOn(dbModule, "insertCoachNote").mockImplementation(() => {
+        throw new Error("disk full");
+      });
+      try {
+        const before = listCoachNotes().length;
+        const res = await gm.chat(g.gameId, {
+          message: "please record this because I keep hanging my queen",
+          context: { mode: "live" },
+        });
+        expect(res.ok).toBe(true);
+        expect(listCoachNotes().length).toBe(before); // no row -- the insert really failed
+        if (res.ok) {
+          expect(res.text).not.toContain(ACK); // never a false "noted"
+          expect(res.text.endsWith(COACH_NOTE_SAVE_FAILED)).toBe(true);
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    }, 20000);
+
+    it("the failure copy is honest, lowercase, and carries no em-dash (coach voice convention)", () => {
+      expect(COACH_NOTE_SAVE_FAILED).toBe(COACH_NOTE_SAVE_FAILED.toLowerCase());
+      expect(COACH_NOTE_SAVE_FAILED).not.toMatch(/—|--/);
+      expect(COACH_NOTE_SAVE_FAILED).toMatch(/couldn't save|could not save|didn't save/);
+    });
+  });
+
+  // Task 9, condition B: the ordering/consistency half. insertCoachNote
+  // fires before the `result.source === "model"` gate that decides whether
+  // a reply is persisted into chat_messages (B3b, 2026-07-27) -- so a
+  // template-fallback turn could write a real coach_notes row while the
+  // acknowledgment that goes with it never joins visible history. Game
+  // 167's coach_notes ids 2/3 are the real, controller-verified instance:
+  // the first insert succeeded silently on a template turn, she never saw
+  // it recorded in history, and repeated herself. The fix must NOT persist
+  // the risky template PROSE (that's exactly what B3b exists to prevent --
+  // game 146's doom loop, a failed reply's own text echoing back into a
+  // later prompt) -- only the deterministic, safe ack line.
+  describe("coach_notes: a successful write is never orphaned from visible history (Task 9, condition B)", () => {
+    const ACK = COACH_NOTE_ACK;
+
+    it("persists a coach turn carrying the ack even when the underlying reply is a template fallback", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      await gm.playerMove(g.gameId, "e2", "e4", undefined, 500);
+
+      const before = listCoachNotes().length;
+      const res = await gm.chat(g.gameId, {
+        message: "please record this because I keep hanging my queen",
+        context: { mode: "live" },
+        backendPref: "template",
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.source).toBe("template");
+      expect(listCoachNotes().length).toBe(before + 1); // the note itself is written either way
+
+      const history = getAllChatMessages(g.gameId) as any[];
+      const coachTurns = history.filter((m) => m.role === "coach");
+      // Review finding F3 (2026-09-01): .includes(ACK) stayed green even
+      // when the code under review persisted replyText (the template's own
+      // prose) instead of the deterministic ACK constant -- exactly the
+      // doom-loop leak B3b exists to prevent. Assert the persisted turn IS
+      // the ack, not merely that it contains it, so that mutation is
+      // actually caught.
+      expect(coachTurns.length).toBe(1);
+      expect(coachTurns[0].text).toBe(ACK);
+    }, 20000);
+
+    it("still never persists a template reply's own prose when NO note was recorded (B3b stays intact)", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      await gm.playerMove(g.gameId, "e2", "e4", undefined, 500);
+
+      const res = await gm.chat(g.gameId, {
+        message: "was my knight move okay?",
+        context: { mode: "live" },
+        backendPref: "template",
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.source).toBe("template");
+
+      const history = getAllChatMessages(g.gameId) as any[];
+      const coachTurns = history.filter((m) => m.role === "coach");
+      expect(coachTurns.length).toBe(0); // B3b: an ordinary template reply still never joins history
+    }, 20000);
+  });
+
   // Task 8 (inc 3.95): coach-backend hardening bundle, three fixes.
   describe("coach-backend hardening (Task 8, inc 3.95)", () => {
     afterEach(() => {
@@ -1448,13 +1596,55 @@ describe("GameManager", () => {
   // below: a pure persistence concern, no live engine needed.
   it("a highlighted move comes back highlighted in the summary", () => {
     const g = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 0 });
 
     gm.highlightMove(g, 1, true);
     expect(gm.getSummary(g).moves.find((m) => m.ply === 1)?.highlighted).toBe(true);
 
     gm.highlightMove(g, 1, false);
     expect(gm.getSummary(g).moves.find((m) => m.ply === 1)?.highlighted).toBe(false);
+  });
+
+  // Wave B4 (2026-09-01 attribution round): the ONLY fixture shape that can
+  // tell "getSummary reads moves.side" apart from "getSummary recomputes
+  // ply % 2" -- every other test in this file passes either way, because
+  // every game in her data was played with her as white, so the recorded
+  // column and naive parity always agree. Ply 1 is odd (her, by parity) but
+  // this row is RECORDED as mallow's, the shape a black-player game
+  // produces (partyFor compares chess.js's move.color to the game's real
+  // player_color, not to ply parity).
+  it("getSummary reads the recorded side, not ply parity, when the two disagree", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, side: "mallow", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+
+    expect(gm.getSummary(g).moves.find((m) => m.ply === 1)?.side).toBe("mallow");
+  });
+
+  // D4 Task 1: summary rows carry raw per-row engine facts (evalCp/evalMate/
+  // bestUci) so the done-well composer (Task 2) can apply the mover offset
+  // at its own read site. These are RAW values straight off the moves row —
+  // no offset applied here, see manager.ts's attachEval doc comment and
+  // src/game/api.ts's SummaryMove comment. A row with no attached eval at
+  // all must carry null/undefined, never a fabricated zero.
+  it("summary rows carry raw evalCp/evalMate/bestUci off the db row, verbatim", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    attachEval(g, 1, { cp: 35, mate: null, bestMove: "g1f3", pv: ["g1f3"] });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    // ply 2 gets no attachEval at all -- its row must come back with
+    // null/undefined evalCp/evalMate/bestUci, not zeroes.
+
+    const moves = gm.getSummary(g).moves;
+    const row1 = moves.find((m) => m.ply === 1) as any;
+    const row2 = moves.find((m) => m.ply === 2) as any;
+
+    expect(row1.evalCp).toBe(35);
+    expect(row1.evalMate).toBe(null);
+    expect(row1.bestUci).toBe("g1f3");
+
+    expect(row2.evalCp == null).toBe(true);
+    expect(row2.evalMate == null).toBe(true);
+    expect(row2.bestUci == null).toBe(true);
   });
 
   // debrief-v2: algo versioning self-heal. A game finished under the OLD
@@ -1467,9 +1657,9 @@ describe("GameManager", () => {
   // needed to exercise a pure read-path/persistence concern.
   it("heals a stale turning_points row set on summary read, without deleting the old rows", () => {
     const g = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
     attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
-    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
     attachEval(g, 2, { cp: 900, mate: null, bestMove: "e7e5", pv: ["e7e5"] }); // dramatic swing, always clears TP_FLOOR
     finishGame(g, "1-0");
 
@@ -1511,7 +1701,7 @@ describe("GameManager", () => {
       [59, "Qh8#", null, null],
     ];
     for (const [ply, san, cp, mate] of tail) {
-      recordMove({ gameId: g, ply, san, uci: "a1a1", fenAfter: `fen${ply}`, timeSpentMs: 0 });
+      recordMove({ gameId: g, ply, side: ply % 2 === 1 ? "her" : "mallow", san, uci: "a1a1", fenAfter: `fen${ply}`, timeSpentMs: 0 });
       if (cp !== null || mate !== null) attachEval(g, ply, { cp, mate, bestMove: "a8h8", pv: ["a8h8"] });
     }
     finishGame(g, "1-0");
@@ -1556,7 +1746,7 @@ describe("GameManager", () => {
     const sans = ["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8"];
     sans.forEach((san, i) => {
       const ply = i + 1;
-      recordMove({ gameId: g, ply, san, uci: "a1a1", fenAfter: `fen${ply}`, timeSpentMs: 0 });
+      recordMove({ gameId: g, ply, side: ply % 2 === 1 ? "her" : "mallow", san, uci: "a1a1", fenAfter: `fen${ply}`, timeSpentMs: 0 });
       attachEval(g, ply, { cp: i % 2 === 0 ? -900 : 900, mate: null, bestMove: null, pv: [] });
     });
     finishGame(g, "1/2-1/2");
@@ -1601,7 +1791,7 @@ describe("GameManager", () => {
     const sans = ["a3", "a6", "b3", "b6", "c3", "c6", "d3", "d6", "e3", "e6"];
     targetCp.forEach((cp, i) => {
       const ply = i + 1;
-      recordMove({ gameId: g, ply, san: sans[i], uci: "a1a1", fenAfter: `fen${ply}`, timeSpentMs: 0 });
+      recordMove({ gameId: g, ply, side: ply % 2 === 1 ? "her" : "mallow", san: sans[i], uci: "a1a1", fenAfter: `fen${ply}`, timeSpentMs: 0 });
       attachEval(g, ply, { cp, mate: null, bestMove: null, pv: [] });
     });
     finishGame(g, "1-0");
@@ -1643,9 +1833,9 @@ describe("GameManager", () => {
   describe("getSummary — on-read historical backfill (task 11 fix 2)", () => {
     it("backfills turning_points for a finished game with zero persisted rows, and a second read inserts nothing", () => {
       const g = createGame(sessionId, "maia-1100");
-      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
       attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
-      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
       attachEval(g, 2, { cp: 900, mate: null, bestMove: "e7e5", pv: ["e7e5"] }); // dramatic swing, always clears TP_FLOOR
       finishGame(g, "1-0");
       expect(getTurningPointsAllVersions(g)).toHaveLength(0); // nothing persisted at all yet
@@ -1665,9 +1855,9 @@ describe("GameManager", () => {
 
     it("leaves a game already persisted at the current algo version untouched", () => {
       const g = createGame(sessionId, "maia-1100");
-      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
       attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
-      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
       attachEval(g, 2, { cp: 900, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
       finishGame(g, "1-0");
       insertTurningPoints(
@@ -1683,8 +1873,8 @@ describe("GameManager", () => {
 
     it("never persists for a finished game with no stored evals at all (graceful no-op)", () => {
       const g = createGame(sessionId, "maia-1100");
-      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
-      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
       // No attachEval calls — eval_cp/eval_mate stay NULL for both plies.
       finishGame(g, "1-0");
 
@@ -1715,14 +1905,14 @@ describe("GameManager", () => {
   // fenBefore).
   it("getTurningLines reads the player-to-move seed-ply eval, not the played-ply eval, for a her-move turning point", () => {
     const g = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
     // Realistic: eval of fenAfter(ply 1) = after 1.e4, BLACK to move.
     attachEval(g, 1, { cp: 30, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
-    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
     // Realistic: eval of fenAfter(ply 2) = after 1.e4 e5, WHITE to move.
     // This is the seed-ply eval a ply-3 turning point should read.
     attachEval(g, 2, { cp: 25, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
-    recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 3, side: "her", san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
     // Realistic: eval of fenAfter(ply 3) = after 1.e4 e5 2.Nf3, BLACK to
     // move. Its pv is black-to-move-shaped and is NOT a legal replay from
     // fenBefore(ply 3) (white to move) — the OLD buggy lookup
@@ -1774,9 +1964,9 @@ describe("GameManager", () => {
   // ply-0 eval.
   it("getTurningLines degrades to pvSans: [] for a ply-1 turning point (no prior ply to seed from)", () => {
     const g = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
     attachEval(g, 1, { cp: 30, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
-    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
     finishGame(g, "1-0");
     insertTurningPoints(
       g,
@@ -1798,8 +1988,8 @@ describe("GameManager", () => {
 
   it("getTurningLines returns pvSans: [] and no bestFromTo when the ply's eval never attached (graceful)", () => {
     const g = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 0 });
-    recordMove({ gameId: g, ply: 2, san: "d5", uci: "d7d5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "d5", uci: "d7d5", fenAfter: "fen2", timeSpentMs: 0 });
     // Deliberately no attachEval call: best_move/pv stay NULL, the same
     // shape as a game whose async eval hadn't landed at persist time.
     finishGame(g, "1/2-1/2");
@@ -1826,9 +2016,9 @@ describe("GameManager", () => {
   // pure getTurningPoints SELECT accessor instead, never getSummary.
   it("getTurningLines never writes to turning_points, even on a stale (pre-heal) algo_version row set", () => {
     const g = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
     attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
-    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
     attachEval(g, 2, { cp: 900, mate: null, bestMove: "e7e5", pv: ["e7e5"] }); // dramatic swing, always clears TP_FLOOR
     finishGame(g, "1-0");
 
@@ -1863,12 +2053,12 @@ describe("GameManager", () => {
   // bug this task exists to fix.
   it("getTurningLines: moverBestFromTo on an EVEN (mallow) turning ply is mallow's own best, distinct from bestFromTo (her reply-best)", () => {
     const g = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
     // fenAfter(ply 1) = after 1.e4, black to move. Engine's suggestion for
     // BLACK here (d7d5) is mallow's own best alternative at ply 2 -- mallow
     // instead plays e5 below, so this and bestFromTo (below) must differ.
     attachEval(g, 1, { cp: 20, mate: null, bestMove: "d7d5", pv: ["d7d5", "c2c4"] });
-    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
     // fenAfter(ply 2) = after 1.e4 e5, white to move. This is what the
     // EXISTING bestFromTo reads for an even turning ply (seedPly = t.ply):
     // her best REPLY, not mallow's alternative.
@@ -1903,14 +2093,14 @@ describe("GameManager", () => {
 
   it("getTurningLines: moverBestFromTo on an ODD (her) turning ply equals her own stored best_move endpoints", () => {
     const g = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
     attachEval(g, 1, { cp: 20, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
-    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
     // fenAfter(ply 2) = after 1.e4 e5, white to move -- her own decision
     // point at ply 3. Engine's suggestion here (Nf3) is her own best; she
     // instead plays d4 below.
     attachEval(g, 2, { cp: 25, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
-    recordMove({ gameId: g, ply: 3, san: "d4", uci: "d2d4", fenAfter: "fen3", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 3, side: "her", san: "d4", uci: "d2d4", fenAfter: "fen3", timeSpentMs: 0 });
     finishGame(g, "1-0");
     insertTurningPoints(
       g,
@@ -1930,8 +2120,8 @@ describe("GameManager", () => {
     // stays NULL at that row (the same shape as an eval that hadn't
     // landed yet at persist time).
     const gMissing = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: gMissing, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
-    recordMove({ gameId: gMissing, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: gMissing, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: gMissing, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
     attachEval(gMissing, 2, { cp: 25, mate: null, bestMove: "g1f3", pv: ["g1f3"] });
     finishGame(gMissing, "1-0");
     insertTurningPoints(
@@ -1953,9 +2143,9 @@ describe("GameManager", () => {
     // from fenBefore(t.ply) (e2e4 is white's already-played move; it is not
     // a legal move for black, who is to move in this fen).
     const gBad = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: gBad, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: gBad, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
     attachEval(gBad, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
-    recordMove({ gameId: gBad, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: gBad, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
     attachEval(gBad, 2, { cp: 25, mate: null, bestMove: "g1f3", pv: ["g1f3"] });
     finishGame(gBad, "1-0");
     insertTurningPoints(
@@ -1976,11 +2166,11 @@ describe("GameManager", () => {
   describe("getHighlightLines (opponent-move-analysis plan, Wave A)", () => {
     it("returns a line for a highlighted HER ply, side='her', seeded at p-1", () => {
       const g = createGame(sessionId, "maia-1100");
-      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
       attachEval(g, 1, { cp: 25, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
-      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
       attachEval(g, 2, { cp: 20, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
-      recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 3, side: "her", san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
       // Realistic: the highlighted ply's OWN eval also attaches (fire-and-
       // forget, every ply -- see manager.ts's attachEval comment); its
       // absence would (correctly) degrade the whole line to "unknown",
@@ -2004,17 +2194,31 @@ describe("GameManager", () => {
       expect(line.quality).toBe("best");
     });
 
+    // Wave B4 (2026-09-01 attribution round): the ONLY fixture shape that
+    // can tell "getHighlightLines reads moves.side" apart from "recomputes
+    // ply % 2" -- every other test in this describe block passes either
+    // way, because every game in her data agrees with parity. Ply 1 is odd
+    // (her, by parity) but this row is RECORDED as mallow's.
+    it("reads the recorded side, not ply parity, when the two disagree", () => {
+      const g = createGame(sessionId, "maia-1100");
+      recordMove({ gameId: g, ply: 1, side: "mallow", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      setMoveHighlighted(g, 1, true);
+
+      const result = gm.getHighlightLines(g);
+      expect(result.lines[0]?.side).toBe("mallow");
+    });
+
     it("returns a line for a highlighted MALLOW ply, side='mallow', seeded at p-1 -- the case getTurningLines cannot serve", () => {
       const g = createGame(sessionId, "maia-1100");
-      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
       attachEval(g, 1, { cp: 25, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
-      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
       attachEval(g, 2, { cp: 20, mate: null, bestMove: "g1f3", pv: ["g1f3", "b8c6", "f1c4"] });
-      recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 3, side: "her", san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
       // Realistic: eval of fenAfter(ply 3) = after 1.e4 e5 2.Nf3, black to
       // move -- the correct seed for a ply-4 (mallow) highlight.
       attachEval(g, 3, { cp: 15, mate: null, bestMove: "b8c6", pv: ["b8c6", "f1c4", "f8c5"] });
-      recordMove({ gameId: g, ply: 4, san: "Nc6", uci: "b8c6", fenAfter: "fen4", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 4, side: "mallow", san: "Nc6", uci: "b8c6", fenAfter: "fen4", timeSpentMs: 0 });
       attachEval(g, 4, { cp: 10, mate: null, bestMove: "f1c4", pv: ["f1c4"] });
       setMoveHighlighted(g, 4, true);
 
@@ -2029,13 +2233,13 @@ describe("GameManager", () => {
 
     it("serves BOTH a highlighted her-ply and a highlighted mallow-ply from one game read, unfiltered by side", () => {
       const g = createGame(sessionId, "maia-1100");
-      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
       attachEval(g, 1, { cp: 25, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
-      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
       attachEval(g, 2, { cp: 20, mate: null, bestMove: "g1f3", pv: ["g1f3"] });
-      recordMove({ gameId: g, ply: 3, san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 3, side: "her", san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
       attachEval(g, 3, { cp: 15, mate: null, bestMove: "b8c6", pv: ["b8c6"] });
-      recordMove({ gameId: g, ply: 4, san: "Nc6", uci: "b8c6", fenAfter: "fen4", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 4, side: "mallow", san: "Nc6", uci: "b8c6", fenAfter: "fen4", timeSpentMs: 0 });
       setMoveHighlighted(g, 3, true);
       setMoveHighlighted(g, 4, true);
 
@@ -2045,9 +2249,9 @@ describe("GameManager", () => {
 
     it("never writes to the db (read-only, mirrors getTurningLines' never-writes rule)", () => {
       const g = createGame(sessionId, "maia-1100");
-      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
       attachEval(g, 1, { cp: 25, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
-      recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
       setMoveHighlighted(g, 2, true);
       const before = getGameMoves(g);
 
@@ -2059,7 +2263,7 @@ describe("GameManager", () => {
 
     it("degrades gracefully (empty lines, ok:true) for a game with zero highlighted plies", () => {
       const g = createGame(sessionId, "maia-1100");
-      recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+      recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
 
       const result = gm.getHighlightLines(g);
       expect(result.ok).toBe(true);
@@ -2073,9 +2277,9 @@ describe("GameManager", () => {
   // ply, even if that row happens to carry a populated facts_json threat.
   it("does not attribute a retracted candidate's threat to the played move's turning-point line", () => {
     const g = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
     attachEval(g, 1, { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] });
-    recordMove({ gameId: g, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
     attachEval(g, 2, { cp: 10, mate: null, bestMove: "e7e5", pv: ["e7e5"] });
     finishGame(g, "1-0");
     insertTurningPoints(
@@ -2109,9 +2313,9 @@ describe("GameManager", () => {
 
   it("attaches threat when the played move's OWN verdict row carries a refutation", () => {
     const g = createGame(sessionId, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 0 });
     attachEval(g, 1, { cp: 20, mate: null, bestMove: "d2d4", pv: ["d2d4"] });
-    recordMove({ gameId: g, ply: 2, san: "f5", uci: "f7f5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "f5", uci: "f7f5", fenAfter: "fen2", timeSpentMs: 0 });
     attachEval(g, 2, { cp: -400, mate: null, bestMove: "f7f5", pv: ["f7f5"] });
     finishGame(g, "1-0");
     insertTurningPoints(
@@ -2148,7 +2352,7 @@ describe("GameManager", () => {
   describe("chat: coach-row persistence gated on source (B3b)", () => {
     it("a template reply is absent from getChatMessages while its advice_trace row still exists", async () => {
       const gameId = createGame(sessionId, "maia-1100");
-      recordMove({ gameId, ply: 1, san: "e4", uci: "e2e4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "irrelevant", timeSpentMs: 0 });
       gm.setCoachBackendForTesting({
         name: "fake-invalid",
         async available() {
@@ -2175,7 +2379,7 @@ describe("GameManager", () => {
 
     it("a model reply is present in getChatMessages alongside the advice_trace row", async () => {
       const gameId = createGame(sessionId, "maia-1100");
-      recordMove({ gameId, ply: 1, san: "e4", uci: "e2e4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "irrelevant", timeSpentMs: 0 });
       gm.setCoachBackendForTesting({
         name: "fake-valid",
         async available() {
@@ -2213,10 +2417,10 @@ describe("GameManager", () => {
   describe("chat: game-over outcome fact reaches the model prompt (B4a)", () => {
     it("a finished game's winner and checkmate 'how' reach the model prompt", async () => {
       const gameId = createGame(sessionId, "maia-1100");
-      recordMove({ gameId, ply: 1, san: "f3", uci: "f2f3", fenAfter: "irrelevant", timeSpentMs: 0 });
-      recordMove({ gameId, ply: 2, san: "e5", uci: "e7e5", fenAfter: "irrelevant", timeSpentMs: 0 });
-      recordMove({ gameId, ply: 3, san: "g4", uci: "g2g4", fenAfter: "irrelevant", timeSpentMs: 0 });
-      recordMove({ gameId, ply: 4, san: "Qh4#", uci: "d8h4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 1, side: "her", san: "f3", uci: "f2f3", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 3, side: "her", san: "g4", uci: "g2g4", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 4, side: "mallow", san: "Qh4#", uci: "d8h4", fenAfter: "irrelevant", timeSpentMs: 0 });
       finishGame(gameId, "0-1"); // black (mallow) delivers mate -- no end_reason, same as a real game
 
       let capturedPrompt = "";
@@ -2249,8 +2453,8 @@ describe("GameManager", () => {
   describe("chat: perPlyAnalysis reaches the model prompt (Task 3, R1a)", () => {
     it("converts stored UCI best_move/pv to SAN and includes it in the fact JSON sent to the backend", async () => {
       const gameId = createGame(sessionId, "maia-1100");
-      recordMove({ gameId, ply: 1, san: "e4", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
-      recordMove({ gameId, ply: 2, san: "Nc6", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 1, side: "her", san: "e4", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 2, side: "mallow", san: "Nc6", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
       // Realistic shape (see the turning-lines block's own comment above):
       // attachEval(ply) persists the eval of fenAfter(ply) -- here, the
       // position right after white's e4, black to move. Black's best reply
@@ -2307,9 +2511,9 @@ describe("GameManager", () => {
 
     it("derives a then claim from the persisted pv and ships it in the prompt (forward-prediction round)", async () => {
       const gameId = createGame(sessionId, "maia-1100");
-      recordMove({ gameId, ply: 1, san: "e4", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
-      recordMove({ gameId, ply: 2, san: "d5", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
-      recordMove({ gameId, ply: 3, san: "Nf3", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 1, side: "her", san: "e4", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 2, side: "mallow", san: "d5", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+      recordMove({ gameId, ply: 3, side: "her", san: "Nf3", uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
       // attachEval(2) persists the eval of the position AFTER black's d5 --
       // white to move at ply 3. Best line exd5 (white nets a pawn, nothing
       // recaptures in the line) attaches to ply 3's row as its "instead"
@@ -2379,7 +2583,7 @@ describe("GameManager", () => {
       ];
       expect(GAME_150_SANS.length).toBe(55);
       for (let i = 0; i < GAME_150_SANS.length; i++) {
-        recordMove({ gameId, ply: i + 1, san: GAME_150_SANS[i], uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
+        recordMove({ gameId, ply: i + 1, side: (i + 1) % 2 === 1 ? "her" : "mallow", san: GAME_150_SANS[i], uci: "0000", fenAfter: "irrelevant", timeSpentMs: 0 });
       }
       // Real persisted best_move/pv for plies 53 and 54 (data/girlchess.db,
       // game 150). pv is stored space-joined UCI on the real row; attachEval

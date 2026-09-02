@@ -15,13 +15,18 @@
 // LLM, ever.
 //
 // Ply parity (CLAUDE.md, "encode in types, not helpers," sixth-instance
-// rule): `side` is a REQUIRED field on every row, derived once at load
-// (ply % 2 === 1 ? "her" : "mallow"). Every check below reads `row.side`
-// directly and never re-derives parity from `row.ply % 2` -- a caller that
-// hands this module a row whose `side` disagrees with its own ply (a
-// malformed load) gets `side`'s answer, not ply's, on purpose: the whole
-// point of carrying the field on the data is that nothing downstream has
-// its own opinion about parity.
+// rule): `side` is a REQUIRED field on every row. Wave B4 (2026-09-01
+// attribution round) tightened this from "derived once at load from ply
+// parity" to "READ once at load from the recorded moves.side column" --
+// ply % 2 == 1 assumed she is always white, which stopped being true the
+// moment games.player_color could be black. Every check below reads
+// `row.side` directly and never re-derives parity from `row.ply % 2` -- a
+// caller that hands this module a row whose `side` disagrees with its own
+// ply (a malformed load) gets `side`'s answer, not ply's, on purpose: the
+// whole point of carrying the field on the data is that nothing downstream
+// has its own opinion about parity. A caller with no recorded side for a
+// row must omit that row rather than guess it (turningPoints.ts/
+// missedWins.ts both do).
 //
 // Sign convention (mirrors missedWins.ts/turningPoints.ts's buildDeltaSeries
 // header): stored evals are SIDE-TO-MOVE signed for the position AFTER the
@@ -35,8 +40,11 @@
 import { Chess } from "chess.js";
 
 export type MoveEvalRow = {
-  ply: number; // 1-based; odd = hers, even = mallow's
-  side: "her" | "mallow"; // REQUIRED, derived at load: ply % 2 === 1 ? "her" : "mallow"
+  ply: number; // 1-based half-move index
+  // REQUIRED. Read from the recorded moves.side column by the caller
+  // (turningPoints.ts/missedWins.ts) -- never derived here or anywhere
+  // downstream from ply % 2 (see the header comment above).
+  side: "her" | "mallow";
   san: string;
   evalCp: number | null; // eval AFTER this ply, side-to-move perspective
   evalMate: number | null; // ditto; sign: + = side-to-move mates

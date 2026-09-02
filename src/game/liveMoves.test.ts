@@ -107,4 +107,20 @@ describe("liveMoves", () => {
     expect(out[1].side).toBe("her");
     expect(out[1].highlighted).toBe(true);
   });
+
+  // Wave B4 (2026-09-01 attribution round): a row with no recorded side --
+  // there should be none after the controller's backfill, only a
+  // pre-backfill row on a fresh dev database -- is OMITTED from the live
+  // move list entirely, never guessed from ply parity. Ply 1 is odd (her,
+  // by parity) but this row's side is genuinely absent; the old
+  // `m.side ?? (m.ply % 2 === 1 ? "her" : "mallow")` fallback would have
+  // silently produced "her" for it -- exactly the fallback this wave
+  // removes.
+  it("omits a move with no recorded side rather than guessing it from ply parity", () => {
+    const out = liveMovesFromSummary([
+      { ply: 1, san: "d4" }, // no `side` at all
+      { ply: 2, san: "d5", side: "mallow" },
+    ]);
+    expect(out.map((m) => m.ply)).toEqual([2]);
+  });
 });

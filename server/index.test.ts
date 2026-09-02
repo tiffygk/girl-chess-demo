@@ -413,7 +413,21 @@ describe("api", () => {
     // at the data load (ply 1 is hers -- the conversion.ts rule).
     expect(Array.isArray(summary.body.moves)).toBe(true);
     expect(summary.body.moves.length).toBeGreaterThanOrEqual(1);
-    expect(summary.body.moves[0]).toEqual({ ply: 1, san: expect.any(String), highlighted: false, side: "her" });
+    // D4 Task 1: evalCp/evalMate/bestUci ride every summary row now (raw,
+    // untransformed -- see SummaryMove's comment in src/game/api.ts). This
+    // test resigns immediately after the move, before the fire-and-forget
+    // attachEval call (manager.ts's record()) has had a chance to land, so
+    // ply 1 genuinely has no eval yet -- verified against the actual route
+    // response (not assumed) that all three come back null, not undefined.
+    expect(summary.body.moves[0]).toEqual({
+      ply: 1,
+      san: expect.any(String),
+      highlighted: false,
+      side: "her",
+      evalCp: null,
+      evalMate: null,
+      bestUci: null,
+    });
   }, 20000);
 
   // Highlight-a-move (Task 1): POST /api/game/:id/move/:ply/highlight
