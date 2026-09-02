@@ -606,6 +606,38 @@ export function detectLeadChanges(series: (DeltaPoint | null)[]): LeadChange[] {
   return out;
 }
 
+// Wave B5 (2026-09-01, CRITICAL finding against Wave B4): B4 made the
+// conversion/missed-win detection below OMIT any row with no recorded
+// `side` rather than guess one from ply parity -- the right call, but her
+// real database has moves.side all-NULL until the owner-approved backfill
+// runs (migrateSchema adds the column all-NULL the first time new code
+// opens a pre-migration db). Before this export existed, that omission was
+// completely silent: `computeTurningPoints` just returned a shorter points
+// array, indistinguishable from a game that genuinely has no conversion/
+// missed-win story. Measured over her 25 most recent finished games: sides
+// ABSENT reads missed-win 0 / conversion 0 across the whole sample; sides
+// PRESENT reads missed-win 7 / conversion 4 on the exact same games.
+//
+// This function makes the fact independently checkable -- callers that
+// need to know whether a "0 conversion points" result means "genuinely
+// none" or "the detectors could not run" call this directly, rather than
+// inferring it from an empty array (see tools/replay-check.ts's
+// sideCoverageInvariant, the gate-side half of this fix). Never guesses a
+// side -- purely a count of what IS and ISN'T recorded.
+export interface SideCoverage {
+  total: number; // total move rows
+  withSide: number; // rows carrying a recorded side
+  missing: number; // rows with no recorded side -- omitted from
+  // conversion/missed-mate detection below, exactly the rows this wave
+  // exists to make visible instead of silently dropping.
+}
+
+export function sideCoverage(moves: MoveEval[]): SideCoverage {
+  const total = moves.length;
+  const withSide = moves.filter((m) => m.side != null).length;
+  return { total, withSide, missing: total - withSide };
+}
+
 export function computeTurningPoints(moves: MoveEval[], finalResult: string): TurningPoint[] {
   if (moves.length <= 1) return [];
 
@@ -802,7 +834,29 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   // recorded once at load (moves.side column) -- never ply % 2. A move with
   // no recorded side is OMITTED here rather than guessed from parity (the
   // fallback rule this wave exists to remove); this only ever happens for a
-  // pre-backfill row on a fresh dev database.
+  // pre-backfill row (moves.side all-NULL until the owner-approved
+  // backfill runs).
+  //
+  // Wave B5 (2026-09-01, CRITICAL finding): that omission used to be
+  // completely silent -- a game whose rows carry no side just produced a
+  // shorter points array, identical in shape to a game with genuinely no
+  // conversion/missed-win story. Loud instead of silent: a real game (more
+  // than one move) missing ANY side is logged once here, distinguishable
+  // from "ran and found nothing" in the server's own logs (same
+  // "[girl-chess] ... failed" pattern manager.ts already uses for
+  // non-fatal computation problems) -- never thrown, since a pre-backfill
+  // game must still render every OTHER card correctly for her tonight.
+  // `sideCoverage` (exported above) is the structured, testable form of
+  // this same fact for callers that need to assert on it directly (see
+  // tools/replay-check.ts's sideCoverageInvariant).
+  const coverage = sideCoverage(moves);
+  if (moves.length > 1 && coverage.missing > 0) {
+    console.warn(
+      `[girl-chess] computeTurningPoints: ${coverage.missing}/${coverage.total} move rows carry no recorded side -- ` +
+        `conversion/missed-win detection could not run on them (this is NOT "found nothing"); pending the side backfill`
+    );
+  }
+
   const evalRows: MoveEvalRow[] = [...moves]
     .sort((a, b) => a.ply - b.ply)
     .filter((m) => m.side != null)
