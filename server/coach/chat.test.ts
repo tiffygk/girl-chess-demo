@@ -8,7 +8,7 @@ import {
   assembleChatFactList, validateChat, validateChatGeneral, chat, CHAT_HISTORY_WINDOW, CHAT_MAX_LEN,
   correctiveSuffix, gapWord, asksForNumber, buildChatPromptParts,
 } from "./chat";
-import type { ChatFactList } from "./chat";
+import type { ChatFactList, ChatPerPlyInput } from "./chat";
 import { GameManager } from "../game/manager";
 import { getPersona } from "./index";
 import type { CoachBackend } from "./backends/types";
@@ -276,8 +276,8 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     it("gap reaches the serialized fact JSON the model prompt is built from", async () => {
       const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
       const perPly = [
-        { ply: 1, san: "e4", evalCp: 500, evalMate: null, bestSan: null, pvSans: [] },
-        { ply: 2, san: "e5", evalCp: 400, evalMate: null, bestSan: "c5", pvSans: ["c5"] },
+        { ply: 1, san: "e4", evalCp: 500, evalMate: null, bestSan: null, pvSans: [], side: "her" as const },
+        { ply: 2, san: "e5", evalCp: 400, evalMate: null, bestSan: "c5", pvSans: ["c5"], side: "mallow" as const },
       ];
       const facts = assembleChatFactList(gameMoves, { mode: "review" }, [], perPly);
 
@@ -1605,12 +1605,23 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
   describe("buildChatPromptParts: the focused moment says the top-level position is a different moment (Task 3)", () => {
     const GAME = ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Bxc6", "dxc6", "d3", "Qf6"];
     const moves = (sans: string[]) => sans.map((san, i) => ({ ply: i + 1, san }));
+    // Wave B4 (2026-09-01 attribution round): assembleChatFactList's
+    // focusPosition.side lookup needs a real recorded party for the focused
+    // ply -- a minimal ChatPerPlyInput per GAME ply, `side` following this
+    // fixture's own ply-parity convention (odd = her, matching how this
+    // game is actually written), never a production derivation.
+    const perPly: ChatPerPlyInput[] = GAME.map((san, i) => ({
+      ply: i + 1, san, evalCp: null, evalMate: null, bestSan: null, pvSans: [],
+      side: (i + 1) % 2 === 1 ? "her" : "mallow",
+    }));
 
     it("her-ply focus: warns that currentFen/occupancy/contested describe a different moment than the focus", () => {
-      const facts = assembleChatFactList(moves(GAME), {
-        mode: "live",
-        turningPointFocus: { ply: 9, san: "d3", label: "inaccuracy" },
-      });
+      const facts = assembleChatFactList(
+        moves(GAME),
+        { mode: "live", turningPointFocus: { ply: 9, san: "d3", label: "inaccuracy" } },
+        undefined,
+        perPly
+      );
       const parts = buildChatPromptParts(facts, [], "where's my bishop?", getPersona(), "board");
 
       expect(parts.dynamic).toMatch(/currentFen.*occupancy.*describe a different moment/i);
@@ -1635,10 +1646,12 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
 
     it("mallow-ply focus: carries the same warning on the opponent-move branch", () => {
-      const facts = assembleChatFactList(moves(GAME), {
-        mode: "live",
-        turningPointFocus: { ply: 8, san: "dxc6", label: "opponent" },
-      });
+      const facts = assembleChatFactList(
+        moves(GAME),
+        { mode: "live", turningPointFocus: { ply: 8, san: "dxc6", label: "opponent" } },
+        undefined,
+        perPly
+      );
       const parts = buildChatPromptParts(facts, [], "what was mallow doing there?", getPersona(), "board");
 
       expect(parts.dynamic).toMatch(/currentFen.*occupancy.*describe a different moment/i);

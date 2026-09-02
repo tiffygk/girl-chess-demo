@@ -62,13 +62,20 @@ export interface MissedWinEvent {
 
 export function detectMissedWins(moves: MoveEval[]): MissedWinEvent[] {
   const byPly = new Map(moves.map((m) => [m.ply, m]));
-  const rows: MoveEvalRow[] = moves.map((m) => ({
-    ply: m.ply,
-    side: m.ply % 2 === 1 ? "her" : "mallow",
-    san: m.san,
-    evalCp: m.evalCp,
-    evalMate: m.evalMate,
-  }));
+  // Wave B4 (2026-09-01 attribution round): reads m.side, the party
+  // recorded once at load (moves.side column) -- never ply % 2. A move with
+  // no recorded side is OMITTED from detection entirely rather than
+  // guessed from parity (the fallback rule this wave exists to remove);
+  // this only ever happens for a pre-backfill row on a fresh dev database.
+  const rows: MoveEvalRow[] = moves
+    .filter((m) => m.side != null)
+    .map((m) => ({
+      ply: m.ply,
+      side: m.side as "her" | "mallow",
+      san: m.san,
+      evalCp: m.evalCp,
+      evalMate: m.evalMate,
+    }));
   const { events } = detectConversion(rows);
   const out: MissedWinEvent[] = [];
   for (const e of events) {
