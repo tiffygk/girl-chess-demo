@@ -43,12 +43,27 @@ describe("store", () => {
     openDb(":memory:");
     const s = createSession();
     const g = createGame(s, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 4000 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 4000 });
     attachEval(g, 1, { cp: 30, mate: null, bestMove: "e2e4", pv: ["e2e4", "e7e5"] });
     const moves = getGameMoves(g);
     expect(moves).toHaveLength(1);
     expect(moves[0].eval_cp).toBe(30);
     expect(moves[0].best_move).toBe("e2e4");
+  });
+
+  // Wave B (attribution round, 2026-09-01), Task B1: the acting party is a
+  // recorded column on the move row, not something a reader computes from
+  // the ply. `side` is required on recordMove precisely so every call site
+  // has to supply a real value -- see this test's own header comment for
+  // why that's deliberate.
+  it("records the acting party on the move row rather than leaving it to be computed", () => {
+    openDb(":memory:");
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "mallow");
+    recordMove({ gameId, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0, side: "her" });
+    recordMove({ gameId, ply: 2, san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0, side: "mallow" });
+    const rows = getGameMoves(gameId) as { ply: number; side: string }[];
+    expect(rows.map((r) => r.side)).toEqual(["her", "mallow"]);
   });
 
   it("logs and retrieves game_events in insertion order", () => {
@@ -146,7 +161,7 @@ describe("store", () => {
     openDb(":memory:");
     const s = createSession();
     const g = createGame(s, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 1200 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "d4", uci: "d2d4", fenAfter: "fen1", timeSpentMs: 1200 });
 
     setMoveHighlighted(g, 1, true);
     expect(getGameMoves(g)[0].highlighted).toBe(1);
@@ -763,7 +778,7 @@ describe("deleteGameRows (Wave 3.5 item 2 -- real per-game deletion)", () => {
   function seedGameWithRowsEverywhere(opponent: string): number {
     const s = createSession();
     const g = createGame(s, opponent);
-    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 1000 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 1000 });
     logGameEvent(g, "resign");
     insertVerdict({
       gameId: g,
@@ -859,7 +874,7 @@ describe("lead-change fields (Wave E)", () => {
     openDb(":memory:");
     const s = createSession();
     const g = createGame(s, "maia-1100");
-    recordMove({ gameId: g, ply: 8, san: "d6", uci: "d7d6", fenAfter: "fen8", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 8, side: "mallow", san: "d6", uci: "d7d6", fenAfter: "fen8", timeSpentMs: 0 });
     insertTurningPoints(
       g,
       [{
@@ -878,7 +893,7 @@ describe("lead-change fields (Wave E)", () => {
     openDb(":memory:");
     const s = createSession();
     const g = createGame(s, "maia-1100");
-    recordMove({ gameId: g, ply: 4, san: "Qh4", uci: "d8h4", fenAfter: "fen4", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 4, side: "mallow", san: "Qh4", uci: "d8h4", fenAfter: "fen4", timeSpentMs: 0 });
     insertTurningPoints(
       g,
       [{
@@ -897,7 +912,7 @@ describe("lead-change fields (Wave E)", () => {
     openDb(":memory:");
     const s = createSession();
     const g = createGame(s, "maia-1100");
-    recordMove({ gameId: g, ply: 1, san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
     insertTurningPoints(
       g,
       [{ rank: 1, ply: 1, san: "e4", label: "blunder", deltaP: -0.2, lowConfidence: false, kind: "swing" }],

@@ -171,7 +171,7 @@ describe("factsForModel — perPlyAnalysis's evalCp/evalMate sanitize into a qua
 
   it("drops evalCp/evalMate (and any eval-named key) from the model projection, while the raw ChatFactList still carries the numbers", async () => {
     const perPly: ChatPerPlyInput[] = [
-      { ply: 1, san: "e4", evalCp: 20, evalMate: null, bestSan: "e4", pvSans: [] },
+      { ply: 1, side: "her", san: "e4", evalCp: 20, evalMate: null, bestSan: "e4", pvSans: [] },
     ];
     const facts = assembleChatFactList(gameMoves(GAME), { mode: "review" }, undefined, perPly);
     expect(facts.perPlyAnalysis?.[0].evalCp).toBe(20); // raw facts: numbers stay, for validation + F40 trace
@@ -183,22 +183,22 @@ describe("factsForModel — perPlyAnalysis's evalCp/evalMate sanitize into a qua
   });
 
   it("a small even-ply cp edge reads as 'even'", async () => {
-    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 20, evalMate: null, bestSan: null, pvSans: [] }]);
+    const prompt = await capturePerPlyPrompt([{ ply: 2, side: "mallow", san: "e5", evalCp: 20, evalMate: null, bestSan: null, pvSans: [] }]);
     expect(prompt).toContain('"read":"even"');
   });
 
   it("a moderate even-ply positive cp reads as 'you're a bit better'", async () => {
-    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 150, evalMate: null, bestSan: null, pvSans: [] }]);
+    const prompt = await capturePerPlyPrompt([{ ply: 2, side: "mallow", san: "e5", evalCp: 150, evalMate: null, bestSan: null, pvSans: [] }]);
     expect(prompt).toContain(`"read":"you're a bit better"`);
   });
 
   it("a large even-ply positive cp reads as 'you're much better'", async () => {
-    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: 500, evalMate: null, bestSan: null, pvSans: [] }]);
+    const prompt = await capturePerPlyPrompt([{ ply: 2, side: "mallow", san: "e5", evalCp: 500, evalMate: null, bestSan: null, pvSans: [] }]);
     expect(prompt).toContain(`"read":"you're much better"`);
   });
 
   it("a large even-ply negative cp reads as 'she's much better'", async () => {
-    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: -500, evalMate: null, bestSan: null, pvSans: [] }]);
+    const prompt = await capturePerPlyPrompt([{ ply: 2, side: "mallow", san: "e5", evalCp: -500, evalMate: null, bestSan: null, pvSans: [] }]);
     expect(prompt).toContain(`"read":"she's much better"`);
   });
 
@@ -206,17 +206,17 @@ describe("factsForModel — perPlyAnalysis's evalCp/evalMate sanitize into a qua
     // Ply 1 is white's own move -- the stored eval afterward is from BLACK's
     // (side-to-move) perspective, so a stored -150 means white (the player)
     // is actually up 150: negation must run before bucketing.
-    const prompt = await capturePerPlyPrompt([{ ply: 1, san: "e4", evalCp: -150, evalMate: null, bestSan: null, pvSans: [] }]);
+    const prompt = await capturePerPlyPrompt([{ ply: 1, side: "her", san: "e4", evalCp: -150, evalMate: null, bestSan: null, pvSans: [] }]);
     expect(prompt).toContain(`"read":"you're a bit better"`);
   });
 
   it("an even-ply positive evalMate reads as 'mate for you in N'", async () => {
-    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: 3, bestSan: null, pvSans: [] }]);
+    const prompt = await capturePerPlyPrompt([{ ply: 2, side: "mallow", san: "e5", evalCp: null, evalMate: 3, bestSan: null, pvSans: [] }]);
     expect(prompt).toContain(`"read":"mate for you in 3"`);
   });
 
   it("an even-ply negative evalMate reads as 'mate against you in N'", async () => {
-    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: -2, bestSan: null, pvSans: [] }]);
+    const prompt = await capturePerPlyPrompt([{ ply: 2, side: "mallow", san: "e5", evalCp: null, evalMate: -2, bestSan: null, pvSans: [] }]);
     expect(prompt).toContain(`"read":"mate against you in 2"`);
   });
 
@@ -224,12 +224,12 @@ describe("factsForModel — perPlyAnalysis's evalCp/evalMate sanitize into a qua
     // Ply 1: stored -4 is black's own perspective (black about to be mated
     // in 4 is wrong framing -- stored is black delivers in -4, i.e. black is
     // BEING mated) -- negating gives white (the player) mates in 4.
-    const prompt = await capturePerPlyPrompt([{ ply: 1, san: "e4", evalCp: null, evalMate: -4, bestSan: null, pvSans: [] }]);
+    const prompt = await capturePerPlyPrompt([{ ply: 1, side: "her", san: "e4", evalCp: null, evalMate: -4, bestSan: null, pvSans: [] }]);
     expect(prompt).toContain(`"read":"mate for you in 4"`);
   });
 
   it("no persisted eval yet for that ply (both null) reads as a plain no-data statement, never a number", async () => {
-    const prompt = await capturePerPlyPrompt([{ ply: 2, san: "e5", evalCp: null, evalMate: null, bestSan: null, pvSans: [] }]);
+    const prompt = await capturePerPlyPrompt([{ ply: 2, side: "mallow", san: "e5", evalCp: null, evalMate: null, bestSan: null, pvSans: [] }]);
     expect(prompt).toContain('"read":"no read yet"');
   });
 });
@@ -251,8 +251,8 @@ describe("perPlyForModel — ply-scoping (B4b)", () => {
 
   it("a turning point outside the recent window still ships full detail", async () => {
     const perPly: ChatPerPlyInput[] = [
-      { ply: 5, san: "h4", evalCp: -20, evalMate: null, bestSan: "Nf3", pvSans: ["Nf3", "Nc6"] },
-      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+      { ply: 5, side: "her", san: "h4", evalCp: -20, evalMate: null, bestSan: "Nf3", pvSans: ["Nf3", "Nc6"] },
+      { ply: 54, side: "mallow", san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
     ];
     const facts = assembleChatFactList(
       moves(LONG_GAME),
@@ -276,8 +276,8 @@ describe("perPlyForModel — ply-scoping (B4b)", () => {
 
   it("an ordinary early ply outside every window collapses to ply/san/bestSan/read -- pvSans/phase still dropped", async () => {
     const perPly: ChatPerPlyInput[] = [
-      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "KEEP-BESTSAN", pvSans: ["DROP-PV"] },
-      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+      { ply: 3, side: "her", san: "Nf3", evalCp: 10, evalMate: null, bestSan: "KEEP-BESTSAN", pvSans: ["DROP-PV"] },
+      { ply: 54, side: "mallow", san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
     ];
     const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
 
@@ -311,8 +311,8 @@ describe("perPlyForModel — ply-scoping (B4b)", () => {
     // change that special-cases away bestSan again fails THIS test even if
     // the collapse test above is edited or removed.
     const perPly: ChatPerPlyInput[] = [
-      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
-      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+      { ply: 3, side: "her", san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
+      { ply: 54, side: "mallow", san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
     ];
     const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
 
@@ -355,8 +355,8 @@ describe("perPlyForModel — then + pv depth (forward-prediction round)", () => 
 
   it("a collapsed ply where she deviated from best carries its then claim", async () => {
     const prompt = await capture([
-      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "d4", pvSans: ["d4"], then: "you win a pawn" },
-      { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+      { ply: 3, side: "her", san: "Nf3", evalCp: 10, evalMate: null, bestSan: "d4", pvSans: ["d4"], then: "you win a pawn" },
+      { ply: 54, side: "mallow", san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
     ]);
     expect(prompt).toContain('"ply":3');
     expect(prompt).toContain('"then":"you win a pawn"');
@@ -364,15 +364,15 @@ describe("perPlyForModel — then + pv depth (forward-prediction round)", () => 
 
   it("a collapsed ply where she PLAYED the best move drops then", async () => {
     const prompt = await capture([
-      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nf3", pvSans: ["Nf3"], then: "you win a pawn" },
-      { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+      { ply: 3, side: "her", san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nf3", pvSans: ["Nf3"], then: "you win a pawn" },
+      { ply: 54, side: "mallow", san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
     ]);
     expect(prompt).not.toContain('"then"');
   });
 
   it("a full-detail ply carries then even when she played the best move", async () => {
     const prompt = await capture([
-      { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: "Bxh6", pvSans: ["Bxh6"], then: "you win a pawn" },
+      { ply: 54, side: "mallow", san: "Bxh6", evalCp: 0, evalMate: null, bestSan: "Bxh6", pvSans: ["Bxh6"], then: "you win a pawn" },
     ]);
     expect(prompt).toContain('"then":"you win a pawn"');
   });
@@ -380,7 +380,7 @@ describe("perPlyForModel — then + pv depth (forward-prediction round)", () => 
   it("a full-detail ply now ships up to six pv moves, not two", async () => {
     const prompt = await capture([
       {
-        ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: "PV1",
+        ply: 54, side: "mallow", san: "Bxh6", evalCp: 0, evalMate: null, bestSan: "PV1",
         pvSans: ["PV1", "PV2", "PV3", "PV4", "PV5", "PV6", "PV7"],
       },
     ]);
@@ -391,8 +391,8 @@ describe("perPlyForModel — then + pv depth (forward-prediction round)", () => 
   it("naming a move in the message promotes its plies to full detail (pvSans ship)", async () => {
     const prompt = await capture(
       [
-        { ply: 27, san: "Nxd2", evalCp: 0, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5", "g4", "Be4"], then: "you win a pawn" },
-        { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+        { ply: 27, side: "her", san: "Nxd2", evalCp: 0, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5", "g4", "Be4"], then: "you win a pawn" },
+        { ply: 54, side: "mallow", san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
       ],
       "what should i have done on move 14"
       // move 14 -> plies 27, 28 (and raw 14): ply 27 sits outside the
@@ -405,8 +405,8 @@ describe("perPlyForModel — then + pv depth (forward-prediction round)", () => 
   it("the same ply stays collapsed when no move number is mentioned", async () => {
     const prompt = await capture(
       [
-        { ply: 27, san: "Nxd2", evalCp: 0, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5", "g4", "Be4"], then: "you win a pawn" },
-        { ply: 54, san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+        { ply: 27, side: "her", san: "Nxd2", evalCp: 0, evalMate: null, bestSan: "Bxf5", pvSans: ["Bxf5", "g4", "Be4"], then: "you win a pawn" },
+        { ply: 54, side: "mallow", san: "Bxh6", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
       ],
       "how did this go?"
     );
@@ -415,7 +415,7 @@ describe("perPlyForModel — then + pv depth (forward-prediction round)", () => 
 
   it("validateChat flags an invented mate-in-N and the reply falls back through the regen discipline", async () => {
     const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, [
-      { ply: 54, san: "Bxh6", evalCp: null, evalMate: 2, bestSan: null, pvSans: [] },
+      { ply: 54, side: "mallow", san: "Bxh6", evalCp: null, evalMate: 2, bestSan: null, pvSans: [] },
     ]);
     const outputs = ["you had mate in 7 there.", "you had mate in 7 there."];
     let calls = 0;
@@ -442,8 +442,8 @@ describe("perPlyForModel — a highlighted ply ships full detail (Task 8)", () =
 
   it("a highlighted ply outside the recent window still ships pvSans/phase", async () => {
     const perPly: ChatPerPlyInput[] = [
-      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
-      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+      { ply: 3, side: "her", san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
+      { ply: 54, side: "mallow", san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
     ];
     const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly, undefined, [3]);
 
@@ -468,8 +468,8 @@ describe("perPlyForModel — a highlighted ply ships full detail (Task 8)", () =
 
   it("without highlightedPlies, the same ply collapses (no behavior change for existing callers)", async () => {
     const perPly: ChatPerPlyInput[] = [
-      { ply: 3, san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
-      { ply: 54, san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
+      { ply: 3, side: "her", san: "Nf3", evalCp: 10, evalMate: null, bestSan: "Nc6", pvSans: ["Nc6", "Bc4"] },
+      { ply: 54, side: "mallow", san: "Bxh6", evalCp: 400, evalMate: null, bestSan: null, pvSans: [] },
     ];
     const facts = assembleChatFactList(moves(LONG_GAME), {}, undefined, perPly);
     expect(facts.highlightedPlies).toBeUndefined();
@@ -515,6 +515,7 @@ describe("perPlyForModel — missed-win turning point ships full detail (missed-
     const gameMoves = GAME150_SANS; // shared fixture, declared above
     const perPly: ChatPerPlyInput[] = gameMoves.map((m) => ({
       ply: m.ply, san: m.san, evalCp: 0, evalMate: null, bestSan: m.ply === 55 ? "Qh8#" : null, pvSans: m.ply === 55 ? ["Qh8#"] : [],
+      side: (m.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow",
     }));
     const facts = assembleChatFactList(
       gameMoves,
@@ -580,7 +581,7 @@ describe("an unprovable phase (no board to derive it from) is omitted, never fab
 
   it("perPlyAnalysis.phase is null, not a fabricated phase string, when gameMoves is empty", () => {
     const perPly: ChatPerPlyInput[] = [
-      { ply: 1, san: "e4", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+      { ply: 1, side: "her", san: "e4", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
     ];
     // gameMoves is deliberately empty -- the one condition (Important 5 /
     // union F1) under which phasesForGame has no board to replay at all.
@@ -590,7 +591,7 @@ describe("an unprovable phase (no board to derive it from) is omitted, never fab
 
   it("the model-facing prompt never carries a phase key -- and never the strings null/undefined/none -- for a ply with no provable phase", async () => {
     const perPly: ChatPerPlyInput[] = [
-      { ply: 1, san: "e4", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
+      { ply: 1, side: "her", san: "e4", evalCp: 0, evalMate: null, bestSan: null, pvSans: [] },
     ];
     const facts = assembleChatFactList([], {}, undefined, perPly);
     expect(facts.perPlyAnalysis![0].phase).toBeNull(); // fixture sanity: this really is the unprovable case
@@ -1064,7 +1065,7 @@ describe("factsForModel — per-ply entries carry an explicit move number, not j
 
   it("ply 7 (white's 4th move) is labeled move 4 in the model-facing projection", async () => {
     const perPly: ChatPerPlyInput[] = [
-      { ply: 7, san: "Nf3", evalCp: 20, evalMate: null, bestSan: "Nf3", pvSans: [] },
+      { ply: 7, side: "her", san: "Nf3", evalCp: 20, evalMate: null, bestSan: "Nf3", pvSans: [] },
     ];
     const facts = assembleChatFactList([], {}, undefined, perPly);
     let capturedPrompt = "";
@@ -1081,7 +1082,7 @@ describe("factsForModel — per-ply entries carry an explicit move number, not j
 
   it("ply 8 (mallow's 4th move) is ALSO labeled move 4 -- same pair, opposite side", async () => {
     const perPly: ChatPerPlyInput[] = [
-      { ply: 8, san: "Nc6", evalCp: -20, evalMate: null, bestSan: "Nc6", pvSans: [] },
+      { ply: 8, side: "mallow", san: "Nc6", evalCp: -20, evalMate: null, bestSan: "Nc6", pvSans: [] },
     ];
     const facts = assembleChatFactList([], {}, undefined, perPly);
     let capturedPrompt = "";

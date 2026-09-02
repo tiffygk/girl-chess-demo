@@ -136,12 +136,27 @@ function readBaseline(dbPath: string): Baseline {
 // for one game -- the seam CT-01/02/03/07 all share. Readonly open every
 // call (the backup is a frozen static snapshot, never opened read-write
 // anywhere in this suite).
+//
+// Wave B4 (2026-09-01 attribution round): this backup PREDATES the
+// moves.side column entirely (it is a frozen pre-migration snapshot -- the
+// name says so), so there is no recorded party to read, ever, for any row
+// in it. That is the one case turningPoints.ts's own omission rule
+// legitimately does not reach: computeTurningPoints would silently drop
+// every row and this whole suite would go dark. `side` is computed here
+// ONCE, at this SQL-read boundary, from the fixture's own known shape
+// (every game in this historical backup was played with her as white --
+// the same fact ct07 below already leans on for its own MoveEvalRow
+// construction) -- a fixture convention for a frozen, never-migrating
+// snapshot, not a production derivation.
 function computeGameTps(dbPath: string, gameId: number): ReturnType<typeof computeTurningPoints> {
   const db = new Database(dbPath, { readonly: true });
   let moves: MoveEval[];
   let result: string;
   try {
-    moves = db.prepare("SELECT ply, san, eval_cp as evalCp, eval_mate as evalMate FROM moves WHERE game_id=? ORDER BY ply").all(gameId) as MoveEval[];
+    const rows = db
+      .prepare("SELECT ply, san, eval_cp as evalCp, eval_mate as evalMate FROM moves WHERE game_id=? ORDER BY ply")
+      .all(gameId) as { ply: number; san: string; evalCp: number | null; evalMate: number | null }[];
+    moves = rows.map((r) => ({ ...r, side: (r.ply % 2 === 1 ? "her" : "mallow") as "her" | "mallow" }));
     const game = db.prepare("SELECT result FROM games WHERE id=?").get(gameId) as { result: string | null } | undefined;
     result = game?.result ?? "";
   } finally {

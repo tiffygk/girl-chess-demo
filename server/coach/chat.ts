@@ -310,6 +310,15 @@ export interface ChatFactList {
   // point is focused, so ordinary chat is untouched.
   focusPosition?: {
     ply: number; // the focused move's ply; this position is the one BEFORE it
+    // Wave B4 (2026-09-01 attribution round): the recorded party for the
+    // focused ply ITSELF (who made the move at `ply`, looked up from the
+    // caller's perPly array by ply match) -- distinct from `toMove` below,
+    // which is a chess (colour) fact about the position BEFORE the move,
+    // out of scope for this wave (see turningPoints.ts's isWhitePly-family
+    // comment). Undefined when no perPly entry matches this ply (no
+    // fallback to ply % 2 -- checkOpponentQualityClaims/focusedMomentSection
+    // below both treat an undefined side as "not a mallow-ply focus").
+    side?: "her" | "mallow";
     fen: string;
     toMove: "you" | "mallow";
     occupancy: { square: string; pieceKind: string; color: "you" | "mallow" }[];
@@ -343,6 +352,9 @@ export interface ChatFactList {
     // (perPlyForModel below) must omit phase for a ply where this is null,
     // never fabricate a phase or leak a placeholder string.
     phase: GamePhase | null;
+    // Wave B4 (2026-09-01 attribution round): carried straight through from
+    // ChatPerPlyInput.side -- see that field's own comment.
+    side?: "her" | "mallow";
     then?: string;
     // Round 3 Task 12 (item 5/Q3, trust floor): the played-vs-best gap for
     // THIS ply, in words, not a number -- distinct from `read`'s per-position
@@ -454,6 +466,15 @@ export interface ChatPerPlyInput {
   // carries it" discipline as every other field here. Absent when the line
   // proves nothing claimable (about half of real plies, measured).
   then?: string;
+  // Wave B4 (2026-09-01 attribution round): the recorded party for THIS
+  // ply (moves.side column, read once at load by manager.ts -- see
+  // conversion.ts's MoveEvalRow comment for the read-not-derive contract
+  // this satisfies). Optional so every existing ChatPerPlyInput literal in
+  // this codebase's tests keeps compiling. Missing side means the ply is
+  // OMITTED from perPlyForModel's output entirely -- never guessed from
+  // ply % 2 (readForPly/sideLabel below no longer accept a bare ply at
+  // all).
+  side?: "her" | "mallow";
 }
 
 // Owner-calibratable starting values (Task 3b, R2 voice-enforcement round):
@@ -468,22 +489,24 @@ const READ_MUCH_BETTER_CP = 300; // |cp| at/above this reads as "much better" (r
 
 // evalCp/evalMate on ChatFactList are SIDE-TO-MOVE signed as of the
 // position AFTER the ply was played (same convention turningPoints.ts's
-// buildDeltaSeries documents and re-derives against real data): after an
-// ODD ply it's black's turn, so the stored value is black-perspective and
-// must be negated to reach the fixed "player is always white" read; after
-// an EVEN ply it's white's turn, so the stored value is already
-// white-perspective, used as-is.
-function toWhitePerspective(ply: number, signed: number): number {
-  return ply % 2 === 1 ? -signed : signed;
+// buildDeltaSeries documents and re-derives against real data). Wave B4
+// (2026-09-01 attribution round): this used to negate based on `ply % 2`,
+// assuming she is always white -- now it reads the RECORDED party for the
+// ply (`side`, off moves.side, never re-derived): after HER ply it is
+// mallow's turn next, so the stored value is mallow-perspective and must be
+// negated to reach "good for her"; after MALLOW's ply it is her turn next,
+// so the stored value is already her-perspective, used as-is.
+function toHerPerspective(side: "her" | "mallow", signed: number): number {
+  return side === "her" ? -signed : signed;
 }
 
-function readForPly(ply: number, evalCp: number | null, evalMate: number | null): string {
+function readForPly(side: "her" | "mallow", evalCp: number | null, evalMate: number | null): string {
   if (evalMate !== null) {
-    const whiteMate = toWhitePerspective(ply, evalMate);
+    const whiteMate = toHerPerspective(side, evalMate);
     return whiteMate > 0 ? `mate for you in ${whiteMate}` : `mate against you in ${Math.abs(whiteMate)}`;
   }
   if (evalCp === null) return "no read yet"; // honest "no data", not a guessed number
-  const whiteCp = toWhitePerspective(ply, evalCp);
+  const whiteCp = toHerPerspective(side, evalCp);
   if (Math.abs(whiteCp) < READ_EVEN_CP) return "even";
   if (whiteCp > 0) return whiteCp >= READ_MUCH_BETTER_CP ? "you're much better" : "you're a bit better";
   return whiteCp <= -READ_MUCH_BETTER_CP ? "she's much better" : "she's a bit better";
@@ -662,7 +685,14 @@ export function assembleChatFactList(
       if (m.ply >= focusPly) break;
       focusChess.move(m.san);
     }
-    focusPosition = { ply: focusPly, ...derivePositionFacts(focusChess) };
+    // Wave B4 (2026-09-01 attribution round): side looked up from `perPly`
+    // (the caller's already-loaded moves.side-backed array) by ply match --
+    // never `focusPly % 2`. `perPly` is absent for a handful of pre-existing
+    // fixtures/tests that exercise unrelated text-formatting behavior; for
+    // those, side stays undefined and the two consumers below treat that as
+    // "not a mallow-ply focus" rather than guessing.
+    const focusSide = perPly?.find((p) => p.ply === focusPly)?.side;
+    focusPosition = { ply: focusPly, side: focusSide, ...derivePositionFacts(focusChess) };
   }
 
   const tpOut = turningPoints?.map((t) => ({
@@ -1018,9 +1048,9 @@ function checkVoice(text: string, _opts: { userAskedForNumber?: boolean } = {}):
 // rule: audit what's newly in scope before shipping a widened checker,
 // don't let the gate find a false positive). Fires only when
 // facts.focusPosition is set AND the focused ply is mallow's
-// (sideForPly(focus.ply) === "mallow" -- the same canonical function
-// focusedMomentSection above uses, never a second parity computation), and
-// only when facts.context.turningPointFocus itself carries matchedBest/
+// (focus.side === "mallow" -- the same recorded field focusedMomentSection
+// below reads, never a second parity computation), and only when
+// facts.context.turningPointFocus itself carries matchedBest/
 // quality (set exclusively by chatFocus.ts's opponentMoveFocusContext for a
 // mallow-ply focus -- see ChatContext.turningPointFocus's own comment).
 //
@@ -1057,7 +1087,11 @@ const OPPONENT_MISTAKE_WORD_RE = /\b(mistake|blunder(?:ed)?|bad move|a bad|playe
 export function checkOpponentQualityClaims(text: string, facts: ChatFactList): string | undefined {
   const focus = facts.focusPosition;
   if (!focus) return undefined;
-  if (sideForPly(focus.ply) !== "mallow") return undefined;
+  // Wave B4 (2026-09-01 attribution round): reads the recorded side, never
+  // `focus.ply % 2`. An undefined side (no perPly entry matched this ply --
+  // see focusPosition's own comment) is treated as "not a mallow focus"
+  // rather than guessed, so this checker simply never fires for it.
+  if (focus.side !== "mallow") return undefined;
   const tp = facts.context?.turningPointFocus;
   if (!tp) return undefined;
   const clean = tp.matchedBest === true || tp.quality === "best" || tp.quality === "solid";
@@ -1314,20 +1348,25 @@ const FOCUS_PLY_RADIUS = 2;
 // Union-review finding 2 (whole-branch review, coach-truth-speed round,
 // 2026-07-28): the per-ply projection below carried no side marker at all,
 // and coach.md's chat section told the model the story reads as "your move
-// then her reply" -- but odd plies are the player's own move and even
-// plies are mallow's (the player is always white, the same fixed mapping
-// derivePositionFacts uses), and that alternation is invisible from a
-// single collapsed ply's shape once it's pulled out of game order (a
-// turning-point lookup, a "what about move 24" follow-up, a collapsed ply
-// carrying only its own `then`). Real game 150 ply 24 -- an even, mallow
-// ply -- shipped {"san":"Nc6","bestSan":"Re8","then":"you win the rook"}
-// with nothing marking whose move `san` was, so a coach reading it
-// literally could attribute mallow's move to the player.
+// then her reply" -- but the player's own move and mallow's alternate, and
+// that alternation is invisible from a single collapsed ply's shape once
+// it's pulled out of game order (a turning-point lookup, a "what about move
+// 24" follow-up, a collapsed ply carrying only its own `then`). Real game
+// 150 ply 24 -- a mallow ply -- shipped
+// {"san":"Nc6","bestSan":"Re8","then":"you win the rook"} with nothing
+// marking whose move `san` was, so a coach reading it literally could
+// attribute mallow's move to the player.
 // checkSideAttributionClaims can't catch this: it only adjudicates the
 // CURRENT legalSans, never who-owns-which-ply. Fixed at the fact layer
 // (this field), not by asking the model to compute ply parity itself.
-function sideForPly(ply: number): "you" | "mallow" {
-  return ply % 2 === 1 ? "you" : "mallow";
+//
+// Wave B4 (2026-09-01 attribution round): this used to compute
+// `ply % 2 === 1 ? "you" : "mallow"`, assuming she is always white. It is
+// now a pure translation of the RECORDED party (never a derivation) --
+// every call site passes the real side already in hand (ChatPerPlyInput's
+// or focusPosition's `side`, both traced to moves.side), never a bare ply.
+function sideLabel(side: "her" | "mallow"): "you" | "mallow" {
+  return side === "her" ? "you" : "mallow";
 }
 
 // Round 3 (trace 126, old L2): the move number she'd actually use to talk
@@ -1373,9 +1412,17 @@ function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
   // that was never an actual turning point would drift that allow-list).
   for (const ply of facts.highlightedPlies ?? []) fullDetailPlies.add(ply);
 
-  return perPlyAnalysis.map((p) => {
-    const read = readForPly(p.ply, p.evalCp, p.evalMate);
-    const side = sideForPly(p.ply);
+  return perPlyAnalysis
+    // Wave B4 (2026-09-01 attribution round): a ply with no recorded side
+    // -- there should be none after the controller's backfill, only a
+    // fresh dev database -- is OMITTED here rather than guessed from ply
+    // parity. readForPly/sideLabel below only ever take the real recorded
+    // side, so there is no fallback path left for a missing one to take.
+    .filter((p) => p.side != null)
+    .map((p) => {
+    const partySide = p.side as "her" | "mallow";
+    const read = readForPly(partySide, p.evalCp, p.evalMate);
+    const side = sideLabel(partySide);
     const move = moveNumberOf(p.ply);
     if (!fullDetailPlies.has(p.ply)) {
       // Collapsed plies: then only where she deviated from best -- the
@@ -1646,10 +1693,13 @@ function formatHistory(history: { role: "user" | "coach"; text: string }[], back
 // framing that names this as an opponent-move-analysis question, grounded
 // ONLY in the engine facts below it, and tells the model to say so plainly
 // when mallow matched the engine's own best move rather than inventing a
-// verdict the facts don't support. Side comes from sideForPly(focus.ply) --
-// the SAME canonical per-ply function perPlyForModel already uses to mark
-// every projected ply "you"/"mallow" (chat.sideLabel.test.ts) -- never a
-// second, independent parity computation written fresh here.
+// verdict the facts don't support. Side comes from facts.focusPosition.side
+// (Wave B4, 2026-09-01 attribution round: the recorded party, off
+// moves.side -- the same field checkOpponentQualityClaims above reads,
+// never a second, independent parity computation written fresh here). An
+// undefined side (no perPly entry matched -- see focusPosition's own
+// comment) falls through to the her-ply framing below, the pre-existing
+// default branch; there is no third framing to switch to.
 //
 // 2026-08-26 review fix: this comment used to claim the her-ply focus
 // branch stays byte-identical forever and that prompt caching depended on
@@ -1665,7 +1715,7 @@ function focusedMomentSection(facts: ChatFactList): string | undefined {
   const tp = facts.context?.turningPointFocus;
   if (!focus || !tp) return undefined;
   const moveNumber = Math.ceil(focus.ply / 2);
-  if (sideForPly(focus.ply) === "mallow") {
+  if (focus.side === "mallow") {
     return (
       `\nfocused moment: the player is asking about MALLOW'S move ${tp.san} at move ${moveNumber} (${focus.fen}) -- ` +
       `explain what the computer was doing, grounded ONLY in the engine facts below; if mallow played the engine's ` +

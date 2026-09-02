@@ -9,6 +9,7 @@ import {
   noPlyCollisionInvariant,
   leadChangeInvariant,
   missedMateInvariant,
+  sideCoverageInvariant,
   isKnownDebriefViolation,
   KNOWN_DEBRIEF_VIOLATIONS,
   KNOWN_UNCONVERTED_GAMES,
@@ -74,9 +75,12 @@ describe("replay-check invariants", () => {
     expect(unconvertedInvariant(game113Shape, "1/2-1/2", [])).toBeNull();
   });
   it("missed mate: an m1 walked past with no detector event is a violation; the real detector satisfies it", () => {
+    // `side` follows this fixture's own ply-parity convention (odd = her),
+    // a TEST fixture choice, never a production derivation (Wave B4,
+    // 2026-09-01: detectMissedWins reads m.side directly now).
     const moves: MoveEval[] = [
-      { ply: 2, san: "Kg8", evalCp: null, evalMate: 1 },
-      { ply: 3, san: "Qd2", evalCp: 300, evalMate: null },
+      { ply: 2, san: "Kg8", evalCp: null, evalMate: 1, side: "mallow" },
+      { ply: 3, san: "Qd2", evalCp: 300, evalMate: null, side: "her" },
     ];
     expect(missedMateInvariant(moves, [])).toMatch(/blind/);
     expect(missedMateInvariant(moves, detectMissedWins(moves))).toBeNull();
@@ -126,6 +130,49 @@ describe("noPlyCollisionInvariant (union review DELTA)", () => {
   it("stays silent on an empty or single-point game", () => {
     expect(noPlyCollisionInvariant(1, [])).toBeNull();
     expect(noPlyCollisionInvariant(1, [{ kind: "swing", ply: 8 }])).toBeNull();
+  });
+});
+
+// Wave B5 (2026-09-01, CRITICAL finding against Wave B4): the gate's own
+// half of the fix. Before sideCoverageInvariant existed, replay-check
+// could not tell "the corpus genuinely has zero conversion/missed-win
+// stories" (every violation counter reads 0, the expected healthy
+// baseline) from "the detectors could not run at all because every row
+// is missing its recorded side" (every violation counter ALSO reads 0,
+// because a detector that never runs never violates anything). This is
+// the proof that the gate can now fail on the second shape.
+describe("sideCoverageInvariant (Wave B5, CRITICAL finding)", () => {
+  const SIDED: MoveEval[] = [
+    { ply: 1, san: "e4", evalCp: 20, evalMate: null, side: "her" },
+    { ply: 2, san: "e5", evalCp: -20, evalMate: null, side: "mallow" },
+    { ply: 3, san: "Nf3", evalCp: 25, evalMate: null, side: "her" },
+  ];
+  // Her real database's exact current shape: moves.side all-NULL,
+  // pending the owner-approved backfill (migrateSchema adds the column
+  // all-NULL the first time new code opens a pre-migration db).
+  const SIDELESS: MoveEval[] = SIDED.map((m) => ({ ...m, side: undefined }));
+
+  it("FAILS loudly when every move row is missing its recorded side -- the pre-backfill migration state", () => {
+    const v = sideCoverageInvariant(42, SIDELESS);
+    expect(v).not.toBeNull();
+    expect(v).toMatch(/3\/3 move rows carry no recorded side/);
+    expect(v).toMatch(/could not run/);
+    expect(v).toMatch(/NOT/); // distinguishes from "ran and found nothing"
+  });
+
+  it("is silent (null) once every row carries a recorded side -- the fully-backfilled, normal state", () => {
+    expect(sideCoverageInvariant(42, SIDED)).toBeNull();
+  });
+
+  it("FAILS on a partially-backfilled game too, reporting the exact fraction missing", () => {
+    const partial = [SIDED[0], { ...SIDED[1], side: undefined }, SIDED[2]];
+    const v = sideCoverageInvariant(42, partial);
+    expect(v).toMatch(/1\/3 move rows carry no recorded side/);
+  });
+
+  it("stays silent on an empty or single-move game (computeTurningPoints itself no-ops there)", () => {
+    expect(sideCoverageInvariant(42, [])).toBeNull();
+    expect(sideCoverageInvariant(42, [SIDELESS[0]])).toBeNull();
   });
 });
 
