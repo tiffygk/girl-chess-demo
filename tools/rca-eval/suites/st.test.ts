@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runStSuite } from "./st";
+import { runStSuite, evaluateStreamConsistency } from "./st";
 
 describe("runStSuite (template-path evals run for real, zero model calls)", () => {
   it("asserts its own denominator: 4 evals", async () => {
@@ -31,5 +31,31 @@ describe("runStSuite (template-path evals run for real, zero model calls)", () =
     const result = await runStSuite(false);
     const st04 = result.results.find((r) => r.id === "ST-04")!;
     expect(st04.verdict).toBe("pass");
+  });
+});
+
+describe("evaluateStreamConsistency (ST-02's pass condition, the arm the probe caught reporting pass over a real failure)", () => {
+  it("a template-fallback done frame yields did-not-run, naming the cause -- there is no model answer to compare against", () => {
+    const result = evaluateStreamConsistency([], { ok: true, text: "i couldn't get that one clean. ask me again and i'll come at it from a different angle.", source: "template", cause: "validation-failed" });
+    expect(result.verdict).toBe("did-not-run");
+    expect(result.detail).toContain("template");
+    expect(result.detail).toContain("validation-failed");
+  });
+
+  it("a model-source done frame with zero deltas yields red -- a validated model answer arrived but the stream was lost", () => {
+    const result = evaluateStreamConsistency([], { ok: true, text: "play knight to f3.", source: "model" });
+    expect(result.verdict).toBe("red");
+    expect(result.detail).toContain("zero delta");
+  });
+
+  it("a model-source frame whose deltas concatenate to the done text yields pass", () => {
+    const result = evaluateStreamConsistency(["play knight ", "to f3."], { ok: true, text: "play knight to f3.", source: "model" });
+    expect(result.verdict).toBe("pass");
+  });
+
+  it("a model-source frame whose deltas do NOT concatenate to the done text yields red", () => {
+    const result = evaluateStreamConsistency(["play knight ", "to e4."], { ok: true, text: "play knight to f3.", source: "model" });
+    expect(result.verdict).toBe("red");
+    expect(result.detail).toContain("DO NOT equal");
   });
 });
