@@ -19,7 +19,7 @@ Chat buffers and flushes only after validation passes. No unvalidated sentence r
 
 ## four ways the analysis can lie
 
-Seventeen rules run over the post-game analysis, sorted into four failures.
+Nineteen rules run over the post-game analysis, sorted into four failures.
 
 | failure | what the player is left believing | example rule | fires on |
 |---|---|---|---|
@@ -36,7 +36,7 @@ The audit at the top of this page is dated 2026-08-21 and ran against my own gam
 
 The cause was structural, not a bad sentence. Seven surfaces were each doing their own arithmetic off one stored `mateIn` field, so a single wrong idea had seven routes to the screen: the missed-win line, the turning-point card, the highlighted-move line, the conversion bullet, the watch-next bullet, the could-be-better bullet, and a dead lesson renderer that would have brought it back. The fix routes all seven through `mateOutcomeFor()` in `src/review/mateOutcome.ts`, which derives what happened from a replay of the game instead of trusting the stored number. When a game hides more than one missed mate, it withholds credit entirely.
 
-The regression check is the `conversion-claim` rule in `src/review/debriefInvariants.ts`. It accepts an efficiency claim only when the replayed sequence agrees with it. `npm run gate` runs that rule and the other sixteen over every finished game in my history, through `tools/replay-check.ts`, and refuses the merge on any violation.
+The regression check is the `conversion-claim` rule in `src/review/debriefInvariants.ts`. It accepts an efficiency claim only when the replayed sequence agrees with it. `npm run gate` runs that rule and the other eighteen over every finished game in my history, through `tools/replay-check.ts`, and refuses the merge on any violation.
 
 Zero is that check's count, not a second pass of my hand audit: `debrief-output violations: 0` corpus-wide, and it has to stay 0 for the gate to pass. Put the bug back by hand and the rule flags fourteen. The two fair complaints still stand in their original wording, because measuring every missed mate in a game rather than only the flagged one is work I have not done.
 

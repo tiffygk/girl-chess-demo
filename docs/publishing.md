@@ -45,6 +45,19 @@ fine given the decision above, but do not read the script's `DELETE FROM chat_me
 privacy guarantee. It is not one. Anything that must not ship has to be removed from `advice_traces`
 too.
 
+## Terminology in documents versus in the product
+
+**"our chess brain" is product voice, not a term for documents.** It is what the coach calls the
+engine when it talks to the player, and it belongs only inside text quoted verbatim from the app or
+the database. In a README, a doc, a commit message or a design note, name the thing: **Stockfish**,
+which does the chess math and drives the judge. Maia, run through lc0, is the opponent. `mallow` is
+the opponent's name in the product and is fine to use once introduced, because the reader meets it in
+the quoted text.
+
+The failure this prevents: glossing a product-voice term in a document reads as though the project
+cannot describe its own architecture in plain words, and it also strands the gloss if the quote
+containing the term is ever trimmed. Owner ruling, 2026-09-03.
+
 ## Rules for pushing
 
 1. **A push needs her explicit word, every time.** Public repo, hiring context; there is no standing

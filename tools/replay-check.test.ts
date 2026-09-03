@@ -274,7 +274,7 @@ describe("F4 (review-2.md): the gate has power over the anchor, not just existen
 
 // F1 (review-1.md important): the debrief allowlist used to be per-GAME --
 // `KNOWN_DEBRIEF_VIOLATION_GAMES.has(gameId)` exempted a listed game from
-// ALL 14 debriefInvariants.ts rules, not just the one it is known to
+// ALL 19 debriefInvariants.ts rules, not just the one it is known to
 // break. Concrete consequence measured live tonight: once Task 2's
 // unconverted detector landed, game 151 started ALSO firing
 // reassurance-vs-detector -- a DIFFERENT rule than the documented

@@ -404,7 +404,7 @@ export const KNOWN_EM_DASH_TRACES = new Set([46, 94, 123, 191, 193, 196, 197, 19
 // mismatch. See report-1.md for the verbatim run this was read off of.
 export const KNOWN_DEFENSE_CLAIM_TRACES = new Set<number>([118]);
 // Fix-wave F1 (2026-07-29): this was a per-GAME allowlist -- skipping a
-// listed game id from ALL 14 debriefInvariants.ts rules, not just the one
+// listed game id from ALL 19 debriefInvariants.ts rules, not just the one
 // rule it is known to break. Concrete failure this caused: once Task 2's
 // unconverted detector landed, game 151 started ALSO firing
 // reassurance-vs-detector and unconverted-silent (see below), and the
