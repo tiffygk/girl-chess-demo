@@ -62,6 +62,7 @@ import { shouldClearLiveDebrief } from "../review/deleteArm";
 import { fenAtPly } from "../review/Rewind";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
 import { readGameParam, withGameParam, isResumableSummary } from "./resumeParam";
+import { readActiveGame, writeActiveGame } from "./activeGame";
 import {
   decideBranch,
   maxPress,
@@ -595,6 +596,7 @@ export function GamePage() {
     setFen(g.fen);
     setFallback(g.fallback);
     setGameId(g.gameId);
+    writeActiveGame(localStorage, g.gameId);
     setOpponentElo(g.elo ?? elo);
     lastReplyAtRef.current = Date.now();
     // Resume self-arm (Wave 3.5): stamp ?game=<id> into the URL so a reload
@@ -661,12 +663,30 @@ export function GamePage() {
       // Failed/dead resume: drop the param so a further reload doesn't retry
       // a game that can't be resumed, and stay on the start state.
       window.history.replaceState(null, "", withGameParam(window.location.pathname, window.location.search, null));
+      // Task 6: a dead resume means the stored id is no good either -- clear
+      // it so the pregame panel doesn't keep offering a game that can't load.
+      writeActiveGame(localStorage, null);
       setStatus("could not resume that game");
     });
     return () => {
       cancelled = true;
     };
   }, [resumeGame]);
+
+  // Task 6 (Appendix B step 6): leaving mid-game with no warning is how a
+  // reload silently orphaned a game before the resume path existed. The
+  // browser's own generic "leave page?" dialog is the guard -- its text
+  // cannot be customised, and that is fine; the goal is just a pause before
+  // the tab closes on a live position.
+  useEffect(() => {
+    if (!gameId || gameOver) return;
+    const h = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [gameId, gameOver]);
 
   // Task 5: newSession() rejecting used to be an unhandled promise -- the
   // page just sat on "finding an opponent..." forever with no signal. Named
@@ -995,6 +1015,7 @@ export function GamePage() {
           }
           setTakedownMove(tm);
           setGameOver(res.gameOver);
+          writeActiveGame(localStorage, null);
           setStatus("");
           celebrate(res.gameOver.result);
         }
@@ -1547,6 +1568,7 @@ export function GamePage() {
             // did — there's no checkmate sequence to stage.
             setTakedownMove(null);
             setGameOver({ result: r.result });
+            writeActiveGame(localStorage, null);
             setStatus("");
             celebrate(r.result);
           }
@@ -2682,6 +2704,23 @@ export function GamePage() {
                 <button className="small" onClick={() => startGame(sessionId, opponentElo)}>
                   start game
                 </button>
+                {readActiveGame(localStorage) != null && readGameParam(window.location.search) == null && (
+                  <button
+                    type="button"
+                    className="small"
+                    onClick={() => {
+                      const id = readActiveGame(localStorage);
+                      if (id == null) return;
+                      // withGameParam returns a full "pathname?query" string, not just
+                      // the query portion -- assigning it to .search would double up
+                      // the "?" (observed: "/?/?game=197"), so it goes to .href instead,
+                      // which resolves the relative path/query correctly and reloads.
+                      window.location.href = withGameParam(window.location.pathname, window.location.search, id);
+                    }}
+                  >
+                    resume your last game
+                  </button>
+                )}
                 <PastGamesButton onClick={openPastGames} />
               </div>
             ) : (
