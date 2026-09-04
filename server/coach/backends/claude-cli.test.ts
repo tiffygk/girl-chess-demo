@@ -49,6 +49,19 @@ describe("coachSpawnOptions", () => {
     const { env } = coachSpawnOptions();
     expect(env.PATH).toBe(process.env.PATH);
   });
+
+  it("never hands ANTHROPIC_API_KEY to the claude child (audit finding 3)", () => {
+    const saved = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "sk-test-not-real";
+    try {
+      const { env } = coachSpawnOptions();
+      expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(env.PATH).toBe(process.env.PATH);
+    } finally {
+      if (saved === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = saved;
+    }
+  });
 });
 
 describe("GENERATE_BASE_ARGS", () => {
