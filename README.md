@@ -60,7 +60,9 @@ npm run dev  # server on 3001, web client on 5173
 
 Open http://localhost:5173. Everything but the coach's words runs on your machine: no API key, no monetization layer. The coach is an optional menu toggle and needs your logged-in Claude subscription and wifi connection. Without one, the game, opponent, judge and post-game analysis still work on computed facts. The chat can run on open-source Ollama instead, but as a Claude girlie I haven't optimized it.
 
-Your games go to `data/girlchess.db`, created on first run, and are never committed.
+If `ANTHROPIC_API_KEY` happens to be set in your shell, the coach ignores it and uses your Claude login only. The server logs one line saying so, and nothing here bills a metered key. The API listens on 127.0.0.1 and refuses requests from other origins.
+
+Your games go to `data/girlchess.db`, created on first run, and are never committed. To browse the 51 committed games instead of starting empty, run `npm run demo`: it serves a working copy at `data/girlchess-demo.scratch.db`, so the committed file never changes and deleting the copy resets it.
 
 ## How it's built
 
@@ -70,7 +72,7 @@ I designed and built this 0-to-1 as a product manager's first vibed project ever
 <summary>Developer detail</summary>
 
 - Four text surfaces reach the player. Two are model-written, the coach chat and the per-move note; two are code, the hint ladder and the post-game analysis, templated from Stockfish facts.
-- `npm run gate` is the local merge check. It fails on any violation of the rules in `src/review/debriefInvariants.ts`.
+- `npm run gate` is the local merge check. It fails on any violation of the rules in `src/review/debriefInvariants.ts`. On a fresh clone with no personal database it runs those rules against the 51 committed games.
 - Skipping `setup.sh` fails loudly: the server refuses to start and names the missing Elo bands. Deliberate. A missing Maia band used to silently swap in a strength-limited Stockfish, a far less human opponent.
 - `data/girlchess-demo.db` is committed on purpose: 51 games with full move lists, each coach reply's final draft with its validation result, my questions, and my thumbs. `tools/make-demo-db.sh` builds it from my live database through a read-only handle: finished games only, backend-error traces dropped. No names, addresses, emails or keys; I scanned it for them.
 

@@ -61,7 +61,7 @@ Trust `git log` for the live tip, never a HEAD pinned anywhere in this file — 
 ## Repository and primitives (file structure locks the decomposition)
 
 **Repo location (owner reorg 2026-07-28 — the old `~/girl-chess` path is DEAD):**
-`<repo>/`
+the `girl-chess-agents/` checkout inside the owner's Obsidian vault. The absolute path lives in the vault's own notes, not in this public repo; from any worktree, `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"` is the main checkout.
 
 The owner moved the repo inside the Obsidian vault so everything about this project is
 findable and reviewable in one master folder. The vault `girl chess game/` is now the root

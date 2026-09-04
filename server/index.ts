@@ -1,14 +1,19 @@
 import express from "express";
-import { openDb, createSession, addModeMinutes, rateAdviceTrace, getRatedTraces, listCoachNotes, deleteCoachNote } from "./store/db";
+import { openDb, resolveServeDbPath, createSession, addModeMinutes, rateAdviceTrace, getRatedTraces, listCoachNotes, deleteCoachNote } from "./store/db";
 import { GameManager } from "./game/manager";
 import { servedCommit } from "./version";
 import { assertWeightsPresent } from "./engines/weightsCheck";
 import { ENGINE_PATHS } from "./engines/paths";
+import { originGuard } from "./originGuard";
 
 export const app = express();
+app.use("/api", originGuard);
 app.use(express.json());
 
-openDb(process.env.NODE_ENV === "test" ? ":memory:" : process.env.DB_PATH || "data/girlchess.db");
+const requestedDb = process.env.NODE_ENV === "test" ? ":memory:" : process.env.DB_PATH || "data/girlchess.db";
+const servedDb = resolveServeDbPath(requestedDb);
+if (servedDb.note) console.log(`[db] ${servedDb.note}`);
+openDb(servedDb.path);
 // Exported: index.test.ts (F16 chat route test) uses
 // gm.setCoachBackendForTesting to inject a fake backend before hitting
 // POST /api/game/:id/chat, the same seam manager.test.ts already relies on
@@ -489,5 +494,8 @@ app.post("/api/session/:id/mode", (req, res) => {
 
 if (process.env.NODE_ENV !== "test") {
   const PORT = Number(process.env.PORT) || 3001;
-  ready.then(() => app.listen(PORT, () => console.log(`girl-chess server on :${PORT} (commit ${servedCommit()})`)));
+  // Security round 2026-09-04, audit finding 1: bind loopback only. The
+  // two-argument listen(port, cb) form listens on every interface, which
+  // exposed an unauthenticated API to the whole LAN.
+  ready.then(() => app.listen(PORT, "127.0.0.1", () => console.log(`girl-chess server on 127.0.0.1:${PORT} (commit ${servedCommit()})`)));
 }

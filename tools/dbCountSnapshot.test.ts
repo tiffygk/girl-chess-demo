@@ -26,6 +26,7 @@ import {
   countDbSnapshot,
   checkDbIntact,
   deriveMainWorktreeDbFromGit,
+  NoDbFoundError,
 } from "./dbCountSnapshot";
 
 const tmpDirs: string[] = [];
@@ -33,6 +34,20 @@ afterEach(() => {
   delete process.env.GC_DB_PATH;
   for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
+
+// The other helper in this file (makeDb, below) always writes to a fresh
+// tmpdir under a fixed "girlchess.db" name -- it has no way to target a
+// caller-chosen path (root/data/girlchess.db vs root/data/girlchess-demo.db
+// vs an empty one), which the demo-fallback tests below need. This one is
+// path-controlled and games-only (resolveRealDbPath's demo-fallback check
+// only ever reads the games table).
+function writeTinyDb(p: string, games: number) {
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  const db = new Database(p);
+  db.exec("CREATE TABLE games(id INTEGER PRIMARY KEY)");
+  for (let i = 0; i < games; i++) db.prepare("INSERT INTO games DEFAULT VALUES").run();
+  db.close();
+}
 
 function makeDb(games: number, moves: number): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dbcount-owner-"));
@@ -60,7 +75,7 @@ describe("checkOwnerDb: the gate's owner-db precheck runs from any worktree", ()
     // The parenthetical gate.ts's own header names as the tell a real check
     // ran: "(N games, N moves, integrity ok)". A bare "ok" (no counts) is
     // exactly what a silently-skipped check used to print.
-    expect(result.detail).toMatch(/^160 games, 1668 moves, integrity ok$/);
+    expect(result.detail).toMatch(/160 games, 1668 moves, integrity ok$/);
   });
 
   it("status 'skipped' (never 'ok') when no db is reachable anywhere -- fresh clone / CI, the legitimate case", () => {
@@ -198,13 +213,72 @@ describe("deriveMainWorktreeDbFromGit: the main-worktree db path comes from git,
     expect(deriveMainWorktreeDbFromGit(nonGitDir)).toBeNull();
   });
 
-  it("resolveRealDbPath falls back to git derivation (not the removed hardcoded constant) when mainWorktreeDb is omitted", () => {
-    // Called from inside this real worktree with no explicit mainWorktreeDb
-    // override -- exercises the actual default-parameter production path
-    // gate.ts/truth-check.ts use, end to end, from a worktree.
+  it("resolveRealDbPath uses git derivation when mainWorktreeDb is omitted: the owner's live db if it exists, else the committed demo db", () => {
     const thisFileDir = path.dirname(fileURLToPath(import.meta.url));
-    const result = resolveRealDbPath(thisFileDir);
-    expect(result.source).toMatch(/main worktree/);
+    // resolveRealDbPath anchors its local/demo fallback paths on its
+    // repoRoot argument, exactly as every production caller (gate.ts,
+    // truth-check.ts, replay-check.ts) does -- that argument must be the
+    // checkout root (the directory holding data/), not tools/ itself, or
+    // the fallback paths become the nonexistent tools/data/....
+    const repoRoot = path.resolve(thisFileDir, "..");
+    // Git derivation itself works from any subdirectory -- that's what this
+    // half tests -- so it still takes thisFileDir. It returns null when no
+    // .git is reachable at all (rarer than a real clone, which always has
+    // one, but resolveRealDbPath must survive it regardless -- production
+    // code already treats a null derivation the same as a derived path
+    // whose file doesn't exist, falling through to local/demo), so this
+    // does not assert derived is non-null; it only uses it when present.
+    const derived = deriveMainWorktreeDbFromGit(thisFileDir);
+    const result = resolveRealDbPath(repoRoot);
+    if (derived != null && fs.existsSync(derived)) {
+      expect(result.source).toMatch(/main worktree/);
+      expect(result.path).toBe(derived);
+      expect(result.writable).toBe(true);
+    } else {
+      // A fresh clone, CI, or a .git-less copy: no owner db anywhere, the
+      // committed demo db carries the rules.
+      expect(result.source).toMatch(/committed demo db/);
+      expect(result.path).toBe(path.join(repoRoot, "data", "girlchess-demo.db"));
+      expect(result.writable).toBe(false);
+    }
     expect(fs.existsSync(result.path)).toBe(true);
+  });
+});
+
+describe("resolveRealDbPath: committed demo db fallback (fresh clone / CI)", () => {
+  const tmp: string[] = [];
+  afterEach(() => { for (const d of tmp.splice(0)) fs.rmSync(d, { recursive: true, force: true }); });
+  const missingMain = "/nonexistent/main/data/girlchess.db";
+
+  it("falls back to data/girlchess-demo.db when neither the main worktree db nor a local copy exists", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gc-demo-fallback-"));
+    tmp.push(root);
+    writeTinyDb(path.join(root, "data", "girlchess-demo.db"), 3);
+    const r = resolveRealDbPath(root, missingMain);
+    expect(r.path).toBe(path.join(root, "data", "girlchess-demo.db"));
+    expect(r.source).toMatch(/committed demo db/);
+    expect(r.source).toMatch(/3 games/);
+    // The demo db is a fixture, not her real history: tools that write must
+    // refuse it (coach-backfill, backfill-move-side), so it must come back
+    // marked non-writable structurally, not by re-parsing `source`.
+    expect(r.writable).toBe(false);
+  });
+
+  it("still throws NoDbFoundError when the demo db has no games", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gc-demo-empty-"));
+    tmp.push(root);
+    writeTinyDb(path.join(root, "data", "girlchess-demo.db"), 0);
+    expect(() => resolveRealDbPath(root, missingMain)).toThrow(NoDbFoundError);
+  });
+
+  it("prefers a local worktree copy with games over the demo db", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gc-demo-local-"));
+    tmp.push(root);
+    writeTinyDb(path.join(root, "data", "girlchess.db"), 2);
+    writeTinyDb(path.join(root, "data", "girlchess-demo.db"), 3);
+    const r = resolveRealDbPath(root, missingMain);
+    expect(r.path).toBe(path.join(root, "data", "girlchess.db"));
+    expect(r.source).toMatch(/local worktree copy/);
+    expect(r.writable).toBe(true);
   });
 });

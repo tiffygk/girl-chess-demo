@@ -3,6 +3,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import type { CoachBackend } from "./types";
+import { subscriptionOnlyEnv } from "./env";
 
 // Task 1 (inc 3.95): the timeout rejection used to discard stderr entirely
 // ("claude cli timed out after Nms", nothing else), so a stalled call left
@@ -25,7 +26,7 @@ const COACH_CWD = path.join(os.tmpdir(), "girl-chess-coach");
 fs.mkdirSync(COACH_CWD, { recursive: true });
 
 export function coachSpawnOptions(): { cwd: string; env: NodeJS.ProcessEnv } {
-  return { cwd: COACH_CWD, env: { ...process.env } };
+  return { cwd: COACH_CWD, env: subscriptionOnlyEnv() };
 }
 
 // Task 1 (inc 3.95), revised after a security review of the first pass:

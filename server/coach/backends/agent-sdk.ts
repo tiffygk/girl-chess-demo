@@ -6,6 +6,7 @@ import path from "path";
 import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { CoachBackend, CoachUsage, ThinkingPref } from "./types";
+import { subscriptionOnlyEnv } from "./env";
 
 // Warm-coach-backend round (2026-07-21). Per decision-no-warm-reserve.md
 // (Opus controller, amending the brief's Task 2): measured startup()/
@@ -125,11 +126,8 @@ fs.mkdirSync(AGENT_SDK_CWD, { recursive: true });
 // subscription/OAuth auth, never a stray metered key -- built fresh from
 // the live process.env on every call, and never mutates process.env
 // itself (no global `delete process.env.ANTHROPIC_API_KEY`, which would
-// leak to every other subprocess this Node process spawns).
-function subscriptionOnlyEnv(): Record<string, string | undefined> {
-  const { ANTHROPIC_API_KEY, ...rest } = process.env;
-  return rest;
-}
+// leak to every other subprocess this Node process spawns). Shared with
+// claude-cli.ts via ./env.ts.
 
 // Security options (A0): all built-in tools disabled (`tools: []`, the
 // availability knob per sdk-api-notes.md Q4 -- not `allowedTools`, which

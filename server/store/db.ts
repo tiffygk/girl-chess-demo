@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import fs from "fs";
+import nodePath from "path";
 import type { Evaluation } from "../engines/types";
 
 let db: Database.Database;
@@ -287,6 +288,26 @@ function migrateSchema(target: Database.Database) {
       }
     }
   }
+}
+
+// Security round 2026-09-04. data/girlchess-demo.db is committed so the
+// tutor can be judged without playing. openDb opens read-write in WAL mode,
+// and merely starting the server against the committed file left it
+// modified in git (a checkpoint touch). Serve a working copy beside it
+// instead: data/* is gitignored except the demo db itself, so the copy is
+// never tracked, and deleting it resets to the committed history.
+export const DEMO_DB_BASENAME = "girlchess-demo.db";
+
+export function resolveServeDbPath(requested: string): { path: string; note?: string } {
+  if (requested === ":memory:" || nodePath.basename(requested) !== DEMO_DB_BASENAME) {
+    return { path: requested };
+  }
+  const scratch = nodePath.join(nodePath.dirname(requested), "girlchess-demo.scratch.db");
+  if (fs.existsSync(scratch)) {
+    return { path: scratch, note: `serving the existing working copy at ${scratch} (delete it to reset to the committed demo db)` };
+  }
+  fs.copyFileSync(requested, scratch);
+  return { path: scratch, note: `serving a working copy of ${requested} at ${scratch}; the committed demo db is never opened for writing` };
 }
 
 export function openDb(path = "data/girlchess.db") {
