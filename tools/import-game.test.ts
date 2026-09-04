@@ -317,4 +317,12 @@ describe("importGame", () => {
     expect(GAME_ID_TABLES).not.toContain("sessions");
     expect(GAME_ID_TABLES).not.toContain("mode_timers");
   });
+
+  it("refuses to write into a target named girlchess-demo.db", () => {
+    const source = tmpPath("source.db");
+    const target = tmpPath("girlchess-demo.db");
+    makeSourceDb(source);
+
+    expect(() => importGame(source, target, 167)).toThrow(/never a write target/);
+  });
 });
