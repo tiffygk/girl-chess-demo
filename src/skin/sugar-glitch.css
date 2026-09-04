@@ -2357,6 +2357,10 @@
   background: #E3D9F5; border-radius: 999px;
   padding: 2px 8px; margin-left: 12px;
 }
+/* Task 3 (stranger-clones-and-plays): the "cookie needs setup" note above
+   the chat input -- lavender family, same reasoning as .chat-offline-chip
+   above (infrastructure status, not chess danger, never magenta). */
+.gc-app .chat-setup-note { font-size: 0.85em; opacity: 0.85; margin: 0 0 0.5em; color: #9C8FC7; }
 /* Task 4 (F19): thumbs up/down with feedback capture on any traced coach
    output -- coach's corner narration (GamePage) and chat replies here,
    including template/redirect ones (they DO have traces per the declared
