@@ -77,7 +77,12 @@ function resolveClaudeBinaryPath(): string | undefined {
   }
 }
 
-const AGENT_SDK_BINARY_PATH = resolveClaudeBinaryPath();
+// test-only: GC_COACH_EXECUTABLE lets a walkthrough see the not-installed
+// state on a Mac that has Claude Code -- it overrides the resolved binary
+// path the version probe spawns (runVersionProbe below), not just the
+// buildOptions() query() path, so that GET /api/coach/status (and the
+// panel it drives) actually reports not-installed with a bogus path.
+const AGENT_SDK_BINARY_PATH = process.env.GC_COACH_EXECUTABLE || resolveClaudeBinaryPath();
 
 // Bounding is the caller's job (available() below), same split as
 // runQuery/generate() -- this just spawns, listens for the abort signal
@@ -195,6 +200,8 @@ function buildOptions(abortController: AbortController, stablePrefix?: string, t
     settingSources: [] as never[],
     env: subscriptionOnlyEnv(),
     abortController,
+    // test-only: lets a walkthrough see the not-installed state on a Mac that has Claude Code
+    ...(process.env.GC_COACH_EXECUTABLE ? { pathToClaudeCodeExecutable: process.env.GC_COACH_EXECUTABLE } : {}),
     ...(stablePrefix ? { systemPrompt: [stablePrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY] } : {}),
     // disabled -> no extended thinking at all; low -> adaptive thinking
     // stays on but effort-capped (SDK's ThinkingConfig/EffortLevel shapes,
@@ -363,24 +370,34 @@ async function runQueryStream(
 // generate, finally clearTimeout -- so a hung or misbehaving SDK call can
 // never stall pickCoachBackend or narrate()/chat()'s existing
 // timeout/fallback handling.
+// Shared race body between available() (swallows the error -> boolean,
+// for pickCoachBackend) and probe.ts's probeCoach (needs the error itself
+// to classify not-installed/not-signed-in/down for the stranger-facing
+// sentence). One probe body, two callers.
+export async function probeAgentSdkOrThrow(): Promise<void> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`agent-sdk probe timed out after ${AGENT_SDK_PROBE_MS}ms`));
+    }, AGENT_SDK_PROBE_MS);
+  });
+  try {
+    await Promise.race([runVersionProbe(controller), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const agentSdkBackend: CoachBackend = {
   name: "agent-sdk",
   async available() {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        controller.abort();
-        reject(new Error(`agent-sdk probe timed out after ${AGENT_SDK_PROBE_MS}ms`));
-      }, AGENT_SDK_PROBE_MS);
-    });
     try {
-      await Promise.race([runVersionProbe(controller), timeout]);
+      await probeAgentSdkOrThrow();
       return true;
     } catch {
       return false;
-    } finally {
-      clearTimeout(timer);
     }
   },
   async generate(prompt, timeoutMs, stablePrefix, onUsage, thinkingPref) {

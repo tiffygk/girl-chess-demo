@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { chatWithCoach, streamChatWithCoach, rateTrace, type ChatContext, type ChatResponse } from "./api";
+import { chatWithCoach, streamChatWithCoach, rateTrace, type ChatContext, type ChatResponse, type CoachProbe } from "./api";
 import { anchorForFocus, focusKey, shouldInjectAnchor, type ThreadEntry } from "./chatThread";
 import type { ChatStatusPhase } from "./chatStream";
 
@@ -174,6 +174,11 @@ export interface CoachChatProps {
   // openSignal itself.
   hintFocus?: ChatContext["hintFocus"];
   turningPointFocus?: ChatContext["turningPointFocus"];
+  // Task 3 (stranger-clones-and-plays): fetched once by GamePage on mount
+  // and passed down so this component stays presentational (the static-
+  // render test drives it directly). null/undefined (not yet fetched, or
+  // the fetch failed) renders nothing extra -- same as today.
+  coachStatus?: CoachProbe | null;
 }
 
 export function CoachChat({
@@ -185,6 +190,7 @@ export function CoachChat({
   openSignal,
   hintFocus,
   turningPointFocus,
+  coachStatus,
 }: CoachChatProps) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ThreadEntry[]>([]);
@@ -449,8 +455,19 @@ export function CoachChat({
                 key={i}
                 className={m.role === "user" ? "chat-bubble chat-bubble-user" : "chat-bubble chat-bubble-coach pop-in"}
               >
-                <p className="chat-bubble-text">{m.text}</p>
-                {m.cause === "backend-down" && <span className="chat-offline-chip">offline</span>}
+                <p className="chat-bubble-text">
+                  {m.cause === "backend-down" &&
+                  coachStatus &&
+                  (coachStatus.state === "not-installed" || coachStatus.state === "not-signed-in")
+                    ? coachStatus.detail
+                    : m.text}
+                </p>
+                {m.cause === "backend-down" &&
+                  (coachStatus && (coachStatus.state === "not-installed" || coachStatus.state === "not-signed-in") ? (
+                    <span className="chat-offline-chip">not set up</span>
+                  ) : (
+                    <span className="chat-offline-chip">offline</span>
+                  ))}
                 {/* Task 2 (2026-07-22, truthfulness leaks): a timeout is a
                     slow-but-healthy backend, not a down one -- reuses the
                     offline chip's exact styling (no new visual treatment,
@@ -491,6 +508,11 @@ export function CoachChat({
             </div>
           )}
         </div>
+        {coachStatus && coachStatus.state !== "ready" && (
+          <p className="chat-setup-note" role="status">
+            {coachStatus.detail}
+          </p>
+        )}
         <div className="chat-input-row">
           <input
             type="text"

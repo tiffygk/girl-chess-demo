@@ -18,6 +18,7 @@ import {
   getHighlightLines,
   exploreReply,
   highlightMove,
+  fetchCoachStatus,
   type MoveResponse,
   type GameOverInfo,
   type Verdict,
@@ -29,6 +30,7 @@ import {
   type TurningPoint,
   type MoveClassification,
   type HighlightLine,
+  type CoachProbe,
 } from "./api";
 import { CoachChat, ThumbRating } from "./CoachChat";
 import {
@@ -216,6 +218,15 @@ function exploreElo(reviewOpponent: string | null, liveElo: number): number {
 }
 
 export function GamePage() {
+  // Task 3 (stranger-clones-and-plays): probed once on mount, not per-game
+  // -- whether cookie can talk on this Mac doesn't change mid-session, and
+  // the server-side probe is cached for 60s anyway. null until the fetch
+  // resolves (or forever, if it fails -- .catch swallows so a coach-status
+  // hiccup never blocks the rest of the page from mounting).
+  const [coachStatus, setCoachStatus] = useState<CoachProbe | null>(null);
+  useEffect(() => {
+    fetchCoachStatus().then(setCoachStatus).catch(() => {});
+  }, []);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [gameId, setGameId] = useState<number | null>(null);
   const [fen, setFen] = useState(() => new Chess().fen());
@@ -2688,6 +2699,7 @@ export function GamePage() {
         mode={reviewGame ? "review" : "live"}
         buildContext={buildChatContext}
         hidden={chatHidden}
+        coachStatus={coachStatus}
         backendPref={coachBackend}
         openSignal={chatOpenSignal}
         hintFocus={chatFocus.hintFocus}

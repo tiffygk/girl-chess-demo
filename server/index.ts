@@ -5,6 +5,7 @@ import { servedCommit } from "./version";
 import { assertWeightsPresent } from "./engines/weightsCheck";
 import { ENGINE_PATHS } from "./engines/paths";
 import { originGuard } from "./originGuard";
+import { coachStatus } from "./coach/backends/probe";
 
 export const app = express();
 app.use("/api", originGuard);
@@ -22,6 +23,7 @@ export const gm = new GameManager();
 export const ready = gm.init();
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, commit: servedCommit() }));
+app.get("/api/coach/status", async (_req, res) => res.json(await coachStatus()));
 
 app.post("/api/session", (_req, res) => res.json({ sessionId: createSession() }));
 
@@ -497,5 +499,10 @@ if (process.env.NODE_ENV !== "test") {
   // Security round 2026-09-04, audit finding 1: bind loopback only. The
   // two-argument listen(port, cb) form listens on every interface, which
   // exposed an unauthenticated API to the whole LAN.
-  ready.then(() => app.listen(PORT, "127.0.0.1", () => console.log(`girl-chess server on 127.0.0.1:${PORT} (commit ${servedCommit()})`)));
+  ready.then(() =>
+    app.listen(PORT, "127.0.0.1", () => {
+      console.log(`girl-chess server on 127.0.0.1:${PORT} (commit ${servedCommit()})`);
+      coachStatus().then((s) => console.log(`coach: ${s.detail}`));
+    }),
+  );
 }
