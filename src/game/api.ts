@@ -180,18 +180,49 @@ export interface JudgeResponse {
   verdict?: Verdict;
 }
 
+// fetch rejects with a TypeError when nothing is listening (server not
+// started, wrong port). Name it so the page can say so instead of hanging.
+export class ServerUnreachableError extends Error {
+  constructor() {
+    super("the game server is not running");
+    this.name = "ServerUnreachableError";
+  }
+}
+async function fetchOrUnreachable(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (err) {
+    if (err instanceof TypeError) throw new ServerUnreachableError();
+    throw err;
+  }
+}
+
+// Under `vite`'s dev proxy (vite.config.ts's `/api` proxy) a server that
+// isn't listening doesn't make fetch() itself throw -- the browser's fetch
+// resolves fine against Vite's own dev server, which answers 502 when
+// nothing is listening (Content-Type: text/plain, and vite logs "http proxy
+// error ... ECONNREFUSED"). Same underlying fact surfacing one layer later,
+// so it maps to the same error -- decided on the status code, not on
+// whatever res.json() happens to throw, so a real server's own non-JSON
+// error page (a 404 for a wrong route, a crashed handler's 500 HTML) is
+// never mislabelled "the game server is not running."
+async function jsonOrUnreachable<T>(res: Response): Promise<T> {
+  if (res.status === 502) throw new ServerUnreachableError();
+  return (await res.json()) as T;
+}
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetchOrUnreachable(`/api${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  return (await res.json()) as T;
+  return jsonOrUnreachable<T>(res);
 }
 
 async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`);
-  return (await res.json()) as T;
+  const res = await fetchOrUnreachable(`/api${path}`);
+  return jsonOrUnreachable<T>(res);
 }
 
 // Wave 3.5, item 2 (owner ask, 2026-08-01): every other write helper in this
@@ -200,8 +231,8 @@ async function getJson<T>(path: string): Promise<T> {
 // shape/error contract (no body, same bare-json-envelope response) rather
 // than bending postJson to also carry a method override.
 async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`, { method: "DELETE" });
-  return (await res.json()) as T;
+  const res = await fetchOrUnreachable(`/api${path}`, { method: "DELETE" });
+  return jsonOrUnreachable<T>(res);
 }
 
 export type CoachProbe = { state: "ready" | "not-installed" | "not-signed-in" | "down"; detail: string; checkedAt: number };
