@@ -6,6 +6,7 @@ import { assertWeightsPresent } from "./engines/weightsCheck";
 import { ENGINE_PATHS } from "./engines/paths";
 import { originGuard } from "./originGuard";
 import { coachStatus } from "./coach/backends/probe";
+import { listenErrorMessage, startupFailureMessage, openUrlMessage } from "./startupMessages";
 
 export const app = express();
 app.use("/api", originGuard);
@@ -39,7 +40,12 @@ export const ALLOWED_ELOS = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 190
 // a stockfish opponent under a maia label. Skipped under test, where the
 // suite runs with no weights directory and never spawns a real engine.
 if (process.env.NODE_ENV !== "test") {
-  assertWeightsPresent(ALLOWED_ELOS, ENGINE_PATHS.maiaWeights);
+  try {
+    assertWeightsPresent(ALLOWED_ELOS, ENGINE_PATHS.maiaWeights);
+  } catch (err) {
+    console.error(startupFailureMessage(err));
+    process.exit(1);
+  }
 }
 
 export function snapElo(raw: unknown): number {
@@ -499,10 +505,27 @@ if (process.env.NODE_ENV !== "test") {
   // Security round 2026-09-04, audit finding 1: bind loopback only. The
   // two-argument listen(port, cb) form listens on every interface, which
   // exposed an unauthenticated API to the whole LAN.
-  ready.then(() =>
-    app.listen(PORT, "127.0.0.1", () => {
-      console.log(`girl-chess server on 127.0.0.1:${PORT} (commit ${servedCommit()})`);
-      coachStatus().then((s) => console.log(`coach: ${s.detail}`));
-    }),
-  );
+  ready
+    .then(() => {
+      // No callback passed to listen(): express 5's app.listen wraps a
+      // trailing callback with once() and registers it as BOTH the
+      // "listening" AND the "error" handler, so a success callback there
+      // fires with the error silently swallowed as its ignored argument --
+      // printing "server on ..." even when the bind failed. Attaching our
+      // own named listeners avoids that.
+      const server = app.listen(PORT, "127.0.0.1");
+      server.on("listening", () => {
+        console.log(`girl-chess server on 127.0.0.1:${PORT} (commit ${servedCommit()})`);
+        console.log(openUrlMessage(process.env.VITE_PORT));
+        coachStatus().then((s) => console.log(`coach: ${s.detail}`));
+      });
+      server.on("error", (err) => {
+        console.error(listenErrorMessage(err, PORT));
+        process.exit(1);
+      });
+    })
+    .catch((err) => {
+      console.error(startupFailureMessage(err));
+      process.exit(1);
+    });
 }
