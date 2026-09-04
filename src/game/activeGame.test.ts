@@ -10,10 +10,10 @@ describe("activeGame", () => {
   it("round-trips a game id and clears it", () => {
     const s = mem();
     expect(readActiveGame(s)).toBeNull();
-    writeActiveGame(s, 191);
+    writeActiveGame(191, s);
     expect(s.getItem(ACTIVE_GAME_KEY)).toBe("191");
     expect(readActiveGame(s)).toBe(191);
-    writeActiveGame(s, null);
+    writeActiveGame(null, s);
     expect(readActiveGame(s)).toBeNull();
   });
   it("ignores garbage", () => {

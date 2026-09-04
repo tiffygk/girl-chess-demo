@@ -10,7 +10,7 @@ export function readActiveGame(storage: Store = localStorage): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-export function writeActiveGame(storage: Store = localStorage, id: number | null): void {
+export function writeActiveGame(id: number | null, storage: Store = localStorage): void {
   if (id == null) storage.removeItem(ACTIVE_GAME_KEY);
   else storage.setItem(ACTIVE_GAME_KEY, String(id));
 }

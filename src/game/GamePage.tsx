@@ -596,7 +596,7 @@ export function GamePage() {
     setFen(g.fen);
     setFallback(g.fallback);
     setGameId(g.gameId);
-    writeActiveGame(localStorage, g.gameId);
+    writeActiveGame(g.gameId, localStorage);
     setOpponentElo(g.elo ?? elo);
     lastReplyAtRef.current = Date.now();
     // Resume self-arm (Wave 3.5): stamp ?game=<id> into the URL so a reload
@@ -641,6 +641,13 @@ export function GamePage() {
       mirrorRef.current = mirror;
       setFen(mirror.fen());
       setGameId(id);
+      // Task 6 review, minor: the stored active-game id must follow the game
+      // actually being played -- a resume via the "resume your last game"
+      // button already matches, but the mount-effect ?game=<id> path (a
+      // shared/bookmarked link, or a manually-edited URL) can resume a DIFFERENT
+      // id than whatever this browser last stored. Write it here so the two
+      // never drift apart.
+      writeActiveGame(id, localStorage);
       // W5: side rides the summary datum (server-derived once at load) and
       // is carried through as data by the liveMoves boundary mapper.
       setLiveMoves(liveMovesFromSummary(s.moves));
@@ -665,7 +672,7 @@ export function GamePage() {
       window.history.replaceState(null, "", withGameParam(window.location.pathname, window.location.search, null));
       // Task 6: a dead resume means the stored id is no good either -- clear
       // it so the pregame panel doesn't keep offering a game that can't load.
-      writeActiveGame(localStorage, null);
+      writeActiveGame(null, localStorage);
       setStatus("could not resume that game");
     });
     return () => {
@@ -1015,7 +1022,7 @@ export function GamePage() {
           }
           setTakedownMove(tm);
           setGameOver(res.gameOver);
-          writeActiveGame(localStorage, null);
+          writeActiveGame(null, localStorage);
           setStatus("");
           celebrate(res.gameOver.result);
         }
@@ -1568,7 +1575,7 @@ export function GamePage() {
             // did — there's no checkmate sequence to stage.
             setTakedownMove(null);
             setGameOver({ result: r.result });
-            writeActiveGame(localStorage, null);
+            writeActiveGame(null, localStorage);
             setStatus("");
             celebrate(r.result);
           }
