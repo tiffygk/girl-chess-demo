@@ -5,7 +5,7 @@
   "type": "module",
   "engines": { "node": ">=20.19" },
   "scripts": {
-    "dev": "concurrently \"tsx watch server/index.ts\" \"vite\"",
+    "dev": "concurrently --kill-others-on-fail \"tsx watch server/index.ts\" \"vite\"",
     "dev:server": "tsx watch server/index.ts",
     "demo": "DB_PATH=data/girlchess-demo.db npm run dev",
     "test": "vitest run",
