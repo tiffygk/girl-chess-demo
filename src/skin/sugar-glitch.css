@@ -255,11 +255,6 @@
   align-items: center;
   gap: 12px;
   padding: 20px 0;
-  /* Task 6 fix round 2: the continue card (below) needs to sit on its own
-     line above the elo-picker row rather than squeeze into it -- wrap is
-     additive here, this row had none before and nothing else in it grows
-     past its content width, so nothing else's layout changes. */
-  flex-wrap: wrap;
 }
 /* Wave C, item 9: sugar-glitch elo picker (owner: "should be a stylized
    sugar glitch UI element"). Kicker mirrors the coach-band .chp-kicker
@@ -305,11 +300,13 @@
   border: 1.5px solid rgba(35,168,199,.35); border-radius: 16px;
   padding: 10px 14px;
   /* Task 6 fix round 2: forces the card onto its own line inside
-     .pregame-panel's flex row (see the flex-wrap added above), rather than
-     sharing a row with the elo picker/start-game/past-games controls --
-     "lives in the action slot ABOVE the picker row". Not part of the
-     library's own rule (that card sits alone in its own mock container);
-     needed only because this card is nested inside the existing panel. */
+     .pregame-panel's flex row -- that row already wraps via the shared
+     .gc-app .controls rule (its classes include "controls"), this just
+     ensures the card takes a full line rather than sharing one with the
+     elo picker/start-game/past-games controls -- "lives in the action slot
+     ABOVE the picker row". Not part of the library's own rule (that card
+     sits alone in its own mock container); needed only because this card
+     is nested inside the existing panel. */
   flex: 1 1 100%;
 }
 .pg2-continue-kicker {
