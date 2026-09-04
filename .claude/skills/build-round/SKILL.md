@@ -1,6 +1,6 @@
 ---
 name: build-round
-description: Use when implementing any wave of features, fixes, or owner playtest feedback in the girl-chess repo — Fable writes the plan, then one Opus-controlled window executes it end to end: Sonnet subagents for logic, Fable subagents for visual/UX-UI work, an Opus review, and a Fable visual-gate subagent. Invoke BEFORE reading source files or dispatching any agent.
+description: Use when implementing any wave of features, fixes, or owner playtest feedback in the girl-chess repo — Fable writes the plan and controls execution end to end: Sonnet subagents for logic and for every review, Fable subagents for visual/UX-UI work and the visual gate. Invoke BEFORE reading source files or dispatching any agent.
 ---
 
 # build-round
@@ -9,11 +9,11 @@ The orchestration procedure for every girl-chess build round. It exists so quali
 
 ## Model roles (no manual model switching)
 
-- **Fable** writes the plan (Phase 1) in its own window, and is dispatched as a **subagent** (Agent tool, `model: "fable"`) for visual/UX-UI coding and for the visual gate. Fable is never the execution controller.
-- **Opus** is the controller for execution (Phases 2-4). It dispatches subagents, verifies returns, reviews, and commits, and stays the controller the whole way — no `/model` switching inside the execution window.
+- **Fable** writes the plan (Phase 1) and is the controller for execution (Phases 2-4): it dispatches subagents, verifies returns, decides, and commits, and stays the controller the whole way with no `/model` switching (owner ruling 2026-09-05; if Fable capacity runs out she resumes the session on Opus 4.6). Fable is also dispatched as a **subagent** (Agent tool, `model: "fable"`) for visual/UX-UI coding and the visual gate.
+- **Sonnet** takes every implementer and reviewer seat, including the whole-round review (owner's standing ask 2026-09-04).
 - **Sonnet** subagents do logic/backend implementation, fixes, and research.
 
-The flow is a one-way handoff, not back-and-forth switching: **Fable plan window → owner approves → one Opus window runs Phases 2-4 autonomously**, calling Sonnet and Fable subagents as each phase needs. The ledger under `.superpowers/sdd/rounds/` carries all state between the two windows and every subagent, so the Opus window needs only the round-folder path to pick up where the plan left off.
+The flow is a one-way handoff, not back-and-forth switching: **Fable plans → owner approves → the same Fable window (or a fresh one) runs Phases 2-4 autonomously**, calling Sonnet and Fable subagents as each phase needs. The ledger under `.superpowers/sdd/rounds/` carries all state, so any window needs only the round-folder path to pick up where the plan left off.
 
 ## Phase 0 — preconditions (any model)
 
@@ -25,7 +25,7 @@ The flow is a one-way handoff, not back-and-forth switching: **Fable plan window
 Write the plan under **`superpowers:writing-plans`** — its structure (spec → decomposition → ordered steps) is how the plan comes out correct and executable before any code is touched.
 
 1. Do NOT read large source files in the controller context. For code knowledge, first consult the UI module map in CLAUDE.md; if that's insufficient, dispatch ONE Sonnet scout that returns an interaction map of the affected area, max 60 lines, and writes anything longer to the round folder. Targeted reads of specific short files/sections are fine.
-2. Group the feedback into waves such that no two waves touch the same file region; order waves so shared files are sequential, never parallel. **Tag each wave `logic` (Sonnet subagent) or `visual` (Fable subagent)** so the Opus controller knows which model to dispatch for it.
+2. Group the feedback into waves such that no two waves touch the same file region; order waves so shared files are sequential, never parallel. **Tag each wave `logic` (Sonnet subagent) or `visual` (Fable subagent)** so the controller knows which model to dispatch for it.
 3. Write one brief per wave to `.superpowers/sdd/rounds/<date>-<slug>/brief-<wave>.md`. Every brief must contain:
    - the owner's verbatim ask for the items it covers
    - exact values (constants, copy strings, file paths, thresholds) — prose ambiguity is what causes rework
@@ -36,9 +36,9 @@ Write the plan under **`superpowers:writing-plans`** — its structure (spec →
    - if the wave draws an original glyph, icon, or illustration: **geometry, not adjectives, plus a falsification test.** "Make it look like a fortune cookie" produced eleven failed iterations; what worked was naming the parts and proportions (fat belly at the bottom, two unequal lobes split by a narrow crack, crease as an arc not a stem, slip angled out of the crack with its tip tucked), saying what must NOT appear, requiring reference study before drawing, and setting a hard self-test: "if bowl, taco, mushroom, tulip, shell, or croissant is a plausible read, it failed, iterate again." All of that was available on iteration one.
    - if the wave writes an identity, dedup, or cache key derived from CONTENT rather than a guaranteed-unique id: the test plan must include a **same-content, different-position** case. A green suite hid a HIGH-severity bug this way once (`focusKey` was `hint:${level}:${text}`, level-1 hint copy is a fixed template, so two different moments collided) because every fixture used distinct text. Distinct-content cases alone do not cover the input space that breaks these functions.
 4. Owner visibility (rule added 2026-07-19 after plans hid in the dot-folder): whenever a round has a plan document, copy it (and any panel review) to the vault's `2 build/` folder, which sits beside `girl-chess-agents/` (`"$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/../2 build/"`), named `Girl Chess — Increment <n> Plan.md` per the existing convention. The ledger copy stays canonical for agents; the vault copy is for the owner to read. Re-copy when the plan is revised.
-5. End the Fable turn: tell the owner the plan and briefs are ready. Once she approves, she opens an **Opus window** at the repo and points it at the round folder to run Phases 2-4. Do not run the execution phases in the Fable plan window.
+5. Tell the owner the plan and briefs are ready. Once she approves (or if she has already said to continue autonomously), run Phases 2-4 in this window or in a fresh Fable window pointed at the round folder.
 
-## Phase 2 — build (Opus controller)
+## Phase 2 — build (Fable controller)
 
 Run execution under **`superpowers:subagent-driven-development`** — the controller's discipline for executing a plan of independent tasks by dispatching one subagent per task and verifying returns, never doing the implementation in the controller context itself.
 
@@ -51,11 +51,11 @@ Run execution under **`superpowers:subagent-driven-development`** — the contro
 3. On each return, verify the commit exists and tests are green (`git log`, agent-reported counts). Do not re-read the diff in the controller context. **For visual deliverables, "it looks right" is a claim, not a verification — render it and look, in the controller's own context, before showing the owner.** Two subagent-declared-done icons were wrong on inspection in the 2026-07-21 round; relaying a self-assessment to the owner wastes her review pass and her trust.
 4. Research tasks (if any) run as background Sonnet agents that write findings to the vault (`1 product/` for product references) and return the path plus ≤10 summary lines.
 
-## Phase 3 — review and fix (Opus controller)
+## Phase 3 — review and fix (Fable controller)
 
 Run the review under **`superpowers:test-driven-development`**: a finding is proven by a failing test before it's fixed, and every fix is red-green (write the failing test that captures the bug, then make it pass). The reviewer also confirms the round's shipped changes carry tests, not just green suites.
 
-1. Dispatch one **Opus** reviewer over the whole round's diff (base..HEAD). Its brief: correctness first, hard project rules second, spec-vs-implementation third; adversarially verify every finding; write the full review to `.superpowers/sdd/rounds/<date>-<slug>/review.md`; return only the findings list (severity, file:line, one sentence) and the verdict.
+1. Dispatch one **Sonnet** reviewer over the whole round's diff (base..HEAD). Its brief: correctness first, hard project rules second, spec-vs-implementation third; adversarially verify every finding; write the full review to `.superpowers/sdd/rounds/<date>-<slug>/review.md`; return only the findings list (severity, file:line, one sentence) and the verdict.
 
 **Reasoning discipline for the review and for any root-cause work (learned the hard way, 2026-07-22):**
 - **A root cause must trace to observed real-world behavior, not a test-rig artifact.** "The synthetic games failed more" is a fact about the harness, not the product — never write it into a root-cause list. If a symptom only appears under your own scaffolding, that's the finding.
@@ -86,12 +86,12 @@ Run the review under **`superpowers:test-driven-development`**: a finding is pro
 
 12. **Do not RULE on a surface you have not rendered, and do not trust a green suite as evidence that anything is WIRED.** Both of the 2026-08-05 four-arrow round's worst defects were invisible to a passing gate and obvious in a screenshot. (a) A legend row decided its own visibility by RE-COMPUTING the arrow set via the old producer, so it promised an arrow the board no longer drew — two independently-computed facts claiming one slot, the same class as the 07-31 anchor collision. (b) Worse, the CONTROLLER itself ruled that a legend label should be parity-aware, having never rendered the legend; it is a single GLOBAL rail, so no parity-aware label can be true for every card on screen at once. A subagent implemented the ruling faithfully, its unit tests passed, and the sole production call site passed a hardcoded argument — the function worked, the wiring did not exist, and the rail stated something false on every mallow card. Practice: before ruling on how a surface should behave, render it and look, exactly as you already require of subagent visual deliverables — a controller ruling is not exempt from the rule it enforces on others; and when a task adds a function, label, or prop, grep its production call sites and confirm each passes real data rather than a constant, because "the tests pass" answers a different question than "is it connected."
 
-## Phase 4 — visual gate (Opus controller dispatches a Fable subagent)
+## Phase 4 — visual gate (the controller dispatches a Fable subagent)
 
 1. Dispatch a **Fable** subagent (Agent tool, `model: "fable"`) with browser access to run the gate. Its brief: before screenshotting, confirm which page the browser daemon has open (`agent-browser eval "location.href"`) — stale tabs from prior sessions are a known trap. Default viewport 1512x982; use 2560x1440 only when the check is about large-desktop scaling. One screenshot per state under test; use `agent-browser eval` assertions (element present, scrollHeight vs innerHeight) instead of screenshots wherever a boolean answers the question. **Always pass an absolute path to `agent-browser screenshot`** — on a bare filename it writes to the process cwd, and it dropped stray PNGs into the repo root twice in one round.
 
    **Server cleanup, hard rule (a gate agent broke this and took down the owner's live stack mid-round, 2026-07-21):** every brief that starts a server must say to capture the PID at launch and kill ONLY that PID. `pkill node`, `pkill vite`, `killall`, or any name-based kill is disallowed language in a brief — the alt-port worktree stack and the owner's canonical 5173/3001 stack are the same binaries, and a pattern kill cannot tell them apart. State the mechanism, never leave "how to kill what you started" to be inferred from "kill what you started." Return the visual verdict plus the specific things worth the owner's eye in her next playtest.
-2. The Opus controller gives the owner the outcome summary: what shipped per feedback item, commits, test count, the Opus review verdict, the Fable gate's verdict, and what to judge by eye.
+2. The controller gives the owner the outcome summary: what shipped per feedback item, commits, test count, the Sonnet review verdict, the Fable gate's verdict, and what to judge by eye.
 
 3. **Run the gate against a db COPY, not her live file.** Opening a finished game triggers an on-read heal that WRITES turning points. A gate that browses her real history mutates it as a side effect of looking. Copy the `.db` plus `-wal` plus `-shm` triple into the gate's worktree and let the heal land there; her live file heals naturally the next time she plays.
 
