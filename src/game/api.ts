@@ -712,6 +712,11 @@ export interface SummaryResponse {
   turningPoints: TurningPoint[];
   classifications: MoveClassification[];
   moves: SummaryMove[];
+  // Task 6 review: null while the game is live, the stored result string
+  // (e.g. "1-0") once it's finished. Optional so any pre-existing fixture
+  // that predates this field keeps compiling, same reasoning as the
+  // `side`/`highlighted` fields on SummaryMove above.
+  result?: string | null;
 }
 
 export function fetchSummary(gameId: number): Promise<SummaryResponse> {

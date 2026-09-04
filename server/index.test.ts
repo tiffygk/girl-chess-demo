@@ -456,7 +456,7 @@ describe("api", () => {
   it("returns an empty-but-ok summary for a nonexistent game (compute-on-read fallback)", async () => {
     await ready;
     const r = await request(app).get("/api/game/999999/summary").expect(200);
-    expect(r.body).toEqual({ ok: true, turningPoints: [], classifications: [], moves: [] });
+    expect(r.body).toEqual({ ok: true, turningPoints: [], classifications: [], moves: [], result: null });
   });
 
   // Increment 3c: GET /api/games — the "past games" saved-games menu.

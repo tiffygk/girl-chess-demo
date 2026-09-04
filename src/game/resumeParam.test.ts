@@ -45,4 +45,10 @@ describe("isResumableSummary", () => {
   it("a zero-move summary (orphaned stub) is NOT resumable", () => {
     expect(isResumableSummary({ moves: [] })).toBe(false);
   });
+  // Task 6 review, Important finding: a second tab left on `?game=<id>` for
+  // a game that finished elsewhere must not resume as if it were live -- a
+  // summary with moves AND a result is a finished game, not a live one.
+  it("a summary with moves and a result (a finished game) is NOT resumable", () => {
+    expect(isResumableSummary({ moves: [{ ply: 1 }], result: "1-0" })).toBe(false);
+  });
 });
