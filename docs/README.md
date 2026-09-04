@@ -2,7 +2,7 @@
 
 A personal AI chess tutor I designed and built 0-to-1 by directing Claude Code.
 
-Girl Chess plays you at any strength, beginner to strong club player, with human-feeling opponents instead of raw Stockfish. It feels like playing a person, not a wall. After each game it finds the moments that actually swung the result, shows you the better move on the board, and explains what it would have opened up in plain English, not notation. A coach named **cookie** sits alongside the whole time, in its own lavender corner: it warns you before a bad move lands, answers questions about any hint or turning point through an inline chat, and never invents a line it can't prove from the actual game.
+Girl Chess plays you at any strength, beginner to strong club player, with human-feeling opponents instead of raw Stockfish. It feels like playing a person, not a wall. After each game it finds the moments that actually swung the result, shows you the better move on the board, and explains what it would have opened up in plain English, not notation. A coach named **cookie** sits alongside the whole time, in its own lavender corner: it warns you before a bad move lands, answers questions about any hint or turning point through an inline chat, and won't keep a line the checks can disprove.
 
 I directed an AI coding agent through a structured build process instead of writing code by hand. The adversarial review caught a security hole and an honesty bug before either shipped. A later measurement pass caught something the review couldn't: the coach's advice was sometimes wrong not because the model was weak, but because it was never given the facts it needed. See **[decisions, measured](technical-decisions.md)** for the finding, the fix, and the eval harness that proved it.
 
@@ -28,7 +28,7 @@ Everything below is that spec turned into a shipped, gated build.
 ## Decisions, measured
 
 Three live decisions, weighed in the open, all shipped and merged: **[technical-decisions.md →](technical-decisions.md)**
-1. **The coach's advice was sometimes wrong, and it wasn't the model.** The headline finding: a fact gap, not a model-quality problem, dropped placement errors from 7.5% to 0 and explanation latency from 13-15s to ~4s, for a smaller and a larger model at once. Model tier turned out to be a downstream decision; the committed eval harness (`tools/coach-eval/`) proved it instead of assuming it.
+1. **The coach's advice was sometimes wrong, and it wasn't the model.** The cause was a fact gap. The coach was reasoning about the position from facts it never had. Giving it those facts fixed both numbers in the July 2026 eval: placement errors went from 7.5% to 0, and explanation answers from 13-15 seconds to about 4. Both held for a smaller model and a larger one, so model tier became a downstream decision. The committed harness (`tools/coach-eval/`) re-runs the model comparison. The placement number comes from that July eval, which the harness does not repeat.
 2. **The coach was too slow.** The trace-driven diagnosis, three options, and why I warmed the free path (an in-process Agent SDK backend) instead of paying for a metered API.
 3. **The coach gave me bad advice about a defended piece.** Why the fix was a computed fact, not a bigger model or an extra engine call.
 
@@ -38,12 +38,36 @@ Every sentence a player reads gets checked, and the check differs by surface: **
 
 Two instruments live in there, and they did different jobs. Keeping them apart is the point.
 
-- **The accuracy fix:** seven surfaces were each deriving the same chess fact on their own, so one wrong idea had seven routes to the screen. Routing all seven through a single verified source and adding a regression check to the merge gate is what took analysis errors on the coach's highlighted plies from 60% to zero. The audit, the population, the named source and the named check are traced in [evaluation.md](evaluation.md#the-sixty-percent-and-what-zero-counts).
+- **The accuracy fix:** seven surfaces were each deriving the same chess fact on their own, so one wrong idea had seven routes to the screen. Routing all seven through a single verified source and adding a regression check to the merge gate fixed it. Before, six of the ten "you could have won faster" claims I audited were contradicted by the moves. Now the rule that checks those claims counts about zero across every finished game. The audit, the population, the named source and the named check are traced in [evaluation.md](evaluation.md#the-sixty-percent-and-what-zero-counts).
 - **The blinded A/B evals:** Sonnet against Opus, across thinking budgets, with the grading key sealed until after I had written every grade. Those tuned answer quality, latency and fallback rate, and settled which model to run. They did not move the accuracy number.
+
+## Two ordinary questions, from the record
+
+The repository README shows the showpiece, a move-11 fork. Most coaching is smaller. Two exchanges from `data/girlchess-demo.db`, both against mallow at 1300, both games I won.
+
+Game 141, before my tenth move. I had a bishop check lined up and asked why the judge disliked it:
+
+> **Why is this bad?**
+>
+> moving your bishop to b5 gives check, but mallow just answers with pawn to c6, hitting your bishop again. you'd have to move it a third time this game, burning a tempo while she gets to develop for free.
+
+I played Be2 instead and rated the answer up.
+
+Game 148, asked from the debrief after the game, about my second move:
+
+> **did she go to d5 after i went to g4?**
+>
+> no, after your pawn to g4 she played her pawn to a5. the pawn to d5 you're thinking of only shows up in our chess brain's line for the move it wanted instead: pawn to d4.
+
+Two follow-ups on the same moment sit beside it, one rated down, one up. The 82 thumbs in the database split 48 up, 34 down. These are `advice_traces` rows 63 and 107; my questions are in the `prompt` column.
+
+The README's two move-11 screenshots show the coach declining to evaluate queen to a4 and the judge refuting it moments later. The judge's line, copied from the second screenshot (that game is not in the demo database):
+
+> moving your queen to a4 walks into a fork, one piece hitting two: her bishop to c6 would hit both your queen and your knight on f3 at once, and you can only save one. moving your knight to e4 instead attacks her bishop on f6, keeping the pressure on you.
 
 ## Live demo
 
-A working local app, not a hosted product. It runs on your own machine, and the [repository README](https://github.com/tiffygk/girl-chess-demo#running-it) covers what you need and what degrades if you skip a step.
+A working local app, not a hosted product. It runs on your own machine, and the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) covers what you need and what degrades if you skip a step.
 
 Five self-contained pages, no clone needed.
 
@@ -63,4 +87,4 @@ One artifact stays out of the repo: a quiz I built to drill myself on defending 
 
 ## Code
 
-The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). See the [repository README](https://github.com/tiffygk/girl-chess-demo#running-it) for setup.
+The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). See the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) for setup.

@@ -56,6 +56,14 @@ Quality grading stays human and blind. An LLM grader went in early and came out 
 
 Blinding cost one sibling JSON file and a fixed reading order, no tooling. The graded report labels the two models A and B, and omits latency, which would fingerprint the faster column. A re-render once swapped the columns and voided grades I had written, so assignment is drawn once per run. The graded subset caps at 30 rows: every eligible general question, then a seeded stratified draw for the rest. Criteria stay symmetric across A and B.
 
+## what the blinded evals decided
+
+The checks above keep answers true. The evals picked the model and its thinking budget. Twenty-one coach-eval runs are committed under `tools/coach-eval/runs/`, and 13 root-cause suite runs under `tools/rca-eval/runs/`.
+
+Sonnet against Opus: three repeats per model, columns blinded, key sealed until every grade was written. Sonnet 5 won.
+
+Thinking budget: three arms, default, low and disabled, three repeats each, 357 rows per arm. Low answers first. It ran at under half of default's latency (p50 6.2s against 14.5s) and failed less on the hardest bucket (13.3% against 18.7% on tactical-or-mate questions). It failed more on the two easier buckets (2.4% against 0% on direct facts, 7.1% against 3.8% on questions that need a line). Default handles the retry: a first draft that fails validation or times out is regenerated at the SDK's own unbounded adaptive thinking, decided by the failure alone, never by the question type.
+
 ## why this matters outside chess
 
 Which of your surfaces produce output you could list before shipping? Those get replayed against reality before merge. The rest get a fallback written before you need it. Chess only makes ground truth cheap.
