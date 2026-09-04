@@ -672,20 +672,35 @@ export function GamePage() {
   // page just sat on "finding an opponent..." forever with no signal. Named
   // so the ServerDownNotice's "try again" button can call the exact same
   // path the mount effect uses, instead of a bespoke retry.
+  //
+  // Review round 1 (Important finding): onRetry={connect} calls connect()
+  // directly, outside the mount effect, so its cleanup return value is
+  // discarded. A plain `cancelled` boolean only protects the ONE call whose
+  // cleanup got wired up (the mount-time one) -- if the user clicks "try
+  // again" while that first newSession() is still in flight, both promises
+  // are live and whichever settles last wins, regardless of which call was
+  // the more recent action. A generation counter fixes this for every
+  // caller uniformly: each connect() call is its own generation; a settled
+  // promise only applies its result if its generation is still current.
+  const connectGenRef = useRef(0);
   const connect = useCallback(() => {
-    let cancelled = false;
+    connectGenRef.current += 1;
+    const myGen = connectGenRef.current;
     setServerDown(false);
     newSession()
       .then((s) => {
-        if (!cancelled) setSessionId(s.sessionId);
+        if (connectGenRef.current !== myGen) return;
+        setSessionId(s.sessionId);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (connectGenRef.current !== myGen) return;
         if (err instanceof ServerUnreachableError) setServerDown(true);
         else setStatus("could not reach the game server. reload the page.");
       });
     return () => {
-      cancelled = true;
+      // Unmount (or any newer connect() call) bumps the generation so this
+      // in-flight promise's eventual settlement is a no-op.
+      connectGenRef.current += 1;
     };
   }, []);
 
