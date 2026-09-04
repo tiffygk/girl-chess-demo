@@ -189,18 +189,36 @@ describe("api: the server is not running", () => {
     await expect(newSession()).resolves.toBeDefined(); // today postJson returns the parsed body regardless of status; do not change that here
     vi.unstubAllGlobals();
   });
-  // Discovered running the real runtime check for this task: under `vite`'s
-  // dev proxy (server/vite.config.ts's `/api` proxy), a server that isn't
-  // listening doesn't make fetch() itself throw -- the browser's fetch
-  // resolves fine against Vite's own dev server, which answers with its own
-  // 502 Bad Gateway and a plain-text (non-JSON) body. res.json() then throws
-  // a SyntaxError, which propagated as an unhandled, unrecognized rejection
-  // and left the page on the "could not reach the game server" fallback
-  // instead of the intended ServerDownNotice. This is the same underlying
-  // fact (nothing is listening) surfacing one layer later.
-  it("maps an unparseable-JSON response (a dev-proxy 502 with a plain-text body) to ServerUnreachableError too", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("Bad Gateway", { status: 502 })));
+  // Discovered running the real runtime check for this task, re-measured by
+  // the controller (ruling 13): under `vite`'s dev proxy (vite.config.ts's
+  // `/api` proxy), a server that isn't listening doesn't make fetch() itself
+  // throw -- the browser's fetch resolves fine against Vite's own dev
+  // server, which answers with its own 502 Bad Gateway (Content-Type:
+  // text/plain) and logs "http proxy error ... ECONNREFUSED". This is the
+  // same underlying fact (nothing is listening) surfacing one layer later,
+  // so it maps to the same error -- decided on the status code, not on
+  // whatever res.json() happens to throw, so a real server returning a
+  // non-JSON 404/500 (wrong route, crashed handler) is never mislabelled.
+  it("maps a dev-proxy 502 (nothing listening) to ServerUnreachableError too", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Bad Gateway", { status: 502, headers: { "Content-Type": "text/plain" } }))
+    );
     await expect(newSession()).rejects.toBeInstanceOf(ServerUnreachableError);
+    vi.unstubAllGlobals();
+  });
+  // Ruling 13's counter-case: the server IS running but answers with a
+  // non-JSON error page (wrong route, crashed handler) -- this must NOT be
+  // mislabelled "the game server is not running." Only status 502 (the dev
+  // proxy's own answer when nothing is listening) maps to
+  // ServerUnreachableError; any other unparseable-JSON status propagates as
+  // it did before this task.
+  it("does not mislabel a non-JSON 404 (server running, wrong route) as ServerUnreachableError", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }))
+    );
+    await expect(newSession()).rejects.not.toBeInstanceOf(ServerUnreachableError);
     vi.unstubAllGlobals();
   });
 });

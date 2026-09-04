@@ -199,17 +199,16 @@ async function fetchOrUnreachable(input: string, init?: RequestInit): Promise<Re
 
 // Under `vite`'s dev proxy (vite.config.ts's `/api` proxy) a server that
 // isn't listening doesn't make fetch() itself throw -- the browser's fetch
-// resolves fine against Vite's own dev server, which answers with its own
-// 502 Bad Gateway and a plain-text (non-JSON) body. res.json() then throws
-// a SyntaxError. Same underlying fact (nothing is listening) surfacing one
-// layer later, so it maps to the same error.
+// resolves fine against Vite's own dev server, which answers 502 when
+// nothing is listening (Content-Type: text/plain, and vite logs "http proxy
+// error ... ECONNREFUSED"). Same underlying fact surfacing one layer later,
+// so it maps to the same error -- decided on the status code, not on
+// whatever res.json() happens to throw, so a real server's own non-JSON
+// error page (a 404 for a wrong route, a crashed handler's 500 HTML) is
+// never mislabelled "the game server is not running."
 async function jsonOrUnreachable<T>(res: Response): Promise<T> {
-  try {
-    return (await res.json()) as T;
-  } catch (err) {
-    if (err instanceof SyntaxError) throw new ServerUnreachableError();
-    throw err;
-  }
+  if (res.status === 502) throw new ServerUnreachableError();
+  return (await res.json()) as T;
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
