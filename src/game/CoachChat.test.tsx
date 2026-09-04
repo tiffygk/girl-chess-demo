@@ -12,8 +12,11 @@ function buildContext(): ChatContext {
   return { mode: "live" };
 }
 
+// Fix round 1 (2026-09-06, controller rulings 9/10): the sentence changed
+// -- not-installed now means the npm-installed helper binary is missing,
+// not that the Claude Code desktop app needs installing.
 const NOT_INSTALLED_DETAIL =
-  "cookie (the coach) needs the Claude Code app on this Mac. you can still play, get hints, and read every debrief. to turn cookie on: install Claude Code from https://claude.com/claude-code, run claude once in Terminal and sign in, then restart with npm run dev.";
+  "cookie (the coach) needs a helper program that did not install with npm ci. you can still play, get hints, and read every debrief. to turn cookie on: run npm ci again in Terminal, then restart with npm run dev.";
 
 describe("CoachChat: the coach tells the truth about whether it can talk", () => {
   it("renders the setup note above the input when the coach is not ready", () => {

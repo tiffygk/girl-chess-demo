@@ -378,6 +378,11 @@ export function CoachChat({
   // "chat with cookie" opener; both branches render and CSS swaps them on
   // .chat-corner-open, which is also what lets the small-viewport media
   // query (D5) hand the space back to the board without touching state.
+  // Fix round 1 review finding: the not-installed/not-signed-in check was
+  // duplicated between the bubble text and its chip below -- one source
+  // of truth for "coach needs setup, not just currently down".
+  const coachNeedsSetup = coachStatus != null && (coachStatus.state === "not-installed" || coachStatus.state === "not-signed-in");
+
   return (
     <div className={open ? "chat-corner chat-corner-open" : "chat-corner"} hidden={hidden}>
       <button type="button" className="chat-corner-opener" onClick={() => setOpen(true)}>
@@ -456,14 +461,10 @@ export function CoachChat({
                 className={m.role === "user" ? "chat-bubble chat-bubble-user" : "chat-bubble chat-bubble-coach pop-in"}
               >
                 <p className="chat-bubble-text">
-                  {m.cause === "backend-down" &&
-                  coachStatus &&
-                  (coachStatus.state === "not-installed" || coachStatus.state === "not-signed-in")
-                    ? coachStatus.detail
-                    : m.text}
+                  {m.cause === "backend-down" && coachNeedsSetup && coachStatus ? coachStatus.detail : m.text}
                 </p>
                 {m.cause === "backend-down" &&
-                  (coachStatus && (coachStatus.state === "not-installed" || coachStatus.state === "not-signed-in") ? (
+                  (coachNeedsSetup ? (
                     <span className="chat-offline-chip">not set up</span>
                   ) : (
                     <span className="chat-offline-chip">offline</span>
