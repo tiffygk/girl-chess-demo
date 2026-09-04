@@ -107,12 +107,12 @@ export function checkDbIntact(before: DbCountSnapshot, after: DbCountSnapshot): 
 // root (git puts the shared .git at <mainWorktreeRoot>/.git; linked
 // worktrees get <mainWorktreeRoot>/.git/worktrees/<name> instead, which is
 // why --git-common-dir -- not --git-dir -- is the one that always points
-// back to the shared root). The old literal is kept as FALLBACK_MAIN_
-// WORKTREE_DB and used ONLY if the git call itself fails (e.g. genuinely
-// not inside a git working tree), never as the first choice.
-const FALLBACK_MAIN_WORKTREE_DB =
-  "/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/data/girlchess.db";
-
+// back to the shared root). No hardcoded fallback path: a public repo must
+// not name the owner's home directory, and a fresh clone's own
+// data/girlchess.db is the only sensible answer when git cannot tell us
+// otherwise (resolveRealDbPath falls further back from there, to
+// data/girlchess-demo.db, when even that local copy is empty or missing).
+//
 // Pure with respect to program state (spawns `git`, touches no files) and
 // never throws -- returns null so callers can fall back rather than crash.
 // Exported for direct unit testing (tools/dbCountSnapshot.test.ts proves
@@ -135,7 +135,7 @@ export function deriveMainWorktreeDbFromGit(repoRoot: string): string | null {
 }
 
 function resolveMainWorktreeDbDefault(repoRoot: string): string {
-  return deriveMainWorktreeDbFromGit(repoRoot) ?? FALLBACK_MAIN_WORKTREE_DB;
+  return deriveMainWorktreeDbFromGit(repoRoot) ?? path.join(repoRoot, "data", "girlchess.db");
 }
 
 export interface DbResolution {
@@ -195,9 +195,22 @@ export function resolveRealDbPath(
       source: `local worktree copy (main worktree db not found at ${mainWorktreeDb}; verified ${localGames} games by count, not hash)`,
     };
   }
+  // Security round 2026-09-04: a fresh clone or CI has no owner db anywhere,
+  // but it does have the committed demo db (51 finished games with full move
+  // lists, the exact shape truth-check and replay-check operate on). Run the
+  // rules against that rather than crash. The owner's live db and a local
+  // copy both still win when present.
+  const demo = path.join(repoRoot, "data", "girlchess-demo.db");
+  const demoGames = countGamesReadonly(demo);
+  if (demoGames != null && demoGames > 0) {
+    return {
+      path: demo,
+      source: `committed demo db (no owner db at ${mainWorktreeDb} or ${local}; verified ${demoGames} games by count, not hash)`,
+    };
+  }
   throw new NoDbFoundError(
     `no usable db found: main worktree db missing at ${mainWorktreeDb}, and local ${local} is ` +
-      `${localGames == null ? "missing or unreadable" : "empty (0 games)"} -- nothing to copy from`
+      `${localGames == null ? "missing or unreadable" : "empty (0 games)"} -- and no committed demo db with games at ${demo}`
   );
 }
 
@@ -256,5 +269,8 @@ export function checkOwnerDb(repoRoot: string, mainWorktreeDb?: string): OwnerDb
   if (snap.games === 0) {
     return { status: "fail", detail: "the games table is EMPTY -- her history is gone" };
   }
-  return { status: "ok", detail: `${snap.games} games, ${snap.moves} moves, integrity ok` };
+  return {
+    status: "ok",
+    detail: `${resolution.source}: ${snap.games} games, ${snap.moves} moves, integrity ok`,
+  };
 }
