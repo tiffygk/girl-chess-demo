@@ -3,7 +3,8 @@ import { openDb, resolveServeDbPath, createSession, addModeMinutes, rateAdviceTr
 import { GameManager } from "./game/manager";
 import { servedCommit } from "./version";
 import { assertWeightsPresent } from "./engines/weightsCheck";
-import { ENGINE_PATHS } from "./engines/paths";
+import { ENGINE_PATHS, ALLOWED_ELOS } from "./engines/paths";
+export { ALLOWED_ELOS } from "./engines/paths";
 import { originGuard } from "./originGuard";
 import { coachStatus } from "./coach/backends/probe";
 import { listenErrorMessage, startupFailureMessage, openUrlMessage } from "./startupMessages";
@@ -27,14 +28,6 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, commit: servedCommit(
 app.get("/api/coach/status", async (_req, res) => res.json(await coachStatus()));
 
 app.post("/api/session", (_req, res) => res.json({ sessionId: createSession() }));
-
-// Every band here MUST have a weights file in weights/; a missing one makes
-// lc0 fail to load and silently swaps in the strength-limited stockfish
-// fallback (which floors at 1320, the opposite of what a low-elo request
-// wants, and far too strong for a high one). assertWeightsPresent at startup
-// is what stops that being silent. 1900 is maia's real published ceiling.
-// Keep in sync with OPPONENT_ELOS in src/game/GamePage.tsx.
-export const ALLOWED_ELOS = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900];
 
 // Fail at boot, not at the first 1900 game, and never by silently handing her
 // a stockfish opponent under a maia label. Skipped under test, where the
