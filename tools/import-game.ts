@@ -32,6 +32,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
 import { openDb } from "../server/store/db";
+import { DEMO_DB_BASENAME } from "./dbCountSnapshot";
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, "..");
@@ -117,6 +118,9 @@ export function importGame(
   targetDbPath: string,
   gameId: number
 ): ImportResult {
+  if (path.basename(targetDbPath) === DEMO_DB_BASENAME) {
+    throw new Error(`refusing: ${targetDbPath} is the committed demo db, never a write target`);
+  }
   const source = new Database(sourceDbPath, { readonly: true, fileMustExist: true });
   try {
     const gameRow = source.prepare("SELECT * FROM games WHERE id = ?").get(gameId) as

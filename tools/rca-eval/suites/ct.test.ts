@@ -26,8 +26,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { describe, it, expect } from "vitest";
-import { runCtSuite } from "./ct";
-import { deriveMainWorktreeDbFromGit } from "../../dbCountSnapshot";
+import { runCtSuite, hasPreTpv7Corpus } from "./ct";
 
 const FIXTURE_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -40,21 +39,13 @@ const COLLISION_GAMES = ["85", "86", "132", "149", "159"];
 const SPAN_GATE_GAMES = ["141", "144"];
 const CONVERSION_GAMES = ["130", "143", "145", "150", "151", "160"];
 
-// Mirrors ct.ts's resolvePreTpv7Backup lookup (ct.ts lines ~92-99) but
-// never throws -- used only to decide whether this file's runCtSuite()
+// hasPreTpv7Corpus (imported from ct.ts, same lookup runCtSuite's own setup
+// uses -- never a second hand-copy) decides whether this file's runCtSuite()
 // tests can run at all. The pre-tpv7-*.db backup corpus is the owner's
 // gitignored backup and exists only on her machine; a fresh clone has
 // none, and a skip with a reason is the honest result there (the
 // rca-eval suite's own did-not-run vs red distinction, applied to the
 // test runner itself).
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-function hasPreTpv7Corpus(): boolean {
-  const mainDataPath = deriveMainWorktreeDbFromGit(REPO_ROOT);
-  if (!mainDataPath) return false;
-  const backupsDir = path.join(path.dirname(mainDataPath), "backups");
-  if (!fs.existsSync(backupsDir)) return false;
-  return fs.readdirSync(backupsDir).some((f) => /^pre-tpv7-.*\.db$/.test(f));
-}
 const PRE_TPV7_CORPUS_PRESENT = hasPreTpv7Corpus();
 
 describe.skipIf(!PRE_TPV7_CORPUS_PRESENT)("runCtSuite (needs the owner's pre-tpv7 backup corpus)", () => {
@@ -71,7 +62,7 @@ describe.skipIf(!PRE_TPV7_CORPUS_PRESENT)("runCtSuite (needs the owner's pre-tpv
     expect(suite.notes?.join(" ")).toMatch(/pre-tpv7/);
   });
 
-  it("CT-01: game 160 heals to exactly one conversion point (ply 87, mateIn 2, plyEnd 187) and one missed-win point (ply 69, mateIn 4, missedCount 8), idempotent, TP_ALGO_VERSION 8", async () => {
+  it("CT-01: game 160 heals to exactly one conversion point (ply 87, mateIn 2, plyEnd 187) and one missed-win point (ply 69, mateIn 4, missedCount 8), idempotent, TP_ALGO_VERSION 9", async () => {
     const suite = await runCtSuite();
     const ct01 = suite.results.find((r) => r.id === "CT-01")!;
     expect(ct01.verdict, ct01.detail).toBe("pass");
@@ -81,7 +72,7 @@ describe.skipIf(!PRE_TPV7_CORPUS_PRESENT)("runCtSuite (needs the owner's pre-tpv
     expect(ct01.detail).toMatch(/ply 69/);
     expect(ct01.detail).toMatch(/missedCount 8/);
     expect(ct01.detail).toMatch(/idempotent/);
-    expect(ct01.detail).toMatch(/TP_ALGO_VERSION 8/);
+    expect(ct01.detail).toMatch(/TP_ALGO_VERSION 9/);
     expect(ct01.detail).toMatch(/computeTurningPoints/); // states which seam was exercised
   });
 

@@ -281,4 +281,36 @@ describe("resolveRealDbPath: committed demo db fallback (fresh clone / CI)", () 
     expect(r.source).toMatch(/local worktree copy/);
     expect(r.writable).toBe(true);
   });
+
+  it("GC_DB_PATH pointing at a file named girlchess-demo.db is never writable", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gc-override-demo-"));
+    tmp.push(root);
+    const demo = path.join(root, "data", "girlchess-demo.db");
+    writeTinyDb(demo, 2);
+    const saved = process.env.GC_DB_PATH;
+    process.env.GC_DB_PATH = demo;
+    try {
+      const r = resolveRealDbPath(root, missingMain);
+      expect(r.source).toMatch(/GC_DB_PATH/);
+      expect(r.writable).toBe(false);
+    } finally {
+      if (saved === undefined) delete process.env.GC_DB_PATH;
+      else process.env.GC_DB_PATH = saved;
+    }
+  });
+
+  it("GC_DB_PATH pointing at any other basename stays writable", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gc-override-other-"));
+    tmp.push(root);
+    const work = path.join(root, "demo-side-work.db");
+    writeTinyDb(work, 2);
+    const saved = process.env.GC_DB_PATH;
+    process.env.GC_DB_PATH = work;
+    try {
+      expect(resolveRealDbPath(root, missingMain).writable).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.GC_DB_PATH;
+      else process.env.GC_DB_PATH = saved;
+    }
+  });
 });
