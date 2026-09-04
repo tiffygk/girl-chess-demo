@@ -20,7 +20,7 @@ import {
   assertNotInAgentWorktree,
   resolveMainWorktreeBackupsDir,
 } from "./db-backup";
-import { countDbSnapshot, resolveRealDbPath } from "./dbCountSnapshot";
+import { countDbSnapshot } from "./dbCountSnapshot";
 
 const tmpDirs: string[] = [];
 afterEach(() => {
@@ -56,24 +56,31 @@ function makeMainWorktree(games: number, moves: number): { root: string; dbPath:
 
 describe("(a) backupLiveDb: produces the .db+-wal+-shm triple under the MAIN worktree's data/backups/, readonly source, counts equal live", () => {
   it("writes all three files, and countDbSnapshot(copy) equals countDbSnapshot(live)", async () => {
-    // Wave 0, item 4: main.dbPath's own game/move counts (161, 1721 below)
-    // were NEVER what got backed up -- this call doesn't override
-    // opts.sourceDb, so backupLiveDb's source defaults to
-    // resolveRealDbPath's real live db (this test's designed behavior, see
-    // this file's header comment). main.dbPath only anchors WHERE the
-    // backup gets WRITTEN (an injected mainWorktreeDb, so the write lands
-    // under a throwaway tmp dir shaped like the main worktree, never the
-    // real one). "live" for the equality check below is therefore that
-    // same real db, counted fresh in this same test run -- never a
-    // hardcoded snapshot from whenever this test was authored, which is
-    // exactly what silently went stale here before: the two hardcoded
-    // literals below asserted her games/moves count from authoring time
-    // (161/1721) and broke on every clean checkout since, because her real
-    // count keeps growing. The equality against a live count taken in the
-    // same run already proves the WAL-inclusion contract; the literals
-    // were never load-bearing.
+    // Fix round 2 (2026-09-04): this test never touches the owner's real
+    // live db. It used to reach it only because backupLiveDb's source
+    // defaulted to resolveRealDbPath's resolution, and passing an
+    // unreachable repoRoot ("/unused-repo-root") made git fail, which used
+    // to fall through to the hardcoded FALLBACK_MAIN_WORKTREE_DB literal --
+    // the owner's real path. That literal is gone (removed this round: a
+    // public repo must not name the owner's home directory), so this test
+    // now supplies its own fixture source db explicitly via opts.sourceDb,
+    // exactly as opts.mainWorktreeDb already does for WHERE the backup gets
+    // WRITTEN (an injected path under a throwaway tmp dir shaped like the
+    // main worktree, never the real one). "live" for the equality check
+    // below is that same fixture, counted fresh in this same test run --
+    // never a hardcoded snapshot from whenever this test was authored,
+    // which is exactly what silently went stale here before: two hardcoded
+    // literals once asserted her games/moves count from authoring time and
+    // broke on every clean checkout since, because her real count keeps
+    // growing. The equality against a live count taken in the same run
+    // already proves the WAL-inclusion contract; the literals were never
+    // load-bearing, and now nothing here reads her db at all.
     const main = makeMainWorktree(161, 1721);
-    const result = await backupLiveDb("/unused-repo-root", { mainWorktreeDb: main.dbPath });
+    const source = makeDb(7, 40);
+    const result = await backupLiveDb("/unused-repo-root", {
+      sourceDb: source,
+      mainWorktreeDb: main.dbPath,
+    });
 
     expect(fs.existsSync(result.dbPath)).toBe(true);
     expect(fs.existsSync(result.walPath)).toBe(true);
@@ -81,7 +88,7 @@ describe("(a) backupLiveDb: produces the .db+-wal+-shm triple under the MAIN wor
     expect(path.dirname(result.dbPath)).toBe(path.join(main.root, "data", "backups"));
 
     const copySnapshot = countDbSnapshot(result.dbPath);
-    const liveSnapshot = countDbSnapshot(resolveRealDbPath("/unused-repo-root").path);
+    const liveSnapshot = countDbSnapshot(source);
     expect(copySnapshot).toEqual(liveSnapshot);
   });
 
@@ -214,7 +221,7 @@ describe("(d) writing a backup path inside a wt-* worktree throws", () => {
     const sourceDb = makeDb(3, 5, dataDir);
 
     await expect(
-      backupLiveDb("/unused-repo-root", { mainWorktreeDb: sourceDb })
+      backupLiveDb("/unused-repo-root", { sourceDb, mainWorktreeDb: sourceDb })
     ).rejects.toThrow(/agent worktree/);
 
     expect(fs.existsSync(path.join(dataDir, "backups"))).toBe(false);
