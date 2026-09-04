@@ -46,3 +46,15 @@ export const ENGINE_PATHS = {
   maiaWeights: (elo: number) =>
     path.resolve(REPO_ROOT, "weights", `maia-${elo}.pb.gz`),
 };
+
+// Every band here MUST have a weights file in weights/; a missing one makes
+// lc0 fail to load and silently swaps in the strength-limited stockfish
+// fallback (which floors at 1320, the opposite of what a low-elo request
+// wants, and far too strong for a high one). assertWeightsPresent at startup
+// is what stops that being silent. 1900 is maia's real published ceiling.
+// Keep in sync with OPPONENT_ELOS in src/game/GamePage.tsx.
+// Moved here from server/index.ts (task 7, 2026-09-06) so tools/doctor.ts
+// can import it without loading the whole server (server/index.ts opens
+// the db at load time). Re-exported from server/index.ts for existing
+// importers.
+export const ALLOWED_ELOS = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900];
