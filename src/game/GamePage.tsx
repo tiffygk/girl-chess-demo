@@ -734,8 +734,17 @@ export function GamePage() {
         }
         setContinueGame({ id, plies: s.moves.length, elo: null });
       })
-      .catch(() => {
+      .catch((err) => {
         if (cancelled) return;
+        // Re-review round: a ServerUnreachableError (server not up yet, a
+        // blip) is not proof the game is dead -- clearing the stored id here
+        // would permanently delete a live game's resumability over a
+        // transient outage. Leave the stored id alone and render no card
+        // this pass; Task 5's ServerDownNotice already covers the
+        // server-down state elsewhere on this page. Only an actual summary
+        // fetch failure for a real reason (404, parse error, etc.) means
+        // the game itself is gone.
+        if (err instanceof ServerUnreachableError) return;
         writeActiveGame(null, localStorage);
         setContinueGame(null);
       });
