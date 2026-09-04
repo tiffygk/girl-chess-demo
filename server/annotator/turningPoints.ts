@@ -164,7 +164,8 @@ export interface TurningPoint {
 // confirmed crossing's ply (the main path -- 29 of 50 real-corpus anchors
 // collide with an existing swing). Old games heal to pick this up on their
 // next summary read.
-export const TP_ALGO_VERSION = 8;
+// 9: the episode anchor joins the collision guard (2026-09-05).
+export const TP_ALGO_VERSION = 9;
 
 // Owner-calibratable: cp -> winprob steepness. This is the same constant as
 // chess.com's published win% formula (0.00368208, here to 3 sig figs per
@@ -796,16 +797,30 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
   // points above. Max 4 cards total.
   const episode = detectKingPressureEpisode(moves, series);
   if (episode) {
-    points.push({
-      rank: points.length + 1,
-      ply: episode.plyStart,
-      plyEnd: episode.plyEnd,
-      san: episode.san,
-      label: "king pressure",
-      deltaP: episode.deltaP,
-      lowConfidence: false,
-      kind: "episode",
-    });
+    // Collision guard (cold-gate round, 2026-09-05): every kind pushed after
+    // this one checks whether a point already owns its ply; this push did
+    // not, and game 180 put a swing ("opponent mistake", Qf2) and this
+    // episode on ply 22 together, the one ply-collision replay-check has
+    // reported since round-2026-09-01. Every ply in [plyStart, plyEnd]
+    // satisfies kingPressureHolds (the run is consecutive by construction),
+    // so anchoring the card on the first unowned ply inside the run states
+    // a true fact; the range itself is unchanged. If the whole run is
+    // owned, the other cards already tell this story and the episode is
+    // redundant here, the same reasoning the conversion guard below uses.
+    let anchor = episode.plyStart;
+    while (anchor <= episode.plyEnd && points.some((p) => p.ply === anchor)) anchor++;
+    if (anchor <= episode.plyEnd) {
+      points.push({
+        rank: points.length + 1,
+        ply: anchor,
+        plyEnd: episode.plyEnd,
+        san: moves.find((m) => m.ply === anchor)?.san ?? episode.san,
+        label: "king pressure",
+        deltaP: episode.deltaP,
+        lowConfidence: false,
+        kind: "episode",
+      });
+    }
   }
 
   // Game-160 RCA round, Task K1 (2026-07-31): a missed or slipped forced

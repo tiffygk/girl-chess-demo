@@ -1804,8 +1804,8 @@ describe("GameManager", () => {
     );
     expect(getTurningPointsAllVersions(g).some((r: any) => (r.algo_version ?? 1) === 7)).toBe(true);
 
-    const summary = gm.getSummary(g); // heals: v7 < TP_ALGO_VERSION(8)
-    expect(TP_ALGO_VERSION).toBe(8);
+    const summary = gm.getSummary(g); // heals: v7 < TP_ALGO_VERSION(9)
+    expect(TP_ALGO_VERSION).toBe(9);
     const lead = summary.turningPoints.find((t: any) => t.kind === "lead-change");
     expect(lead).toMatchObject({ ply: 8, san: "d6", leader: "her", leadMarginCp: 310, leadNth: 1 });
 
