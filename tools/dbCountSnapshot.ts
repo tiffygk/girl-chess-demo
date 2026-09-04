@@ -37,6 +37,14 @@ import path from "path";
 import { execFileSync } from "child_process";
 import Database from "better-sqlite3";
 
+// The committed demo db is a fixture. No resolution branch, including the
+// GC_DB_PATH override, may hand it to a tool that writes (final review of
+// the 2026-09-04 security round).
+// server/store/db.ts exports its own DEMO_DB_BASENAME of the same name and
+// value; the two stay separate because tools/ must not import server/store
+// at load time.
+export const DEMO_DB_BASENAME = "girlchess-demo.db";
+
 export interface DbCountSnapshot {
   games: number;
   moves: number;
@@ -187,7 +195,8 @@ export function resolveRealDbPath(
   mainWorktreeDb: string = resolveMainWorktreeDbDefault(repoRoot)
 ): DbResolution {
   if (process.env.GC_DB_PATH) {
-    return { path: process.env.GC_DB_PATH, source: "GC_DB_PATH override", writable: true };
+    const p = process.env.GC_DB_PATH;
+    return { path: p, source: "GC_DB_PATH override", writable: path.basename(p) !== DEMO_DB_BASENAME };
   }
   if (fs.existsSync(mainWorktreeDb)) {
     return { path: mainWorktreeDb, source: "main worktree (live db, source of truth)", writable: true };
@@ -206,7 +215,7 @@ export function resolveRealDbPath(
   // lists, the exact shape truth-check and replay-check operate on). Run the
   // rules against that rather than crash. The owner's live db and a local
   // copy both still win when present.
-  const demo = path.join(repoRoot, "data", "girlchess-demo.db");
+  const demo = path.join(repoRoot, "data", DEMO_DB_BASENAME);
   const demoGames = countGamesReadonly(demo);
   if (demoGames != null && demoGames > 0) {
     return {

@@ -83,8 +83,13 @@ check "journal mode"   "$(sqlite3 "$TMP" 'PRAGMA journal_mode;')" "delete"
 # state a fresh clone ever sees. Checking the pragma alone would not catch it.
 rm -f "$TMP-wal" "$TMP-shm"
 check "readonly open"  "$(sqlite3 -readonly "$TMP" 'SELECT COUNT(*) FROM games;' 2>/dev/null || echo FAILED)" "$(sqlite3 "$TMP" 'SELECT COUNT(*) FROM games;')"
-leaks="$(strings "$TMP" | grep -icE '/Users/|/home/|@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' || true)"
-check "path/email leaks" "$leaks" 0
+# Same generic scan the publishing rules require before any push that
+# changes the demo db; pass GC_SCAN_EXTRA_PATTERNS (a file outside the repo)
+# to add owner-specific patterns.
+check "identifier scan" "$(tools/demo-db-scan.sh "$TMP" ${GC_SCAN_EXTRA_PATTERNS:-} >/dev/null 2>&1 && echo 0 || echo 1)" 0
+# The 2026-09-01 side column: a demo db without it cannot run replay-check's
+# conversion rules on a fresh clone (found 2026-09-04).
+check "moves.side populated" "$(sqlite3 "$TMP" 'SELECT COUNT(*) FROM moves WHERE side IS NULL;' 2>/dev/null || echo missing)" 0
 [ "$fail" = "0" ] || { echo "refusing to install a db that failed its own checks"; exit 1; }
 
 rm -f "$OUT-wal" "$OUT-shm"
