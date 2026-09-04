@@ -1647,6 +1647,21 @@ describe("GameManager", () => {
     expect(row2.bestUci == null).toBe(true);
   });
 
+  // Task 6 review, Important finding: the client's isResumableSummary needs
+  // to tell a live game from a finished one off the summary alone (a second
+  // tab left on `?game=<id>` while the game ended elsewhere). getSummary
+  // must carry the game's `result` (null while live, the stored result
+  // string once finishGame has run) so the client can reject a finished
+  // summary rather than resuming it as live.
+  it("summary carries a null result for a live game and the real result once finished", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    expect(gm.getSummary(g).result).toBe(null);
+
+    finishGame(g, "1-0");
+    expect(gm.getSummary(g).result).toBe("1-0");
+  });
+
   // debrief-v2: algo versioning self-heal. A game finished under the OLD
   // algorithm (dedup-swallows-her-swings, no episode detector) has a stale
   // algo_version=1 row set — getSummary must recompute under the current
