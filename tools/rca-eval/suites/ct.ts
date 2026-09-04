@@ -97,6 +97,20 @@ function resolvePreTpv7Backup(): string {
   return path.join(backupsDir, candidates[candidates.length - 1]);
 }
 
+// The pre-tpv7-*.db backup corpus is the owner's gitignored backup and
+// exists only on her machine; a fresh clone has none. Exported so
+// ct.test.ts can decide whether its runCtSuite() tests can run at all
+// (skip with a reason there) without hand-copying resolvePreTpv7Backup's
+// lookup a second time (fix round 2026-09-04, security round test minor).
+export function hasPreTpv7Corpus(): boolean {
+  try {
+    resolvePreTpv7Backup();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function loadExpectedConversion(): any {
   return JSON.parse(fs.readFileSync(path.join(FIXTURES_DIR, "expected-conversion.json"), "utf8"));
 }

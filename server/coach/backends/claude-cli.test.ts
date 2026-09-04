@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import os from "os";
 import path from "path";
 import {
@@ -6,6 +6,7 @@ import {
   coachSpawnOptions,
   GENERATE_BASE_ARGS,
 } from "./claude-cli";
+import { resetMeteredKeyWarningForTesting } from "./env";
 
 // Task 1 (inc 3.95): the coach's claude-cli backend was returning "offline"
 // on every server-spawned call. The real cause (found by isolating cwd,
@@ -53,11 +54,14 @@ describe("coachSpawnOptions", () => {
   it("never hands ANTHROPIC_API_KEY to the claude child (audit finding 3)", () => {
     const saved = process.env.ANTHROPIC_API_KEY;
     process.env.ANTHROPIC_API_KEY = "sk-test-not-real";
+    resetMeteredKeyWarningForTesting();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const { env } = coachSpawnOptions();
       expect(env.ANTHROPIC_API_KEY).toBeUndefined();
       expect(env.PATH).toBe(process.env.PATH);
     } finally {
+      warnSpy.mockRestore();
       if (saved === undefined) delete process.env.ANTHROPIC_API_KEY;
       else process.env.ANTHROPIC_API_KEY = saved;
     }
