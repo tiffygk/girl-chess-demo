@@ -72,7 +72,7 @@ I designed and built this 0-to-1 as a product manager's first vibed project ever
 <summary>Developer detail</summary>
 
 - Four text surfaces reach the player. Two are model-written, the coach chat and the per-move note; two are code, the hint ladder and the post-game analysis, templated from Stockfish facts.
-- `npm run gate` is the local merge check. It fails on any violation of the rules in `src/review/debriefInvariants.ts`. On a fresh clone with no personal database it runs those rules against the 51 committed games, and the same steps run in GitHub Actions on every push.
+- `npm run gate` is the local merge check. It fails on any violation of the rules in `src/review/debriefInvariants.ts`. On a fresh clone with no personal database it runs those rules against the 51 committed games.
 - Skipping `setup.sh` fails loudly: the server refuses to start and names the missing Elo bands. Deliberate. A missing Maia band used to silently swap in a strength-limited Stockfish, a far less human opponent.
 - `data/girlchess-demo.db` is committed on purpose: 51 games with full move lists, each coach reply's final draft with its validation result, my questions, and my thumbs. `tools/make-demo-db.sh` builds it from my live database through a read-only handle: finished games only, backend-error traces dropped. No names, addresses, emails or keys; I scanned it for them.
 
