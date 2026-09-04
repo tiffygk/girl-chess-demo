@@ -77,7 +77,12 @@ function resolveClaudeBinaryPath(): string | undefined {
   }
 }
 
-const AGENT_SDK_BINARY_PATH = resolveClaudeBinaryPath();
+// test-only: GC_COACH_EXECUTABLE lets a walkthrough see the not-installed
+// state on a Mac that has Claude Code -- it overrides the resolved binary
+// path the version probe spawns (runVersionProbe below), not just the
+// buildOptions() query() path, so that GET /api/coach/status (and the
+// panel it drives) actually reports not-installed with a bogus path.
+const AGENT_SDK_BINARY_PATH = process.env.GC_COACH_EXECUTABLE || resolveClaudeBinaryPath();
 
 // Bounding is the caller's job (available() below), same split as
 // runQuery/generate() -- this just spawns, listens for the abort signal
@@ -195,6 +200,8 @@ function buildOptions(abortController: AbortController, stablePrefix?: string, t
     settingSources: [] as never[],
     env: subscriptionOnlyEnv(),
     abortController,
+    // test-only: lets a walkthrough see the not-installed state on a Mac that has Claude Code
+    ...(process.env.GC_COACH_EXECUTABLE ? { pathToClaudeCodeExecutable: process.env.GC_COACH_EXECUTABLE } : {}),
     ...(stablePrefix ? { systemPrompt: [stablePrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY] } : {}),
     // disabled -> no extended thinking at all; low -> adaptive thinking
     // stays on but effort-capped (SDK's ThinkingConfig/EffortLevel shapes,
@@ -363,24 +370,109 @@ async function runQueryStream(
 // generate, finally clearTimeout -- so a hung or misbehaving SDK call can
 // never stall pickCoachBackend or narrate()/chat()'s existing
 // timeout/fallback handling.
+// Shared race body between available() (swallows the error -> boolean,
+// for pickCoachBackend) and probe.ts's probeCoach (needs the error itself
+// to classify not-installed/not-signed-in/down for the stranger-facing
+// sentence). One probe body, two callers.
+export async function probeAgentSdkOrThrow(): Promise<void> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`agent-sdk probe timed out after ${AGENT_SDK_PROBE_MS}ms`));
+    }, AGENT_SDK_PROBE_MS);
+  });
+  try {
+    await Promise.race([runVersionProbe(controller), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Fix round 1 (2026-09-06, controller rulings 9/10): `--version` answers
+// with no login at all -- it proved a live binary, not a signed-in one, so
+// a stranger who ran npm ci and never signed in read `ready` and still hit
+// the old "try me again" wall at the first question. `auth status` is the
+// real signal: measured on this Mac it exits 0 and prints JSON beginning
+// `{"loggedIn": true, "authMethod": "claude.ai", ...}` (with or without
+// ANTHROPIC_API_KEY set -- `subscriptionOnlyEnv()` below is belt-and-
+// suspenders, matching every other spawn in this file, not load-bearing
+// for this particular command). Same spawn/stdout-capture shape as
+// runVersionProbe, plus stdout capture and JSON parse.
+function runAuthProbe(controller: AbortController): Promise<{ loggedIn: boolean }> {
+  return new Promise((resolve, reject) => {
+    if (!AGENT_SDK_BINARY_PATH) {
+      reject(new Error("agent-sdk binary path could not be resolved"));
+      return;
+    }
+    let settled = false;
+    let stdout = "";
+    const proc = spawn(AGENT_SDK_BINARY_PATH, ["auth", "status"], {
+      signal: controller.signal,
+      env: subscriptionOnlyEnv(),
+    });
+
+    proc.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+    });
+
+    proc.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err instanceof Error ? err : new Error(String(err)));
+    });
+
+    proc.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      if (code !== 0) {
+        reject(new Error(`agent-sdk auth probe exited ${code}`));
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(stdout);
+      } catch {
+        reject(new Error("agent-sdk auth probe returned no JSON"));
+        return;
+      }
+      resolve({ loggedIn: Boolean((parsed as { loggedIn?: unknown })?.loggedIn) });
+    });
+  });
+}
+
+// Same bounded race shape as probeAgentSdkOrThrow -- AbortController +
+// Promise.race + finally clearTimeout -- but returns the auth result
+// instead of a boolean, since probe.ts's probeCoach needs `loggedIn`
+// itself to tell not-signed-in apart from ready (the version probe above
+// can never do that: `--version` doesn't touch auth). Exported for
+// probe.ts; pickCoachBackend's `available()` is unaffected and keeps
+// calling probeAgentSdkOrThrow (the cheaper liveness check).
+export async function probeAgentSdkAuth(): Promise<{ loggedIn: boolean }> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`agent-sdk auth probe timed out after ${AGENT_SDK_PROBE_MS}ms`));
+    }, AGENT_SDK_PROBE_MS);
+  });
+  try {
+    return await Promise.race([runAuthProbe(controller), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const agentSdkBackend: CoachBackend = {
   name: "agent-sdk",
   async available() {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        controller.abort();
-        reject(new Error(`agent-sdk probe timed out after ${AGENT_SDK_PROBE_MS}ms`));
-      }, AGENT_SDK_PROBE_MS);
-    });
     try {
-      await Promise.race([runVersionProbe(controller), timeout]);
+      await probeAgentSdkOrThrow();
       return true;
     } catch {
       return false;
-    } finally {
-      clearTimeout(timer);
     }
   },
   async generate(prompt, timeoutMs, stablePrefix, onUsage, thinkingPref) {

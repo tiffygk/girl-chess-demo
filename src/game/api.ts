@@ -204,6 +204,11 @@ async function del<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+export type CoachProbe = { state: "ready" | "not-installed" | "not-signed-in" | "down"; detail: string; checkedAt: number };
+
+export function fetchCoachStatus(): Promise<CoachProbe> {
+  return getJson("/coach/status");
+}
 export function newSession(): Promise<NewSessionResponse> {
   return postJson("/session", {});
 }
