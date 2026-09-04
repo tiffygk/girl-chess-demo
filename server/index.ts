@@ -6,6 +6,7 @@ import { assertWeightsPresent } from "./engines/weightsCheck";
 import { ENGINE_PATHS } from "./engines/paths";
 import { originGuard } from "./originGuard";
 import { coachStatus } from "./coach/backends/probe";
+import { listenErrorMessage, startupFailureMessage, openUrlMessage } from "./startupMessages";
 
 export const app = express();
 app.use("/api", originGuard);
@@ -39,7 +40,12 @@ export const ALLOWED_ELOS = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 190
 // a stockfish opponent under a maia label. Skipped under test, where the
 // suite runs with no weights directory and never spawns a real engine.
 if (process.env.NODE_ENV !== "test") {
-  assertWeightsPresent(ALLOWED_ELOS, ENGINE_PATHS.maiaWeights);
+  try {
+    assertWeightsPresent(ALLOWED_ELOS, ENGINE_PATHS.maiaWeights);
+  } catch (err) {
+    console.error(startupFailureMessage(err));
+    process.exit(1);
+  }
 }
 
 export function snapElo(raw: unknown): number {
@@ -496,13 +502,38 @@ app.post("/api/session/:id/mode", (req, res) => {
 
 if (process.env.NODE_ENV !== "test") {
   const PORT = Number(process.env.PORT) || 3001;
+  // The probe is independent of the db, so start it now rather than after
+  // the listen succeeds -- it overlaps with ready/listen instead of adding
+  // to the wait before the open line prints.
+  const coachReady = coachStatus();
   // Security round 2026-09-04, audit finding 1: bind loopback only. The
   // two-argument listen(port, cb) form listens on every interface, which
   // exposed an unauthenticated API to the whole LAN.
-  ready.then(() =>
-    app.listen(PORT, "127.0.0.1", () => {
-      console.log(`girl-chess server on 127.0.0.1:${PORT} (commit ${servedCommit()})`);
-      coachStatus().then((s) => console.log(`coach: ${s.detail}`));
-    }),
-  );
+  ready
+    .then(() => {
+      // No callback passed to listen(): express 5's app.listen wraps a
+      // trailing callback with once() and registers it as BOTH the
+      // "listening" AND the "error" handler, so a success callback there
+      // fires with the error silently swallowed as its ignored argument --
+      // printing "server on ..." even when the bind failed. Attaching our
+      // own named listeners avoids that.
+      const server = app.listen(PORT, "127.0.0.1");
+      server.on("listening", () => {
+        console.log(`girl-chess server on 127.0.0.1:${PORT} (commit ${servedCommit()})`);
+        // The open line goes last: the README tells a stranger the last
+        // line printed is the address to open.
+        coachReady.then((s) => {
+          console.log(`coach: ${s.detail}`);
+          console.log(openUrlMessage(process.env.VITE_PORT));
+        });
+      });
+      server.on("error", (err) => {
+        console.error(listenErrorMessage(err, PORT));
+        process.exit(1);
+      });
+    })
+    .catch((err) => {
+      console.error(startupFailureMessage(err));
+      process.exit(1);
+    });
 }
