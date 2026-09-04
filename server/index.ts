@@ -502,6 +502,10 @@ app.post("/api/session/:id/mode", (req, res) => {
 
 if (process.env.NODE_ENV !== "test") {
   const PORT = Number(process.env.PORT) || 3001;
+  // The probe is independent of the db, so start it now rather than after
+  // the listen succeeds -- it overlaps with ready/listen instead of adding
+  // to the wait before the open line prints.
+  const coachReady = coachStatus();
   // Security round 2026-09-04, audit finding 1: bind loopback only. The
   // two-argument listen(port, cb) form listens on every interface, which
   // exposed an unauthenticated API to the whole LAN.
@@ -516,8 +520,12 @@ if (process.env.NODE_ENV !== "test") {
       const server = app.listen(PORT, "127.0.0.1");
       server.on("listening", () => {
         console.log(`girl-chess server on 127.0.0.1:${PORT} (commit ${servedCommit()})`);
-        console.log(openUrlMessage(process.env.VITE_PORT));
-        coachStatus().then((s) => console.log(`coach: ${s.detail}`));
+        // The open line goes last: the README tells a stranger the last
+        // line printed is the address to open.
+        coachReady.then((s) => {
+          console.log(`coach: ${s.detail}`);
+          console.log(openUrlMessage(process.env.VITE_PORT));
+        });
       });
       server.on("error", (err) => {
         console.error(listenErrorMessage(err, PORT));
