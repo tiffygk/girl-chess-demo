@@ -62,6 +62,7 @@ import { shouldClearLiveDebrief } from "../review/deleteArm";
 import { fenAtPly } from "../review/Rewind";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
 import { readGameParam, withGameParam, isResumableSummary } from "./resumeParam";
+import { readActiveGame, writeActiveGame, continueCardBody } from "./activeGame";
 import {
   decideBranch,
   maxPress,
@@ -231,6 +232,11 @@ export function GamePage() {
   }, []);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [gameId, setGameId] = useState<number | null>(null);
+  // Task 6 fix round 2 (owner ruling 14): the pregame "continue card" data,
+  // fetched once when the pregame panel would show and a stored active-game
+  // id exists with no ?game= param already resuming it. null = nothing to
+  // offer (either no stored id, or the fetch proved it's not resumable).
+  const [continueGame, setContinueGame] = useState<{ id: number; plies: number; elo: number | null } | null>(null);
   const [fen, setFen] = useState(() => new Chess().fen());
   const [fallback, setFallback] = useState(false);
   // Round 3 (session-gone recovery, owner ruling 2026-08-02): "can we
@@ -595,6 +601,7 @@ export function GamePage() {
     setFen(g.fen);
     setFallback(g.fallback);
     setGameId(g.gameId);
+    writeActiveGame(g.gameId, localStorage);
     setOpponentElo(g.elo ?? elo);
     lastReplyAtRef.current = Date.now();
     // Resume self-arm (Wave 3.5): stamp ?game=<id> into the URL so a reload
@@ -639,6 +646,13 @@ export function GamePage() {
       mirrorRef.current = mirror;
       setFen(mirror.fen());
       setGameId(id);
+      // Task 6 review, minor: the stored active-game id must follow the game
+      // actually being played -- a resume via the "resume your last game"
+      // button already matches, but the mount-effect ?game=<id> path (a
+      // shared/bookmarked link, or a manually-edited URL) can resume a DIFFERENT
+      // id than whatever this browser last stored. Write it here so the two
+      // never drift apart.
+      writeActiveGame(id, localStorage);
       // W5: side rides the summary datum (server-derived once at load) and
       // is carried through as data by the liveMoves boundary mapper.
       setLiveMoves(liveMovesFromSummary(s.moves));
@@ -661,12 +675,83 @@ export function GamePage() {
       // Failed/dead resume: drop the param so a further reload doesn't retry
       // a game that can't be resumed, and stay on the start state.
       window.history.replaceState(null, "", withGameParam(window.location.pathname, window.location.search, null));
+      // Task 6: a dead resume means the stored id is no good either -- clear
+      // it so the pregame panel doesn't keep offering a game that can't load.
+      writeActiveGame(null, localStorage);
       setStatus("could not resume that game");
     });
     return () => {
       cancelled = true;
     };
   }, [resumeGame]);
+
+  // Task 6 (Appendix B step 6): leaving mid-game with no warning is how a
+  // reload silently orphaned a game before the resume path existed. The
+  // browser's own generic "leave page?" dialog is the guard -- its text
+  // cannot be customised, and that is fine; the goal is just a pause before
+  // the tab closes on a live position.
+  useEffect(() => {
+    if (!gameId || gameOver) return;
+    const h = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [gameId, gameOver]);
+
+  // Task 6 fix round 2 (owner ruling 14): the pregame "continue card" gate.
+  // Fires whenever the pregame panel is about to show (gameId falls back to
+  // null, or on mount) and there's no ?game=<id> already resuming a game --
+  // that path's own mount effect (above) handles the URL-driven resume, and
+  // this effect must not double-fetch/duplicate it. Fetches the stored
+  // active game's summary ONCE, shows the card only if it's genuinely
+  // resumable (moves and no result -- the same isResumableSummary gate
+  // resumeGame uses), and clears a dead stored id with no card and no dead
+  // space, per the component library's own rule ("card absent when nothing
+  // is resumable").
+  //
+  // Elo: checked whether SummaryResponse or SummaryMove carry the opponent
+  // elo (they don't -- see src/game/api.ts) and whether fetchGames() could
+  // supply it (it can't: GET /api/games is listFinishedGames(), filtered to
+  // `WHERE result IS NOT NULL`, so it never lists the live game being
+  // resumed, and it carries no elo field regardless). No server field was
+  // added this round (out of scope per the fix instructions), so elo is
+  // omitted and continueCardBody(null, plies) renders the elo-less body.
+  useEffect(() => {
+    if (!sessionId || gameId) return;
+    if (readGameParam(window.location.search) != null) return;
+    const id = readActiveGame(localStorage);
+    if (id == null) return;
+    let cancelled = false;
+    fetchSummary(id)
+      .then((s) => {
+        if (cancelled) return;
+        if (!isResumableSummary(s)) {
+          writeActiveGame(null, localStorage);
+          setContinueGame(null);
+          return;
+        }
+        setContinueGame({ id, plies: s.moves.length, elo: null });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // Re-review round: a ServerUnreachableError (server not up yet, a
+        // blip) is not proof the game is dead -- clearing the stored id here
+        // would permanently delete a live game's resumability over a
+        // transient outage. Leave the stored id alone and render no card
+        // this pass; Task 5's ServerDownNotice already covers the
+        // server-down state elsewhere on this page. Only an actual summary
+        // fetch failure for a real reason (404, parse error, etc.) means
+        // the game itself is gone.
+        if (err instanceof ServerUnreachableError) return;
+        writeActiveGame(null, localStorage);
+        setContinueGame(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, gameId]);
 
   // Task 5: newSession() rejecting used to be an unhandled promise -- the
   // page just sat on "finding an opponent..." forever with no signal. Named
@@ -995,6 +1080,7 @@ export function GamePage() {
           }
           setTakedownMove(tm);
           setGameOver(res.gameOver);
+          writeActiveGame(null, localStorage);
           setStatus("");
           celebrate(res.gameOver.result);
         }
@@ -1547,6 +1633,7 @@ export function GamePage() {
             // did — there's no checkmate sequence to stage.
             setTakedownMove(null);
             setGameOver({ result: r.result });
+            writeActiveGame(null, localStorage);
             setStatus("");
             celebrate(r.result);
           }
@@ -2660,6 +2747,29 @@ export function GamePage() {
               <ServerDownNotice onRetry={connect} />
             ) : sessionId && !gameId ? (
               <div className="controls game-controls pregame-panel">
+                {continueGame && (
+                  // Task 6 fix round 2 (owner ruling 14): the designed pregame
+                  // "continue card", ported verbatim from docs/component-library.html
+                  // (:3560-3574) -- absent entirely when nothing is resumable, per
+                  // the library's own rule, so there's no reserved dead space.
+                  <div className="pg2-continue">
+                    <span className="pg2-continue-kicker">game in progress</span>
+                    <p className="pg2-continue-body">{continueCardBody(continueGame.elo, continueGame.plies)}</p>
+                    <button
+                      type="button"
+                      className="small pg2-resume-btn"
+                      onClick={() => {
+                        // withGameParam returns a full "pathname?query" string, not just
+                        // the query portion -- assigning it to .search would double up
+                        // the "?" (observed: "/?/?game=197"), so it goes to .href instead,
+                        // which resolves the relative path/query correctly and reloads.
+                        window.location.href = withGameParam(window.location.pathname, window.location.search, continueGame.id);
+                      }}
+                    >
+                      resume game
+                    </button>
+                  </div>
+                )}
                 <label className="pregame-label" htmlFor="pregame-elo">
                   mallow plays at
                 </label>

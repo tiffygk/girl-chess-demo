@@ -571,9 +571,17 @@ export class GameManager {
       ply: number; san: string; highlighted: boolean; side?: "her" | "mallow";
       evalCp?: number | null; evalMate?: number | null; bestUci?: string | null;
     }[];
+    // Task 6 review, Important finding: null while the game is live, the
+    // stored result string once finishGame has run. Lets the client's
+    // isResumableSummary (src/game/resumeParam.ts) tell a summary fetched
+    // for a game that finished elsewhere apart from one that is still live,
+    // so a `?game=<id>` left open in a second tab doesn't resume as live.
+    result: string | null;
   } {
     let persisted = getTurningPoints(gameId);
     const rows = getGameMoves(gameId);
+    const resultRow = getGame(gameId);
+    const result: string | null = resultRow?.result ?? null;
     // W5 (opponent-move highlight): `side` rides every summary row, READ
     // once here off the moves.side column (Wave B4, 2026-09-01 attribution
     // round: this used to derive it from ply parity -- odd hers, even
@@ -602,8 +610,7 @@ export class GameManager {
     const persistedVersion = persisted.length > 0 ? (persisted[0].algo_version ?? 1) : TP_ALGO_VERSION;
     if (persisted.length > 0 && persistedVersion < TP_ALGO_VERSION) {
       const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null, side: r.side ?? undefined })); // Wave B4: side threaded from moves.side, see persistGameSummary's comment above
-      const game = getGame(gameId);
-      const healed = computeTurningPoints(evalMoves, game?.result ?? "");
+      const healed = computeTurningPoints(evalMoves, result ?? "");
       insertTurningPoints(
         gameId,
         healed.map((t) => ({
@@ -637,6 +644,7 @@ export class GameManager {
           .filter((m: any) => m.classification)
           .map((m: any) => ({ ply: m.ply, classification: m.classification })),
         moves,
+        result,
       };
     }
 
@@ -665,9 +673,8 @@ export class GameManager {
     // short-circuit), and the `computed.length > 0` guard below means
     // nothing is ever written for it (graceful no-op).
     const evalMoves = rows.map((r: any) => ({ ply: r.ply, san: r.san, evalCp: r.eval_cp, evalMate: r.eval_mate, bestMove: r.best_move ?? null, side: r.side ?? undefined })); // Wave B4: side threaded from moves.side, see persistGameSummary's comment above
-    const game = getGame(gameId);
-    const computed = computeTurningPoints(evalMoves, game?.result ?? "");
-    if (game?.result && computed.length > 0) {
+    const computed = computeTurningPoints(evalMoves, result ?? "");
+    if (result && computed.length > 0) {
       insertTurningPoints(
         gameId,
         computed.map((t) => ({
@@ -687,6 +694,7 @@ export class GameManager {
       turningPoints: computed,
       classifications: classifyMoves(evalMoves).filter((c): c is { ply: number; classification: string } => c != null),
       moves,
+      result,
     };
   }
 
