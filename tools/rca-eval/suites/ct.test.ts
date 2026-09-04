@@ -62,7 +62,7 @@ describe.skipIf(!PRE_TPV7_CORPUS_PRESENT)("runCtSuite (needs the owner's pre-tpv
     expect(suite.notes?.join(" ")).toMatch(/pre-tpv7/);
   });
 
-  it("CT-01: game 160 heals to exactly one conversion point (ply 87, mateIn 2, plyEnd 187) and one missed-win point (ply 69, mateIn 4, missedCount 8), idempotent, TP_ALGO_VERSION 8", async () => {
+  it("CT-01: game 160 heals to exactly one conversion point (ply 87, mateIn 2, plyEnd 187) and one missed-win point (ply 69, mateIn 4, missedCount 8), idempotent, TP_ALGO_VERSION 9", async () => {
     const suite = await runCtSuite();
     const ct01 = suite.results.find((r) => r.id === "CT-01")!;
     expect(ct01.verdict, ct01.detail).toBe("pass");
@@ -72,7 +72,7 @@ describe.skipIf(!PRE_TPV7_CORPUS_PRESENT)("runCtSuite (needs the owner's pre-tpv
     expect(ct01.detail).toMatch(/ply 69/);
     expect(ct01.detail).toMatch(/missedCount 8/);
     expect(ct01.detail).toMatch(/idempotent/);
-    expect(ct01.detail).toMatch(/TP_ALGO_VERSION 8/);
+    expect(ct01.detail).toMatch(/TP_ALGO_VERSION 9/);
     expect(ct01.detail).toMatch(/computeTurningPoints/); // states which seam was exercised
   });
 
