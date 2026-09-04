@@ -1,4 +1,4 @@
-import { Component, type ReactNode } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
 
 // The last line of defence: a rendering bug shows one sentence and a reload
 // button instead of a blank page. Exported separately from ErrorBoundary so
@@ -19,6 +19,13 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  // Review round 2 (minor finding): the fallback sentence tells the player
+  // to reload; this is what tells a developer anything at all -- otherwise
+  // the caught error and its component stack vanish the moment the fallback
+  // renders. Console only, no change to what the fallback shows.
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(error, info.componentStack);
   }
   render() {
     if (!this.state.failed) return this.props.children;
