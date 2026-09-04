@@ -215,17 +215,30 @@ describe("deriveMainWorktreeDbFromGit: the main-worktree db path comes from git,
 
   it("resolveRealDbPath uses git derivation when mainWorktreeDb is omitted: the owner's live db if it exists, else the committed demo db", () => {
     const thisFileDir = path.dirname(fileURLToPath(import.meta.url));
+    // resolveRealDbPath anchors its local/demo fallback paths on its
+    // repoRoot argument, exactly as every production caller (gate.ts,
+    // truth-check.ts, replay-check.ts) does -- that argument must be the
+    // checkout root (the directory holding data/), not tools/ itself, or
+    // the fallback paths become the nonexistent tools/data/....
+    const repoRoot = path.resolve(thisFileDir, "..");
+    // Git derivation itself works from any subdirectory -- that's what this
+    // half tests -- so it still takes thisFileDir. It returns null when no
+    // .git is reachable at all (rarer than a real clone, which always has
+    // one, but resolveRealDbPath must survive it regardless -- production
+    // code already treats a null derivation the same as a derived path
+    // whose file doesn't exist, falling through to local/demo), so this
+    // does not assert derived is non-null; it only uses it when present.
     const derived = deriveMainWorktreeDbFromGit(thisFileDir);
-    expect(derived).not.toBeNull();
-    const result = resolveRealDbPath(thisFileDir);
-    if (fs.existsSync(derived!)) {
+    const result = resolveRealDbPath(repoRoot);
+    if (derived != null && fs.existsSync(derived)) {
       expect(result.source).toMatch(/main worktree/);
       expect(result.path).toBe(derived);
       expect(result.writable).toBe(true);
     } else {
-      // A fresh clone or CI: no owner db anywhere, the committed demo db carries the rules.
+      // A fresh clone, CI, or a .git-less copy: no owner db anywhere, the
+      // committed demo db carries the rules.
       expect(result.source).toMatch(/committed demo db/);
-      expect(result.path).toMatch(/[\\/]data[\\/]girlchess-demo\.db$/);
+      expect(result.path).toBe(path.join(repoRoot, "data", "girlchess-demo.db"));
       expect(result.writable).toBe(false);
     }
     expect(fs.existsSync(result.path)).toBe(true);
