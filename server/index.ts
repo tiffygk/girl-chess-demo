@@ -4,9 +4,11 @@ import { GameManager } from "./game/manager";
 import { servedCommit } from "./version";
 import { assertWeightsPresent } from "./engines/weightsCheck";
 import { ENGINE_PATHS } from "./engines/paths";
+import { originGuard } from "./originGuard";
 
 export const app = express();
 app.use(express.json());
+app.use("/api", originGuard);
 
 openDb(process.env.NODE_ENV === "test" ? ":memory:" : process.env.DB_PATH || "data/girlchess.db");
 // Exported: index.test.ts (F16 chat route test) uses
@@ -489,5 +491,8 @@ app.post("/api/session/:id/mode", (req, res) => {
 
 if (process.env.NODE_ENV !== "test") {
   const PORT = Number(process.env.PORT) || 3001;
-  ready.then(() => app.listen(PORT, () => console.log(`girl-chess server on :${PORT} (commit ${servedCommit()})`)));
+  // Security round 2026-09-04, audit finding 1: bind loopback only. The
+  // two-argument listen(port, cb) form listens on every interface, which
+  // exposed an unauthenticated API to the whole LAN.
+  ready.then(() => app.listen(PORT, "127.0.0.1", () => console.log(`girl-chess server on 127.0.0.1:${PORT} (commit ${servedCommit()})`)));
 }
