@@ -205,7 +205,7 @@ function ct01(dbPath: string, baseline: Baseline, expected: any): EvalResult {
     if (missedWin.mateIn !== expectedMissed.mateIn) problems.push(`missed-win mateIn ${missedWin.mateIn} != expected ${expectedMissed.mateIn}`);
     if (missedWin.missedCount !== expectedMissed.missedCount) problems.push(`missed-win missedCount ${missedWin.missedCount} != expected ${expectedMissed.missedCount}`);
   }
-  if (TP_ALGO_VERSION !== 8) problems.push(`TP_ALGO_VERSION is ${TP_ALGO_VERSION}, expected 8`);
+  if (TP_ALGO_VERSION !== 9) problems.push(`TP_ALGO_VERSION is ${TP_ALGO_VERSION}, expected 9`);
   if (!idempotent) problems.push("a second computeTurningPoints() call on the identical input produced a different result -- not idempotent");
 
   const seamNote =
