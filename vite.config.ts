@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: Number(process.env.VITE_PORT) || 5173,
-    proxy: { "/api": process.env.VITE_API_TARGET || "http://localhost:3001" },
+    proxy: { "/api": process.env.VITE_API_TARGET || "http://127.0.0.1:3001" },
   },
   // Task 1f (coach-truth-speed latency round, 2026-08-02): `vite preview`
   // serves the BUILT static dist/ (no watcher, no HMR -- the whole point of
@@ -17,7 +17,7 @@ export default defineConfig({
   // changes nothing about `npm run dev`'s existing `vite` (server-key) path.
   preview: {
     port: Number(process.env.VITE_PREVIEW_PORT) || 4173,
-    proxy: { "/api": process.env.VITE_API_TARGET || "http://localhost:3001" },
+    proxy: { "/api": process.env.VITE_API_TARGET || "http://127.0.0.1:3001" },
   },
   test: {
     // The css source pins (endCopy.test.ts) need the real stylesheet text.

@@ -60,8 +60,8 @@ Trust `git log` for the live tip, never a HEAD pinned anywhere in this file — 
 
 ## Repository and primitives (file structure locks the decomposition)
 
-**Repo location (owner reorg 2026-07-28 — the old `/Users/tiffany/girl-chess` path is DEAD):**
-`/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/`
+**Repo location (owner reorg 2026-07-28 — the old `~/girl-chess` path is DEAD):**
+the `girl-chess-agents/` checkout inside the owner's Obsidian vault. The absolute path lives in the vault's own notes, not in this public repo; from any worktree, `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"` is the main checkout.
 
 The owner moved the repo inside the Obsidian vault so everything about this project is
 findable and reviewable in one master folder. The vault `girl chess game/` is now the root
@@ -71,7 +71,7 @@ worktree. **Any new folder or worktree an agent creates goes INSIDE `girl-chess-
 never at `~/` and never loose in the vault root** — the point of the reorg is that the owner
 can review agent output without hunting for it. Worktrees are registered with `git worktree`
 and gitignored as directories, so never `git add` them. If a path in an old handoff or round
-ledger still says `/Users/tiffany/girl-chess`, it is stale — translate it to the path above
+ledger still says `~/girl-chess`, it is stale — translate it to the path above
 rather than recreating the old directory.
 
 Plans, handoffs, and product docs live in the Obsidian vault, NOT the repo: **plans go to the vault `2 build/`, handoffs go to the vault `6 handoffs/`** — write them there, or if first drafted under `.superpowers/`, mirror to the vault immediately (owner rule, 2026-07-21). `CLAUDE.md` in the repo carries the architecture map and standing rules for future sessions; `docs/changelog.md` carries the "what shipped when" history that used to live inline here. Front-end design references — component libraries, visual style guides, anything like `front-end-components.md` — belong in the vault's `3 visual/` folder alongside `Sugar Glitch Demo.html`, never in a repo-local `design/` folder.

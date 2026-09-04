@@ -17,7 +17,7 @@ The flow is a one-way handoff, not back-and-forth switching: **Fable plan window
 
 ## Phase 0 — preconditions (any model)
 
-1. Confirm the session started inside `/Users/tiffany/girl-chess` (CLAUDE.md auto-loaded). If not, tell the owner to restart there.
+1. Confirm the session started inside the repo root, the `girl-chess-agents/` checkout (CLAUDE.md auto-loaded). If not, tell the owner to restart there.
 2. Capture the owner's feedback verbatim into `.superpowers/sdd/rounds/<date>-<slug>/feedback.md` before interpreting it.
 
 ## Phase 1 — plan (Fable window)
@@ -35,7 +35,7 @@ Write the plan under **`superpowers:writing-plans`** — its structure (spec →
    - if the wave runs the app: the kill mechanism, by PID. See the hard rule in Phase 4.
    - if the wave draws an original glyph, icon, or illustration: **geometry, not adjectives, plus a falsification test.** "Make it look like a fortune cookie" produced eleven failed iterations; what worked was naming the parts and proportions (fat belly at the bottom, two unequal lobes split by a narrow crack, crease as an arc not a stem, slip angled out of the crack with its tip tucked), saying what must NOT appear, requiring reference study before drawing, and setting a hard self-test: "if bowl, taco, mushroom, tulip, shell, or croissant is a plausible read, it failed, iterate again." All of that was available on iteration one.
    - if the wave writes an identity, dedup, or cache key derived from CONTENT rather than a guaranteed-unique id: the test plan must include a **same-content, different-position** case. A green suite hid a HIGH-severity bug this way once (`focusKey` was `hint:${level}:${text}`, level-1 hint copy is a fixed template, so two different moments collided) because every fixture used distinct text. Distinct-content cases alone do not cover the input space that breaks these functions.
-4. Owner visibility (rule added 2026-07-19 after plans hid in the dot-folder): whenever a round has a plan document, copy it (and any panel review) to the vault at `"/Users/tiffany/Documents/Obsidian Vaults/girl chess game/2 build/"` named `Girl Chess — Increment <n> Plan.md` per the existing convention. The ledger copy stays canonical for agents; the vault copy is for the owner to read. Re-copy when the plan is revised.
+4. Owner visibility (rule added 2026-07-19 after plans hid in the dot-folder): whenever a round has a plan document, copy it (and any panel review) to the vault's `2 build/` folder, which sits beside `girl-chess-agents/` (`"$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/../2 build/"`), named `Girl Chess — Increment <n> Plan.md` per the existing convention. The ledger copy stays canonical for agents; the vault copy is for the owner to read. Re-copy when the plan is revised.
 5. End the Fable turn: tell the owner the plan and briefs are ready. Once she approves, she opens an **Opus window** at the repo and points it at the round folder to run Phases 2-4. Do not run the execution phases in the Fable plan window.
 
 ## Phase 2 — build (Opus controller)

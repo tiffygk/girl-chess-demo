@@ -82,6 +82,12 @@ function main() {
 
   // --confirm: the one path that writes to her real history.
   if (!fs.existsSync(res.path)) throw new Error(`refusing --confirm: resolved db path does not exist: ${res.path}`);
+  if (!res.writable) {
+    console.error(
+      `refusing to write: resolved to the committed demo db (${res.source}); point GC_DB_PATH at a real db`
+    );
+    process.exit(1);
+  }
   const before = countDbSnapshot(res.path);
   console.log(`[backfill-move-side] writing to ${res.path} (${res.source})`);
   console.log(`[backfill-move-side] counts before: ${JSON.stringify(before)}`);

@@ -40,14 +40,15 @@ import { Chess } from "chess.js";
 import { phasesForGame, type MidgameTrigger } from "../src/review/gamePhases";
 import { nearlyBarePlies } from "../src/review/phase";
 import type { SummaryMove } from "../src/game/api";
+import { deriveMainWorktreeDbFromGit } from "./dbCountSnapshot";
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, "..");
 const BACKUP_DB_PATH = path.join(REPO_ROOT, "data", "backups", "2026-07-30-phase", "girlchess.db");
 const FORBIDDEN_LIVE_PATHS = [
   path.join(REPO_ROOT, "data", "girlchess.db"),
-  "/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/data/girlchess.db",
-];
+  deriveMainWorktreeDbFromGit(REPO_ROOT),
+].filter((p): p is string => p !== null);
 
 type Phase = "opening" | "middlegame" | "endgame";
 
