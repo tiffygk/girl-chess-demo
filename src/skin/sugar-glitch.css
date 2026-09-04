@@ -255,6 +255,11 @@
   align-items: center;
   gap: 12px;
   padding: 20px 0;
+  /* Task 6 fix round 2: the continue card (below) needs to sit on its own
+     line above the elo-picker row rather than squeeze into it -- wrap is
+     additive here, this row had none before and nothing else in it grows
+     past its content width, so nothing else's layout changes. */
+  flex-wrap: wrap;
 }
 /* Wave C, item 9: sugar-glitch elo picker (owner: "should be a stylized
    sugar glitch UI element"). Kicker mirrors the coach-band .chp-kicker
@@ -287,6 +292,41 @@
 .gc-app .pregame-panel button.small:active {
   box-shadow: 0 2px 0 #C22B7E, 0 6px 10px rgba(255,61,166,.22);
 }
+
+/* Task 6 fix round 2 (owner ruling 14): the pregame "continue card", ported
+   verbatim from docs/component-library.html (:3325-3372 CSS, :3560-3574
+   markup) -- flat-tint statement card holding one candy button, dest-chip
+   cyan wash: her game, her voice. Absent entirely when nothing is
+   resumable (GamePage.tsx's continueGame gate), so there's no reserved
+   dead space -- the picker row simply sits first in that case. */
+.gc-app .pg2-continue {
+  display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
+  background: #D7FAFF;
+  border: 1.5px solid rgba(35,168,199,.35); border-radius: 16px;
+  padding: 10px 14px;
+  /* Task 6 fix round 2: forces the card onto its own line inside
+     .pregame-panel's flex row (see the flex-wrap added above), rather than
+     sharing a row with the elo picker/start-game/past-games controls --
+     "lives in the action slot ABOVE the picker row". Not part of the
+     library's own rule (that card sits alone in its own mock container);
+     needed only because this card is nested inside the existing panel. */
+  flex: 1 1 100%;
+}
+.pg2-continue-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; text-transform: lowercase; color: #1A7A93;
+}
+.pg2-continue-body {
+  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 12.5px;
+  color: #1A7A93; margin: 0;
+}
+.gc-app button.small.pg2-resume-btn {
+  align-self: center; flex: none;
+  background: #fff; color: #1A7A93;
+  box-shadow: 0 3px 0 #D7FAFF, 0 6px 10px rgba(35,168,199,.14);
+}
+.gc-app button.small.pg2-resume-btn:hover { box-shadow: 0 5px 0 #D7FAFF, 0 8px 14px rgba(35,168,199,.18); }
+.gc-app button.small.pg2-resume-btn:active { box-shadow: 0 1px 0 #D7FAFF, 0 4px 8px rgba(35,168,199,.12); }
 
 /* Wave B: fixed-height reserve directly under the board-stack card so the
    judge indicator and the controls (play it/take it back, resign/offer
