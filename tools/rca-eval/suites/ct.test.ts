@@ -27,6 +27,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { describe, it, expect } from "vitest";
 import { runCtSuite } from "./ct";
+import { deriveMainWorktreeDbFromGit } from "../../dbCountSnapshot";
 
 const FIXTURE_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -39,7 +40,24 @@ const COLLISION_GAMES = ["85", "86", "132", "149", "159"];
 const SPAN_GATE_GAMES = ["141", "144"];
 const CONVERSION_GAMES = ["130", "143", "145", "150", "151", "160"];
 
-describe("runCtSuite", () => {
+// Mirrors ct.ts's resolvePreTpv7Backup lookup (ct.ts lines ~92-99) but
+// never throws -- used only to decide whether this file's runCtSuite()
+// tests can run at all. The pre-tpv7-*.db backup corpus is the owner's
+// gitignored backup and exists only on her machine; a fresh clone has
+// none, and a skip with a reason is the honest result there (the
+// rca-eval suite's own did-not-run vs red distinction, applied to the
+// test runner itself).
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+function hasPreTpv7Corpus(): boolean {
+  const mainDataPath = deriveMainWorktreeDbFromGit(REPO_ROOT);
+  if (!mainDataPath) return false;
+  const backupsDir = path.join(path.dirname(mainDataPath), "backups");
+  if (!fs.existsSync(backupsDir)) return false;
+  return fs.readdirSync(backupsDir).some((f) => /^pre-tpv7-.*\.db$/.test(f));
+}
+const PRE_TPV7_CORPUS_PRESENT = hasPreTpv7Corpus();
+
+describe.skipIf(!PRE_TPV7_CORPUS_PRESENT)("runCtSuite (needs the owner's pre-tpv7 backup corpus)", () => {
   it("asserts its own denominator: exactly 7 evals, over the real 161-game corpus", async () => {
     const suite = await runCtSuite();
     expect(suite.suite).toBe("CT");
