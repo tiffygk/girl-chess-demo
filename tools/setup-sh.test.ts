@@ -90,4 +90,18 @@ describe("setup.sh", () => {
     expect(fs.existsSync(path.join(work, "curl.log"))).toBe(false);
     expect(r.stdout).toMatch(/all 9 opponent files already present/);
   });
+
+  it("still downloads a missing named elo even when a stray file makes the glob count reach 9", () => {
+    fs.mkdirSync(path.join(work, "weights"));
+    const elos = [1100, 1200, 1300, 1400, 1600, 1700, 1800, 1900]; // 1500 missing
+    for (const elo of elos) {
+      fs.writeFileSync(path.join(work, "weights", `maia-${elo}.pb.gz`), goodGz());
+    }
+    fs.writeFileSync(path.join(work, "weights", "maia-9999.pb.gz"), goodGz());
+    stub(bin, "curl", 'out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done; echo "curl $out" >> "$HOME/curl.log"; printf "" | gzip -c > "$out"');
+    const r = run();
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const log = fs.readFileSync(path.join(work, "curl.log"), "utf8");
+    expect(log).toMatch(/maia-1500\.pb\.gz/);
+  });
 });
