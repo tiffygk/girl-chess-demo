@@ -1,22 +1,25 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { fileURLToPath } from "url";
 import { describe, it, expect, afterEach } from "vitest";
 
 describe("ENGINE_PATHS weights resolution", () => {
-  it("resolves the weights dir from the repo root, independent of cwd", async () => {
+  it("resolves the weights dir from the repo root, independent of cwd and of the folder's name", async () => {
     const original = process.cwd();
     try {
       // weightsDir is a module-level constant computed at import time, so
       // to exercise cwd-independence we must chdir BEFORE the module is
-      // first evaluated -- a dynamic import after chdir does that. A
-      // worktree's own cwd (or any unrelated cwd) must not change the
-      // resolved weights path: weights/ is gitignored and only exists in
-      // the main checkout, never in a worktree's own directory.
+      // first evaluated -- a dynamic import after chdir does that. The
+      // expected root comes from findRepoRoot on this test file's own
+      // location, never from a folder name: a clone can live anywhere.
       process.chdir("/tmp");
-      const { ENGINE_PATHS } = await import("./paths");
-      expect(ENGINE_PATHS.weightsDir).toMatch(/girl-chess-agents\/weights$/);
-      expect(ENGINE_PATHS.maiaWeights(1300)).toMatch(/girl-chess-agents\/weights\/maia-1300\.pb\.gz$/);
+      const { ENGINE_PATHS, findRepoRoot } = await import("./paths");
+      const expectedRoot = findRepoRoot(path.dirname(fileURLToPath(import.meta.url)));
+      expect(fs.existsSync(path.join(expectedRoot, "package.json"))).toBe(true);
+      expect(ENGINE_PATHS.weightsDir).toBe(path.join(expectedRoot, "weights"));
+      expect(ENGINE_PATHS.maiaWeights(1300)).toBe(path.join(expectedRoot, "weights", "maia-1300.pb.gz"));
+      expect(ENGINE_PATHS.weightsDir.startsWith("/tmp")).toBe(false);
     } finally {
       process.chdir(original);
     }
