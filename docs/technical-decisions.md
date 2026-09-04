@@ -16,6 +16,12 @@ The tempting fix is a bigger model: Opus over Sonnet, reasoning its way to a bet
 
 The engine had already analyzed every ply, and the hint system had already computed its own facts, both sitting in the database, unused by chat. I threaded that persisted analysis into the coach's fact list instead of asking the model to re-derive it, and added a deterministic placement-claim check that catches a contradiction before it renders. The coach went from reasoning about the position to reading it.
 
+## One question the model never gets the board for
+
+A rule, not the model, decides whether a question is about the position or about chess in general. Pointing at a hint, a card or a pending move forces the board route; ambiguity goes to the board route too, because a general answer to a board question can be false about a position the model never saw. The general route gets no FEN and no engine lines, only the game's status, outcome, move list and turning points, and its validator drops the move allowlist and the mate check.
+
+Source: `classifyIntent` in `server/coach/intent.ts`; `generalFactsForModel` and `validateChatGeneral` in `server/coach/chat.ts`.
+
 ## Both numbers moved together, for both models
 
 Placement errors: 7.5% to 0. Explanation latency: 13-15s to about 4s. Neither fix was aimed at the other; both came from the same change, because the same missing facts were causing both problems. After the fix, Sonnet and Opus were tied on both axes.
