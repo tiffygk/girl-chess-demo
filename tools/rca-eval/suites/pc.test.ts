@@ -13,11 +13,13 @@ import type { SuiteResult } from "../lib/types";
 // each one -- computed ONCE here, shared across assertions, rather than
 // once per `it` (which pushed the file well past vitest's default 5s
 // per-test timeout when each assertion recomputed it independently).
+// The hook itself needs its own budget: vitest's default 10 s hook timeout
+// tripped on the shared macos-latest runner (first Actions run, 2026-09-05).
 describe("runPcSuite", () => {
   let suite: SuiteResult;
   beforeAll(() => {
     suite = runPcSuite();
-  });
+  }, 60_000);
 
   it("asserts its own denominator: exactly 4 evals", () => {
     expect(suite.suite).toBe("PC");
