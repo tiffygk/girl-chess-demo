@@ -19,6 +19,7 @@ import {
   exploreReply,
   highlightMove,
   fetchCoachStatus,
+  ServerUnreachableError,
   type MoveResponse,
   type GameOverInfo,
   type Verdict,
@@ -52,6 +53,7 @@ import { reconcile } from "./reconcile";
 import { findTakedownPiece, type Takedown } from "./terminal";
 import { replayPlan } from "./replay";
 import { GameEndPanel } from "./GameEndPanel";
+import { ServerDownNotice } from "./ServerDownNotice";
 import { DebriefPage, PastGamesButton, PastGamesDrawer } from "../review/DebriefPage";
 // Wave 3.5 fix (Important, review 2026-08-01): the pure "does deleting this
 // game also mean clearing the live just-finished debrief" predicate -- see
@@ -238,7 +240,15 @@ export function GamePage() {
   // db swap while this tab sat open). No toast spam, no retry loop -- one
   // calm state, one action that recovers it.
   const [sessionGone, setSessionGone] = useState(false);
-  const [status, setStatus] = useState("finding an opponent...");
+  // Task 5 (stranger-clones-and-plays): empty until a game actually exists --
+  // "finding an opponent..." now appears only while startGame is in flight
+  // (resetGameState sets it), not on first paint before any game has started.
+  const [status, setStatus] = useState("");
+  // Task 5: set by the mount-time connect() below when newSession() rejects
+  // with ServerUnreachableError (fetch's TypeError -- nothing listening on
+  // the API port). Gates the pregame panel to a notice with a retry button
+  // instead of leaving the page silently stuck.
+  const [serverDown, setServerDown] = useState(false);
   const [gameOver, setGameOver] = useState<GameOverInfo | null>(null);
   const [takedownMove, setTakedownMove] = useState<Takedown | null>(null);
   const [resyncTick, setResyncTick] = useState(0);
@@ -658,17 +668,28 @@ export function GamePage() {
     };
   }, [resumeGame]);
 
-  useEffect(() => {
+  // Task 5: newSession() rejecting used to be an unhandled promise -- the
+  // page just sat on "finding an opponent..." forever with no signal. Named
+  // so the ServerDownNotice's "try again" button can call the exact same
+  // path the mount effect uses, instead of a bespoke retry.
+  const connect = useCallback(() => {
     let cancelled = false;
-    (async () => {
-      const s = await newSession();
-      if (cancelled) return;
-      setSessionId(s.sessionId);
-    })();
+    setServerDown(false);
+    newSession()
+      .then((s) => {
+        if (!cancelled) setSessionId(s.sessionId);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (err instanceof ServerUnreachableError) setServerDown(true);
+        else setStatus("could not reach the game server. reload the page.");
+      });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => connect(), [connect]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -2620,6 +2641,8 @@ export function GamePage() {
                   take it back
                 </button>
               </div>
+            ) : serverDown ? (
+              <ServerDownNotice onRetry={connect} />
             ) : sessionId && !gameId ? (
               <div className="controls game-controls pregame-panel">
                 <label className="pregame-label" htmlFor="pregame-elo">

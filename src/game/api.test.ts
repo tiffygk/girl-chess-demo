@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logHint, deleteGame, modeTimer } from "./api";
+import { logHint, deleteGame, modeTimer, newSession, ServerUnreachableError } from "./api";
 
 // Wave 0, item 1 (F0): hint telemetry was logging the OPPONENT's refutation
 // move under the field named `bestUci` for levels 1-3 -- any log analysis
@@ -175,5 +175,32 @@ describe("modeTimer (session-gone recovery)", () => {
     expect(onGone).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(3);
     stop();
+  });
+});
+
+describe("api: the server is not running", () => {
+  it("maps a fetch network failure to ServerUnreachableError", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
+    await expect(newSession()).rejects.toBeInstanceOf(ServerUnreachableError);
+    vi.unstubAllGlobals();
+  });
+  it("leaves other failures alone", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 500 })));
+    await expect(newSession()).resolves.toBeDefined(); // today postJson returns the parsed body regardless of status; do not change that here
+    vi.unstubAllGlobals();
+  });
+  // Discovered running the real runtime check for this task: under `vite`'s
+  // dev proxy (server/vite.config.ts's `/api` proxy), a server that isn't
+  // listening doesn't make fetch() itself throw -- the browser's fetch
+  // resolves fine against Vite's own dev server, which answers with its own
+  // 502 Bad Gateway and a plain-text (non-JSON) body. res.json() then throws
+  // a SyntaxError, which propagated as an unhandled, unrecognized rejection
+  // and left the page on the "could not reach the game server" fallback
+  // instead of the intended ServerDownNotice. This is the same underlying
+  // fact (nothing is listening) surfacing one layer later.
+  it("maps an unparseable-JSON response (a dev-proxy 502 with a plain-text body) to ServerUnreachableError too", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("Bad Gateway", { status: 502 })));
+    await expect(newSession()).rejects.toBeInstanceOf(ServerUnreachableError);
+    vi.unstubAllGlobals();
   });
 });
