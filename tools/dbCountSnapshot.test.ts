@@ -221,10 +221,12 @@ describe("deriveMainWorktreeDbFromGit: the main-worktree db path comes from git,
     if (fs.existsSync(derived!)) {
       expect(result.source).toMatch(/main worktree/);
       expect(result.path).toBe(derived);
+      expect(result.writable).toBe(true);
     } else {
       // A fresh clone or CI: no owner db anywhere, the committed demo db carries the rules.
       expect(result.source).toMatch(/committed demo db/);
       expect(result.path).toMatch(/[\\/]data[\\/]girlchess-demo\.db$/);
+      expect(result.writable).toBe(false);
     }
     expect(fs.existsSync(result.path)).toBe(true);
   });
@@ -243,6 +245,10 @@ describe("resolveRealDbPath: committed demo db fallback (fresh clone / CI)", () 
     expect(r.path).toBe(path.join(root, "data", "girlchess-demo.db"));
     expect(r.source).toMatch(/committed demo db/);
     expect(r.source).toMatch(/3 games/);
+    // The demo db is a fixture, not her real history: tools that write must
+    // refuse it (coach-backfill, backfill-move-side), so it must come back
+    // marked non-writable structurally, not by re-parsing `source`.
+    expect(r.writable).toBe(false);
   });
 
   it("still throws NoDbFoundError when the demo db has no games", () => {
@@ -260,5 +266,6 @@ describe("resolveRealDbPath: committed demo db fallback (fresh clone / CI)", () 
     const r = resolveRealDbPath(root, missingMain);
     expect(r.path).toBe(path.join(root, "data", "girlchess.db"));
     expect(r.source).toMatch(/local worktree copy/);
+    expect(r.writable).toBe(true);
   });
 });

@@ -454,6 +454,12 @@ async function main() {
   if (!fs.existsSync(dbResolution.path)) {
     throw new Error(`refusing --confirm: resolved db path does not exist: ${dbResolution.path}`);
   }
+  if (!dbResolution.writable) {
+    console.error(
+      `refusing to write: resolved to the committed demo db (${dbResolution.source}); point GC_DB_PATH at a real db`
+    );
+    process.exit(1);
+  }
   console.log("[coach-backfill] taking a counted backup before any write...");
   const backup = await backupLiveDb(REPO_ROOT);
   console.log(

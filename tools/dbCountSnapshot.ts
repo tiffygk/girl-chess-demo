@@ -141,6 +141,11 @@ function resolveMainWorktreeDbDefault(repoRoot: string): string {
 export interface DbResolution {
   path: string;
   source: string;
+  // Fix round 2026-09-04: the committed demo db is a fixture that ships in
+  // git, not her real history. Any tool about to open a write handle must
+  // check this structurally (never by re-parsing `source`) and refuse when
+  // it is false.
+  writable: boolean;
 }
 
 // Readonly, count-based, never a hash. Returns null (not 0) when the file
@@ -182,10 +187,10 @@ export function resolveRealDbPath(
   mainWorktreeDb: string = resolveMainWorktreeDbDefault(repoRoot)
 ): DbResolution {
   if (process.env.GC_DB_PATH) {
-    return { path: process.env.GC_DB_PATH, source: "GC_DB_PATH override" };
+    return { path: process.env.GC_DB_PATH, source: "GC_DB_PATH override", writable: true };
   }
   if (fs.existsSync(mainWorktreeDb)) {
-    return { path: mainWorktreeDb, source: "main worktree (live db, source of truth)" };
+    return { path: mainWorktreeDb, source: "main worktree (live db, source of truth)", writable: true };
   }
   const local = path.join(repoRoot, "data", "girlchess.db");
   const localGames = countGamesReadonly(local);
@@ -193,6 +198,7 @@ export function resolveRealDbPath(
     return {
       path: local,
       source: `local worktree copy (main worktree db not found at ${mainWorktreeDb}; verified ${localGames} games by count, not hash)`,
+      writable: true,
     };
   }
   // Security round 2026-09-04: a fresh clone or CI has no owner db anywhere,
@@ -206,6 +212,7 @@ export function resolveRealDbPath(
     return {
       path: demo,
       source: `committed demo db (no owner db at ${mainWorktreeDb} or ${local}; verified ${demoGames} games by count, not hash)`,
+      writable: false,
     };
   }
   throw new NoDbFoundError(
