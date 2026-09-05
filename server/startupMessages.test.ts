@@ -4,7 +4,7 @@ import { listenErrorMessage, startupFailureMessage, openUrlMessage } from "./sta
 describe("startup messages", () => {
   it("a busy port names the port and the two ways out", () => {
     const err = Object.assign(new Error("listen EADDRINUSE"), { code: "EADDRINUSE" });
-    expect(listenErrorMessage(err, 3001)).toBe("port 3001 is already in use by another program. run PORT=3002 npm run dev, or quit that program.");
+    expect(listenErrorMessage(err, 3001)).toBe("port 3001 is already in use by another program. press Ctrl+C, then run PORT=3002 npm run dev, or quit that program and try again.");
   });
   it("other listen errors keep their own message after a plain lead-in", () => {
     const err = Object.assign(new Error("listen EACCES: permission denied 127.0.0.1:80"), { code: "EACCES" });
