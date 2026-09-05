@@ -1,5 +1,5 @@
 import express from "express";
-import { openDb, resolveServeDbPath, createSession, addModeMinutes, rateAdviceTrace, getRatedTraces, listCoachNotes, deleteCoachNote } from "./store/db";
+import { openDb, resolveServeDbPath, createSession, addModeMinutes, rateAdviceTrace, getRatedTraces, listCoachNotes, deleteCoachNote, getGame, getAllChatMessages } from "./store/db";
 import { GameManager } from "./game/manager";
 import { servedCommit } from "./version";
 import { assertWeightsPresent } from "./engines/weightsCheck";
@@ -401,6 +401,32 @@ app.delete("/api/coach-notes/:id", (req, res) => {
 app.get("/api/game/:id/summary", (req, res) => {
   try {
     res.json(gm.getSummary(Number(req.params.id)));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
+// Task 11.2 (stranger-clones-and-plays round, resume-brings-back-chat):
+// exposes the persisted chat_messages rows for a game, so a resumed game's
+// coach panel can seed itself with what the player asked cookie and what
+// she answered (see chat-resume-research.md part 2: no prior route ever
+// returned these). Backed by the already-existing, already-tested
+// getAllChatMessages(gameId) (server/store/db.ts) -- unfiltered, oldest
+// first, exactly the order a transcript should render in. 404 with
+// game_not_found when the id doesn't correspond to a real game, same
+// existence check manager.ts's chat() itself uses (getGame(gameId)).
+app.get("/api/game/:id/chat", (req, res) => {
+  try {
+    const gameId = Number(req.params.id);
+    if (!getGame(gameId)) {
+      return res.status(404).json({ ok: false, error: "game_not_found" });
+    }
+    const messages = getAllChatMessages(gameId).map((m: any) => ({
+      role: m.role,
+      text: m.text,
+      createdAt: m.created_at,
+    }));
+    res.json({ ok: true, messages });
   } catch (error) {
     res.status(500).json({ ok: false, error: "internal" });
   }

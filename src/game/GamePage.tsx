@@ -12,6 +12,7 @@ import {
   fetchHintFacts,
   narrate,
   fetchSummary,
+  fetchChatHistory,
   fetchGames,
   deleteGame,
   getTurningLines,
@@ -32,6 +33,7 @@ import {
   type MoveClassification,
   type HighlightLine,
   type CoachProbe,
+  type ChatHistoryMessage,
 } from "./api";
 import { CoachChat, ThumbRating } from "./CoachChat";
 import {
@@ -400,6 +402,14 @@ export function GamePage() {
   // position," a ply count means "show the position after that many plies,"
   // driven by a turning-point card's "replay" button.
   const [liveSummary, setLiveSummary] = useState<SummaryResponse | null>(null);
+  // Task 11.2 (stranger-clones-and-plays round): the resumed game's
+  // persisted chat_messages rows, fetched once by resumeGame and handed
+  // down to CoachChat as its `history` prop so a reload + "resume game"
+  // brings the coach panel's thread back instead of it staying empty
+  // (chat-resume-research.md). null on a fresh game (startGame/
+  // handleNewGame clear it, see resetGameState) and while no resume has
+  // happened yet.
+  const [resumedChat, setResumedChat] = useState<ChatHistoryMessage[] | null>(null);
   const [reviewGame, setReviewGame] = useState<{
     id: number;
     opponent: string;
@@ -584,6 +594,10 @@ export function GamePage() {
     // Increment 3.95 (Task 7): a fresh/new game must never carry an "ask
     // about this" focus over from the last one.
     setChatFocus({});
+    // Task 11.2: a fresh/new game must never inherit the last resumed
+    // game's coach thread -- resumeGame is the only path that sets this
+    // again, right after its own resetGameState() call.
+    setResumedChat(null);
     // Increment 3.91 (Task 4): a fresh/new game must never carry over the
     // last debrief's turning-lines cache or board arrows.
     setTurningLines([]);
@@ -662,6 +676,15 @@ export function GamePage() {
       // param is already there, but this keeps every entry point consistent).
       window.history.replaceState(null, "", withGameParam(window.location.pathname, window.location.search, id));
       setStatus("");
+      // Task 11.2: fetch this game's chat_messages rows so CoachChat's
+      // panel comes back with what the player asked cookie and what she
+      // answered, instead of empty (chat-resume-research.md's finding).
+      // Caught and ignored on failure -- a missing/broken history fetch
+      // must never block the resume itself, same "board and moves come
+      // back regardless" contract fetchSummary above already has.
+      fetchChatHistory(id)
+        .then((r) => setResumedChat(r.ok ? r.messages : null))
+        .catch(() => setResumedChat(null));
     },
     [resetGameState]
   );
@@ -2852,6 +2875,14 @@ export function GamePage() {
         openSignal={chatOpenSignal}
         hintFocus={chatFocus.hintFocus}
         turningPointFocus={chatFocus.turningPointFocus}
+        // Task 11.2: resumedChat is keyed to whatever LIVE game resumeGame
+        // last resumed -- gated to null in review mode so switching into
+        // "review a past game" (selectPastGame, a different gameId than
+        // resumedChat's) never seeds that past game's panel with the live
+        // game's resumed thread. Review mode's "ask about this" already
+        // opens with an empty thread by design (chat-resume-research.md
+        // part 2); this task is scoped to live resume only.
+        history={reviewGame ? null : resumedChat}
       />
       <p className="status-line">{inputHint ?? status}</p>
       {gameOver && (
