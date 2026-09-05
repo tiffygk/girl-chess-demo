@@ -13,7 +13,7 @@
     "gate": "tsx tools/gate.ts",
     "rca-eval": "tsx tools/rca-eval/run.ts",
     "playtest:serve": "tsx tools/playtest-serve.ts",
-    "doctor": "node -e \"require('fs').existsSync('node_modules/.bin/tsx')||(console.log('run npm ci first, then npm run doctor.'),process.exit(1))\" && tsx tools/doctor.ts"
+    "doctor": "node tools/doctor.cjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.217",
