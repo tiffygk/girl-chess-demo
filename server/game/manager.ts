@@ -1004,7 +1004,7 @@ export class GameManager {
   }
 
   // Increment 3c, extended by the resume round (2026-09-06), Wave B:
-  // GET /api/games — every game with a move, finished or not, newest
+  // GET /api/games: every game with a move, finished or not, newest
   // first. Thin mapping over the db accessor into GameListEntry, kept as a
   // GameManager method for the same reason every other route goes through
   // gm rather than db directly (index.ts stays a pure routing layer).
