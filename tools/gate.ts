@@ -154,14 +154,18 @@ function main() {
   const allowLive = process.argv.includes("--allow-live");
   const failures: string[] = [];
 
+  console.log(
+    "[gate] seven checks: database, in-play guard, tests, types, lint, truth-check, replay-check. about 2 to 4 minutes."
+  );
+
   // Runs FIRST: if her history is damaged, nothing else matters and the run
   // should stop being about the code.
-  process.stdout.write("[gate] owner db... ");
+  process.stdout.write("[gate] database... ");
   let ownerDbResult: ReturnType<typeof checkOwnerDb> | undefined;
   try {
     ownerDbResult = checkOwnerDb(REPO_ROOT);
     if (ownerDbResult.status === "fail") {
-      failures.push(`owner db: ${ownerDbResult.detail}`);
+      failures.push(`database: ${ownerDbResult.detail}`);
       process.stdout.write(`FAIL\n  ${ownerDbResult.detail}\n`);
     } else if (ownerDbResult.status === "skipped") {
       // Distinct from "ok" on purpose: a fresh clone or CI with no db
@@ -173,7 +177,7 @@ function main() {
       process.stdout.write(`(${ownerDbResult.detail}) ok\n`);
     }
   } catch (err) {
-    failures.push(`owner db: could not verify (${(err as Error).message})`);
+    failures.push(`database: could not verify (${(err as Error).message})`);
     process.stdout.write("FAIL (could not verify)\n");
   }
 
