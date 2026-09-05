@@ -48,7 +48,8 @@ describe("frozen counts stay byte-identical (RCA round is additive-only)", () =>
   });
 });
 
-describe("fork-* fixtures (suite FH ground truth)", () => {
+// the forced-loss proof searches real positions; it timed out at vitest's 5 s default on a shared CI runner (2026-09-05) with correct code.
+describe("fork-* fixtures (suite FH ground truth)", { timeout: 30_000 }, () => {
   it("has exactly 6 fixtures, all midGameOfFinished", () => {
     expect(FORK_FIXTURE_IDS.length).toBe(6);
     for (const id of FORK_FIXTURE_IDS) {
