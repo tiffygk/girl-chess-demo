@@ -1,11 +1,11 @@
 import { Chess } from "chess.js";
 import { MaiaOpponent } from "../engines/maia";
 import { StockfishEvaluator } from "../engines/stockfish";
-import { replayMoves, eloFromOpponentLabel } from "./rebuild";
+import { replayMoves, eloFromOpponentLabel, isResumableAt } from "./rebuild";
 import {
   createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict, getVerdicts,
   getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
-  listFinishedGames, insertChatMessage, getChatMessages, getMoveEvalsByPlies,
+  listRecentGames, getGameCounts, insertChatMessage, getChatMessages, getMoveEvalsByPlies,
   setMoveHighlighted, deleteGameRows, insertCoachNote, listCoachNotes,
 } from "../store/db";
 import { classifyMove, isAdviceLevel, DEFAULT_ADVICE_LEVEL } from "../annotator/classify";
@@ -262,6 +262,27 @@ function partyFor(live: LiveGame, moveColor: "w" | "b"): "her" | "mallow" {
 export type ResumeResult =
   | { ok: true; fen: string; plies: number; yourTurn: boolean; gameOver: boolean }
   | { ok: false; reason: "not_found" | "finished" | "empty" | "corrupt" };
+
+// Resume round (2026-09-06), Wave B: one row in the games list / one
+// GET /api/game/:id/status payload. `gameNumber` equals `id` today -- kept
+// as its own field so the visible name shown to her can diverge from the
+// row id later (see PR: "you keep referring to games as 'game 195'...")
+// without touching every surface that reads this shape. `resumable` is the
+// seven-day rule (isResumableAt) computed here, server-side only -- the
+// client never re-derives it (owner ruling 2026-07-30).
+export type GameListEntry = {
+  id: number;
+  gameNumber: number;
+  startedAt: string;
+  lastMoveAt: string | null;
+  opponent: string;
+  elo: number | null;
+  plies: number;
+  result: string | null;
+  endReason: string | null;
+  lesson: string | null;
+  resumable: boolean;
+};
 
 export class GameManager {
   private games = new Map<number, LiveGame>();
@@ -982,15 +1003,58 @@ export class GameManager {
     return undefined;
   }
 
-  // Increment 3c: GET /api/games — the "past games" saved-games menu. Thin
-  // passthrough to the db accessor, kept as a GameManager method for the
-  // same reason every other route goes through gm rather than db directly
-  // (index.ts stays a pure routing layer).
-  listGames(): {
-    ok: true;
-    games: { id: number; startedAt: string; opponent: string; result: string; endReason: string | null; lesson: string | null }[];
-  } {
-    return { ok: true, games: listFinishedGames() as any };
+  // Increment 3c, extended by the resume round (2026-09-06), Wave B:
+  // GET /api/games — every game with a move, finished or not, newest
+  // first. Thin mapping over the db accessor into GameListEntry, kept as a
+  // GameManager method for the same reason every other route goes through
+  // gm rather than db directly (index.ts stays a pure routing layer).
+  listGames(): { ok: true; games: GameListEntry[] } {
+    const rows = listRecentGames();
+    const now = Date.now();
+    return {
+      ok: true,
+      games: rows.map((row) => ({
+        id: row.id,
+        gameNumber: row.id,
+        startedAt: row.startedAt,
+        lastMoveAt: row.lastMoveAt,
+        opponent: row.opponent,
+        elo: eloFromOpponentLabel(row.opponent),
+        plies: row.plies,
+        result: row.result,
+        endReason: row.endReason,
+        lesson: row.lesson,
+        resumable: isResumableAt(row.lastMoveAt, row.plies, row.result, now),
+      })),
+    };
+  }
+
+  // Resume round (2026-09-06), Wave B: GET /api/game/:id/status -- "what is
+  // this game right now" for a single id, same GameListEntry shape as
+  // listGames() so the client has one type to read either way. Built from
+  // getGame plus getGameCounts rather than filtering listRecentGames' rows,
+  // since a game outside that query's LIMIT would otherwise report false
+  // not_found even though it exists.
+  gameStatus(gameId: number): { ok: true; game: GameListEntry } | { ok: false; reason: "not_found" } {
+    const row = getGame(gameId);
+    if (!row) return { ok: false, reason: "not_found" };
+    const { plies, lastMoveAt } = getGameCounts(gameId);
+    return {
+      ok: true,
+      game: {
+        id: row.id,
+        gameNumber: row.id,
+        startedAt: row.started_at,
+        lastMoveAt,
+        opponent: row.opponent,
+        elo: eloFromOpponentLabel(row.opponent),
+        plies,
+        result: row.result,
+        endReason: row.end_reason,
+        lesson: null,
+        resumable: isResumableAt(lastMoveAt, plies, row.result, Date.now()),
+      },
+    };
   }
 
   // Wave 3.5, item 2 (owner ask, 2026-08-01): real per-game deletion for the
