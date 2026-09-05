@@ -3,11 +3,36 @@ import {
   anchorForFocus,
   focusKey,
   historyForBackend,
+  historyToThread,
   moveNumberForPly,
   shouldInjectAnchor,
   type ThreadEntry,
 } from "./chatThread";
-import { chatWithCoach, type ChatContext } from "./api";
+import { chatWithCoach, type ChatContext, type ChatHistoryMessage } from "./api";
+
+// Task 11.2 (stranger-clones-and-plays round): historyToThread is the pure
+// mapper CoachChat.tsx uses to seed its thread from a resumed game's
+// GET /api/game/:id/chat rows -- pulled out to a pure function (this
+// file's own no-React-imports convention) so it's testable without driving
+// a mount-time effect.
+describe("historyToThread", () => {
+  it("maps chat_messages rows onto ThreadEntry message entries, in order", () => {
+    const history: ChatHistoryMessage[] = [
+      { role: "user", text: "what should i do?", createdAt: "2026-09-05T00:00:00Z" },
+      { role: "coach", text: "take on d5 with your pawn.", createdAt: "2026-09-05T00:00:01Z" },
+    ];
+    expect(historyToThread(history)).toEqual([
+      { kind: "message", role: "user", text: "what should i do?" },
+      { kind: "message", role: "coach", text: "take on d5 with your pawn." },
+    ]);
+  });
+
+  it("returns an empty thread for null/undefined/empty history", () => {
+    expect(historyToThread(null)).toEqual([]);
+    expect(historyToThread(undefined)).toEqual([]);
+    expect(historyToThread([])).toEqual([]);
+  });
+});
 
 describe("moveNumberForPly", () => {
   it("maps 1-indexed plies to move numbers", () => {

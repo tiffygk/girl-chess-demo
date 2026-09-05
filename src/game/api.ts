@@ -723,6 +723,21 @@ export function fetchSummary(gameId: number): Promise<SummaryResponse> {
   return getJson(`/game/${gameId}/summary`);
 }
 
+// Task 11.2 (stranger-clones-and-plays round): the game's persisted
+// chat_messages rows, oldest first, off the new GET /api/game/:id/chat
+// route -- lets a resumed game seed CoachChat's thread with what the
+// player asked cookie and what she answered, instead of the panel coming
+// back empty (chat-resume-research.md).
+export interface ChatHistoryMessage {
+  role: string;
+  text: string;
+  createdAt: string;
+}
+
+export function fetchChatHistory(gameId: number): Promise<{ ok: boolean; messages: ChatHistoryMessage[] }> {
+  return getJson(`/game/${gameId}/chat`);
+}
+
 // Increment 3c: the "past games" saved-games menu list.
 export interface GameListEntry {
   id: number;
