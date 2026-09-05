@@ -41,7 +41,7 @@ else
     # each curl call below retries twice on its own (--retry 2), so a person
     # may see more than three HTTP attempts before the "3 tries" sentence.
     for attempt in 1 2 3; do
-      if curl -fL --retry 2 --retry-delay 2 --connect-timeout 20 -o "$f.part" "$BASE/maia-$elo.pb.gz" && valid "$f.part"; then
+      if curl -fL --progress-bar --retry 2 --retry-delay 2 --connect-timeout 20 -o "$f.part" "$BASE/maia-$elo.pb.gz" && valid "$f.part"; then
         mv "$f.part" "$f"; ok=1; break
       fi
       rm -f "$f.part"
