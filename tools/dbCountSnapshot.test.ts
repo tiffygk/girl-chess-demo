@@ -28,6 +28,7 @@ import {
   deriveMainWorktreeDbFromGit,
   NoDbFoundError,
   MIN_FINISHED_GAMES,
+  countFinishedGamesReadonly,
 } from "./dbCountSnapshot";
 
 const tmpDirs: string[] = [];
@@ -248,9 +249,22 @@ describe("deriveMainWorktreeDbFromGit: the main-worktree db path comes from git,
     const derived = deriveMainWorktreeDbFromGit(thisFileDir);
     const result = resolveRealDbPath(repoRoot);
     if (derived != null && fs.existsSync(derived)) {
-      expect(result.source).toMatch(/main worktree/);
-      expect(result.path).toBe(derived);
-      expect(result.writable).toBe(true);
+      // Since 885e36d, resolveRealDbPath defers to the committed demo db
+      // when the personal db has fewer than MIN_FINISHED_GAMES finished
+      // games, so the expectation here must follow the real state of the
+      // checkout's own db rather than assuming it always qualifies.
+      const finished = countFinishedGamesReadonly(derived) ?? 0;
+      if (finished >= MIN_FINISHED_GAMES) {
+        expect(result.source).toMatch(/main worktree/);
+        expect(result.path).toBe(derived);
+        expect(result.writable).toBe(true);
+      } else {
+        expect(result.source).toMatch(
+          /committed demo db \(your own database at .* has \d+ finished games?; the checks need at least 5\)/
+        );
+        expect(result.path.endsWith("girlchess-demo.db")).toBe(true);
+        expect(result.writable).toBe(false);
+      }
     } else {
       // A fresh clone, CI, or a .git-less copy: no owner db anywhere, the
       // committed demo db carries the rules.
