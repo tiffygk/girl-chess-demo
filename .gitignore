@@ -79,3 +79,9 @@ backup-*.git/
 
 # db backups taken before a sanctioned write (her history; never versioned)
 backups/
+
+# Claude Code: machine-specific session data and caches only; skills, hooks, and settings.json are committed on purpose
+.claude/settings.local.json
+.claude/sessions/
+.claude/history/
+.claude/cache/
