@@ -18,6 +18,7 @@ import {
   TP_ALGO_VERSION,
   winProb,
   sideCoverage,
+  firstUnownedPly,
   type MoveEval,
 } from "./turningPoints";
 
@@ -1215,4 +1216,10 @@ describe("sideCoverage — the migration state must be loud, not silently reduce
     expect(cov.missing).toBeGreaterThan(0);
     expect(cov.missing).toBeLessThan(cov.total);
   });
+});
+
+describe("firstUnownedPly (episode collision guard)", () => {
+  it("returns the start when nothing is owned", () => expect(firstUnownedPly(22, 27, new Set())).toBe(22));
+  it("moves forward past owned plies", () => expect(firstUnownedPly(22, 27, new Set([22, 23]))).toBe(24));
+  it("returns null when every ply in the run is owned", () => expect(firstUnownedPly(22, 27, new Set([22, 23, 24, 25, 26, 27]))).toBeNull());
 });
