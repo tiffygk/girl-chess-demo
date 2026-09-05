@@ -2,7 +2,7 @@
 
 [![gate](https://github.com/tiffygk/girl-chess-demo/actions/workflows/gate.yml/badge.svg)](https://github.com/tiffygk/girl-chess-demo/actions/workflows/gate.yml)
 
-Want to play it? Jump to [Running the game locally](#running-the-game-locally): about ten minutes on a Mac, most of it downloads.
+Want to play it? Jump to [Running the game locally](#running-the-game-locally): ten to fifteen minutes on a Mac, most of it downloads.
 
 A personal AI chess tutor that runs locally on your machine. Play against mallow, human-feeling opponent at nine strengths, who's beatable due to warnings, progressive hints, and a plain-English debrief after every game. The repo ships 51 of my own finished games and 113 coach exchanges from them. The fastest way to assess a chess tutor is to read it coaching real mistakes.
 
@@ -58,7 +58,7 @@ Two guardrails: every coach reply is checked before it reaches you, and the debr
 
 ## Running the game locally
 
-You need a Mac (Apple silicon or Intel), Homebrew, and Node 22. Linux and Windows are not supported and not tested. If you are not sure what you have, the third command below tells you.
+You need a Mac (Apple silicon or Intel), Homebrew, and Node 22. Linux and Windows are not supported and not tested. If you are not sure what you have, run the first three commands below, then npm run doctor tells you what is missing.
 
 - Homebrew: one command from https://brew.sh, about five minutes.
 - Node 22: `brew install node@22`, or the installer at https://nodejs.org. Reopen Terminal afterwards.
