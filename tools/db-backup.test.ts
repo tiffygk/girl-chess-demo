@@ -92,6 +92,46 @@ describe("(a) backupLiveDb: produces the .db+-wal+-shm triple under the MAIN wor
     expect(copySnapshot).toEqual(liveSnapshot);
   });
 
+  it("includes a row that is only in the WAL, not yet checkpointed -- the writer stays open through the backup", async () => {
+    // Every other fixture in this file closes its writer (makeDb calls
+    // db.close()) before backupLiveDb ever runs, which checkpoints the WAL
+    // back into the main db file as a side effect -- so none of those
+    // tests actually prove backupLiveDb's own WAL-safety claim (the header
+    // comment above backupLiveDb: "a row inserted but not yet WAL-
+    // checkpointed on the source still lands correctly in the backup").
+    // This test keeps a live WAL-mode writer connection OPEN, with an
+    // uncheckpointed insert still sitting only in the -wal file, for the
+    // entire backup call.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "db-backup-wal-"));
+    tmpDirs.push(dir);
+    const sourcePath = path.join(dir, "girlchess.db");
+    const writer = new Database(sourcePath);
+    writer.pragma("journal_mode = WAL");
+    writer.exec("CREATE TABLE games(id INTEGER PRIMARY KEY); CREATE TABLE moves(id INTEGER PRIMARY KEY);");
+    writer.prepare("INSERT INTO games DEFAULT VALUES").run();
+    // Not checkpointed, not closed: this row lives only in girlchess.db-wal
+    // right now, per better-sqlite3/SQLite's own WAL semantics.
+    expect(fs.existsSync(`${sourcePath}-wal`)).toBe(true);
+
+    try {
+      const main = makeMainWorktree(0, 0);
+      const result = await backupLiveDb("/unused-repo-root", {
+        sourceDb: sourcePath,
+        mainWorktreeDb: main.dbPath,
+      });
+
+      const backupReader = new Database(result.dbPath, { readonly: true });
+      try {
+        const count = backupReader.prepare("SELECT COUNT(*) AS n FROM games").get() as { n: number };
+        expect(count.n).toBe(1); // the WAL-only row made it into the backup
+      } finally {
+        backupReader.close();
+      }
+    } finally {
+      writer.close();
+    }
+  });
+
   it("never opens the source db read-write -- static check on the actual instrument, same discipline as dbCountSnapshot.test.ts", () => {
     const src = fs.readFileSync(path.join(__dirname, "db-backup.ts"), "utf8");
     // Every `new Database(sourceDb...)`-shaped open of the thing being

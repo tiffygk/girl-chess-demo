@@ -306,6 +306,7 @@ export function resolveServeDbPath(requested: string): { path: string; note?: st
   if (fs.existsSync(scratch)) {
     return { path: scratch, note: `serving the existing working copy at ${scratch} (delete it to reset to the committed demo db)` };
   }
+  fs.mkdirSync(nodePath.dirname(scratch), { recursive: true });
   fs.copyFileSync(requested, scratch);
   return { path: scratch, note: `serving a working copy of ${requested} at ${scratch}; the committed demo db is never opened for writing` };
 }

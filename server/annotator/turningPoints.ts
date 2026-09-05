@@ -639,6 +639,16 @@ export function sideCoverage(moves: MoveEval[]): SideCoverage {
   return { total, withSide, missing: total - withSide };
 }
 
+// Collision guard helper (cold-gate round, 2026-09-05): pulled out of the
+// episode push site below so the "whole run owned" branch -- returns null,
+// no card pushed -- can be tested directly, without building a fixture that
+// drives detectKingPressureEpisode into that exact state.
+export function firstUnownedPly(plyStart: number, plyEnd: number, owned: Set<number>): number | null {
+  let anchor = plyStart;
+  while (anchor <= plyEnd && owned.has(anchor)) anchor++;
+  return anchor <= plyEnd ? anchor : null;
+}
+
 export function computeTurningPoints(moves: MoveEval[], finalResult: string): TurningPoint[] {
   if (moves.length <= 1) return [];
 
@@ -807,9 +817,12 @@ export function computeTurningPoints(moves: MoveEval[], finalResult: string): Tu
     // a true fact; the range itself is unchanged. If the whole run is
     // owned, the other cards already tell this story and the episode is
     // redundant here, the same reasoning the conversion guard below uses.
-    let anchor = episode.plyStart;
-    while (anchor <= episode.plyEnd && points.some((p) => p.ply === anchor)) anchor++;
-    if (anchor <= episode.plyEnd) {
+    const anchor = firstUnownedPly(
+      episode.plyStart,
+      episode.plyEnd,
+      new Set(points.map((p) => p.ply))
+    );
+    if (anchor !== null) {
       points.push({
         rank: points.length + 1,
         ply: anchor,
