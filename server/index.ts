@@ -486,7 +486,7 @@ app.get("/api/game/:id/highlight-lines", (req, res) => {
 });
 
 // Increment 3c, extended by the resume round (2026-09-06), Wave B: GET
-// /api/games — the "past games" / saved-games menu list. Every game with a
+// /api/games: the "past games" / saved-games menu list. Every game with a
 // move, finished or not, newest first, capped inside listGames/
 // listRecentGames. Sync, same try/catch envelope as every other route.
 app.get("/api/games", (_req, res) => {
