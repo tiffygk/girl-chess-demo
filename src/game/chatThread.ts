@@ -2,7 +2,7 @@
 // provenance-anchor logic that decides when a hint/turning-point focus gets
 // restated into the persisted thread. Pure functions only, no React imports
 // -- CoachChat.tsx wires these into its own state/effects.
-import type { ChatContext } from "./api";
+import type { ChatContext, ChatHistoryMessage } from "./api";
 
 export type ThreadEntry =
   | {
@@ -102,4 +102,20 @@ export function historyForBackend(entries: ThreadEntry[]): { role: "user" | "coa
   return entries
     .filter((e): e is Extract<ThreadEntry, { kind: "message" }> => e.kind === "message")
     .map((e) => ({ role: e.role, text: e.text }));
+}
+
+// Task 11.2 (stranger-clones-and-plays round, resume-brings-back-chat): maps
+// a resumed game's GET /api/game/:id/chat rows onto plain "message"
+// ThreadEntry entries, so CoachChat.tsx's reset effect can seed its thread
+// instead of coming back empty on resume (chat-resume-research.md). Rows
+// carry no `cause` -- never persisted (see server/game/manager.ts's chat())
+// -- so seeded entries render as plain bubbles with no cause chip, same as
+// the research doc's "presentationally acceptable" conclusion. A row whose
+// stored role isn't "user"/"coach" (there should be none) is dropped rather
+// than guessed at, same discipline as the rest of this module.
+export function historyToThread(history: ChatHistoryMessage[] | null | undefined): ThreadEntry[] {
+  if (!history) return [];
+  return history
+    .filter((m): m is ChatHistoryMessage & { role: "user" | "coach" } => m.role === "user" || m.role === "coach")
+    .map((m) => ({ kind: "message" as const, role: m.role, text: m.text }));
 }
