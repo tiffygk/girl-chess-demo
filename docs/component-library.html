@@ -3258,7 +3258,7 @@ body.gc-app { align-items: center; }
   </div>
 </section>
 
-<!-- ============ 14. PAST GAMES + THE WAY BACK IN (round 2026-07-30, resumable games) ============ -->
+<!-- ============ 14. PAST GAMES + THE WAY BACK IN (round 2026-07-30, resumable games; revised 2026-09-06, numbers + resume game + mint standalone) ============ -->
 <style>
 /* Section 14 styles live here so everything above stays byte-identical.
    Zero new hex: every value below is already in production sugar-glitch.css
@@ -3295,6 +3295,14 @@ body.gc-app { align-items: center; }
   font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
   letter-spacing: .08em; color: #9C8FC7;
 }
+/* NEW 2026-09-06: the game number, first span of every row. Same machine
+   register as the time (Chakra Petch 700 9px, ls .08em, #9C8FC7): it is a
+   record id, not a name, so it sits in the record's own small print. */
+.pg2-num {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .08em; color: #9C8FC7;
+  font-variant-numeric: tabular-nums;
+}
 .pg2-opp { color: #4A3B7E; }
 .pg2-result { color: #6952C4; }
 .pg2-lesson {
@@ -3318,10 +3326,11 @@ body.gc-app { align-items: center; }
   font-variant-numeric: tabular-nums;
 }
 
-/* NEW: row + resume. The row stays a flat record; the button is candy in
-   the PLAYER'S cyan voice (it is her game waiting -- not mallow's magenta,
-   not cookie's lavender, and never mint, which belongs to the armed-win
-   button alone). */
+/* NEW: row + resume. The row stays a flat record. The resume button is one
+   affordance with two skins, decided by context (owner ruling 3,
+   2026-07-30): WHITE inside the cyan continue card, MINT when it stands
+   alone beside a lavender row (the white pill read "too light" there). The
+   mint is the armed-win recipe verbatim (.egc-win), never a new value. */
 .pg2-row { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; }
 .pg2-row .pg2-row-main { flex: 1 1 220px; }
 .pg2-row-resumable .pg2-row-main { border-color: rgba(35,168,199,.45); }
@@ -3331,6 +3340,7 @@ body.gc-app { align-items: center; }
   border: 1.5px solid #E3D9F5; border-radius: 999px; padding: 2px 8px;
 }
 .pg2-chip-live { color: #1A7A93; background: #D7FAFF; border-color: rgba(35,168,199,.35); }
+/* base skin: white on cyan, for the button INSIDE the continue card */
 .gc-app button.small.pg2-resume-btn {
   align-self: center; flex: none;
   background: #fff; color: #1A7A93;
@@ -3338,17 +3348,17 @@ body.gc-app { align-items: center; }
 }
 .gc-app button.small.pg2-resume-btn:hover { box-shadow: 0 5px 0 #D7FAFF, 0 8px 14px rgba(35,168,199,.18); }
 .gc-app button.small.pg2-resume-btn:active { box-shadow: 0 1px 0 #D7FAFF, 0 4px 8px rgba(35,168,199,.12); }
-
-/* NEW: failed-resume card. The ONE alarm in this section -- magenta family
-   is earned here: something she wanted is not available. Flat tint, no
-   shadow (a statement, not an invitation), warn-tint fill + warning ink,
-   the existing warning-badge recipe at card size. */
-.pg2-fail {
-  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 12px;
-  color: #C22B7E; background: #FFD6EC;
-  border: 1.5px solid rgba(194,43,126,.35); border-radius: 14px;
-  padding: 8px 12px; margin: 0;
+/* standalone skin: mint beside a lavender row. Scoped by .pg2-row and
+   declared AFTER the base so it wins on both order and specificity
+   (the plan's bare `.pg2-row .pg2-resume-btn` would lose to the base's
+   .gc-app button.small chain). Values = .egc-win, sugar-glitch.css:217-222.
+   No animation on any pg2 rule: this button sits in the drawer all session. */
+.gc-app .pg2-row button.small.pg2-resume-btn {
+  background: #A9EFD3; color: #2E9C74;
+  box-shadow: 0 3px 0 #7BD4B0, 0 6px 10px rgba(76,175,140,.25);
 }
+.gc-app .pg2-row button.small.pg2-resume-btn:hover { box-shadow: 0 5px 0 #7BD4B0, 0 6px 10px rgba(76,175,140,.25); }
+.gc-app .pg2-row button.small.pg2-resume-btn:active { box-shadow: 0 1px 0 #7BD4B0, 0 6px 10px rgba(76,175,140,.25); }
 
 /* NEW: pregame continue card -- flat-tint statement holding one candy
    button. dest-chip cyan wash: her game, her voice. */
@@ -3377,6 +3387,34 @@ body.gc-app { align-items: center; }
   font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13px; color: #4A3B7E;
   background: #fff; border: 1.5px solid #E3D9F5; border-radius: 999px; padding: 8px 14px;
 }
+
+/* NEW 2026-09-06: the two places the number shows OUTSIDE the drawer, so a
+   date the coach mentions can be matched to the game on screen. Both are
+   the SHIPPED recipes with the number added, no new shape:
+   pg2-banner = .debrief-review-banner (lavender pill, kicker + meta);
+   pg2-bar-mock = the "you" player bar's identity cell, .bar-move-count
+   as shipped (10.5px 700 #9A8BC9; the Press Start 2P counter in §5 is
+   the older proposal and the shipped code wins). */
+.pg2-banner {
+  display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+  background: #E7DFFF; border-radius: 999px; padding: 6px 14px;
+  width: fit-content;
+}
+.pg2-banner-kicker {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .14em; color: #6952C4;
+}
+.pg2-banner-meta {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
+  color: #4A3B7E;
+}
+.pg2-bar-mock {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: min(92vw, 440px); padding: 10px 18px;
+  background: #fff; border-radius: 0 0 28px 28px;
+  box-shadow: 0 12px 0 #C9BFEF, 0 22px 40px rgba(90,70,180,.3);
+}
+.pg2-bar-mock .bar-identity { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 
 /* PAST-GAME DELETE CONTROL (shipped 2026-08-01, owner ask: "stylized from
    the palette", "I need to double click it so that I don't accidentally
@@ -3419,8 +3457,8 @@ body.gc-app { align-items: center; }
 </style>
 <section class="lib-section" id="sec-past-games">
   <span class="lib-kicker">AFTER THE GAME · 15</span>
-  <h2>Past games + the way back in<span class="lib-status st-reserved">proposal — not built</span><span class="lib-status st-asis">delete control shipped</span></h2>
-  <p class="lib-caption"><strong>Nothing in this section has shipped yet</strong> (verified against src 2026-07-30): the resumable-games round is owner-approved in shape but unbuilt — these four surfaces are the approved proposal, waiting for her ruling and the build. The one live piece of resume behaviour in the app today is GamePage's <span class="lib-code">?game=&lt;id&gt;</span> recovery, which has no surface of its own. The 2026-07-29 incident: an interrupted tab could only abandon a live game. This section is the way back in, three surfaces: the past-games drawer regrown around <strong>day groups with a count per day</strong> (owner ruling 3) and unfinished games (0-move stubs stay hidden server-side, ruling 2); a <strong>resume button</strong> on any unfinished game whose last move is within 7 days (rulings 1, 2, 4 — computed server-side, the client never re-derives the window); and a pregame <strong>continue card</strong> so the recovery isn't hidden behind the past-games button after a reload. Voices: day headers and counts are machine statements (Chakra Petch, flat); resume is candy in the <em>player's</em> cyan — her game is the thing waiting, so it is not mallow's magenta, not cookie's lavender, and never mint (armed-win only). The one magenta thing here is the failed-resume card, and it is a real alarm. Zero new hex; drawer shell, row recipe, and chip strokes are the shipped values. <strong>Update, verified against src on round/2026-08-01-hint-tree:</strong> the day-grouping and resume button below are still exactly this — unbuilt proposal. But a delete control has since shipped on this same drawer (owner ask, 2026-08-01) — see the card immediately below, kept in its own pgdel- scope so it can't be mistaken for part of this proposal.</p>
+  <h2>Past games + the way back in<span class="lib-status st-reserved">for review 2026-09-06</span><span class="lib-status st-asis">delete control shipped</span></h2>
+  <p class="lib-caption">The way back into a game, and the way to tell two games apart. The 2026-07-29 incident: an interrupted tab could only abandon a live game. Her 2026-09-06 ask: "when I click my past games ... it's just a row of dates", which cannot be matched to a game the coach mentions when two were played the same day, so <strong>every game now carries its number</strong>, in the drawer row, in the continue card, in the review banner, and in the live footer. Three surfaces: the past-games drawer regrown around <strong>day groups with a count per day</strong> and unfinished games (0-move stubs stay hidden server-side); a <strong>resume game</strong> button on any unfinished game whose last move is within 7 days (computed server-side, the client never re-derives the window); and a pregame <strong>continue card</strong> so the recovery isn't hidden behind the past-games button after a reload. The four owner rulings of 2026-07-30, one sentence each. <strong>Ruling 1:</strong> there is no failed-resume alarm; an expired game simply shows no button, and the missing button is the whole signal. <strong>Ruling 2:</strong> the standalone button gets the mint treatment, because the white pill "next to the lavender box is too light colored" and it "needs to be darker while still matching the rest of the style". <strong>Ruling 3:</strong> context decides the skin: white inside the cyan card, mint standing alone next to lavender. <strong>Ruling 4:</strong> the copy is <span class="lib-code">resume game</span>. Voices: day headers, counts, and game numbers are machine statements (Chakra Petch, flat); the resume button is candy, cyan-white in the card and armed-win mint in the row. Zero new hex; drawer shell, row recipe, chip strokes, and the mint recipe are all shipped values. The delete control on this same drawer shipped 2026-08-01 (owner ask) and is shown first, in its own pgdel- scope so it can't be mistaken for part of the proposal.</p>
 
   <div class="lib-card" id="past-games-delete">
     <span class="lib-label" style="display:block;margin-bottom:12px">PAST-GAME DELETE — shipped separately from the proposal above; two-click, no modal <span class="lib-pick">✓ shipped</span></span>
@@ -3456,7 +3494,7 @@ body.gc-app { align-items: center; }
   </div>
 
   <div class="lib-card">
-    <span class="lib-label" style="display:block;margin-bottom:12px">THE DRAWER, DAY-GROUPED — in-progress row with resume, finished rows, and an expired unfinished row that reads "unfinished", never as a loss <span class="lib-pick">proposed ✓</span></span>
+    <span class="lib-label" style="display:block;margin-bottom:12px">THE DRAWER, DAY-GROUPED — every row numbered; an in-progress row with the mint resume button, finished rows, and an expired unfinished row that reads "unfinished" with no button, never as a loss <span class="lib-pick">for review</span></span>
     <div class="pg2-drawer">
       <div class="pg2-drawer-head">
         <span class="pg2-title">past games</span>
@@ -3467,15 +3505,17 @@ body.gc-app { align-items: center; }
         <div class="pg2-list">
           <div class="pg2-row pg2-row-resumable">
             <button type="button" class="pg2-row-main">
+              <span class="pg2-num">game 195</span>
               <span class="pg2-time">4:12 pm</span>
               <span class="pg2-opp">mallow 1300</span>
               <span class="pg2-chip pg2-chip-live">in progress</span>
               <span class="pg2-lesson">12 moves in</span>
             </button>
-            <button type="button" class="small pg2-resume-btn">pick it back up</button>
+            <button type="button" class="small pg2-resume-btn">resume game</button>
           </div>
           <div class="pg2-row">
             <button type="button" class="pg2-row-main">
+              <span class="pg2-num">game 194</span>
               <span class="pg2-time">2:47 pm</span>
               <span class="pg2-opp">mallow 1300</span>
               <span class="pg2-result">won</span>
@@ -3484,8 +3524,9 @@ body.gc-app { align-items: center; }
           </div>
           <div class="pg2-row">
             <button type="button" class="pg2-row-main">
+              <span class="pg2-num">game 193</span>
               <span class="pg2-time">9:05 am</span>
-              <span class="pg2-opp">mallow 1200</span>
+              <span class="pg2-opp">mallow 1300</span>
               <span class="pg2-result">lost</span>
               <span class="pg2-lesson">the knight fork on move 14</span>
             </button>
@@ -3497,6 +3538,7 @@ body.gc-app { align-items: center; }
         <div class="pg2-list">
           <div class="pg2-row">
             <button type="button" class="pg2-row-main">
+              <span class="pg2-num">game 192</span>
               <span class="pg2-time">8:31 pm</span>
               <span class="pg2-opp">mallow 1300</span>
               <span class="pg2-result">draw</span>
@@ -3506,10 +3548,11 @@ body.gc-app { align-items: center; }
         </div>
       </div>
       <div class="pg2-day">
-        <div class="pg2-day-head"><span class="pg2-day-name">jul 19</span><span class="pg2-day-count">2 games</span></div>
+        <div class="pg2-day-head"><span class="pg2-day-name">aug 27</span><span class="pg2-day-count">2 games</span></div>
         <div class="pg2-list">
           <div class="pg2-row">
             <button type="button" class="pg2-row-main">
+              <span class="pg2-num">game 188</span>
               <span class="pg2-time">6:20 pm</span>
               <span class="pg2-opp">mallow 1400</span>
               <span class="pg2-chip">unfinished</span>
@@ -3518,6 +3561,7 @@ body.gc-app { align-items: center; }
           </div>
           <div class="pg2-row">
             <button type="button" class="pg2-row-main">
+              <span class="pg2-num">game 187</span>
               <span class="pg2-time">5:58 pm</span>
               <span class="pg2-opp">mallow 1400</span>
               <span class="pg2-result">won</span>
@@ -3527,42 +3571,17 @@ body.gc-app { align-items: center; }
         </div>
       </div>
     </div>
-    <span class="lib-code" style="display:inline-block;margin-top:12px">day header: Chakra Petch 700 10px ls .12em #7A6BB5 · count 9px #9C8FC7 tabular-nums, flat, no shadow (a statement) · rows keep the shipped #F4F0FF/#E3D9F5 record recipe; a resumable row's stroke warms to rgba(35,168,199,.45) · "in progress" chip: dest-chip #D7FAFF fill, teal-ink #1A7A93 · "unfinished" chip: #E7DFFF/#7A6BB5, deliberately NOT a result word and NOT magenta — status is never the alarm colour · resume button: candy pill, #fff on 0 3px 0 #D7FAFF press shadow, teal ink · row click still opens review; only the button resumes</span>
-    <p class="lib-note" style="margin-top:10px">Empty state: "no games yet. play one and it lands here." in the existing 13px quicksand whisper, centered — the drawer reserves no space beyond its own padding. The drawer is a centered fixed overlay in production (unchanged), so it floats above the board at every width and cannot disturb the protected narrow-window fold; at narrow widths it is already min(92vw, 440px) — see the narrow card below.</p>
+    <span class="lib-code" style="display:inline-block;margin-top:12px">game number: first span of every row, Chakra Petch 700 9px ls .08em #9C8FC7 tabular-nums, the same register as the time · day header: Chakra Petch 700 10px ls .12em #7A6BB5 · count 9px #9C8FC7 tabular-nums, flat, no shadow (a statement) · day names: today, yesterday, else lowercase month and day (sep 3), the year only when it differs (sep 3, 2025) · rows keep the shipped #F4F0FF/#E3D9F5 record recipe; a resumable row's stroke warms to rgba(35,168,199,.45) · "in progress" chip: dest-chip #D7FAFF fill, teal-ink #1A7A93 · "unfinished" chip: #E7DFFF/#7A6BB5, deliberately NOT a result word and NOT magenta, status is never the alarm colour · resume game button, standalone beside a lavender row: mint #A9EFD3 on #2E9C74 ink, 0 3px 0 #7BD4B0 press shadow (the armed-win recipe, ruling 2) · row click still opens review; only the button resumes</span>
+    <p class="lib-note" style="margin-top:10px">Three games today, two of them against the same mallow 1300: the number is what tells game 194 from game 193 when the coach says "your game on the 6th". An unfinished game older than seven days shows the unfinished chip and no button; the missing button is the whole signal. Empty state: "no games yet. play one and it lands here." in the existing 13px quicksand whisper, centered; the drawer reserves no space beyond its own padding. The drawer is a centered fixed overlay in production (unchanged), so it floats above the board at every width and cannot disturb the protected narrow-window fold; at narrow widths it is already min(92vw, 440px), see the narrow card below.</p>
   </div>
 
   <div class="lib-card">
-    <span class="lib-label" style="display:block;margin-bottom:12px">FAILED RESUME — the one alarm in this section. the drawer stays open and says so; never a silently dead board</span>
-    <div class="pg2-drawer" style="gap:10px">
-      <div class="pg2-drawer-head">
-        <span class="pg2-title">past games</span>
-        <button type="button" class="small">close</button>
-      </div>
-      <p class="pg2-fail">that one sat for more than 7 days, so it can't be picked back up. it stays saved in past games.</p>
-      <div class="pg2-day">
-        <div class="pg2-day-head"><span class="pg2-day-name">jul 21</span><span class="pg2-day-count">1 game</span></div>
-        <div class="pg2-list">
-          <div class="pg2-row">
-            <button type="button" class="pg2-row-main">
-              <span class="pg2-time">7:44 pm</span>
-              <span class="pg2-opp">mallow 1300</span>
-              <span class="pg2-chip">unfinished</span>
-              <span class="pg2-lesson">9 moves in</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <span class="lib-code" style="display:inline-block;margin-top:12px">warn-tint #FFD6EC fill · warning ink #C22B7E · 1.5px rgba(194,43,126,.35) stroke · 14px radius · flat, no shadow — a statement, and the magenta family is EARNED here: this is the section's only alarm. three copies, one per refusal: finished ("that game is already finished. it lives in past games."), expired (shown), generic ("couldn't pick that game back up. it stays saved in past games.")</span>
-  </div>
-
-  <div class="lib-card">
-    <span class="lib-label" style="display:block;margin-bottom:12px">PREGAME CONTINUE CARD — the recovery at the point of entry: reload lands on the pregame panel, and the live game offers itself back <span class="lib-pick">proposed ✓ (new scope — open question 1)</span></span>
+    <span class="lib-label" style="display:block;margin-bottom:12px">PREGAME CONTINUE CARD — the recovery at the point of entry: reload lands on the pregame panel, and the live game offers itself back by number <span class="lib-pick">for review</span></span>
     <div class="pg2-pregame-mock">
       <div class="pg2-continue">
         <span class="pg2-continue-kicker">game in progress</span>
-        <p class="pg2-continue-body">you and mallow 1300 are mid-game, 12 moves in.</p>
-        <button type="button" class="small pg2-resume-btn">pick it back up</button>
+        <p class="pg2-continue-body">game 195: you and mallow 1300 are mid-game, 12 moves in.</p>
+        <button type="button" class="small pg2-resume-btn">resume game</button>
       </div>
       <div class="pg2-pregame-row">
         <span class="pg2-pregame-label">mallow plays at</span>
@@ -3571,8 +3590,33 @@ body.gc-app { align-items: center; }
         <button type="button" class="small" style="background:#fff;color:#7A6BB5;box-shadow:0 3px 0 #E3D9F5, 0 6px 10px rgba(90,70,180,.12)">past games</button>
       </div>
     </div>
-    <span class="lib-code" style="display:inline-block;margin-top:12px">flat-tint statement card holding one candy button: dest-chip #D7FAFF wash, 1.5px rgba(35,168,199,.35) stroke, 16px radius, no shadow · kicker Chakra Petch 700 9px ls .14em #1A7A93 (machine names the fact) · body quicksand 700 12.5px teal-ink · the button is the same pg2 resume pill as the drawer — one affordance, one look · card absent when nothing is resumable: no reserved dead space, the picker row simply sits first</span>
-    <p class="lib-note" style="margin-top:10px">Narrow-width behaviour (protected-fold statement): the card lives INSIDE the existing pregame panel in the action slot, above the picker row; its flex row wraps at narrow widths (kicker, body, button stack center-aligned) and it never touches <span class="lib-code">--board-size</span>, <span class="lib-code">.postgame</span>, the coach band, or the wordmark — the fold is unaffected, and Task 6 verifies that by eye at 430px anyway.</p>
+    <span class="lib-code" style="display:inline-block;margin-top:12px">flat-tint statement card holding one candy button: dest-chip #D7FAFF wash, 1.5px rgba(35,168,199,.35) stroke, 16px radius, no shadow · kicker Chakra Petch 700 9px ls .14em #1A7A93 (machine names the fact) · body quicksand 700 12.5px teal-ink, opens with the number ("1 move in" when singular) · the button here is WHITE on 0 3px 0 #D7FAFF, teal ink: inside the cyan card the white pill already reads, so the mint is not spent (ruling 3) · card absent when nothing is resumable: no reserved dead space, the picker row simply sits first</span>
+    <p class="lib-note" style="margin-top:10px">Narrow-width behaviour (protected-fold statement): the card lives INSIDE the existing pregame panel in the action slot, above the picker row; its flex row wraps at narrow widths (kicker, body, button stack center-aligned) and it never touches <span class="lib-code">--board-size</span>, <span class="lib-code">.postgame</span>, the coach band, or the wordmark; the fold is unaffected, and the port verifies that by eye at 430px anyway.</p>
+  </div>
+
+  <div class="lib-card">
+    <span class="lib-label" style="display:block;margin-bottom:12px">THE NUMBER ELSEWHERE — review banner and live footer, so the drawer's number can be matched to the game on screen <span class="lib-pick">for review</span></span>
+    <div class="lib-row" style="align-items:flex-start">
+      <div class="lib-cell">
+        <span class="lib-label">REVIEW BANNER — top of a reviewed past game's debrief</span>
+        <div class="pg2-banner">
+          <span class="pg2-banner-kicker">reviewing</span>
+          <span class="pg2-banner-meta">game 195 · mallow 1600 · won</span>
+          <button type="button" class="small">back to play</button>
+        </div>
+        <span class="lib-code" style="display:inline-block;margin-top:8px">the shipped .debrief-review-banner pill (#E7DFFF, kicker Chakra Petch 700 9px #6952C4, meta Fredoka 600 12.5px #4A3B7E) with the number leading the meta; nothing else moves</span>
+      </div>
+      <div class="lib-cell">
+        <span class="lib-label">LIVE FOOTER — the "you" bar's move counter during play</span>
+        <div class="pg2-bar-mock">
+          <div class="bar-identity">
+            <span class="name-plate np-you"><span class="np-body"><svg class="np-glyph" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0 6.2 3.8 10 5 6.2 6.2 5 10 3.8 6.2 0 5 3.8 3.8z" fill="#23E5FF" stroke="#1A7A93" stroke-width="1" stroke-linejoin="miter"/></svg><span class="np-name">you</span><span class="np-div" aria-hidden="true"></span><span class="np-elo">1350</span></span></span>
+            <span class="bar-move-count">move 2 · game 195</span>
+          </div>
+        </div>
+        <span class="lib-code" style="display:inline-block;margin-top:8px">the shipped .bar-move-count line (10.5px 700 ls .03em #9A8BC9) under the name plate, with the number appended after a U+00B7; the bar is shown bottom-only, captures and chip slot omitted</span>
+      </div>
+    </div>
   </div>
 
   <div class="lib-card">
@@ -3589,15 +3633,17 @@ body.gc-app { align-items: center; }
             <div class="pg2-list">
               <div class="pg2-row pg2-row-resumable">
                 <button type="button" class="pg2-row-main">
+                  <span class="pg2-num">game 195</span>
                   <span class="pg2-time">4:12 pm</span>
                   <span class="pg2-opp">mallow 1300</span>
                   <span class="pg2-chip pg2-chip-live">in progress</span>
                   <span class="pg2-lesson">12 moves in</span>
                 </button>
-                <button type="button" class="small pg2-resume-btn">pick it back up</button>
+                <button type="button" class="small pg2-resume-btn">resume game</button>
               </div>
               <div class="pg2-row">
                 <button type="button" class="pg2-row-main">
+                  <span class="pg2-num">game 194</span>
                   <span class="pg2-time">2:47 pm</span>
                   <span class="pg2-opp">mallow 1300</span>
                   <span class="pg2-result">won</span>
@@ -3611,12 +3657,12 @@ body.gc-app { align-items: center; }
       <div class="lib-cell" style="width:340px;flex:none">
         <div class="pg2-continue" style="width:340px">
           <span class="pg2-continue-kicker">game in progress</span>
-          <p class="pg2-continue-body">you and mallow 1300 are mid-game, 12 moves in.</p>
-          <button type="button" class="small pg2-resume-btn">pick it back up</button>
+          <p class="pg2-continue-body">game 195: you and mallow 1300 are mid-game, 12 moves in.</p>
+          <button type="button" class="small pg2-resume-btn">resume game</button>
         </div>
       </div>
     </div>
-    <span class="lib-code" style="display:inline-block;margin-top:12px">the resume pill drops under the row text at tight widths (flex-wrap on the row pair) and the continue card stacks its three pieces — no truncation, no horizontal scroll · in production the drawer is min(92vw, 440px), so 340px is what a small phone-ish window actually gets</span>
+    <span class="lib-code" style="display:inline-block;margin-top:12px">the mint resume pill drops under the row text at tight widths (flex-wrap on the row pair) and the continue card stacks its three pieces around the white pill: no truncation, no horizontal scroll · in production the drawer is min(92vw, 440px), so 340px is what a small phone-ish window actually gets</span>
   </div>
 </section>
 
