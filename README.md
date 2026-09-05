@@ -68,7 +68,7 @@ Then, in Terminal:
 ```
 git clone https://github.com/tiffygk/girl-chess-demo.git
 cd girl-chess-demo
-npm ci          # installs the project's packages, under a minute. "vulnerabilities" lines are npm noise, not a problem here.
+npm ci          # installs the project's packages, under a minute. lines about "vulnerabilities", "deprecated", or "funding" are npm noise, not a problem here.
 ./setup.sh      # once: installs two chess engines and downloads nine opponent files, 2 to 10 minutes. safe to run again.
 npm run doctor  # says what, if anything, is still missing and how to fix it
 npm run dev     # starts the game; the last line tells you the address to open
@@ -90,7 +90,7 @@ When something goes wrong, the message on screen says what to do. The ones you a
 | `Homebrew is not installed` | https://brew.sh, then `./setup.sh` again |
 | cookie says she needs you signed in | the game works without her; to turn her on, install Claude Code, run `claude` once to sign in, restart with `npm run dev` |
 
-`npm run gate` is the project's own check (tests, types, lint, and two rule-checkers over the 51 committed games), about three minutes; it runs in GitHub Actions on every push, which is what the badge at the top reports.
+`npm run gate` is the project's own check (tests, types, lint, and two rule-checkers over the 51 committed games), about three minutes. Its report is written for contributors; the last line is the verdict. Once you have finished five games of your own it checks those instead of the committed ones. It runs in GitHub Actions on every push, which is what the badge at the top reports.
 
 ## How it's built
 
