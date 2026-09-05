@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { chatWithCoach, streamChatWithCoach, rateTrace, type ChatContext, type ChatResponse, type CoachProbe } from "./api";
-import { anchorForFocus, focusKey, shouldInjectAnchor, type ThreadEntry } from "./chatThread";
+import { chatWithCoach, streamChatWithCoach, rateTrace, type ChatContext, type ChatHistoryMessage, type ChatResponse, type CoachProbe } from "./api";
+import { anchorForFocus, focusKey, historyToThread, shouldInjectAnchor, type ThreadEntry } from "./chatThread";
 import type { ChatStatusPhase } from "./chatStream";
 
 // Task 1c (coach-truth-speed latency round, 2026-08-02): the staged
@@ -179,6 +179,16 @@ export interface CoachChatProps {
   // render test drives it directly). null/undefined (not yet fetched, or
   // the fetch failed) renders nothing extra -- same as today.
   coachStatus?: CoachProbe | null;
+  // Task 11.2 (stranger-clones-and-plays round, resume-brings-back-chat):
+  // this game's persisted chat_messages rows, fetched by GamePage's
+  // resumeGame via fetchChatHistory and handed down so this component
+  // stays presentational (same precedent as coachStatus above). Seeds the
+  // thread on the CURRENT gameId once, in place of the panel coming back
+  // empty on resume -- see the seeding effect below for why it's a
+  // separate effect from the gameId reset rather than folded into it.
+  // null/undefined (no game to resume, or the fetch failed/is still in
+  // flight) seeds nothing, same as an empty history array.
+  history?: ChatHistoryMessage[] | null;
 }
 
 export function CoachChat({
@@ -191,9 +201,18 @@ export function CoachChat({
   hintFocus,
   turningPointFocus,
   coachStatus,
+  history,
 }: CoachChatProps) {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ThreadEntry[]>([]);
+  // Lazy initializer (not `useState<ThreadEntry[]>([])`): seeds the FIRST
+  // render straight from `history` if the caller already has it at mount
+  // time -- this is what lets a static render (CoachChat.test.tsx, which
+  // never runs effects) prove seeding works without a DOM. The gameId
+  // reset effect below still wipes this on every later game-id change (this
+  // component stays mounted across games), and the seeding effect after it
+  // re-populates once history for the NEW game arrives -- see that effect's
+  // comment for why late-arriving history needs its own effect.
+  const [messages, setMessages] = useState<ThreadEntry[]>(() => historyToThread(history));
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
   // B-stream (2026-07-27, coach-truth-speed round): the in-flight coach
@@ -218,6 +237,13 @@ export function CoachChat({
   // from "the current focus", so a focus that clears to null and comes back
   // to the SAME key re-anchors (see shouldInjectAnchor's contract).
   const lastInjectedKeyRef = useRef<string | null>(null);
+  // Task 11.2: which gameId's history has already been seeded into
+  // `messages` -- a ref, not state, so it doesn't itself retrigger the
+  // seeding effect below. Cleared on every gameId change so a resumed game
+  // seeds once, and a later re-render carrying the same (or a stale
+  // re-fetched) history array never wipes a question the player has since
+  // typed into this thread.
+  const seededHistoryGameIdRef = useRef<number | null>(null);
 
   // "component chat state resets when the viewed game id changes (server
   // owns durable history)" — the visible thread is per-view only; switching
@@ -232,7 +258,29 @@ export function CoachChat({
     setStatusPhase(null);
     setOpen(false);
     lastInjectedKeyRef.current = null;
+    seededHistoryGameIdRef.current = null;
   }, [gameId]);
+
+  // Task 11.2 (stranger-clones-and-plays round): seeds `messages` from
+  // `history` once per gameId. This is a SEPARATE effect from the reset
+  // above, keyed on [gameId, history] rather than [gameId] alone, because
+  // GamePage's resumeGame calls setGameId(id) before its fetchChatHistory
+  // call has settled -- so `history` for the new game typically arrives on
+  // a LATER render than the gameId change itself, after the reset effect
+  // has already run and cleared messages to []. Folding this into the
+  // reset effect would either fire on the stale (previous game's) history,
+  // or require reading history through a ref to dodge that -- keeping it
+  // separate and re-running whenever `history` changes is simpler and
+  // correct either way. The ref guard is what stops a later render with an
+  // unchanged (or a stale, re-fetched-identical) history value from wiping
+  // out a question the player has typed since the seed landed.
+  useEffect(() => {
+    if (gameId == null) return;
+    if (!history || history.length === 0) return;
+    if (seededHistoryGameIdRef.current === gameId) return;
+    seededHistoryGameIdRef.current = gameId;
+    setMessages(historyToThread(history));
+  }, [gameId, history]);
 
   useEffect(() => {
     if (!listRef.current) return;
