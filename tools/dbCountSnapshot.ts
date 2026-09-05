@@ -220,7 +220,7 @@ export function resolveRealDbPath(
   if (demoGames != null && demoGames > 0) {
     return {
       path: demo,
-      source: `committed demo db (no owner db at ${mainWorktreeDb} or ${local}; verified ${demoGames} games by count, not hash)`,
+      source: `committed demo db (no personal database at ${local}; verified ${demoGames} games by count, not hash)`,
       writable: false,
     };
   }

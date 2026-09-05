@@ -19,9 +19,8 @@ describe("ErrorBoundary", () => {
   it("the fallback says what happened and offers a reload button", () => {
     const html = renderToStaticMarkup(<ErrorFallback />);
     expect(html).toContain("something went wrong on this page.");
-    expect(html).toContain(
-      "reload the page to keep playing. if it happens again, the Terminal window shows the error to report."
-    );
+    expect(html).toContain("reload the page to keep playing.");
+    expect(html).not.toContain("Terminal");
     expect(html).toContain(">reload<");
     expect(html).not.toContain("\u2014");
   });
