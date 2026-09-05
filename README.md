@@ -82,7 +82,7 @@ When something goes wrong, the message on screen says what to do. The ones you a
 
 | you see | do this |
 |---|---|
-| `port 3001 is already in use by another program` | run `PORT=3002 npm run dev` (that moves both halves), or quit the other program |
+| `port 3001 is already in use by another program` | press Ctrl+C, then run `PORT=3002 npm run dev` (that moves both halves), or quit the other program |
 | `Port 5173 is already in use` | run `VITE_PORT=5174 npm run dev` and open the address it prints |
 | `the game server is not running` in the browser | look at Terminal: the server printed why; fix that, then click try again |
 | `opponent files ... are missing` or `... damaged` | run `./setup.sh` again; it fetches only what is missing or damaged |
