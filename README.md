@@ -2,6 +2,8 @@
 
 [![gate](https://github.com/tiffygk/girl-chess-demo/actions/workflows/gate.yml/badge.svg)](https://github.com/tiffygk/girl-chess-demo/actions/workflows/gate.yml)
 
+Want to play it? Jump to [Running the game locally](#running-the-game-locally): about ten minutes on a Mac, most of it downloads.
+
 A personal AI chess tutor that runs locally on your machine. Play against mallow, human-feeling opponent at nine strengths, who's beatable due to warnings, progressive hints, and a plain-English debrief after every game. The repo ships 51 of my own finished games and 113 coach exchanges from them. The fastest way to assess a chess tutor is to read it coaching real mistakes.
 
 I am a woman who learned chess 3 months ago in my 30s. Most chess apps felt cold and masculine, so I built the tutor I wanted: feminine-first and approachable, for an underserved slice of a massive market.
@@ -11,6 +13,8 @@ I am a woman who learned chess 3 months ago in my 30s. Most chess apps felt cold
 Three layers do the thinking. Stockfish does the chess math. Maia is the human-feeling opponent, run through the open source lc0 engine, named mallow. Claude Sonnet 5, through the Agent SDK, writes the coach's chat answers and per-move notes.
 
 By default, selecting a move is not playing it. Click a piece, click a square, and the judge evaluates that move while your piece sits ghosted on the target. A second click or "play it" confirms; "take it back" retracts.
+
+Girl Chess is meant to be played on a computer, not on a phone or a small screen.
 
 Move 11 of a real game, knight to d5 selected but not confirmed: I ask the coach why not queen to a4 instead.
 
@@ -54,17 +58,39 @@ Two guardrails: every coach reply is checked before it reaches you, and the debr
 
 ## Running the game locally
 
+You need a Mac (Apple silicon or Intel), Homebrew, and Node 22. Linux and Windows are not supported and not tested. If you are not sure what you have, the third command below tells you.
+
+- Homebrew: one command from https://brew.sh, about five minutes.
+- Node 22: `brew install node@22`, or the installer at https://nodejs.org. Reopen Terminal afterwards.
+
+Then, in Terminal:
+
 ```
-npm install  # Node 20.19+
-./setup.sh   # once, macOS + Homebrew: installs Stockfish + lc0, downloads Maia weights for all nine Elo bands
-npm run dev  # server on 3001, web client on 5173
+git clone https://github.com/tiffygk/girl-chess-demo.git
+cd girl-chess-demo
+npm ci          # installs the project's packages, under a minute. "vulnerabilities" lines are npm noise, not a problem here.
+./setup.sh      # once: installs two chess engines and downloads nine opponent files, 2 to 10 minutes. safe to run again.
+npm run doctor  # says what, if anything, is still missing and how to fix it
+npm run dev     # starts the game; the last line tells you the address to open
 ```
 
-Open http://localhost:5173. Everything but the coach's words runs on your machine: no API key, no monetization layer. The coach is an optional menu toggle and needs your logged-in Claude subscription and wifi connection. Without one, the game, opponent, judge and post-game analysis still work on computed facts. The chat can run on open-source Ollama instead, but as a Claude girlie I haven't optimized it.
+Open http://localhost:5173. You will see the board, a strength picker, and "start game". Click a piece, then a square; the judge weighs the move while the piece sits ghosted, and "play it" confirms. Your games are saved to `data/girlchess.db` on your machine and never leave it. To browse the 51 games I played instead of starting empty, run `npm run demo`.
 
-If `ANTHROPIC_API_KEY` happens to be set in your shell, the coach ignores it and uses your Claude login only. The server logs one line saying so, and nothing here bills a metered key. The API listens on 127.0.0.1 and refuses requests from other origins.
+The coach, cookie, needs you signed in to Claude on this Mac (the Claude Code app's sign-in; install it from https://claude.com/claude-code, run claude once in Terminal, and sign in). Without that, cookie says so in the chat panel, and everything else still works: the opponent, the judge's warnings and hints, and the full debrief after each game. If `ANTHROPIC_API_KEY` happens to be set in your shell, the coach ignores it and uses your Claude login only; nothing here bills a metered key. The API listens on 127.0.0.1 and refuses requests from other origins.
 
-Your games go to `data/girlchess.db`, created on first run, and are never committed. To browse the 51 committed games instead of starting empty, run `npm run demo`: it serves a working copy at `data/girlchess-demo.scratch.db`, so the committed file never changes and deleting the copy resets it.
+When something goes wrong, the message on screen says what to do. The ones you are most likely to meet:
+
+| you see | do this |
+|---|---|
+| `port 3001 is already in use by another program` | run `PORT=3002 npm run dev` (that moves both halves), or quit the other program |
+| `Port 5173 is already in use` | run `VITE_PORT=5174 npm run dev` and open the address it prints |
+| `the game server is not running` in the browser | look at Terminal: the server printed why; fix that, then click try again |
+| `opponent files ... are missing` or `... damaged` | run `./setup.sh` again; it fetches only what is missing or damaged |
+| `Could not read package.json` | you are not inside the folder: `cd girl-chess-demo` first |
+| `Homebrew is not installed` | https://brew.sh, then `./setup.sh` again |
+| cookie says she needs you signed in | the game works without her; to turn her on, install Claude Code, run `claude` once to sign in, restart with `npm run dev` |
+
+`npm run gate` is the project's own check (tests, types, lint, and two rule-checkers over the 51 committed games), about three minutes; it runs in GitHub Actions on every push, which is what the badge at the top reports.
 
 ## How it's built
 
@@ -74,7 +100,7 @@ I designed and built this 0-to-1 as a product manager's first vibed project ever
 <summary>Developer detail</summary>
 
 - Four text surfaces reach the player. Two are model-written, the coach chat and the per-move note; two are code, the hint ladder and the post-game analysis, templated from Stockfish facts.
-- `npm run gate` is the local merge check. It fails on any violation of the rules in `src/review/debriefInvariants.ts`. On a fresh clone with no personal database it runs those rules against the 51 committed games, and the same steps run in GitHub Actions on every push.
+- `npm run gate` is the local merge check. It fails on any violation of the rules in `src/review/debriefInvariants.ts`. On a fresh clone with no personal database it runs those rules against the 51 committed games.
 - Skipping `setup.sh` fails loudly: the server refuses to start and names the missing Elo bands. Deliberate. A missing Maia band used to silently swap in a strength-limited Stockfish, a far less human opponent.
 - `data/girlchess-demo.db` is committed on purpose: 51 games with full move lists, each coach reply's final draft with its validation result, my questions, and my thumbs. `tools/make-demo-db.sh` builds it from my live database through a read-only handle: finished games only, backend-error traces dropped. No names, addresses, emails or keys; I scanned it for them.
 
