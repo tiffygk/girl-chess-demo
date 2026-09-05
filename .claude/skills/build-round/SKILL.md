@@ -52,6 +52,20 @@ Run execution under **`superpowers:subagent-driven-development`** — the contro
 3. On each return, verify the commit exists and tests are green (`git log`, agent-reported counts). Do not re-read the diff in the controller context. **For visual deliverables, "it looks right" is a claim, not a verification — render it and look, in the controller's own context, before showing the owner.** Two subagent-declared-done icons were wrong on inspection in the 2026-07-21 round; relaying a self-assessment to the owner wastes her review pass and her trust.
 4. Research tasks (if any) run as background Sonnet agents that write findings to the vault (`1 product/` for product references) and return the path plus ≤10 summary lines.
 
+## Merge policy: one pull request per wave (owner ruling 2026-09-05)
+
+Every wave reaches `main` through a pull request, never a local merge or a direct push. The PR is the public record of the work; the vault ledger stays the private one.
+
+1. Push the round branch (`env -u GH_TOKEN git push -u origin <branch>`) after the wave's review is clean.
+2. `env -u GH_TOKEN gh pr create --base main --head <branch> --title "<wave subject>" --body-file <body.md>` where the body follows `.github/pull_request_template.md`: What, Why, How it was checked (the gate verdict line, the red-first tests, screenshots for any surface), Review (the Sonnet reviewer's verdict and how each finding was resolved), Rulings (`Ruling: what / why / cost if wrong`), Rollback. Write it for a stranger reading the repo, in plain sentences, no em-dashes.
+3. Post the reviewer's full verdict as a PR review comment: `env -u GH_TOKEN gh pr review <n> --comment --body-file <review.md>`. A single-maintainer repo cannot approve its own PR, so the comment is the review record; do not fake an approval.
+4. Wait for the `gate` check on the PR (`env -u GH_TOKEN gh pr checks <n> --watch`). A red check is repo-reason or environment-reason: read the log; a timing flake is rerun (`gh run rerun --failed`), wrong code is a fix commit on the same branch.
+5. Before merging anything that changes `server/**`, run the mid-game check (no move in her live db in the last 15 minutes and no open game with recent moves); her live server restarts on merge.
+6. `env -u GH_TOKEN gh pr merge <n> --merge --delete-branch` (a merge commit, never squash or rebase, so `git revert -m 1 <merge sha>` stays the rollback). Record the PR number, merge SHA, and Actions run id in the ledger.
+7. Branch protection on `main` requires the `gate` check and a pull request; a direct push is refused. A round still cuts its rollback tag before its first PR.
+
+Several small PRs beat one large one: one wave, one PR, so a reader can follow the change and a revert stays small.
+
 ## Phase 3 — review and fix (Fable controller)
 
 Run the review under **`superpowers:test-driven-development`**: a finding is proven by a failing test before it's fixed, and every fix is red-green (write the failing test that captures the bug, then make it pass). The reviewer also confirms the round's shipped changes carry tests, not just green suites.
