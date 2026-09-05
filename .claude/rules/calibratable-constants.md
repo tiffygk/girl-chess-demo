@@ -4,7 +4,7 @@ paths: ["server/**", "src/review/**", "src/game/**"]
 
 # Calibratable constants
 
-Purpose: the owner-calibratable starting values across the annotator, coach, and client, verified against the current tree, so a tuning change starts from the real value.
+Purpose: the owner-calibratable starting values across the annotator, coach, and client, so a tuning change starts from the real value.
 
 | Constant | Value | File | Meaning |
 | --- | --- | --- | --- |
