@@ -24,7 +24,7 @@ See docs/changelog.md#attribution-rule-2026-09-01-attribution-grounding-round
 3. The eval harness records per-row usage metadata so invisible token spend stays visible.
 See docs/changelog.md#total-time-accounting-rule-2026-08-02
 
-**The `CoachBackend` seam is FOUR members, not three** (`server/coach/backends/types.ts`): `name`, `available()`, `generate()`, and the optional `generateStream?()`. Only `agent-sdk.ts` implements the stream member; the other backends need zero edits and stay as fast and tested as before. The deltas `onDelta` receives are ADVISORY RENDERING ONLY: the returned `Promise<string>` is the single terminal-result authority that `chat.ts` validates against. A caller must NEVER assemble its own return value by concatenating deltas.
+**The `CoachBackend` seam is FOUR members, not three (2026-07-27)** (`server/coach/backends/types.ts`): `name`, `available()`, `generate()`, and the optional `generateStream?()`. Only `agent-sdk.ts` implements the stream member; the other backends need zero edits and stay as fast and tested as before. The deltas `onDelta` receives are ADVISORY RENDERING ONLY: the returned `Promise<string>` is the single terminal-result authority that `chat.ts` validates against. A caller must NEVER assemble its own return value by concatenating deltas.
 
 The debrief/analysis path (`src/review/`, `server/annotator/`) contains no LLM call at all: a false statement there is always our own template contradicting our own data, never a model hallucination.
 

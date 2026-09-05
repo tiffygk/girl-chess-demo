@@ -19,6 +19,7 @@ See docs/changelog.md#play-rule-2026-07-29
 See docs/changelog.md#gate-rule-2026-07-28
 
 **Db-copy rule:** when gating or browsing against her real games is unavoidable, drive a COPY of the db triple: the `.db`, `-wal`, and `-shm` files together, never just the `.db` file alone.
+See the visual gate rule in `.claude/skills/build-round/SKILL.md` (run the gate against a db COPY, not her live file).
 
 **Directory rule:** no agent moves, renames, or deletes any directory, ever: file edits only, inside your own worktree. If the repo is ever found off its canonical path, that is an INCIDENT to report, not something to fix silently.
 See docs/changelog.md#directory-rule-2026-07-29

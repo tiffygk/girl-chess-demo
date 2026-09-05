@@ -17,7 +17,7 @@ See docs/changelog.md#playtest-freshness-rule-2026-08-01
 Push-freshness rule: a "the remote is clean" claim is true only of the commit it was checked against, and expires the moment another commit lands. State the SHA it ran against in the same breath as the claim.
 See docs/changelog.md#push-freshness-rule-2026-08-26
 
-Publishing: the vault's publishing rules (not in this repo, internal policy, never committed) are the authority on what may go to GitHub. The repo is public and a portfolio piece. A push needs her word every time; re-scan for identifiers if the demo db changes. The publishing doc lives in the owner's vault under the `GitHub/` folder, no path.
+Publishing: the vault's publishing rules (not in this repo, internal policy, never committed) are the authority on what may go to GitHub. The repo is public and a portfolio piece. A push needs her word every time; re-scan for identifiers if the demo db changes. The publishing doc lives in the owner's vault under the `GitHub/` folder.
 
 Durability rule: conversation state is not real until the bytes are verified on disk. Every owner ask lands in the ledger in the same turn it is made.
 See docs/changelog.md#durability-rule-2026-08-01
