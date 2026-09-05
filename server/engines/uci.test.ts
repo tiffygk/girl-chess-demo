@@ -51,4 +51,26 @@ describe("UciEngine", () => {
     }
     expect(alive).toBe(false);
   }, 5000);
+
+  it("stdin carries an error listener so a late write cannot crash the process", async () => {
+    const e = new UciEngine("node", ["-e", "setTimeout(()=>{}, 2000)"]);
+    expect((e as any).proc.stdin.listenerCount("error")).toBeGreaterThanOrEqual(1);
+    e.quit();
+  });
+
+  it("a write after the child closed its stdin is swallowed, not raised", async () => {
+    const e = new UciEngine("sh", ["-c", "exec 0<&-; sleep 1"]);
+    await new Promise((r) => setTimeout(r, 150));
+    e.send("isready");
+    await new Promise((r) => setTimeout(r, 200));
+    expect((e as any).dead).toBe(true);
+    e.quit();
+  });
+
+  it("send after quit is a no-op", async () => {
+    const e = new UciEngine("stockfish");
+    e.quit();
+    expect((e as any).dead).toBe(true);
+    expect(() => e.send("isready")).not.toThrow();
+  });
 });
