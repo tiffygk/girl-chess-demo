@@ -9,7 +9,7 @@ export function ErrorFallback() {
   return (
     <div className="server-down" role="alert">
       <p>something went wrong on this page.</p>
-      <p>reload the page to keep playing. if it happens again, the Terminal window shows the error to report.</p>
+      <p>reload the page to keep playing.</p>
       <button type="button" className="small" onClick={() => window.location.reload()}>reload</button>
     </div>
   );
