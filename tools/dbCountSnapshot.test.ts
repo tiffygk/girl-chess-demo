@@ -27,6 +27,7 @@ import {
   checkDbIntact,
   deriveMainWorktreeDbFromGit,
   NoDbFoundError,
+  MIN_FINISHED_GAMES,
 } from "./dbCountSnapshot";
 
 const tmpDirs: string[] = [];
@@ -46,6 +47,22 @@ function writeTinyDb(p: string, games: number) {
   const db = new Database(p);
   db.exec("CREATE TABLE games(id INTEGER PRIMARY KEY)");
   for (let i = 0; i < games; i++) db.prepare("INSERT INTO games DEFAULT VALUES").run();
+  db.close();
+}
+
+// Games-only, like writeTinyDb, but with an ended_at column so callers can
+// mark a chosen number of rows "finished" -- the shape resolveRealDbPath's
+// under-five-finished-games fallback reads (SELECT COUNT(*) FROM games
+// WHERE ended_at IS NOT NULL). Unfinished rows get a NULL ended_at, the
+// same as an in-progress game in the real schema.
+function writeTinyDbWithFinished(p: string, totalGames: number, finishedGames: number) {
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  const db = new Database(p);
+  db.exec("CREATE TABLE games(id INTEGER PRIMARY KEY, ended_at TEXT)");
+  const ins = db.prepare("INSERT INTO games(ended_at) VALUES (?)");
+  for (let i = 0; i < totalGames; i++) {
+    ins.run(i < finishedGames ? new Date().toISOString() : null);
+  }
   db.close();
 }
 
@@ -280,6 +297,32 @@ describe("resolveRealDbPath: committed demo db fallback (fresh clone / CI)", () 
     expect(r.path).toBe(path.join(root, "data", "girlchess.db"));
     expect(r.source).toMatch(/local worktree copy/);
     expect(r.writable).toBe(true);
+  });
+
+  it("a personal db under MIN_FINISHED_GAMES defers to the committed demo db (a fresh clone that has played one game must not run the checkers against a 1-game corpus)", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gc-personal-under-floor-"));
+    tmp.push(root);
+    const personalPath = path.join(root, "data", "girlchess.db");
+    writeTinyDbWithFinished(personalPath, 3, 1);
+    writeTinyDb(path.join(root, "data", "girlchess-demo.db"), 51);
+    const r = resolveRealDbPath(root, missingMain);
+    expect(r.path).toBe(path.join(root, "data", "girlchess-demo.db"));
+    expect(r.writable).toBe(false);
+    expect(r.source).toBe(
+      `committed demo db (your own database at ${personalPath} has 1 finished game; the checks need at least ${MIN_FINISHED_GAMES})`
+    );
+  });
+
+  it("a personal db at or above MIN_FINISHED_GAMES resolves to itself, demo db present or not", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gc-personal-at-floor-"));
+    tmp.push(root);
+    const personalPath = path.join(root, "data", "girlchess.db");
+    writeTinyDbWithFinished(personalPath, 5, 5);
+    writeTinyDb(path.join(root, "data", "girlchess-demo.db"), 51);
+    const r = resolveRealDbPath(root, missingMain);
+    expect(r.path).toBe(personalPath);
+    expect(r.writable).toBe(true);
+    expect(r.source).toMatch(/local worktree copy/);
   });
 
   it("GC_DB_PATH pointing at a file named girlchess-demo.db is never writable", () => {
