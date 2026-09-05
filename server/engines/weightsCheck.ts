@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// N2 (2026-08-21): ALLOWED_ELOS (server/index.ts) and OPPONENT_ELOS
+// N2 (2026-08-21): ALLOWED_ELOS (server/engines/paths.ts) and OPPONENT_ELOS
 // (src/game/GamePage.tsx) are two independent literals, and neither was ever
 // checked against what is actually on disk. A band with no weights file does
 // not error: lc0 fails to load, MaiaOpponent.engageFallback() swaps in
