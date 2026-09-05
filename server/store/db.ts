@@ -738,6 +738,52 @@ export const listFinishedGames = (limit = 30) =>
      ORDER BY g.id DESC
      LIMIT ?`
   ).all(limit) as any[];
+
+// Resume round (2026-09-06), Wave B: every game with at least one move,
+// newest first, finished or not -- the drawer shows unfinished games with
+// a chip. Zero-move stubs (a game created and abandoned before the first
+// move) are never listed. Keeps listFinishedGames above untouched --
+// tools/truth-check.ts and tools/replay-check.ts still call it directly.
+// `lesson`'s subquery is copied verbatim from listFinishedGames; that
+// rank/algo_version condition is authoritative, don't re-derive it here.
+export const listRecentGames = (limit = 60) =>
+  db.prepare(
+    `SELECT g.id as id, g.started_at as startedAt, g.opponent as opponent,
+            g.result as result, g.end_reason as endReason,
+            (SELECT COUNT(*) FROM moves m WHERE m.game_id = g.id) as plies,
+            (SELECT MAX(m.moved_at) FROM moves m WHERE m.game_id = g.id) as lastMoveAt,
+            (SELECT label FROM turning_points tp WHERE tp.game_id = g.id AND tp.rank = 1
+               AND COALESCE(tp.algo_version, 1) = (
+                 SELECT MAX(COALESCE(algo_version, 1)) FROM turning_points WHERE game_id = g.id
+               )
+            ) as lesson
+     FROM games g
+     WHERE (SELECT COUNT(*) FROM moves m WHERE m.game_id = g.id) > 0
+     ORDER BY g.id DESC
+     LIMIT ?`
+  ).all(limit) as Array<{
+    id: number;
+    startedAt: string;
+    opponent: string;
+    result: string | null;
+    endReason: string | null;
+    plies: number;
+    lastMoveAt: string | null;
+    lesson: string | null;
+  }>;
+
+// Resume round (2026-09-06), Wave B: the same move-count/last-move-time
+// facts listRecentGames computes per row, for a single game -- backs
+// GameManager.gameStatus (GET /api/game/:id/status). Kept as a separate
+// two-number accessor rather than reusing listRecentGames(1) filtered by
+// id, since that query's ORDER BY/LIMIT shape doesn't guarantee this game
+// is even in the top `limit` rows.
+export const getGameCounts = (gameId: number): { plies: number; lastMoveAt: string | null } =>
+  db.prepare(
+    `SELECT (SELECT COUNT(*) FROM moves m WHERE m.game_id = ?) as plies,
+            (SELECT MAX(m.moved_at) FROM moves m WHERE m.game_id = ?) as lastMoveAt`
+  ).get(gameId, gameId) as { plies: number; lastMoveAt: string | null };
+
 // A plain UPDATE (not an insert), safe to call repeatedly with the same
 // value — unlike turning_points above, this needs no existence guard.
 export const setMoveClassification = (gameId: number, ply: number, classification: string | null) =>
