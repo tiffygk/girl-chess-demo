@@ -43,7 +43,8 @@ function run(extraEnv: Record<string, string> = {}) {
   });
 }
 
-describe("setup.sh", () => {
+// each test spawns bash, nine stub curl calls, and gzip; 5 s is not enough on a loaded machine or a shared CI runner.
+describe("setup.sh", { timeout: 30_000 }, () => {
   it("re-downloads a weight file that exists but is not a valid gzip", () => {
     fs.mkdirSync(path.join(work, "weights"));
     fs.writeFileSync(path.join(work, "weights", "maia-1500.pb.gz"), "not gzip at all");
