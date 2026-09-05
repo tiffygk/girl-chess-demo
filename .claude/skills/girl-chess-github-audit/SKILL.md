@@ -20,7 +20,7 @@ Project layer over `github-ready-audit`, which holds the method, the Autonomy/Co
 | REPORT_DEST / PLAN_DEST | Vault GitHub folder / vault build-notes folder |
 | BUILD_SKILL | This project's SDD skill; the fix round runs under it |
 | ROLLBACK_TAG / WORKFLOW_FILE | Tag cut at round start (Autonomous mode) / `.github/workflows/gate.yml` |
-| MID_GAME_CHECK | Newest `ended_at` in the live db (read-only) plus the health endpoint; run before every merge, not once |
+| MID_GAME_CHECK | Read-only on the live db: no move in the last 15 minutes AND no game with `result IS NULL` that has moves in the last few hours, plus the health endpoint; run before every merge that touches `server/**`, not once. Move age alone orphaned open game 195 on 2026-09-05 (tsx watch restarts the process and empties the in-memory game map); until the resume round ships, an idle open game does not survive a restart |
 
 ## Project specifics
 
