@@ -600,11 +600,16 @@ describe("DebriefPage: a conversion card that finished faster loses the negative
 describe("PastGamesDrawer (Wave 3.5, item 2): row restructure for the delete X", () => {
   const GAME: GameListEntry = {
     id: 42,
+    gameNumber: 42,
     startedAt: "2026-08-01T12:00:00Z",
+    lastMoveAt: "2026-08-01 12:05:00",
     opponent: "maia-1400",
+    elo: 1400,
+    plies: 10,
     result: "1-0",
     endReason: null,
     lesson: "blunder",
+    resumable: false,
   };
 
   function noop() {

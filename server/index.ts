@@ -131,6 +131,18 @@ app.post("/api/game/:id/resume", async (req, res) => {
   }
 });
 
+// Resume round (2026-09-06), Wave B: "what is this game right now" for a
+// single id -- the games-list row shape (GameListEntry), including the
+// server-computed seven-day resumable flag. Sync (reads only), same
+// try/catch envelope as every other route.
+app.get("/api/game/:id/status", (req, res) => {
+  try {
+    res.json(gm.gameStatus(Number(req.params.id)));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 app.post("/api/game/:id/draw-offer", async (req, res) => {
   try {
     const result = await gm.offerDraw(Number(req.params.id));
@@ -473,9 +485,10 @@ app.get("/api/game/:id/highlight-lines", (req, res) => {
   }
 });
 
-// Increment 3c: GET /api/games — the "past games" / saved-games menu list.
-// Finished games only, newest first, capped at 30 inside listGames/
-// listFinishedGames. Sync, same try/catch envelope as every other route.
+// Increment 3c, extended by the resume round (2026-09-06), Wave B: GET
+// /api/games: the "past games" / saved-games menu list. Every game with a
+// move, finished or not, newest first, capped inside listGames/
+// listRecentGames. Sync, same try/catch envelope as every other route.
 app.get("/api/games", (_req, res) => {
   try {
     res.json(gm.listGames());
