@@ -1,6 +1,7 @@
 import { Chess } from "chess.js";
 import { MaiaOpponent } from "../engines/maia";
 import { StockfishEvaluator } from "../engines/stockfish";
+import { replayMoves, eloFromOpponentLabel } from "./rebuild";
 import {
   createGame, finishGame, recordMove, attachEval, logGameEvent, insertVerdict, getVerdicts,
   getGameMoves, getGame, insertTurningPoints, getTurningPoints, setMoveClassification,
@@ -258,10 +259,18 @@ function partyFor(live: LiveGame, moveColor: "w" | "b"): "her" | "mallow" {
   return moveColor === live.playerColor ? "her" : "mallow";
 }
 
+export type ResumeResult =
+  | { ok: true; fen: string; plies: number; yourTurn: boolean; gameOver: boolean }
+  | { ok: false; reason: "not_found" | "finished" | "empty" | "corrupt" };
+
 export class GameManager {
   private games = new Map<number, LiveGame>();
   private evaluator = new StockfishEvaluator();
   private opponents = new Map<number, MaiaOpponent>();
+  // One rebuild per game at a time: the client fires judge and hint-facts
+  // almost together on the first move after a restart, and both must wait
+  // for the same rebuild rather than each replaying the moves.
+  private rebuilds = new Map<number, Promise<LiveGame | undefined>>();
   // Task 5 (F17): probed once PER PREF, cached in a Map keyed by the pref
   // string — never a single shared member. A single member would race: two
   // concurrent requests carrying different backendPref values (e.g. one
@@ -472,6 +481,76 @@ export class GameManager {
       this.opponents.set(elo, o);
     }
     return this.opponents.get(elo)!;
+  }
+
+  // Rebuild round (resume plan, 2026-09-06): every mutating call on a game
+  // the process forgot (server restarted mid-game) must first try to
+  // rebuild it from the db before acting -- this is the single seam every
+  // one of those call sites goes through. Never called by deleteGame: that
+  // guard reads this.games/getGame directly and must not pay for a rebuild
+  // just to refuse a live game.
+  private async ensureLive(gameId: number): Promise<LiveGame | undefined> {
+    const held = this.games.get(gameId);
+    if (held) return held;
+    const pending = this.rebuilds.get(gameId);
+    if (pending) return pending;
+    const p = this.rebuildFromDb(gameId).finally(() => this.rebuilds.delete(gameId));
+    this.rebuilds.set(gameId, p);
+    return p;
+  }
+
+  private async rebuildFromDb(gameId: number): Promise<LiveGame | undefined> {
+    const row = getGame(gameId);
+    if (!row || row.result != null) return undefined;
+    const rows = getGameMoves(gameId);
+    if (rows.length === 0) return undefined;
+    const chess = replayMoves(rows);
+    if (!chess) return undefined;
+    const elo = eloFromOpponentLabel(row.opponent) ?? 1100;
+    const opponent = await this.opponentFor(elo);
+    // The stored label is a write-once fact about the engine that started
+    // the game; it is not rewritten. If the engine tier differs now (lc0 was
+    // up then and is down now, or the reverse) leave a trace, the way
+    // adjudicate logs its event, so the change is discoverable later.
+    const storedFallback = row.opponent.startsWith("fallback-");
+    if (storedFallback !== opponent.fallback) {
+      logGameEvent(
+        gameId,
+        "rebuilt-with-other-engine",
+        JSON.stringify({ stored: row.opponent, live: opponent.fallback ? "fallback" : "maia" })
+      );
+    }
+    const live: LiveGame = {
+      chess,
+      opponent,
+      ply: rows.length,
+      finished: false,
+      playerColor: row.player_color === "b" ? "b" : "w",
+      hintHistory: [],
+    };
+    this.games.set(gameId, live);
+    return live;
+  }
+
+  async resume(gameId: number): Promise<ResumeResult> {
+    const row = getGame(gameId);
+    if (!row) return { ok: false, reason: "not_found" };
+    if (row.result != null) return { ok: false, reason: "finished" };
+    if (getGameMoves(gameId).length === 0) return { ok: false, reason: "empty" };
+    const live = await this.ensureLive(gameId);
+    if (!live) return { ok: false, reason: "corrupt" };
+    // A restart between her move and mallow's reply leaves mallow to move.
+    // Answer it here so the position handed back is always hers.
+    if (!live.finished && live.chess.turn() !== live.playerColor && !live.chess.isGameOver()) {
+      await this.opponentReply(gameId, live);
+    }
+    return {
+      ok: true,
+      fen: live.chess.fen(),
+      plies: live.ply,
+      yourTurn: live.chess.turn() === live.playerColor,
+      gameOver: live.finished || live.chess.isGameOver(),
+    };
   }
 
   async newGame(sessionId: number, elo: number) {
@@ -999,12 +1078,21 @@ export class GameManager {
     timeSpentMs = 0,
     override?: { deltaCp: number | null; mateAgainst: boolean }
   ) {
-    const live = this.games.get(gameId);
+    const live = await this.ensureLive(gameId);
     if (!live) return { ok: false, fen: "" };
     // B6-flagged data-integrity gap, closed here: a finished game stayed in
     // `games` forever with no guard, so a stray /move after resign/mate
     // could still apply against a position that still had legal moves.
     if (live.finished) return { ok: false, fen: live.chess.fen() };
+    // A rebuilt game can come back with mallow to move (the restart landed
+    // between her move and mallow's reply). A stale tab that never called
+    // /resume first will attempt her next move against that stale position;
+    // answer mallow's pending reply here and refuse the move so the client
+    // rolls back and redraws -- her next attempt lands against the right fen.
+    if (live.chess.turn() !== live.playerColor && !live.chess.isGameOver()) {
+      await this.opponentReply(gameId, live);
+      return { ok: false, fen: live.chess.fen() };
+    }
     let mv;
     try {
       mv = live.chess.move({ from, to, promotion: (promotion as any) ?? "q" });
@@ -1025,7 +1113,7 @@ export class GameManager {
       );
     }
 
-    let over = this.gameOver(live.chess);
+    const over = this.gameOver(live.chess);
     if (over) {
       finishGame(gameId, over.result);
       live.finished = true;
@@ -1033,18 +1121,30 @@ export class GameManager {
       return { ok: true, fen: live.chess.fen(), playerSan: mv.san, playerCapture, gameOver: over };
     }
 
+    const r = await this.opponentReply(gameId, live);
+    return {
+      ok: true, fen: live.chess.fen(), playerSan: mv.san, playerCapture,
+      reply: { san: r.san, uci: r.uci, capture: r.capture },
+      gameOver: r.gameOver,
+    };
+  }
+
+  // The engine-reply half of a player's move: extracted so resume() can
+  // answer a pending reply on a rebuilt game (mallow left to move by a
+  // restart) through the exact same body playerMove uses -- one reply path,
+  // one place that calls finishGame/persistGameSummary for the reply side.
+  private async opponentReply(
+    gameId: number,
+    live: LiveGame
+  ): Promise<{ san: string; uci: string; capture: boolean; gameOver: { result: string } | undefined }> {
     const replyUci = await live.opponent.pickMove(live.chess.fen());
     const reply = live.chess.move({ from: replyUci.slice(0, 2), to: replyUci.slice(2, 4), promotion: (replyUci[4] as any) ?? undefined });
     const replyCapture = reply.flags.includes("c") || reply.flags.includes("e");
     this.record(gameId, live, reply.san, replyUci, 0, partyFor(live, reply.color));
 
-    over = this.gameOver(live.chess);
+    const over = this.gameOver(live.chess);
     if (over) { finishGame(gameId, over.result); live.finished = true; this.persistGameSummary(gameId, over.result); }
-    return {
-      ok: true, fen: live.chess.fen(), playerSan: mv.san, playerCapture,
-      reply: { san: reply.san, uci: replyUci, capture: replyCapture },
-      gameOver: over,
-    };
+    return { san: reply.san, uci: replyUci, capture: replyCapture, gameOver: over };
   }
 
   // Stateless: no pending state is stored server-side (retract is purely
@@ -1067,7 +1167,7 @@ export class GameManager {
   // value falls back to DEFAULT_ADVICE_LEVEL ("standard") rather than
   // throwing.
   async judgeMove(gameId: number, from: string, to: string, promotion?: string, mode?: string, strictness?: string) {
-    const live = this.games.get(gameId);
+    const live = await this.ensureLive(gameId);
     if (!live) return { ok: false };
     if (live.finished) return { ok: false };
     const clone = new Chess(live.chess.fen());
@@ -1108,7 +1208,7 @@ export class GameManager {
   }
 
   async resign(gameId: number) {
-    const live = this.games.get(gameId);
+    const live = await this.ensureLive(gameId);
     if (!live) return { ok: false };
     if (live.finished) return { ok: false };
     // Player is always white in v1, so resigning is always a loss for white.
@@ -1120,7 +1220,7 @@ export class GameManager {
   }
 
   async offerDraw(gameId: number) {
-    const live = this.games.get(gameId);
+    const live = await this.ensureLive(gameId);
     if (!live) return { ok: false, accepted: false };
     if (live.finished) return { ok: false, accepted: false };
 
@@ -1156,7 +1256,7 @@ export class GameManager {
   // what actually gets recorded. resign()/offerDraw() above stay exactly as
   // they were (API compat) and are simply no longer wired into the UI.
   async adjudicate(gameId: number, execute: boolean) {
-    const live = this.games.get(gameId);
+    const live = await this.ensureLive(gameId);
     if (!live) return { ok: false };
     if (live.finished) return { ok: false };
 
@@ -1188,7 +1288,7 @@ export class GameManager {
   // concurrent judge/eval call (~1.5-4s worst case), acceptable because hints
   // are rare and explicitly requested.
   async computeHint(gameId: number): Promise<{ ok: false } | { ok: true; facts: HintFacts }> {
-    const live = this.games.get(gameId);
+    const live = await this.ensureLive(gameId);
     if (!live || live.finished) return { ok: false };
     const fen = live.chess.fen();
     // RC1 (game 192): the deep hint is wall-clock bounded, so two searches at
@@ -1255,7 +1355,7 @@ export class GameManager {
   ): Promise<
     { ok: false } | { ok: true; text: string; source: "model" | "template"; traceId: number }
   > {
-    const live = this.games.get(gameId);
+    const live = await this.ensureLive(gameId);
     if (!live || live.finished) return { ok: false };
 
     const backend = await this.pickCoachBackend(body.backendPref);
@@ -1602,7 +1702,7 @@ export class GameManager {
   // the client actually knows at that hint level. Neither is required by
   // this type because the detail is stored as opaque JSON with no schema;
   // extending it here is additive, not a rename of any existing field.
-  logHint(
+  async logHint(
     gameId: number,
     detail: {
       level: number;
@@ -1617,7 +1717,7 @@ export class GameManager {
       fen: string;
     }
   ) {
-    const live = this.games.get(gameId);
+    const live = await this.ensureLive(gameId);
     if (!live) return { ok: false };
     logGameEvent(gameId, "hint", JSON.stringify(detail));
     return { ok: true };

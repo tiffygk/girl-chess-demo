@@ -52,6 +52,13 @@ export interface DrawOfferResponse {
   result?: string;
 }
 
+// Resume round (2026-09-06): the reply shape for POST /game/:id/resume,
+// asked on load (and by a stale tab whose move just got refused after a
+// server restart) to learn whose turn it is before trying to act again.
+export type ResumeResult =
+  | { ok: true; fen: string; plies: number; yourTurn: boolean; gameOver: boolean }
+  | { ok: false; reason: "not_found" | "finished" | "empty" | "corrupt" };
+
 // Wave C, task C-A: the single "end the game?" flow's response — mirrors
 // server/annotator/adjudicate.ts's AdjudicationDecision plus the raw
 // playerCp (unused by the UI today, but handed through in case a future
@@ -303,6 +310,10 @@ export function judgeMove(
 
 export function resign(gameId: number): Promise<ResignResponse> {
   return postJson(`/game/${gameId}/resign`, {});
+}
+
+export function resumeGame(gameId: number): Promise<ResumeResult> {
+  return postJson(`/game/${gameId}/resume`, {});
 }
 
 export function offerDraw(gameId: number): Promise<DrawOfferResponse> {
