@@ -45,6 +45,16 @@ import Database from "better-sqlite3";
 // at load time.
 export const DEMO_DB_BASENAME = "girlchess-demo.db";
 
+// Mirrors replay-check.ts's REGEN_MIN_CANDIDATES floor (tools/replay-check.ts,
+// ~line 485): the rule-checkers need enough finished games to say anything.
+// A fresh clone that has played one game of its own would otherwise run
+// truth-check/replay-check against that 1-game personal db instead of the
+// 51-game committed corpus, and replay-check's own floor then fails outright
+// (its regen-candidate count comes from those finished games). Below this
+// floor, resolveRealDbPath prefers the committed demo db over a personal db
+// that exists but is too small to check.
+export const MIN_FINISHED_GAMES = 5;
+
 export interface DbCountSnapshot {
   games: number;
   moves: number;
@@ -173,6 +183,28 @@ function countGamesReadonly(p: string): number | null {
   }
 }
 
+// Same shape as countGamesReadonly, but counts only games that have
+// actually ended -- the population MIN_FINISHED_GAMES gates on and the one
+// replay-check's own regen-candidate count is drawn from. Same
+// null-vs-missing/unreadable distinction as countGamesReadonly.
+function countFinishedGamesReadonly(p: string): number | null {
+  if (!fs.existsSync(p)) return null;
+  try {
+    const db = new Database(p, { readonly: true });
+    try {
+      return (
+        db.prepare("SELECT COUNT(*) c FROM games WHERE ended_at IS NOT NULL").get() as {
+          c: number;
+        }
+      ).c;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
 // union finding (review-union.md, fix wave 2): a dedicated error subclass
 // so callers can tell "no usable db exists anywhere" (the legitimate
 // fresh-clone/CI case) apart from every OTHER way this function can throw,
@@ -198,12 +230,38 @@ export function resolveRealDbPath(
     const p = process.env.GC_DB_PATH;
     return { path: p, source: "GC_DB_PATH override", writable: path.basename(p) !== DEMO_DB_BASENAME };
   }
+  const demo = path.join(repoRoot, "data", DEMO_DB_BASENAME);
+
+  // Below-the-floor helper for the two personal-db branches below: a
+  // personal db that exists and has games is still too small a population
+  // for the rule-checkers once it has fewer than MIN_FINISHED_GAMES
+  // finished games -- a stranger who has played one game of their own must
+  // not have the checkers run against that 1-game corpus and fail on
+  // replay-check's own floor. Only defers when the committed demo db is
+  // actually there with games; otherwise falls through to the personal db
+  // unchanged (existing behavior, checked further down / by the throw).
+  const deferToDemoBelowFloor = (personalPath: string): DbResolution | undefined => {
+    const finished = countFinishedGamesReadonly(personalPath);
+    if (finished == null || finished >= MIN_FINISHED_GAMES) return undefined;
+    const demoGames = countGamesReadonly(demo);
+    if (demoGames == null || demoGames === 0) return undefined;
+    return {
+      path: demo,
+      source: `committed demo db (your own database at ${personalPath} has ${finished} finished game${finished === 1 ? "" : "s"}; the checks need at least ${MIN_FINISHED_GAMES})`,
+      writable: false,
+    };
+  };
+
   if (fs.existsSync(mainWorktreeDb)) {
+    const deferred = deferToDemoBelowFloor(mainWorktreeDb);
+    if (deferred) return deferred;
     return { path: mainWorktreeDb, source: "main worktree (live db, source of truth)", writable: true };
   }
   const local = path.join(repoRoot, "data", "girlchess.db");
   const localGames = countGamesReadonly(local);
   if (localGames != null && localGames > 0) {
+    const deferred = deferToDemoBelowFloor(local);
+    if (deferred) return deferred;
     return {
       path: local,
       source: `local worktree copy (main worktree db not found at ${mainWorktreeDb}; verified ${localGames} games by count, not hash)`,
@@ -215,7 +273,6 @@ export function resolveRealDbPath(
   // lists, the exact shape truth-check and replay-check operate on). Run the
   // rules against that rather than crash. The owner's live db and a local
   // copy both still win when present.
-  const demo = path.join(repoRoot, "data", DEMO_DB_BASENAME);
   const demoGames = countGamesReadonly(demo);
   if (demoGames != null && demoGames > 0) {
     return {
