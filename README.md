@@ -4,6 +4,8 @@
 
 Want to play it? Jump to [Running the game locally](#running-the-game-locally): ten to fifteen minutes on a Mac, most of it downloads.
 
+[Instructions for how to run it](#running-the-game-locally) are at the end of this page.
+
 A personal AI chess tutor that runs locally on your machine. Play against mallow, human-feeling opponent at nine strengths, who's beatable due to warnings, progressive hints, and a plain-English debrief after every game. The repo ships 51 of my own finished games and 113 coach exchanges from them. The fastest way to assess a chess tutor is to read it coaching real mistakes.
 
 I am a woman who learned chess 3 months ago in my 30s. Most chess apps felt cold and masculine, so I built the tutor I wanted: feminine-first and approachable, for an underserved slice of a massive market.
@@ -56,6 +58,30 @@ Two guardrails: every coach reply is checked before it reaches you, and the debr
 - Missed checkmates are measured only on the flagged move, not the whole game, so a second one later in the game goes uncounted.
 - My 1350 rating is a hard-coded placeholder anyone who downloads this inherits. A rating judged from how you actually play is on the roadmap.
 
+## How it's built
+
+I designed and built this 0-to-1 as a product manager's first vibed project ever, via Claude Code: spec, plan, execute, adversarial review, gate. A live playtest and evals drove each increment.
+
+<details>
+<summary>Developer detail</summary>
+
+- Four text surfaces reach the player. Two are model-written, the coach chat and the per-move note; two are code, the hint ladder and the post-game analysis, templated from Stockfish facts.
+- `npm run gate` is the local merge check. It fails on any violation of the rules in `src/review/debriefInvariants.ts`. On a fresh clone with no personal database it runs those rules against the 51 committed games.
+- Skipping `setup.sh` fails loudly: the server refuses to start and names the missing Elo bands. Deliberate. A missing Maia band used to silently swap in a strength-limited Stockfish, a far less human opponent.
+- `data/girlchess-demo.db` is committed on purpose: 51 games with full move lists, each coach reply's final draft with its validation result, my questions, and my thumbs. `tools/make-demo-db.sh` builds it from my live database through a read-only handle: finished games only, backend-error traces dropped. No names, addresses, emails or keys; I scanned it for them.
+
+</details>
+
+## Docs and credits
+
+The docs are published at [tiffygk.github.io/girl-chess-demo](https://tiffygk.github.io/girl-chess-demo/), so none of them need a clone to read.
+
+- [docs/README.md](docs/README.md) is the front door: the product spec, one increment plan-to-gate, three real review catches, and the coach-transport decision.
+- [docs/evaluation.md](docs/evaluation.md) is how the tutor is kept honest.
+- [CLAUDE.md](CLAUDE.md) is the architecture map and runbook a future Claude session reads first.
+
+Built on Stockfish, Maia through lc0, and Claude Sonnet 5. The mistakes in the committed games are mine.
+
 ## Running the game locally
 
 You need a Mac (Apple silicon or Intel), Homebrew, and Node 22. Linux and Windows are not supported and not tested. If you are not sure what you have, run the first three commands below, then npm run doctor tells you what is missing.
@@ -91,27 +117,3 @@ When something goes wrong, the message on screen says what to do. The ones you a
 | cookie says she needs you signed in | the game works without her; to turn her on, install Claude Code, run `claude` once to sign in, restart with `npm run dev` |
 
 `npm run gate` is the project's own check (tests, types, lint, and two rule-checkers over the 51 committed games), about three minutes. Its report is written for contributors; the last line is the verdict. Once you have finished five games of your own it checks those instead of the committed ones. It runs in GitHub Actions on every push, which is what the badge at the top reports.
-
-## How it's built
-
-I designed and built this 0-to-1 as a product manager's first vibed project ever, via Claude Code: spec, plan, execute, adversarial review, gate. A live playtest and evals drove each increment.
-
-<details>
-<summary>Developer detail</summary>
-
-- Four text surfaces reach the player. Two are model-written, the coach chat and the per-move note; two are code, the hint ladder and the post-game analysis, templated from Stockfish facts.
-- `npm run gate` is the local merge check. It fails on any violation of the rules in `src/review/debriefInvariants.ts`. On a fresh clone with no personal database it runs those rules against the 51 committed games.
-- Skipping `setup.sh` fails loudly: the server refuses to start and names the missing Elo bands. Deliberate. A missing Maia band used to silently swap in a strength-limited Stockfish, a far less human opponent.
-- `data/girlchess-demo.db` is committed on purpose: 51 games with full move lists, each coach reply's final draft with its validation result, my questions, and my thumbs. `tools/make-demo-db.sh` builds it from my live database through a read-only handle: finished games only, backend-error traces dropped. No names, addresses, emails or keys; I scanned it for them.
-
-</details>
-
-## Docs and credits
-
-The docs are published at [tiffygk.github.io/girl-chess-demo](https://tiffygk.github.io/girl-chess-demo/), so none of them need a clone to read.
-
-- [docs/README.md](docs/README.md) is the front door: the product spec, one increment plan-to-gate, three real review catches, and the coach-transport decision.
-- [docs/evaluation.md](docs/evaluation.md) is how the tutor is kept honest.
-- [CLAUDE.md](CLAUDE.md) is the architecture map and runbook a future Claude session reads first.
-
-Built on Stockfish, Maia through lc0, and Claude Sonnet 5. The mistakes in the committed games are mine.
