@@ -20,3 +20,24 @@ describe("the rules' incident narratives live in the changelog", () => {
     }
   });
 });
+
+describe("path-scoped rule files", () => {
+  const rules = ["ports-and-servers", "data-and-gate", "checkers", "ui-design", "rounds-and-merges", "calibratable-constants"];
+  it("exist, stay short, and carry no em-dash in a rewritten line", () => {
+    for (const r of rules) {
+      const p = path.join(ROOT, ".claude", "rules", `${r}.md`);
+      expect(fs.existsSync(p), p).toBe(true);
+      const text = fs.readFileSync(p, "utf8");
+      expect(text.split("\n").length, `${r} lines`).toBeLessThanOrEqual(80);
+      expect(text, `${r} points at the changelog`).toContain("docs/changelog.md");
+      expect(text.includes("—"), `${r} has an em-dash`).toBe(false);
+    }
+  });
+  it("the scoped ones declare their paths", () => {
+    for (const r of ["data-and-gate", "checkers", "ui-design", "calibratable-constants"]) {
+      const text = fs.readFileSync(path.join(ROOT, ".claude", "rules", `${r}.md`), "utf8");
+      expect(text.startsWith("---\n"), `${r} frontmatter`).toBe(true);
+      expect(text, `${r} paths`).toMatch(/^paths:/m);
+    }
+  });
+});
