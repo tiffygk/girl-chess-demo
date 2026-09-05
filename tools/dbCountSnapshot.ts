@@ -187,7 +187,7 @@ function countGamesReadonly(p: string): number | null {
 // actually ended -- the population MIN_FINISHED_GAMES gates on and the one
 // replay-check's own regen-candidate count is drawn from. Same
 // null-vs-missing/unreadable distinction as countGamesReadonly.
-function countFinishedGamesReadonly(p: string): number | null {
+export function countFinishedGamesReadonly(p: string): number | null {
   if (!fs.existsSync(p)) return null;
   try {
     const db = new Database(p, { readonly: true });
