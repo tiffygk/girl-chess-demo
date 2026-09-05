@@ -14,6 +14,10 @@ Obsidian vault holding the product docs, plans and handoffs. They are not in thi
 not resolve. They are left as written, because rewriting them would misrepresent what each entry
 actually cited at the time.
 
+## A stranger can clone and play (2026-09-05, code merged, README held for approval)
+
+Eight tasks made the repo cloneable and playable by someone who has never seen it. `setup.sh` validates every opponent file with gzip -t, retries failed downloads, and names each step instead of failing silently. A damaged opponent file is refused at server startup with the fix named in the same sentence, so a bad download surfaces at boot, not mid-game. The coach probes whether cookie can talk before the first question and tells a signed-out stranger so, instead of a generic error. The server prints the address to open last, after the coach probe, and a busy port refuses with one sentence that names the fix (`PORT=3002 npm run dev`) rather than crashing. The client says plainly when the game server is not running, guards its reconnect logic against a race on mount, and warns before leaving a game in progress with an offer to resume it after a reload; resuming a finished game via `?game=<id>` is now rejected instead of corrupting state. `npm run doctor` checks every prerequisite (Node, Homebrew, the two engines, the opponent files, both ports, the coach) and names what is missing with its fix. `npm run gate` prints plain labels and a legend instead of raw rule names, and the four parked test debts are closed. Together these commits are what Appendix B's stranger walkthrough is judged against. The README's own "Running the game locally" section is rewritten to match (a Mac-first requirements list, a cd-first recipe with durations, and a troubleshooting table for the messages above) on `round/2026-09-06-stranger-readme`, held for the owner's approval and not merged in this round.
+
 ## Honest efficiency claims, elo to 1900, conversion reason at the badge (2026-08-21, merged)
 
 Three waves in the owner's order, all merged to `main`: N2 `d347de4..f9a2da2`, N1 `f9a2da2..b6e3a7b`,
