@@ -23,6 +23,9 @@ export class UciEngine {
     this.proc.on("error", (err) => {
       this.markDead(err instanceof Error ? err : new Error(String(err)));
     });
+    this.proc.stdin.on("error", (err) => {
+      if (!this.dead) this.markDead(err instanceof Error ? err : new Error(String(err)));
+    });
     this.proc.on("exit", (code, signal) => {
       if (this.dead) return;
       this.markDead(new Error(`uci engine exited unexpectedly (code=${code}, signal=${signal})`));
@@ -40,6 +43,7 @@ export class UciEngine {
 
   send(cmd: string) {
     if (this.dead) return;
+    if (this.proc.stdin.destroyed || !this.proc.stdin.writable) return;
     this.proc.stdin.write(cmd + "\n");
   }
 
@@ -91,6 +95,7 @@ export class UciEngine {
   quit() {
     if (this.dead) return;
     try { this.send("quit"); } catch { /* already dead */ }
+    this.markDead(new Error("uci engine quit"));
     this.proc.kill();
   }
 
