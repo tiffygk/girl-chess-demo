@@ -12,7 +12,7 @@ UI design laws (the vault `front-end-components.md` is authoritative for detail)
 - Three color voices: player is cyan, mallow is magenta/pink, coach is lavender.
 - Cookie is the coach's name; mallow is the OPPONENT and never the coach's name.
 - Magenta is the ONLY alarm color (warnings, thumbs-down), never spent on infrastructure status.
-- mint is reserved exclusively for the armed-win button.
+- mint is the last-move / legal-move / armed-win / resume-game family; the resume button reuses egc-win's exact values and never its split-flicker (resume round, 2026-09-06).
 - Glitch and split-flicker effects are rationed to machine moments.
 - The palette is closed: no new hex values without an owner ruling.
 - New components join this cast rather than auditioning new aesthetics: the distinctiveness budget is spent on presence and role, not novelty.

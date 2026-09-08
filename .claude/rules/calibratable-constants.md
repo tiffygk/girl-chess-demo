@@ -42,6 +42,7 @@ Purpose: the owner-calibratable starting values across the annotator, coach, and
 | MIN_CONVERSION_RUN_PLIES | 6 | server/annotator/conversion.ts | minimum run length to become a conversion turning point |
 | IN_PLAY_WINDOW_MS | 30 min | tools/gate.ts | the in-play guard's window |
 | COACH_UNHEALTHY_COOLDOWN_MS | 60000 | server/game/manager.ts | cooldown before retrying an unhealthy coach backend |
+| RESUME_WINDOW_DAYS | 7 | server/game/rebuild.ts | days after its last move that an unfinished game can be resumed; server-side only, the client reads the resumable boolean |
 
 Warning: `src/review/gamePhases.ts`'s phase thresholds relabel every debrief; re-run `tools/phase-before-after.ts` on a WAL-safe copy before and after any change.
 
