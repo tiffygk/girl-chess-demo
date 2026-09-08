@@ -110,7 +110,7 @@ describe("GAME-127 acceptance (owner playtest fixture, feedback.md)", () => {
     // validation tacked on -- structurally the same AI-ism shape as the
     // banned "that part is real". Reworded to state only what the episode
     // signal actually proves (she survived real king-pressure danger).
-    expect(bullets[0].text).toBe("you held a worse position under real pressure and got through it.");
+    expect(bullets[0].text).toBe("you held a worse position under pressure and got through it.");
 
     // could-be-better: her ply-15 missed punish, "the miss" framing, move 8
     // (ceil(15/2)), category "missed tactic" per the brief's binding

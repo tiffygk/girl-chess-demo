@@ -133,7 +133,7 @@ export const NEXT_TIME_TIPS: Record<Motif, string> = {
     "she gave you a chance here. when your opponent slips, look for the move that makes them pay before you carry on with your own plan.",
   "good-moment": "good eye. keep hunting for your most forcing move first every turn.",
   "eval-drop":
-    "this move gave back the most ground here. before you commit, check every forcing reply she has: her checks, her captures, her threats.",
+    "this move gave back the most ground here. before you commit, check every forcing reply she has: start with her checks, then her captures.",
   "missed-mate":
     "when you are winning big, hunt the fastest finish first: look at every check you have and count her king's escape squares. a check she cannot answer while her king has nowhere to go is mate.",
   // Game-151 round (2026-07-29): the annotator's unconverted point (Task 2,
@@ -153,11 +153,11 @@ export const NEXT_TIME_TIPS: Record<Motif, string> = {
   // tip; nextTimeTipFor below swaps in LEAD_CHANGE_MALLOW_TIP when
   // tp.leader === "mallow".
   "lead-change":
-    "learn to feel this moment as you play: when you are up about a piece and nothing hangs, the job changes. trade pieces, keep your king safe, and let the lead win the game.",
+    "learn to feel this moment as you play: when you are up about a piece and nothing hangs, the job changes. trade pieces and keep your king safe. the lead wins the game by itself.",
 };
 
 const LEAD_CHANGE_MALLOW_TIP =
-  "when the lead tips against you, the job changes too: keep pieces on, make her prove it, and look for chances to complicate.";
+  "when the lead tips against you, the job changes too: keep pieces on and make her prove it. look for a chance to complicate.";
 
 // Fix wave (2026-07-29, review-3.md MEDIUM finding 4): the card tip is
 // documented as "generic across endKinds" but named repetition
@@ -270,7 +270,7 @@ function buildDidWell(
   }
   if (tp.kind === "episode") {
     const n = moveNumberForPly(tp.ply);
-    return `you held up under real pressure starting around move ${n}. that composure is a skill.`;
+    return `you held up under pressure starting around move ${n}. that composure is a skill.`;
   }
   if (tp.label === "strong move") {
     const n = moveNumberForPly(tp.ply);
@@ -324,7 +324,7 @@ function buildDidWell(
 // the NEXT_TIME_TIPS honesty sweep.
 const IMPROVE_NUDGE: Record<string, string> = {
   blunder: "that was the biggest slip here",
-  mistake: "that gave back real ground",
+  mistake: "that gave back ground",
   inaccuracy: "a small slip",
 };
 
@@ -337,7 +337,7 @@ const IMPROVE_NUDGE: Record<string, string> = {
 // delta doesn't establish.
 const OPPONENT_SLIP: Record<string, { phrase: string; tail: string }> = {
   "opponent blunder": {
-    phrase: "a real gift",
+    phrase: "a gift",
     tail: "the game swung your way here whether or not you cashed it in on the spot.",
   },
   // Fix round 1, F4 (2026-08-29, ruled copy amendment): the original tail
@@ -346,8 +346,8 @@ const OPPONENT_SLIP: Record<string, { phrase: string; tail: string }> = {
   // lost or won starts no lead (the known decided-position class). States
   // only the magnitude, nothing the eval delta alone doesn't establish.
   "opponent mistake": {
-    phrase: "a real slip",
-    tail: "it handed you real ground.",
+    phrase: "a slip",
+    tail: "it handed you ground.",
   },
   "opponent inaccuracy": {
     phrase: "a small opening",
