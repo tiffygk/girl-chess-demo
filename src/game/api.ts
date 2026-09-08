@@ -52,6 +52,13 @@ export interface DrawOfferResponse {
   result?: string;
 }
 
+// Resume round (2026-09-06): the reply shape for POST /game/:id/resume,
+// asked on load (and by a stale tab whose move just got refused after a
+// server restart) to learn whose turn it is before trying to act again.
+export type ResumeResult =
+  | { ok: true; fen: string; plies: number; yourTurn: boolean; gameOver: boolean }
+  | { ok: false; reason: "not_found" | "finished" | "empty" | "corrupt" };
+
 // Wave C, task C-A: the single "end the game?" flow's response — mirrors
 // server/annotator/adjudicate.ts's AdjudicationDecision plus the raw
 // playerCp (unused by the UI today, but handed through in case a future
@@ -303,6 +310,10 @@ export function judgeMove(
 
 export function resign(gameId: number): Promise<ResignResponse> {
   return postJson(`/game/${gameId}/resign`, {});
+}
+
+export function resumeGame(gameId: number): Promise<ResumeResult> {
+  return postJson(`/game/${gameId}/resume`, {});
 }
 
 export function offerDraw(gameId: number): Promise<DrawOfferResponse> {
@@ -738,14 +749,24 @@ export function fetchChatHistory(gameId: number): Promise<{ ok: boolean; message
   return getJson(`/game/${gameId}/chat`);
 }
 
-// Increment 3c: the "past games" saved-games menu list.
+// Increment 3c, extended by the resume round (2026-09-06), Wave B: the
+// "past games" saved-games menu list -- now every game with a move,
+// finished or not. `gameNumber` equals `id` today (kept separate so the
+// visible name shown to her can diverge from the row id later). `resumable`
+// is the server-computed seven-day rule; the client never re-derives it
+// (owner ruling 2026-07-30).
 export interface GameListEntry {
   id: number;
+  gameNumber: number;
   startedAt: string;
+  lastMoveAt: string | null;
   opponent: string;
-  result: string;
+  elo: number | null;
+  plies: number;
+  result: string | null;
   endReason: string | null;
   lesson: string | null;
+  resumable: boolean;
 }
 
 export interface GamesListResponse {
@@ -755,6 +776,14 @@ export interface GamesListResponse {
 
 export function fetchGames(): Promise<GamesListResponse> {
   return getJson("/games");
+}
+
+// Resume round (2026-09-06), Wave B: "what is this game right now" for a
+// single id -- the same GameListEntry shape as fetchGames' rows.
+export type GameStatusResponse = { ok: true; game: GameListEntry } | { ok: false; reason: "not_found" };
+
+export function fetchGameStatus(gameId: number): Promise<GameStatusResponse> {
+  return getJson(`/game/${gameId}/status`);
 }
 
 // Wave 3.5, item 2 (owner ask, 2026-08-01): the past-games drawer's delete X

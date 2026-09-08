@@ -117,6 +117,32 @@ app.post("/api/game/:id/resign", async (req, res) => {
   }
 });
 
+// Resume round (2026-09-06): a reload (or a fresh /move after the server
+// process forgot the game) asks this first to find out whose turn it is
+// and to trigger the rebuild -- the game is otherwise rebuilt lazily on the
+// first mutating call, but resume is the route that answers "what do I
+// see right now" without also trying to apply a move.
+app.post("/api/game/:id/resume", async (req, res) => {
+  try {
+    const result = await gm.resume(Number(req.params.id));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
+// Resume round (2026-09-06), Wave B: "what is this game right now" for a
+// single id -- the games-list row shape (GameListEntry), including the
+// server-computed seven-day resumable flag. Sync (reads only), same
+// try/catch envelope as every other route.
+app.get("/api/game/:id/status", (req, res) => {
+  try {
+    res.json(gm.gameStatus(Number(req.params.id)));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
 app.post("/api/game/:id/draw-offer", async (req, res) => {
   try {
     const result = await gm.offerDraw(Number(req.params.id));
@@ -154,7 +180,7 @@ app.post("/api/game/:id/hint-facts", async (req, res) => {
 
 // Wave C, task C-B: fire-and-forget observability for the Lab's
 // hint-escalation metric — one game_events row per hint reveal.
-app.post("/api/game/:id/hint", (req, res) => {
+app.post("/api/game/:id/hint", async (req, res) => {
   // Wave 0, item 1 (F0): the client now names the move field it means --
   // `bestUci` for the coach's own best move, `refutationUci` for the
   // opponent's threat move a levels-1-3 hint reveals. Pass through
@@ -165,7 +191,7 @@ app.post("/api/game/:id/hint", (req, res) => {
   // invalid-hint log.
   const { level, tier, deltaCp, bestUci, refutationUci, fen, branch } = req.body;
   try {
-    const result = gm.logHint(Number(req.params.id), {
+    const result = await gm.logHint(Number(req.params.id), {
       level: Number(level),
       tier: String(tier),
       deltaCp: deltaCp ?? null,
@@ -459,9 +485,10 @@ app.get("/api/game/:id/highlight-lines", (req, res) => {
   }
 });
 
-// Increment 3c: GET /api/games — the "past games" / saved-games menu list.
-// Finished games only, newest first, capped at 30 inside listGames/
-// listFinishedGames. Sync, same try/catch envelope as every other route.
+// Increment 3c, extended by the resume round (2026-09-06), Wave B: GET
+// /api/games: the "past games" / saved-games menu list. Every game with a
+// move, finished or not, newest first, capped inside listGames/
+// listRecentGames. Sync, same try/catch envelope as every other route.
 app.get("/api/games", (_req, res) => {
   try {
     res.json(gm.listGames());
