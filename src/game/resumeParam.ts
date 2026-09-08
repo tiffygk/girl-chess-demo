@@ -39,23 +39,11 @@ export function withGameParam(pathname: string, search: string, id: number | nul
   return s ? `${pathname}?${s}` : pathname;
 }
 
-/**
- * Whether a fetched summary describes a game worth resuming. A game with zero
- * recorded moves is the orphaned 0-move stub (see GamePage's resumeGame
- * header) -- resuming it would mount an empty board wired to a dead gameId,
- * so it is treated as a failed resume instead.
- *
- * Task 6 review, Important finding: a summary that also carries a `result`
- * describes a FINISHED game -- e.g. a second tab left on `?game=<id>` while
- * the game ended elsewhere, then reloaded. `resumeGame` never sets `gameOver`
- * (it only replays live-play state), so accepting a finished summary here
- * would arm the beforeunload guard and show "your move" for a game that's
- * over. The debrief/past-games path (GamePage's `selectPastGame`) does NOT
- * go through this function -- it fetches a summary directly and sets
- * `reviewGame` from the separate `GameListEntry.result` field returned by
- * `/api/games` -- so rejecting a finished summary here only affects the
- * `?game=<id>` resume path, which is exactly what needs it.
- */
-export function isResumableSummary(summary: { moves: unknown[]; result?: string | null }): boolean {
-  return summary.moves.length > 0 && !summary.result;
-}
+// Resume round (2026-09-06), Wave D: isResumableSummary (the pure "does a
+// fetched summary describe a game worth resuming" check) is retired -- both
+// its call sites now ask the server directly instead of re-deriving the
+// answer from a summary: the `?game=<id>` resume path calls POST
+// /api/game/:id/resume (its own ok:false covers not_found/finished/empty/
+// corrupt) and the pregame continue-card gate calls GET
+// /api/game/:id/status (GameListEntry.resumable, the server's own
+// seven-day rule). Deleted with its test rather than left as dead exports.
