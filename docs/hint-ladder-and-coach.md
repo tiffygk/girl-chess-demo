@@ -127,7 +127,7 @@ rule: `onDelta` is advisory rendering only, the terminal string is the one
 
 ## where each is stored
 
-- `advice_traces`: `kind` (`nudge`/`warning`/chat kinds), `source` (`model`/`template`),
+- `advice_traces`: `kind` (`chat`, `nudge`, `warning`), `source` (`model`/`template`),
   `output`, `facts_json`, `latency_ms`, `rating`, `feedback_text`.
 - `chat_messages`: the db-backed chat history, `CHAT_HISTORY_WINDOW = 8`
   (`server/coach/chat.ts:56`) messages sent to the model per turn.
@@ -142,11 +142,12 @@ rule: `onDelta` is advisory rendering only, the terminal string is the one
 | chat | 8.1 s | 21.0 s |
 | nudge (band) | 4.1 s | n/a |
 | warning (band) | 3.6 s | n/a |
-| a regen (either surface) | 33.5 s | (vs 8.2 s non-regen) |
+| a chat regen | 33.5 s average (vs 8.2 s without) | n/a |
 | cheapest model call observed | 3.3 s | n/a |
 
-owner ceiling for any change to a coach reply path: +1 to 2 s. a regen is never a
-style fix; it costs roughly 25 s and exists only to correct a validation failure.
+owner ceiling for any change to a coach reply path: +1 to 2 s. a regen roughly
+quadruples a chat reply's latency and is never a style fix; it exists only to
+correct a validation failure.
 
 ## rulings
 
