@@ -112,7 +112,7 @@ mallow, the opponent.
 - mate-threat: she's threatening mate on her next move.
 - check-threat: she can give check and force you to answer it.
 - promotion-threat: she's about to promote a pawn and make a new queen.
-- positional: nothing hangs, but she can quietly improve her position.
+- positional: nothing hangs, but she gets a free move to improve her position.
 
 ### recommendation
 
@@ -123,7 +123,7 @@ mallow, the opponent.
 - attacks: better: put pressure on her {attackedPieceKind} on {attackedSquare}.
 - promotes: better: push the pawn through and make a new queen.
 - castles: better: castle here and tuck your king into safety.
-- develops: better: keep building quietly, bring another piece into the game.
+- develops: better: bring another piece into the game before you commit to a plan.
 
 ## chat
 
