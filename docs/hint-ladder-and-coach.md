@@ -89,11 +89,10 @@ template fallback, never partial deltas. the result is stored to `advice_traces`
 `kind` `nudge` or `warning` and `source` `model` or `template` (`:505-` area,
 `recordAdviceTrace`).
 
-as of this round the band's text is additionally run through `normalizeVoice` before
-persist and return (wave V3). at the time this page was written, `normalizeVoice` was
-not present anywhere in `server/` or `src/` (confirmed by grep); if wave V3 has not
-merged when you read this, wave V3 adds it; the controller will fold in the exact
-call site once it lands.
+the band runs `normalizeVoice` on the model reply and the regen (`index.ts`, the
+`attemptOutput` assignment), the backend-error string, and the template fallback,
+before `validateNarration`, so the persisted `output` and the returned text are both
+normalized.
 
 ## the chat
 
@@ -119,8 +118,12 @@ claims (`checkMateClaims`, `:1178`, imported at `:26`) against
 `checkOpponentQualityClaims` (`:1087-1103`) is a 0 ms append, never a regen: it
 catches the reply calling a move a mistake when the recorded turning-point quality
 says it matched or nearly matched the engine's own top choice, and appends a
-correction rather than re-running the model. `normalizeEmDash` (imported at `:29`)
-strips em-dashes from the reply text. unlike the band, chat deltas are buffered and
+correction rather than re-running the model. `normalizeVoice` (`server/coach/textNormalize.ts`,
+imported at `chat.ts:29`) folds em and en dashes, spaced double and single hyphens, and
+a short swap list of hollow phrases ("a real slip" to "a slip", "worth a look" to "one
+to look at") into plain punctuation. it runs on the raw model text BEFORE `validateChat`,
+on every seam: the streamed or whole reply, the regen, the backend-error string, and
+the failure template. unlike the band, chat deltas are buffered and
 only released to the player once validation passes (the `CoachBackend` seam's own
 rule: `onDelta` is advisory rendering only, the terminal string is the one
 `chat.ts` validates).
@@ -156,8 +159,9 @@ correct a validation failure.
 - a regen is never a style fix.
 - the persona ban list (coach.md's `## voice` block, e.g. never naming raw notation
   or centipawn numbers) is a request TO THE MODEL, not an enforced guarantee; the only
-  guarantees are the deterministic checks that run after the reply (`validateNarration`,
-  `validateChat`, `checkOpponentQualityClaims`, `checkMateClaims`, `normalizeEmDash`).
+  guarantees are the deterministic checks, and `normalizeVoice` runs BEFORE those
+  validators, not after (`validateNarration`, `validateChat`, `checkOpponentQualityClaims`,
+  `checkMateClaims`, `normalizeVoice`).
 
 ## known gaps this round works on
 
