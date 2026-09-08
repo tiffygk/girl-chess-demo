@@ -225,6 +225,75 @@ describe("GameManager", () => {
     expect((gm as any).games.has(g.gameId)).toBe(true);
   }, 20000);
 
+  // Wave D fix round 1 (2026-09-06): section 14 puts a two-click delete pill
+  // on unfinished/in-progress drawer rows, and since Wave A a forgotten game
+  // is rebuilt on demand -- so a null-result row with no live in-memory
+  // entry is not actually being played, and must be deletable. This models
+  // a restarted server: the game has a real row and a real move, but no
+  // `this.games` entry (evicted below rather than constructed via the
+  // db-fixture helpers, so it goes through the exact same newGame/playerMove
+  // path a real in-progress game would).
+  it("deleteGame removes an unfinished game that is not live in memory", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const mv = await gm.playerMove(g.gameId, "e2", "e4");
+    expect(mv.ok).toBe(true);
+    (gm as any).games.delete(g.gameId);
+    expect((gm as any).games.has(g.gameId)).toBe(false);
+
+    const r = gm.deleteGame(g.gameId);
+    expect(r).toEqual({ ok: true });
+    expect(getGame(g.gameId)).toBeUndefined();
+    expect(getGameMoves(g.gameId)).toEqual([]);
+
+    // Must not resurrect the deleted game as a "forgotten" one to rebuild.
+    const resumed = await gm.resume(g.gameId);
+    expect(resumed).toEqual({ ok: false, reason: "not_found" });
+  }, 20000);
+
+  // Wave D fix round 2 (2026-09-06, review-D2's Important finding): the
+  // race the fix above opened up. rebuildFromDb's only await is
+  // `this.opponentFor(elo)`, BEFORE it reaches `this.games.set`. If a
+  // deleteGame lands while a rebuild is suspended there, deleteGame sees
+  // no live entry (correctly, per the fix above) and deletes the rows --
+  // but when the suspended await resolves, the old code called
+  // `this.games.set` unconditionally, resurrecting a live game whose rows
+  // are already gone and which could never be deleted again until restart.
+  // opponentFor is stubbed with a manually-controlled deferred promise so
+  // the test can land the delete exactly inside that window, resolved with
+  // the REAL opponent instance newGame already cached for elo 1100 (a
+  // placeholder object would make the post-resume opponentReply call below
+  // throw on a missing pickMove, a different failure than the one under
+  // test).
+  it("a delete that lands during a rebuild's engine await wins; the rebuild sets no live entry", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const mv = await gm.playerMove(g.gameId, "e2", "e4");
+    expect(mv.ok).toBe(true);
+    (gm as any).games.delete(g.gameId);
+
+    const realOpponent = (gm as any).opponents.get(1100);
+    let releaseOpponent!: (o: unknown) => void;
+    const deferred = new Promise((resolve) => {
+      releaseOpponent = resolve;
+    });
+    const opponentSpy = vi.spyOn(gm as any, "opponentFor").mockReturnValue(deferred);
+
+    // resume() runs synchronously through its own row checks and into
+    // rebuildFromDb, suspending at the mocked opponentFor await -- by the
+    // time this line finishes, this.games has NOT been set yet.
+    const p = gm.resume(g.gameId);
+
+    const del = gm.deleteGame(g.gameId);
+    expect(del).toEqual({ ok: true });
+
+    releaseOpponent(realOpponent);
+    const resumed = await p;
+    expect(resumed).toEqual({ ok: false, reason: "corrupt" });
+    expect((gm as any).games.has(g.gameId)).toBe(false);
+    expect(getGame(g.gameId)).toBeUndefined();
+
+    opponentSpy.mockRestore();
+  }, 20000);
+
   // Finished -> gone from BOTH the db-backed listGames() and the in-memory
   // `this.games` map. Evicting the map entry matters on its own: a stale
   // LiveGame handle for a row that no longer exists in the db must never be
@@ -493,7 +562,7 @@ describe("GameManager", () => {
   // — a hint on an already-decided game is harmless to log).
   it("logHint writes a game_events row with the expected detail shape", async () => {
     const g = await gm.newGame(sessionId, 1100);
-    const r = gm.logHint(g.gameId, {
+    const r = await gm.logHint(g.gameId, {
       level: 2,
       tier: "warning",
       deltaCp: 220,
@@ -513,8 +582,8 @@ describe("GameManager", () => {
     });
   }, 20000);
 
-  it("logHint refuses cleanly on an unknown game", () => {
-    const r = gm.logHint(999999, { level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: "x" });
+  it("logHint refuses cleanly on an unknown game", async () => {
+    const r = await gm.logHint(999999, { level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: "x" });
     expect(r.ok).toBe(false);
   });
 
@@ -2635,6 +2704,133 @@ describe("GameManager", () => {
       expect(capturedPrompt).toContain('"ply":54,"san":"Kh6","side":"mallow","bestSan":"Kh7"');
       expect(capturedPrompt).toContain('"ply":55,"san":"Nf7+","side":"you","bestSan":"Qh8#"');
     }, 20000);
+  });
+
+  describe("a game the process forgot (server restart)", () => {
+    function forgottenGame(sans: string[]): number {
+      const s = createSession();
+      const id = createGame(s, "maia-1100", "w");
+      const c = new Chess();
+      sans.forEach((san, i) => {
+        const mv = c.move(san);
+        recordMove({
+          gameId: id,
+          ply: i + 1,
+          san: mv.san,
+          uci: mv.from + mv.to + (mv.promotion ?? ""),
+          fenAfter: c.fen(),
+          timeSpentMs: 0,
+          side: i % 2 === 0 ? "her" : "mallow",
+        });
+      });
+      expect((gm as any).games.has(id)).toBe(false);
+      return id;
+    }
+
+    it("resume rebuilds the position from the stored moves and says it is her turn", async () => {
+      const id = forgottenGame(["e4", "e5"]);
+      const r = await gm.resume(id);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.plies).toBe(2);
+      expect(r.yourTurn).toBe(true);
+      expect(r.fen.split(" ")[1]).toBe("w");
+      expect((gm as any).games.has(id)).toBe(true);
+    }, 20000);
+
+    it("a move on a forgotten game lands and mallow replies", async () => {
+      const id = forgottenGame(["e4", "e5"]);
+      const r = await gm.playerMove(id, "g1", "f3");
+      expect(r.ok).toBe(true);
+      expect(getGameMoves(id).length).toBe(4);
+    }, 20000);
+
+    it("resume answers mallow's pending reply when the last stored move was hers", async () => {
+      const id = forgottenGame(["e4"]);
+      const r = await gm.resume(id);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.yourTurn).toBe(true);
+      expect(r.plies).toBe(2);
+      expect(getGameMoves(id).length).toBe(2);
+    }, 20000);
+
+    it("resign works on a forgotten game", async () => {
+      const id = forgottenGame(["e4", "e5"]);
+      const r = await gm.resign(id);
+      expect(r.ok).toBe(true);
+      expect(getGame(id)?.result).toBe("0-1");
+    }, 20000);
+
+    it("a finished game, an empty game, and an unknown id are refused with a reason", async () => {
+      const s = createSession();
+      const finished = createGame(s, "maia-1100", "w");
+      finishGame(finished, "1-0");
+      expect(await gm.resume(finished)).toEqual({ ok: false, reason: "finished" });
+      const empty = createGame(s, "maia-1100", "w");
+      expect(await gm.resume(empty)).toEqual({ ok: false, reason: "empty" });
+      expect(await gm.resume(999999)).toEqual({ ok: false, reason: "not_found" });
+    });
+
+    it("two simultaneous requests rebuild once", async () => {
+      const id = forgottenGame(["e4", "e5"]);
+      const [a, b] = await Promise.all([gm.resume(id), gm.resume(id)]);
+      expect(a.ok && b.ok).toBe(true);
+      expect((gm as any).rebuilds.size).toBe(0);
+      expect(getGameMoves(id).length).toBe(2);
+    }, 20000);
+
+    it("a corrupt stored move refuses the rebuild instead of throwing", async () => {
+      const s = createSession();
+      const id = createGame(s, "maia-1100", "w");
+      recordMove({
+        gameId: id,
+        ply: 1,
+        san: "e4",
+        uci: "e2e4",
+        fenAfter: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+        timeSpentMs: 0,
+        side: "her",
+      });
+      recordMove({
+        gameId: id,
+        ply: 2,
+        san: "Zz9",
+        uci: "zz99",
+        fenAfter: "garbage",
+        timeSpentMs: 0,
+        side: "mallow",
+      });
+      expect(await gm.resume(id)).toEqual({ ok: false, reason: "corrupt" });
+      expect(await gm.resign(id)).toEqual({ ok: false });
+    });
+
+    it("resign on a rebuilt game where mallow is to move makes no engine call", async () => {
+      const id = forgottenGame(["e4"]);
+      const live0 = await (gm as any).ensureLive(id);
+      const spy = vi.spyOn(live0.opponent, "pickMove");
+      const r = await gm.resign(id);
+      expect(r.ok).toBe(true);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    }, 20000);
+
+    // Correction (Wave D fix round 1, 2026-09-06): the db-level
+    // result==null refusal this test used to pin is gone (see deleteGame's
+    // own comment) -- a forgotten unfinished game is now deletable, same as
+    // any other null-result row with no live in-memory entry. What still
+    // matters, and what this test now pins instead, is that deleteGame gets
+    // there WITHOUT routing through ensureLive/rebuildFromDb -- it must
+    // decide from the row alone, never pay for a rebuild just to delete.
+    it("deleteGame never rebuilds", async () => {
+      const id = forgottenGame(["e4", "e5"]);
+      const spy = vi.spyOn(gm as any, "rebuildFromDb");
+      const r = gm.deleteGame(id);
+      expect(r).toEqual({ ok: true });
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+      expect((gm as any).games.has(id)).toBe(false);
+    });
   });
 });
 
