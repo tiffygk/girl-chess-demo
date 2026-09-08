@@ -66,7 +66,7 @@ import { shouldClearLiveDebrief } from "../review/deleteArm";
 import { fenAtPly } from "../review/Rewind";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
 import { readGameParam, withGameParam } from "./resumeParam";
-import { readActiveGame, writeActiveGame, continueCardBody } from "./activeGame";
+import { readActiveGame, writeActiveGame, continueCardBody, plateElo } from "./activeGame";
 import {
   decideBranch,
   maxPress,
@@ -367,6 +367,15 @@ export function GamePage() {
   // echoes it back, so this state always converges on a real band even if
   // localStorage somehow held something stale.
   const [opponentElo, setOpponentElo] = useState<number>(readEloPref);
+  // Wave D fix round 1 (2026-09-06): the elo the CURRENTLY LIVE game is
+  // actually playing at, once known -- kept separate from opponentElo
+  // (the picker's own preference default) on purpose. A resume must never
+  // call setOpponentElo: that would silently overwrite her saved default
+  // for the NEXT new game with whatever elo this resumed game happened to
+  // be. Null while no resumed game has reported its own elo yet, in which
+  // case the mallow plate falls back to opponentElo (a fresh/new game's own
+  // elo already rides opponentElo via startGame's setOpponentElo(g.elo)).
+  const [liveElo, setLiveElo] = useState<number | null>(null);
   // V1: independent of coachOn (judging) — not read by any hint logic yet.
   const [coachHints, setCoachHints] = useState<boolean>(() => readBoolPref(COACH_HINTS_KEY));
   // Task 5 (F17): which backend narrate()/chatWithCoach() ask for, per
@@ -583,6 +592,9 @@ export function GamePage() {
     setLastMove(null);
     setLiveMoves([]);
     setMallowThinking(false);
+    // Wave D fix round 1: never let a resumed game's elo leak into the
+    // NEXT game (fresh or resumed) before it reports its own.
+    setLiveElo(null);
     if (inputHintTimerRef.current) {
       window.clearTimeout(inputHintTimerRef.current);
       inputHintTimerRef.current = null;
@@ -693,6 +705,21 @@ export function GamePage() {
       fetchChatHistory(id)
         .then((r) => setResumedChat(r.ok ? r.messages : null))
         .catch(() => setResumedChat(null));
+      // Wave D fix round 1 (2026-09-06, controller fix after gate-D-resumed
+      // shot): the mallow plate must show the strength THIS game is
+      // actually playing at, not her saved picker preference -- opponentElo
+      // is seeded from readEloPref and a resume never touched it, so a game
+      // stored at 1600 showed "mallow 1100" whenever her preference
+      // happened to be 1100. fetchGameStatus's game.elo is the db-recorded
+      // value for this row, read not derived (no new route: the pregame
+      // continue-card effect above already calls this same function).
+      // setLiveElo only -- never setOpponentElo, which would leak this
+      // game's elo into her saved default for the next NEW game.
+      fetchGameStatus(id)
+        .then((status) => {
+          if (status.ok && status.game.elo != null) setLiveElo(status.game.elo);
+        })
+        .catch(() => {});
     },
     [resetGameState]
   );
@@ -2613,7 +2640,7 @@ export function GamePage() {
           materialLead={material.leader === "mallow" ? material.points : null}
           active={mallowActive}
           chip={mallowChip}
-          elo={opponentElo}
+          elo={plateElo(liveElo, opponentElo)}
         />
         <div className={"mallow-stripe " + (mallowThinking ? "ms-thinking" : "ms-dormant")} aria-hidden="true"></div>
         <Board

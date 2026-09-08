@@ -41,6 +41,7 @@ import { parseUtc } from "./localDate";
 // in-progress/unfinished word, shared with the pregame continue card via
 // GameListEntry -- see gameGroups.ts's own comment.
 import { groupGamesByDay, resultOrStatusWord } from "../game/gameGroups";
+import { movesIn } from "../game/activeGame";
 import { moveNumberForPly } from "./debriefLesson";
 import { debriefBullets, affordancesForBullet, type DebriefBullet } from "./debriefBullets";
 // N1 (owner report 2026-08-21): the shared "what actually happened" module.
@@ -1064,7 +1065,7 @@ export function PastGamesDrawer({ open, games, onSelect, onClose, onDelete, onRe
                           </span>
                         )}
                         <span className="pg2-lesson">
-                          {g.lesson ?? (g.result == null ? `${g.plies} moves in` : "no clear lesson yet")}
+                          {g.lesson ?? (g.result == null ? movesIn(g.plies) : "no clear lesson yet")}
                         </span>
                       </button>
                       <button

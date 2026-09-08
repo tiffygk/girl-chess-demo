@@ -648,6 +648,18 @@ describe("PastGamesDrawer (resume round, Wave D): day groups, numbers, resume", 
     expect(html).toContain(">unfinished<");
   });
 
+  // Wave D fix round 1 (2026-09-06): the row lesson text's own inline
+  // ternary lacked the singular branch activeGame.ts's continueCardBody
+  // already had, so a one-ply unfinished row read "1 moves in".
+  it("an unfinished row with a single ply reads '1 move in', not '1 moves in'", () => {
+    const oneMoveGame: GameListEntry = { ...LIVE_GAME, id: 199, gameNumber: 199, plies: 1 };
+    const html = renderToStaticMarkup(
+      <PastGamesDrawer open games={[oneMoveGame]} onSelect={noop} onClose={noop} onDelete={noop} onResume={noop} />
+    );
+    expect(html).toContain(">1 move in<");
+    expect(html).not.toContain("1 moves in");
+  });
+
   it("the drawer close is an X-glyph button, and delete reads the word 'delete' (armed: 'sure?'), no bare × text", () => {
     const html = renderToStaticMarkup(
       <PastGamesDrawer open games={[LIVE_GAME]} onSelect={noop} onClose={noop} onDelete={noop} onResume={noop} />
