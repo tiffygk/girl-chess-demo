@@ -24,13 +24,13 @@ describe("activeGame", () => {
 });
 
 describe("continueCardBody", () => {
-  it("includes the opponent elo when it's known", () => {
-    expect(continueCardBody(1300, 12)).toBe("you and mallow 1300 are mid-game, 12 moves in.");
+  it("leads with the game number and includes the opponent elo when it's known", () => {
+    expect(continueCardBody(195, 1600, 2)).toBe("game 195: you and mallow 1600 are mid-game, 2 moves in.");
   });
   it("omits the elo when it isn't known", () => {
-    expect(continueCardBody(null, 12)).toBe("you and mallow are mid-game, 12 moves in.");
+    expect(continueCardBody(195, null, 1)).toBe("game 195: you and mallow are mid-game, 1 move in.");
   });
-  it("uses singular 'move' for exactly one ply", () => {
-    expect(continueCardBody(1300, 1)).toBe("you and mallow 1300 are mid-game, 1 move in.");
+  it("uses plural 'moves' for more than one ply", () => {
+    expect(continueCardBody(195, 1600, 12)).toBe("game 195: you and mallow 1600 are mid-game, 12 moves in.");
   });
 });
