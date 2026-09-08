@@ -79,6 +79,36 @@ function seedDb(): string {
   return dbPath;
 }
 
+// Reported-only row seed for the loose-contrast / bare-"real" ruling
+// (controller ruling, ledgered report-V4.md, 2026-09-08): a single chat row
+// whose text hits the LOOSE contrast phrase ("it's not a big deal") but not
+// the strict "contrast shape" tell (no second "it's" inside the window),
+// proving the two are counted independently.
+function seedLooseContrastDb(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-tells-test-loose-"));
+  tmpDirs.push(dir);
+  const dbPath = path.join(dir, "girlchess.db");
+  openDb(dbPath);
+  const s = createSession();
+  const g = createGame(s, "maia-1100");
+
+  insertAdviceTrace({
+    gameId: g,
+    ply: 4,
+    kind: "chat",
+    factsJson: "{}",
+    prompt: "p",
+    output: "it's not a big deal, just a normal move.",
+    source: "model",
+    backend: "claude-cli",
+    validated: true,
+    regenCount: 0,
+    latencyMs: 100,
+  });
+
+  return dbPath;
+}
+
 describe("voice-tells: computeVoiceTells", () => {
   // Falsification: change TELLS' "let's" pattern to /\bletsx\b/i (a typo
   // that can never match real text) and this assertion on
@@ -110,5 +140,18 @@ describe("voice-tells: computeVoiceTells", () => {
     const result = computeVoiceTells(dbPath, "2099-01-01");
 
     expect(result.totals).toEqual({ chat: 0, nudge: 0, warning: 0 });
+  });
+
+  // Falsification: change looseContrastCounts' pattern from
+  // /\bit's not\b|.../ to /\bitsx not\b|.../ (a typo that can never match
+  // real text) and this assertion goes from 1 to 0. Watched red 2026-09-08,
+  // restored, confirmed green again -- see the reply for the pasted output.
+  it("reports the loose contrast phrase separately from the strict contrast-shape tell, and excludes it from any-tell", () => {
+    const dbPath = seedLooseContrastDb();
+    const result = computeVoiceTells(dbPath, "2020-01-01");
+
+    expect(result.looseContrastCounts).toEqual({ chat: 1, nudge: 0, warning: 0 });
+    expect(result.tellCounts["contrast shape"]).toEqual({ chat: 0, nudge: 0, warning: 0 });
+    expect(result.anyTellCounts).toEqual({ chat: 0, nudge: 0, warning: 0 });
   });
 });

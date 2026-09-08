@@ -62,6 +62,16 @@ export const TELLS: Tell[] = [
 // the softener use of "quietly" the tell above is trying to catch.
 export const QUIET_CHESS_CARVE_OUT: RegExp = /\bquiet (move|developing|king)\b/i;
 
+// Reported-only rows (controller ruling, ledgered report-V4.md, 2026-09-08):
+// the strict "contrast shape" and "hollow real" tells above came in well
+// under this wave's ballpark estimate (contrast 4/67 vs ~15/67, hollow real
+// 5/67 vs ~12/67 against her real db). These two loosen the shape back to
+// what the ballpark likely counted, but are printed for visibility only --
+// never counted toward tellCounts or anyTellCounts. The strict rows above
+// stay the counted metric per the controller's ruling.
+export const LOOSE_CONTRAST: RegExp = /\bit's not\b|\bisn't about\b|\bnot just\b|\bnot really\b/i;
+export const BARE_REAL: RegExp = /\breal \w+\b/i;
+
 function zeroKindRecord(): Record<Kind, number> {
   return { chat: 0, nudge: 0, warning: 0 };
 }
@@ -71,6 +81,8 @@ export interface VoiceTellsResult {
   tellCounts: Record<string, Record<Kind, number>>;
   quietCarveOutCounts: Record<Kind, number>;
   anyTellCounts: Record<Kind, number>;
+  looseContrastCounts: Record<Kind, number>;
+  bareRealCounts: Record<Kind, number>;
 }
 
 // Opens dbPath { readonly: true } -- copied from tools/gate.ts's
@@ -90,6 +102,8 @@ export function computeVoiceTells(dbPath: string, since: string): VoiceTellsResu
     for (const tell of TELLS) tellCounts[tell.name] = zeroKindRecord();
     const quietCarveOutCounts = zeroKindRecord();
     const anyTellCounts = zeroKindRecord();
+    const looseContrastCounts = zeroKindRecord();
+    const bareRealCounts = zeroKindRecord();
 
     for (const row of rows) {
       if (!isKind(row.kind)) continue;
@@ -104,10 +118,19 @@ export function computeVoiceTells(dbPath: string, since: string): VoiceTellsResu
         }
       }
       if (QUIET_CHESS_CARVE_OUT.test(text)) quietCarveOutCounts[kind]++;
+      if (LOOSE_CONTRAST.test(text)) looseContrastCounts[kind]++;
+      if (BARE_REAL.test(text)) bareRealCounts[kind]++;
       if (matchedAny) anyTellCounts[kind]++;
     }
 
-    return { totals, tellCounts, quietCarveOutCounts, anyTellCounts };
+    return {
+      totals,
+      tellCounts,
+      quietCarveOutCounts,
+      anyTellCounts,
+      looseContrastCounts,
+      bareRealCounts,
+    };
   } finally {
     db.close();
   }
@@ -133,6 +156,18 @@ export function formatReport(result: VoiceTellsResult): string {
       `${fraction(result.quietCarveOutCounts.chat, result.totals.chat, "chat")} | ` +
       `${fraction(result.quietCarveOutCounts.nudge, result.totals.nudge, "nudge")} | ` +
       `${fraction(result.quietCarveOutCounts.warning, result.totals.warning, "warning")}`
+  );
+  lines.push(
+    `loose contrast (reported) | ` +
+      `${fraction(result.looseContrastCounts.chat, result.totals.chat, "chat")} | ` +
+      `${fraction(result.looseContrastCounts.nudge, result.totals.nudge, "nudge")} | ` +
+      `${fraction(result.looseContrastCounts.warning, result.totals.warning, "warning")}`
+  );
+  lines.push(
+    `bare real (reported) | ` +
+      `${fraction(result.bareRealCounts.chat, result.totals.chat, "chat")} | ` +
+      `${fraction(result.bareRealCounts.nudge, result.totals.nudge, "nudge")} | ` +
+      `${fraction(result.bareRealCounts.warning, result.totals.warning, "warning")}`
   );
   lines.push(
     `rows with any tell: chat ${result.anyTellCounts.chat}/${result.totals.chat}, ` +
