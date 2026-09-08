@@ -26,7 +26,7 @@ import { checkPlacementClaims } from "./placementClaims";
 import { checkMateClaims } from "./mateClaims";
 import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
 import { isOffTopic, mentionedPlies, thinkingForIntent, type ChatIntent } from "./intent";
-import { normalizeEmDash } from "./textNormalize";
+import { normalizeVoice } from "./textNormalize";
 
 // Round 3 (Q4, trace-180): the recapture-viability exemption checkDefenseClaims
 // takes -- shared by both validateChat's board route and validateChatGeneral,
@@ -2057,10 +2057,11 @@ export async function chat(
   // advice_traces row, same discipline as every other exit from this
   // function.
   if (isOffTopic(userMessage)) {
-    // F2 (2026-08-03): funnel through the same normalizeEmDash seam every
-    // other final-reply string in this function uses, so an em-dash typed
-    // into a persona template can never reach advice_traces or the caller.
-    const text = normalizeEmDash(
+    // F2 (2026-08-03) / Wave V3 (2026-09-08): funnel through the same
+    // normalizeVoice seam every other final-reply string in this function
+    // uses, so an em-dash or a swap-list phrase typed into a persona
+    // template can never reach advice_traces or the caller.
+    const text = normalizeVoice(
       persona.chatTemplates.redirect ??
         "keep it on the board. ask me about a move from this game and i'll break it down."
     );
@@ -2197,16 +2198,17 @@ export async function chat(
       // for deltas -- every other caller (every pre-this-wave test, narrate's
       // own callers, a non-streaming backend) takes the untouched generate()
       // path.
-      // F2 (2026-08-03): normalizeEmDash right where the backend's raw text
-      // first becomes attemptOutput -- the single seam every downstream use
-      // (validateChat, trimmed/modelText, and the advice_traces `output`
-      // field this function persists at the end) reads from, so a model
-      // reply can never carry an em-dash into the db or the caller. This is
-      // also the value that ends up persisted on a REJECTED draft (a
-      // template-fallback row's `output` is this raw last attempt, not the
-      // apology copy the user sees) -- normalizing here is what covers that
-      // path too, per the brief's "do not patch only the model branch".
-      attemptOutput = normalizeEmDash(
+      // F2 (2026-08-03) / Wave V3 (2026-09-08): normalizeVoice right where
+      // the backend's raw text first becomes attemptOutput -- the single
+      // seam every downstream use (validateChat, trimmed/modelText, and the
+      // advice_traces `output` field this function persists at the end)
+      // reads from, so a model reply can never carry an em-dash or a
+      // swap-list phrase into the db or the caller. This is also the value
+      // that ends up persisted on a REJECTED draft (a template-fallback
+      // row's `output` is this raw last attempt, not the apology copy the
+      // user sees) -- normalizing here is what covers that path too, per
+      // the brief's "do not patch only the model branch".
+      attemptOutput = normalizeVoice(
         backend.generateStream && opts?.onDelta
           ? await backend.generateStream(
               attemptPrompt,
@@ -2219,7 +2221,7 @@ export async function chat(
           : await backend.generate(attemptPrompt, timeoutMs, stablePrefix, opts?.onUsage, thinkingPref)
       );
     } catch (err) {
-      attemptOutput = normalizeEmDash(`[backend error] ${err instanceof Error ? err.message : String(err)}`);
+      attemptOutput = normalizeVoice(`[backend error] ${err instanceof Error ? err.message : String(err)}`);
       failureCause = isTimeoutError(err) ? "timeout" : "backend-down";
       // Task 6: a genuine (non-timeout) failure means this backend is
       // actually down, not just slow -- report it so the caller can skip it
@@ -2306,13 +2308,14 @@ export async function chat(
   // cause) rather than deleted. Persona-overridable (`slow:` / `down:` /
   // `garbled:` under the chat templates in coach.md) with an honest default
   // here so the fallback never lies about why it fired.
-  // F2 (2026-08-03): normalizeEmDash covers this persona-template fallback
-  // string too -- same seam as the model-reply branch above, so an
-  // owner-edited coach.md template can never reintroduce an em-dash into a
-  // returned reply (this string is never itself persisted to advice_traces;
-  // attemptOutput above is what's persisted on a template-fallback row, and
-  // that is already normalized at its own assignment).
-  const failureTemplate = normalizeEmDash(
+  // F2 (2026-08-03) / Wave V3 (2026-09-08): normalizeVoice covers this
+  // persona-template fallback string too -- same seam as the model-reply
+  // branch above, so an owner-edited coach.md template can never
+  // reintroduce an em-dash or a swap-list phrase into a returned reply
+  // (this string is never itself persisted to advice_traces; attemptOutput
+  // above is what's persisted on a template-fallback row, and that is
+  // already normalized at its own assignment).
+  const failureTemplate = normalizeVoice(
     failureCause === "timeout"
       ? persona.chatTemplates.slow ??
         "that one took me longer than i had. ask me again and i'll get you an answer."

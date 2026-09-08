@@ -122,6 +122,8 @@ girl-chess/
 
 Primitive-to-directory: Board & Game = `server/game` + `src/board` + `src/game`; Engine Room = `server/engines`; Annotator = `server/annotator`; Coach = `server/coach`; Memory & Drills = `server/store` + `data/notebook/`; Player Profile = `data/profile.md` + stats tables; the Lab = `src/home/Lab.tsx` over the same SQLite.
 
+`docs/hint-ladder-and-coach.md` is the canonical description of the three coach text surfaces: the hint ladder's template rungs, the model-written band under the game, and the validated chat.
+
 One documented deviation from the PRD's stack line: the board is a custom component ported from the approved `Sugar Glitch Demo.html` prototype (pieces, palette, glitch-capture animation already exist there) rather than react-chessboard; the library remains a fallback if the custom board misbehaves. chess.js still owns all rules, client and server.
 
 Runbook: `./setup.sh` once, then `npm run dev`.
