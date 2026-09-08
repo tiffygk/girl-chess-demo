@@ -87,4 +87,4 @@ One artifact stays out of the repo: a quiz I built to drill myself on defending 
 
 ## Code
 
-The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). See the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) for setup.
+The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). See the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) for setup. [The hint ladder and the coach](hint-ladder-and-coach.md) walks the three coach text surfaces (ladder, band, chat) cited straight to the code.
