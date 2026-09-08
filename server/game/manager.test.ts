@@ -250,6 +250,50 @@ describe("GameManager", () => {
     expect(resumed).toEqual({ ok: false, reason: "not_found" });
   }, 20000);
 
+  // Wave D fix round 2 (2026-09-06, review-D2's Important finding): the
+  // race the fix above opened up. rebuildFromDb's only await is
+  // `this.opponentFor(elo)`, BEFORE it reaches `this.games.set`. If a
+  // deleteGame lands while a rebuild is suspended there, deleteGame sees
+  // no live entry (correctly, per the fix above) and deletes the rows --
+  // but when the suspended await resolves, the old code called
+  // `this.games.set` unconditionally, resurrecting a live game whose rows
+  // are already gone and which could never be deleted again until restart.
+  // opponentFor is stubbed with a manually-controlled deferred promise so
+  // the test can land the delete exactly inside that window, resolved with
+  // the REAL opponent instance newGame already cached for elo 1100 (a
+  // placeholder object would make the post-resume opponentReply call below
+  // throw on a missing pickMove, a different failure than the one under
+  // test).
+  it("a delete that lands during a rebuild's engine await wins; the rebuild sets no live entry", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const mv = await gm.playerMove(g.gameId, "e2", "e4");
+    expect(mv.ok).toBe(true);
+    (gm as any).games.delete(g.gameId);
+
+    const realOpponent = (gm as any).opponents.get(1100);
+    let releaseOpponent!: (o: unknown) => void;
+    const deferred = new Promise((resolve) => {
+      releaseOpponent = resolve;
+    });
+    const opponentSpy = vi.spyOn(gm as any, "opponentFor").mockReturnValue(deferred);
+
+    // resume() runs synchronously through its own row checks and into
+    // rebuildFromDb, suspending at the mocked opponentFor await -- by the
+    // time this line finishes, this.games has NOT been set yet.
+    const p = gm.resume(g.gameId);
+
+    const del = gm.deleteGame(g.gameId);
+    expect(del).toEqual({ ok: true });
+
+    releaseOpponent(realOpponent);
+    const resumed = await p;
+    expect(resumed).toEqual({ ok: false, reason: "corrupt" });
+    expect((gm as any).games.has(g.gameId)).toBe(false);
+    expect(getGame(g.gameId)).toBeUndefined();
+
+    opponentSpy.mockRestore();
+  }, 20000);
+
   // Finished -> gone from BOTH the db-backed listGames() and the in-memory
   // `this.games` map. Evicting the map entry matters on its own: a stale
   // LiveGame handle for a row that no longer exists in the db must never be
