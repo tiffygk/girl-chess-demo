@@ -6,6 +6,7 @@ import type { RecommendationFacts } from "../annotator/motifs";
 import type { CoachBackend } from "./backends/types";
 import { validateNarration } from "./validate";
 import { recordAdviceTrace } from "./traces";
+import { normalizeVoice } from "./textNormalize";
 
 // F17 + F18 + F14 + F40: the coach's fact-list assembly, render-only
 // validation, and narration loop. This file never imports an evaluator or
@@ -471,11 +472,19 @@ export async function narrate(
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      attemptOutput = await backend.generate(attemptPrompt, budgetMs);
+      // Wave V3 (voice-align round, 2026-09-08): normalizeVoice right where
+      // the backend's raw text first becomes attemptOutput -- the same
+      // seam pattern chat.ts already uses (see that file's attemptOutput
+      // assignment). Every downstream read (validateNarration, modelText,
+      // and the advice_traces `output` field recordAdviceTrace persists
+      // below) sees the normalized string, including on a rejected/
+      // template-fallback row -- attemptOutput is what's persisted there
+      // too, not just on a validated reply.
+      attemptOutput = normalizeVoice(await backend.generate(attemptPrompt, budgetMs));
     } catch (err) {
       // Backend error/timeout at any attempt short-circuits straight to the
-      // template fallback below — never worth a second network/process call.
-      attemptOutput = `[backend error] ${err instanceof Error ? err.message : String(err)}`;
+      // template fallback below -- never worth a second network/process call.
+      attemptOutput = normalizeVoice(`[backend error] ${err instanceof Error ? err.message : String(err)}`);
       // Task 6: a genuine (non-timeout) failure means this backend is
       // actually down, not just slow -- report it so the caller can skip it
       // for a cooldown instead of re-picking it on the very next call.
@@ -501,7 +510,12 @@ export async function narrate(
   }
 
   const source: NarrateSource = modelText !== null ? "model" : "template";
-  const text = modelText ?? buildTemplateNarration(facts, persona);
+  // Wave V3: the persona-template fallback funnels through normalizeVoice
+  // too, same as chat.ts's own failureTemplate -- an owner-edited coach.md
+  // template can never reintroduce a dash or a swap-list phrase into a
+  // returned band reply. modelText is already normalized at its own
+  // assignment above, so it is used here as-is.
+  const text = modelText ?? normalizeVoice(buildTemplateNarration(facts, persona));
   const latencyMs = Date.now() - start;
 
   const traceId = recordAdviceTrace({
