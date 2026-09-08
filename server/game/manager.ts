@@ -1368,6 +1368,30 @@ export class GameManager {
     };
   }
 
+  // Wave A1 (2026-09-08, voice-align): the reuse-if-verified guard and the
+  // deep search itself, factored out of computeHint(gameId) below so a
+  // chat-triggered search (Wave A1's own new call site, a few hundred lines
+  // down) can run the exact same "ladder's own verified search" without
+  // duplicating it. Only this method touches live.lastHint / runs
+  // computeHintFacts; hintHistory and the hint_compute event are recorded
+  // by computeHint(gameId) alone, immediately below, because those two
+  // record what the player was actually SHOWN on the ladder -- a
+  // chat-triggered search was never shown there.
+  private async searchAndCacheVerifiedHint(live: LiveGame, fen: string): Promise<HintFacts | null> {
+    // RC1 (game 192): the deep hint is wall-clock bounded, so two searches at
+    // the SAME fen can return different near-equal best moves (Kh1 +810 then
+    // h4 +809, traces 296/298). Reuse the verified entry for this fen instead
+    // of re-searching -- the fast path has had this exact guard since Q2
+    // (see the computePositionView site below); the deep path never did.
+    if (live.lastHint && live.lastHint.fen === fen && live.lastHint.facts.verified) {
+      return live.lastHint.facts;
+    }
+    const facts = await computeHintFacts(fen, this.evaluator);
+    if (!facts) return null;
+    live.lastHint = { fen, facts, at: Date.now() };
+    return facts;
+  }
+
   // Increment 2.5: player-initiated deep hint. The pending move is client-only
   // state, so live.chess.fen() IS the before-position the hint applies to.
   // Runs on the shared serialized evaluator queue: a hint can briefly delay a
@@ -1377,24 +1401,25 @@ export class GameManager {
     const live = await this.ensureLive(gameId);
     if (!live || live.finished) return { ok: false };
     const fen = live.chess.fen();
-    // RC1 (game 192): the deep hint is wall-clock bounded, so two searches at
-    // the SAME fen can return different near-equal best moves (Kh1 +810 then
-    // h4 +809, traces 296/298). Reuse the verified entry for this fen instead
-    // of re-searching -- the fast path has had this exact guard since Q2
-    // (see the computePositionView site below); the deep path never did.
-    if (live.lastHint && live.lastHint.fen === fen && live.lastHint.facts.verified) {
-      return { ok: true, facts: live.lastHint.facts };
-    }
-    const facts = await computeHintFacts(fen, this.evaluator);
+    // Byte-for-byte the same reuse-if-verified behaviour as before the
+    // Wave A1 refactor above: decide BEFORE calling the shared helper
+    // whether this fen already had a fresh verified entry, so a cache hit
+    // here still skips the hintHistory/event write below exactly as it did
+    // when this guard lived inline.
+    const wasAlreadyVerifiedForThisFen =
+      Boolean(live.lastHint) && live.lastHint!.fen === fen && live.lastHint!.facts.verified;
+    const facts = await this.searchAndCacheVerifiedHint(live, fen);
     if (!facts) return { ok: false };
-    live.lastHint = { fen, facts, at: Date.now() };
+    if (wasAlreadyVerifiedForThisFen) {
+      return { ok: true, facts };
+    }
     // Task 3 (RC2, game 192): record what was actually shown -- a FRESH deep
-    // result only, never the Task 1 reuse early-return above (that fen
-    // already has an entry from the first time it was computed). bestSan is
-    // converted from facts.bestUci by replaying it from `fen` (pvLine, the
-    // same UCI-replay this file already uses for every other bestSan it
-    // derives) so hintHistory speaks SAN, not UCI, the same convention
-    // perPlyAnalysis and the hint shelf itself follow.
+    // result only, never the reuse case above (that fen already has an
+    // entry from the first time it was computed). bestSan is converted from
+    // facts.bestUci by replaying it from `fen` (pvLine, the same UCI-replay
+    // this file already uses for every other bestSan it derives) so
+    // hintHistory speaks SAN, not UCI, the same convention perPlyAnalysis
+    // and the hint shelf itself follow.
     const { bestSan } = this.pvLine(fen, { bestMove: facts.bestUci, pv: null });
     live.hintHistory.push({ fen, bestSan: bestSan ?? facts.bestUci, moveNumber: Math.floor(live.ply / 2) + 1 });
     if (live.hintHistory.length > HINT_HISTORY_CAP) live.hintHistory.shift();
@@ -1603,17 +1628,29 @@ export class GameManager {
     // shelf source -- undefined for a finished/never-hinted game, in which
     // case assembleChatFactList's fen-match simply never fires.
     const live = this.games.get(gameId);
-    // Round 3 (B1, Task 6): when chat opens on a live position with no
-    // matching hint yet -- the common case, since a hint is player-
-    // initiated and rare -- score the current position with a fast,
-    // bounded engine call so a why/lookahead question still has facts to
-    // ground on (trace-185). Reuses this.evaluator (zero new engine
-    // processes) and caches the result onto live.lastHint exactly like a
-    // real hint would, so a follow-up question about the SAME position
-    // does not recompute.
+    // Wave A1 (2026-09-08, voice-align): owner ruling -- "the live coaching
+    // that happens under the ladder hints is always more trustworthy and
+    // better" -- so a chat that opens on a live position with no verified
+    // cached entry now runs the ladder's OWN verified search (the same
+    // searchAndCacheVerifiedHint helper computeHint(gameId) uses above),
+    // once per position, cached, rather than the fast/unverified read this
+    // used to fall to (Round 3 B1's computePositionView, trace-185). This
+    // is a chat-triggered search, not a ladder press, so it deliberately
+    // does NOT go through computeHint(gameId): no hintHistory entry, no
+    // hint_compute event -- those record what she was actually SHOWN.
+    // Worst case adds HINT_MOVETIME_MS (1500ms) plus at most one
+    // HINT_VERIFY_MOVETIME_MS (500ms) verification pass and, rarely, a
+    // HINT_RETRY_MOVETIME_MS (3000ms) escalation if the first pick fails
+    // verification -- see the report for the arithmetic against the
+    // owner's 1-2s ceiling. Only when the verified search itself returns no
+    // facts (e.g. a position computeHintFacts's own isGameOver() guard
+    // rejects) does this fall back to computePositionView's fast,
+    // explicitly-unverified read, same as before, so a why-question still
+    // has something to ground on.
     if (live && !live.finished && body.context.mode === "live") {
       const liveFen = live.chess.fen();
-      if (!live.lastHint || live.lastHint.fen !== liveFen) {
+      const verifiedFacts = await this.searchAndCacheVerifiedHint(live, liveFen);
+      if (!verifiedFacts && (!live.lastHint || live.lastHint.fen !== liveFen)) {
         const positionView = await computePositionView(liveFen, this.evaluator);
         if (positionView) {
           live.lastHint = { fen: liveFen, facts: positionView, at: Date.now() };
