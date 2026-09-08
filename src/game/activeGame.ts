@@ -16,13 +16,12 @@ export function writeActiveGame(id: number | null, storage: Store = localStorage
 }
 
 // Task 6 fix round 2 (owner ruling 14): the pregame "continue card" body
-// copy, ported from the component library's `.pg2-continue-body` example
-// ("you and mallow 1300 are mid-game, 12 moves in."). Pure so it's testable
-// without the DOM -- GamePage.tsx supplies elo (null when it isn't cheaply
-// available this round -- see the fix report) and plies (moves.length from
-// the resumed game's summary).
-export function continueCardBody(elo: number | null, plies: number): string {
+// copy, ported from the component library's `.pg2-continue-body` example.
+// Pure so it's testable without the DOM. Resume round (2026-09-06), Wave D:
+// leads with the game number (her ask -- "let's make sure that we actually
+// make the name visible to me") now that GameListEntry always carries one.
+export function continueCardBody(gameNumber: number, elo: number | null, plies: number): string {
   const who = elo == null ? "mallow" : `mallow ${elo}`;
   const moveWord = plies === 1 ? "1 move in" : `${plies} moves in`;
-  return `you and ${who} are mid-game, ${moveWord}.`;
+  return `game ${gameNumber}: you and ${who} are mid-game, ${moveWord}.`;
 }
