@@ -529,6 +529,18 @@ export class GameManager {
     if (!chess) return undefined;
     const elo = eloFromOpponentLabel(row.opponent) ?? 1100;
     const opponent = await this.opponentFor(elo);
+    // Wave D fix round 2 (2026-09-06): the row can be deleted while this was
+    // suspended on the await above (deleteGame requires no live entry to
+    // succeed, and there is none yet -- this method has not reached
+    // this.games.set below). Without this re-check the resumed await
+    // returns and sets a live entry anyway, resurrecting a game whose rows
+    // are already gone and which could never be deleted again until
+    // restart. A second concurrent rebuild for the same id can also have
+    // finished and set an entry while this one waited; return that one
+    // rather than clobbering it with a fresh (redundant) engine handle.
+    if (!getGame(gameId)) return undefined;
+    const already = this.games.get(gameId);
+    if (already) return already;
     // The stored label is a write-once fact about the engine that started
     // the game; it is not rewritten. If the engine tier differs now (lc0 was
     // up then and is down now, or the reverse) leave a trace, the way
