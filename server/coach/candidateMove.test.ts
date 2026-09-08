@@ -29,6 +29,13 @@ const PAWN_TAKES_FEN = "4k3/8/4p3/3P4/8/8/8/4K3 w - - 0 1";
 const ROOK_FEN = "4k3/8/8/8/8/8/8/1R2K3 w - - 0 1";
 // Both castling rights, clear ranks -- "castle short"/"castle long".
 const CASTLE_FEN = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+// White pawn at e7, e8 empty -- "pawn to e8" is a promoting push (4 legal
+// moves, e8=Q/R/B/N, differing ONLY by promotion piece).
+const PROMOTE_PUSH_FEN = "8/4P3/8/8/8/8/8/k3K3 w - - 0 1";
+// White pawn at e7, black rook at d8 -- "pawn takes on d8" is a promoting
+// CAPTURE (4 legal moves, exd8=Q/R/B/N); e8 is also a legal (non-capturing)
+// promotion square from the same pawn, so requireCapture must exclude it.
+const PROMOTE_CAPTURE_FEN = "3r4/4P3/8/8/8/8/8/k3K3 w - - 0 1";
 
 describe("parseCandidateMove", () => {
   test("resolves an exact SAN token", () => {
@@ -112,5 +119,31 @@ describe("parseCandidateMove", () => {
 
   test("returns undefined when the message names no move at all", () => {
     expect(parseCandidateMove("why is my position so bad right now", QUEEN_FEN)).toBeUndefined();
+  });
+
+  // Review-A2 defect 1: a pawn reaching the last rank is FOUR legal moves
+  // (e8=Q/R/B/N) that differ only by promotion piece -- resolveUnique's own
+  // "exactly one match" rule used to read that as ambiguous and return
+  // undefined for every single promoting move named in chat. Rule: default
+  // to the queen unless the message names a different piece.
+  test("'pawn to e8' resolves to the queen promotion by default", () => {
+    expect(parseCandidateMove("why not pawn to e8", PROMOTE_PUSH_FEN)).toEqual({
+      san: "e8=Q",
+      uci: "e7e8q",
+    });
+  });
+
+  test("'pawn to e8 and make a knight' resolves to the named underpromotion", () => {
+    expect(parseCandidateMove("what about pawn to e8 and make a knight", PROMOTE_PUSH_FEN)).toEqual({
+      san: "e8=N",
+      uci: "e7e8n",
+    });
+  });
+
+  test("a promoting CAPTURE ('pawn takes on d8') resolves to the queen promotion by default, never the non-capturing e8 push", () => {
+    expect(parseCandidateMove("what about pawn takes on d8", PROMOTE_CAPTURE_FEN)).toEqual({
+      san: "exd8=Q",
+      uci: "e7d8q",
+    });
   });
 });
