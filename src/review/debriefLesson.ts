@@ -11,7 +11,7 @@
 //   2. else, the backfilled "the losing move" point when one was selected
 //      (only happens when fewer than 3 real swings qualified — see
 //      turningPoints.ts's backfill comment): "today's lesson: the losing
-//      move came on move {n}. worth a rewind."
+//      move came on move {n}. rewind it and watch the moment."
 //   3. else, the punished story when at least one turning point carries a
 //      punishSan — fixed sentence, count-sensitive (F2): "you did." for
 //      exactly one punished point, "you did, twice." for two or more.
@@ -54,7 +54,7 @@ const CROSSING_GRADED_LABELS = new Set(["mistake", "inaccuracy"]);
 
 const PUNISHED_LESSON_ONCE = "today's lesson: when she blunders, take it. you did.";
 const PUNISHED_LESSON_TWICE = "today's lesson: when she blunders, take it. you did, twice.";
-const CLEAN_WIN_LESSON = "clean game. today was execution, not drama.";
+const CLEAN_WIN_LESSON = "clean game. nothing to fix today.";
 const LOSS_LESSON = "tough one. nothing dramatic lost it, it slipped away in small pieces.";
 const DRAW_LESSON = "a draw. solid, careful, nothing hung.";
 
@@ -110,7 +110,7 @@ export function debriefLesson(turningPoints: TurningPoint[], result: GameResult)
   const losingMove = turningPoints.find((t) => t.label === "the losing move");
   if (losingMove) {
     const n = moveNumberForPly(losingMove.ply);
-    return `today's lesson: the losing move came on move ${n}. worth a rewind.`;
+    return `today's lesson: the losing move came on move ${n}. rewind it and watch the moment.`;
   }
 
   const punished = turningPoints.filter((t) => !!t.punishSan);

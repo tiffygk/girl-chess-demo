@@ -265,6 +265,33 @@ describe("narrate", () => {
     expect(rows[1].backend).toBe("fake");
     expect(rows[1].facts_json).toBeTruthy();
   });
+
+  // Wave V3 (voice-align round, 2026-09-08): narrate() (the band) had zero
+  // normalizeVoice calls before this wave -- chat.ts's own em-dash guard
+  // never reached this surface. Red proof: comment out the normalizeVoice
+  // call on the model-reply seam (the `attemptOutput = normalizeVoice(...)`
+  // assignment in narrate()) and this fails, both on the returned text and
+  // the persisted advice_traces row, because the em-dash passes straight
+  // through untouched.
+  it("normalizes an em-dash in a validated model reply before persist and return", async () => {
+    const facts = mkFacts();
+    const backend = fakeBackend({
+      async generate() {
+        return "her bishop hits your rook — move it.";
+      },
+    });
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1100");
+    const result = await narrate(facts, backend, { gameId, ply: 3, kind: "warning" });
+
+    expect(result.source).toBe("model");
+    expect(result.text).toBe("her bishop hits your rook, move it.");
+    expect(result.text).not.toMatch(/[—–]/);
+
+    const rows = getAdviceTraces(gameId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].output).toBe("her bishop hits your rook, move it.");
+  });
 });
 
 // The player is always "you"/"your" in the coach's output; "she"/"her" must
