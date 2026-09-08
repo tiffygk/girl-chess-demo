@@ -1652,7 +1652,13 @@ export class GameManager {
       const verifiedFacts = await this.searchAndCacheVerifiedHint(live, liveFen);
       if (!verifiedFacts && (!live.lastHint || live.lastHint.fen !== liveFen)) {
         const positionView = await computePositionView(liveFen, this.evaluator);
-        if (positionView) {
+        // review-A1.md (medium finding): a concurrent ladder press
+        // (computeHint(gameId), same fen) can land a verified entry while
+        // the fast search above is in flight -- re-check right before the
+        // write instead of trusting the pre-await guard, so this fast,
+        // unverified result never clobbers a verified one that arrived in
+        // the meantime.
+        if (positionView && (!live.lastHint || live.lastHint.fen !== liveFen || !live.lastHint.facts.verified)) {
           live.lastHint = { fen: liveFen, facts: positionView, at: Date.now() };
         }
       }
