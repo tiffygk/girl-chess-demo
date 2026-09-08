@@ -1466,13 +1466,31 @@ export class GameManager {
       // with no reply to report.
       line = { san: candidate.san, uci: candidate.uci, evalCp: null, evalMate: null, verified: false };
     } else {
+      // Review-A2 defect 2: hint.bestUci is computeHint's CHOSEN move --
+      // for a real hint, that is deliberately trade-averse within
+      // HINT_TRADE_MARGIN_CP (a quieter move preferred over the engine's
+      // own top pick, when comparable), because that field exists to
+      // answer "what should SHE play." Mallow's reply is not a
+      // recommendation to a human who might regret a trade -- mallow plays
+      // the engine's actual best move, i.e. the ONE multipv search's own
+      // top candidate, best-first at index 0 (HintFacts.candidates, see
+      // hint.ts's own comment on that field). candidates is `[]` only when
+      // escalated (the verification retry is itself a single-line
+      // re-search with no trade-aware reselection to correct for), in
+      // which case hint.bestUci already IS that single raw line.
+      const top = hint.candidates[0];
+      const replyUci = top ? top.uci : hint.bestUci;
+      const replyEvalCp = top ? top.evalCp : hint.evalCp;
+      const replyEvalMate = top ? top.evalMate : hint.evalMate;
+      const replyPv = top ? [] : hint.pv;
+
       const replyBoard = new Chess(postFen);
       let replyMv;
       try {
         replyMv = replyBoard.move({
-          from: hint.bestUci.slice(0, 2),
-          to: hint.bestUci.slice(2, 4),
-          promotion: (hint.bestUci.slice(4, 5) || undefined) as "q" | "r" | "b" | "n" | undefined,
+          from: replyUci.slice(0, 2),
+          to: replyUci.slice(2, 4),
+          promotion: (replyUci.slice(4, 5) || undefined) as "q" | "r" | "b" | "n" | undefined,
         });
       } catch {
         replyMv = null;
@@ -1481,18 +1499,21 @@ export class GameManager {
       // Mirrors classify.ts's own deriveThreatFacts call: postFen is the
       // position AFTER her candidate move, mallow to move, exactly the
       // shape deriveThreatFacts expects ("her" = whoever just moved, here
-      // the candidate's own mover). hint's bestUci/pv/evalCp/evalMate ARE
-      // an Evaluation at postFen (computeHintFacts's own return shape), so
-      // no second engine call is needed to build the Evaluation-shaped
-      // object deriveThreatFacts takes. Left undefined (never a guess) if
-      // the replay-only derivation fails to apply cleanly.
+      // the candidate's own mover). The Evaluation-shaped object built here
+      // is the RAW top line's own uci/cp/mate (never the trade-averse
+      // chosen one) -- no second engine call, the multipv search already
+      // paid for this candidate. pv is `[]` for the raw-top case
+      // (HintFacts.candidates carries uci/evalCp/evalMate only, no pv --
+      // deriveThreatFacts's OWN optional recapture-holds refinement simply
+      // has nothing to refine on then, same "no facts, no claim" contract
+      // as the rest of this file; the motif itself never depends on pv).
       let replyMotif: ThreatFacts["motif"] | undefined;
       try {
         const threat = deriveThreatFacts(
           postFen,
           mv.to,
           live.playerColor,
-          { bestMove: hint.bestUci, cp: hint.evalCp, mate: hint.evalMate, pv: hint.pv },
+          { bestMove: replyUci, cp: replyEvalCp, mate: replyEvalMate, pv: replyPv },
           mv.captured
         );
         replyMotif = threat?.motif;
@@ -1504,8 +1525,8 @@ export class GameManager {
         uci: candidate.uci,
         replySan,
         replyMotif,
-        evalCp: hint.evalCp,
-        evalMate: hint.evalMate,
+        evalCp: replyEvalCp,
+        evalMate: replyEvalMate,
         verified: hint.verified,
       };
     }

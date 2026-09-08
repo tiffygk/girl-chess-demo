@@ -1339,6 +1339,67 @@ describe("GameManager", () => {
         (gm as any).evaluator = realEvaluator;
       }
     }, 65000);
+
+    // Review-A2 defect 2: computeHint applies HINT_TRADE_MARGIN_CP to
+    // prefer a quieter move for HER OWN recommendation (owner ruling,
+    // increment 3.95: "following hints led my pieces to get captured...
+    // I could have avoided the trade entirely") -- that preference is
+    // exactly wrong for modeling mallow's reply to a candidate she is only
+    // ASKING about: mallow doesn't defer to trade-aversion, mallow plays
+    // the engine's actual best move. Fixture mirrors hint.test.ts's own
+    // trade-aware-selection fixture exactly (King e1/Rook d1 vs King
+    // e8/Rook d8), colors swapped so the trade fires on MALLOW's reply
+    // (black to move) rather than her own recommendation, with a spare
+    // white a-pawn so her own candidate move ("pawn to a3") is a real,
+    // separate legal move that reaches that exact position one ply later.
+    it("resolveCandidateLine reports the engine's actual top reply (the trade), not computeHint's trade-averse pick for HER", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      // Live fen (her turn): same King/Rook skeleton as hint.test.ts's own
+      // trade fixture, mirrored so mallow (not her) is the one with the
+      // trade available one ply later, plus a spare a2 pawn she can push.
+      const live = (gm as any).games.get(g.gameId);
+      live.chess.load("3rk3/8/8/8/8/8/P7/3RK3 w - - 0 1");
+      const tradeMove: Evaluation = { cp: 50, mate: null, bestMove: "d8d1", pv: ["d8d1", "e1d1"] };
+      // Within HINT_TRADE_MARGIN_CP (35) of the trade's own 50 -- computeHint
+      // prefers this quiet move, exactly the case under test.
+      const quietMove: Evaluation = { cp: 20, mate: null, bestMove: "d8d5", pv: ["d8d5", "e1e2"] };
+      class TradeVsQuietEvaluator implements Evaluator {
+        async init() {}
+        async evaluate(): Promise<Evaluation> {
+          return { cp: 0, mate: null, bestMove: "e8e7", pv: [] };
+        }
+        async evaluateMulti(): Promise<Evaluation[]> {
+          return [tradeMove, quietMove];
+        }
+        quit() {}
+      }
+      const fake = new TradeVsQuietEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      let capturedPrompt = "";
+      try {
+        gm.setCoachBackendForTesting({
+          name: "fake-a2-trade-vs-quiet",
+          async available() {
+            return true;
+          },
+          async generate(prompt: string) {
+            capturedPrompt = prompt;
+            return "that keeps your development on track.";
+          },
+        });
+        const result = await gm.chat(g.gameId, { message: "why not pawn to a3", context: { mode: "live" } });
+        expect(result.ok).toBe(true);
+        // computeHint's OWN chosen pick for this position is the quiet
+        // move (trade-averse) -- sanity-check the fixture actually
+        // exercises the trade-aware preference before asserting the fix.
+        expect(capturedPrompt).toContain('"candidateLine"');
+        expect(capturedPrompt).not.toContain("Rd5"); // the quiet move must NOT be reported as mallow's reply
+        expect(capturedPrompt).toContain("Rxd1"); // mallow's actual top reply -- the trade
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 40000);
   });
 
   // Increment 3a Wave 2: narrate(). Uses setCoachBackendForTesting to inject

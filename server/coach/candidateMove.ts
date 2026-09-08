@@ -40,11 +40,27 @@ function toCandidate(mv: Move): CandidateMove {
 // two-or-more (ambiguous, e.g. two knights reaching the same square) both
 // mean "no candidate from this phrase," never a guess at which one she
 // meant.
-function resolveUnique(fen: string, filter: (m: Move) => boolean): CandidateMove | undefined {
+//
+// Review-A2 defect 1: a pawn reaching the last rank IS four legal moves
+// (=Q/=R/=B/=N) that differ only by promotion piece -- that is not the
+// ambiguity this rule guards against (two genuinely different moves), it's
+// one move with an unstated detail. When every surviving match shares the
+// same from+to, resolve to the requested promotion piece (promotionPiece,
+// default queen -- "make a knight"/"promote to a rook"/"underpromote to a
+// bishop" name a different one) rather than reporting no candidate.
+function resolveUnique(
+  fen: string,
+  filter: (m: Move) => boolean,
+  promotionPiece?: string
+): CandidateMove | undefined {
   const probe = new Chess(fen);
   const matches = probe.moves({ verbose: true }).filter(filter);
-  if (matches.length !== 1) return undefined;
-  return toCandidate(matches[0]);
+  if (matches.length === 0) return undefined;
+  if (matches.length === 1) return toCandidate(matches[0]);
+  const allSameMove = matches.every((m) => m.from === matches[0].from && m.to === matches[0].to);
+  if (!allSameMove) return undefined; // a real ambiguity (different squares) -- no guess.
+  const chosen = matches.find((m) => m.promotion === (promotionPiece ?? "q"));
+  return chosen ? toCandidate(chosen) : undefined;
 }
 
 function resolveCastle(fen: string, side: string | undefined): CandidateMove | undefined {
@@ -66,15 +82,37 @@ function resolvePieceMove(
   pieceLetter: string,
   from: string | undefined,
   to: string,
-  requireCapture: boolean
+  requireCapture: boolean,
+  promotionPiece: string | undefined
 ): CandidateMove | undefined {
-  return resolveUnique(fen, (m) => {
-    if (m.piece !== pieceLetter) return false;
-    if (m.to !== to) return false;
-    if (from && m.from !== from) return false;
-    if (requireCapture && !(m.flags.includes("c") || m.flags.includes("e"))) return false;
-    return true;
-  });
+  return resolveUnique(
+    fen,
+    (m) => {
+      if (m.piece !== pieceLetter) return false;
+      if (m.to !== to) return false;
+      if (from && m.from !== from) return false;
+      if (requireCapture && !(m.flags.includes("c") || m.flags.includes("e"))) return false;
+      return true;
+    },
+    promotionPiece
+  );
+}
+
+// "promote to a knight" / "promotes to rook" / "underpromote to a bishop" /
+// "make a knight" (the owner's own shorthand -- "make it a rook" also
+// matches) -- any recognized phrase in the whole message names the desired
+// promotion piece; absent, resolveUnique's own default (queen) applies.
+// Deliberately message-wide, not scoped to one particular move phrase --
+// this wave's own out-of-scope cut ("an 'A or B' question") already means a
+// message naming two distinct candidate moves resolves to undefined before
+// a promotion choice could even matter.
+const PROMOTION_RE =
+  /\b(?:under)?promotes?(?:d|ing)?\s+(?:it\s+)?(?:to\s+)?a?\s*(queen|rook|bishop|knight)\b|\bmake\s+(?:it\s+)?a?\s*(queen|rook|bishop|knight)\b/i;
+
+function extractPromotionPiece(message: string): string | undefined {
+  const match = message.match(PROMOTION_RE);
+  const word = match?.[1] ?? match?.[2];
+  return word ? WORD_TO_PIECE[word.toLowerCase()] : undefined;
 }
 
 const CASTLE_RE = /\bcastl(?:e|ing|es|ed)\b(?:\s+(short|long|kingside|queenside))?/gi;
@@ -112,6 +150,8 @@ export function parseCandidateMove(message: string, fen: string): CandidateMove 
     }
   }
 
+  const promotionPiece = extractPromotionPiece(message);
+
   let m: RegExpExecArray | null;
   CASTLE_RE.lastIndex = 0;
   while ((m = CASTLE_RE.exec(message))) {
@@ -124,7 +164,7 @@ export function parseCandidateMove(message: string, fen: string): CandidateMove 
     const piece = WORD_TO_PIECE[m[1].toLowerCase()];
     const from = m[2]?.toLowerCase();
     const to = m[3].toLowerCase();
-    const cand = resolvePieceMove(fen, piece, from, to, false);
+    const cand = resolvePieceMove(fen, piece, from, to, false, promotionPiece);
     if (cand) found.set(cand.uci, cand);
   }
 
@@ -133,7 +173,7 @@ export function parseCandidateMove(message: string, fen: string): CandidateMove 
     const piece = WORD_TO_PIECE[m[1].toLowerCase()];
     const from = m[2]?.toLowerCase();
     const to = m[3].toLowerCase();
-    const cand = resolvePieceMove(fen, piece, from, to, true);
+    const cand = resolvePieceMove(fen, piece, from, to, true, promotionPiece);
     if (cand) found.set(cand.uci, cand);
   }
 
