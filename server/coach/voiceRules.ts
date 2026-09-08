@@ -79,6 +79,13 @@ export const AI_ISM_WORDS: string[] = [
   "holistic",
   "actionable",
   "impactful",
+  // Voice-align round (2026-09-08): the same recurrence patterns
+  // src/review/templateVoice.test.ts lints template copy against, added
+  // here per the persona's new "more banned shapes" paragraph
+  // (coach.md). checkVoice here is eval-only (see the file header):
+  // nothing under server/coach/chat.ts or index.ts imports it at runtime.
+  "quietly",
+  "genuinely",
 ];
 
 export const AI_ISM_PHRASES: RegExp[] = [
@@ -91,6 +98,16 @@ export const AI_ISM_PHRASES: RegExp[] = [
   /it'?s not \S[^.!?]{0,40}, it'?s /i,
   /\bmoreover\b/i,
   /\bfurthermore\b/i,
+  // Voice-align round (2026-09-08): "real" spent as a hollow booster
+  // ("a real slip", "the real issue"), never the adjective describing an
+  // actual thing ("a real threat" naming a genuine threat is fine --
+  // this list is deliberately the same closed set coach.md's "more
+  // banned shapes" paragraph names).
+  /\breal (slip|gift|ground|pressure|issue|reason|plan|mistake)\b/i,
+  /\bworth (a look|a rewind|knowing|noting)\b/i,
+  /\bnot just\b/i,
+  /\bthat'?s the thing\b/i,
+  /\bhere'?s the real\b/i,
 ];
 
 // ---- register drift (eval-instrument-repair round, 2026-07-28) ------------

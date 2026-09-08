@@ -62,7 +62,9 @@ describe("debriefLesson", () => {
       tp({ rank: 1, ply: 26, label: "opponent blunder", deltaP: 0.28, punishSan: "Nxf6+" }),
       tp({ rank: 2, ply: 43, san: "Qxg7#", label: "the losing move", deltaP: 0, kind: "backfill" }),
     ];
-    expect(debriefLesson(points, "0-1")).toBe("today's lesson: the losing move came on move 22. worth a rewind.");
+    expect(debriefLesson(points, "0-1")).toBe(
+      "today's lesson: the losing move came on move 22. rewind it and watch the moment."
+    );
   });
 
   it("priority 3: falls back to the punished story (once) when there's exactly one punished point", () => {
@@ -81,11 +83,11 @@ describe("debriefLesson", () => {
 
   it("priority 4: clean-win fallback only when there are no own mistakes, nothing punished, and result is 1-0", () => {
     const points = [tp({ rank: 1, ply: 43, san: "Qxg7#", label: "checkmate", deltaP: 0, kind: "backfill" })];
-    expect(debriefLesson(points, "1-0")).toBe("clean game. today was execution, not drama.");
+    expect(debriefLesson(points, "1-0")).toBe("clean game. nothing to fix today.");
   });
 
   it("priority 4: clean-win fallback for an empty turning-points list with a 1-0 result", () => {
-    expect(debriefLesson([], "1-0")).toBe("clean game. today was execution, not drama.");
+    expect(debriefLesson([], "1-0")).toBe("clean game. nothing to fix today.");
   });
 
   it("priority 4: the clean-win line never fires on a lost game (F1) — falls to the honest loss line instead", () => {
