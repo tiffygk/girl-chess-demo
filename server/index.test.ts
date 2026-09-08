@@ -534,6 +534,21 @@ describe("api", () => {
     expect(del.body).toEqual({ ok: false, reason: "not-found" });
   });
 
+  // Wave D fix round 1 (2026-09-06): section 14's delete pill reaches
+  // unfinished/in-progress rows too, and a null-result row with no live
+  // in-memory entry (no `this.games` handle for it) is deletable at the
+  // HTTP level, not just refused with the old db-level 409.
+  it("DELETE /api/game/:id deletes an unfinished game once it has no live in-memory entry", async () => {
+    await ready;
+    const s = await request(app).post("/api/session").expect(200);
+    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(app).post(`/api/game/${g.body.gameId}/move`).send({ from: "e2", to: "e4" }).expect(200);
+    (gm as any).games.delete(g.body.gameId);
+
+    const del = await request(app).delete(`/api/game/${g.body.gameId}`).expect(200);
+    expect(del.body).toEqual({ ok: true });
+  });
+
   // Wave 4, item 2 (2026-08-01): GET /api/traces/rated?rating=1 -- the
   // first-ever READ path for ratings the owner leaves via the thumbs UI.
   // Seeds two traces on a private gameId, rates one +1 and one -1 through the
