@@ -590,25 +590,37 @@ describe("DebriefPage: a conversion card that finished faster loses the negative
   });
 });
 
-// Wave 3.5, item 2 (owner ask, 2026-08-01): PastGamesDrawer's row
-// restructure -- nested buttons are invalid HTML, so a row is now a plain
-// div wrapping two SIBLING buttons (the select button carrying the old
-// row's content, and the delete X). This is a static markup smoke test for
-// that shape; the actual two-step arm/disarm CLICK behavior is unit-tested
-// against the pure helper directly (deleteArm.test.ts) since
-// renderToStaticMarkup never fires an onClick.
-describe("PastGamesDrawer (Wave 3.5, item 2): row restructure for the delete X", () => {
-  const GAME: GameListEntry = {
-    id: 42,
-    gameNumber: 42,
-    startedAt: "2026-08-01T12:00:00Z",
-    lastMoveAt: "2026-08-01 12:05:00",
+// Resume round (2026-09-06), Wave D: the drawer is day-grouped now, every
+// row carries its own game number, and delete/close are words/an X glyph
+// (owner ruling 2026-09-05: "that x should say delete instead of x because
+// that's misleading"). This is a static markup smoke test (renderToStaticMarkup
+// never fires an onClick; the arm/disarm click sequence is unit-tested
+// against the pure helper directly in deleteArm.test.ts).
+describe("PastGamesDrawer (resume round, Wave D): day groups, numbers, resume", () => {
+  const LIVE_GAME: GameListEntry = {
+    id: 195,
+    gameNumber: 195,
+    startedAt: "2026-09-05 20:00:00",
+    lastMoveAt: "2026-09-05 20:05:00",
+    opponent: "maia-1600",
+    elo: 1600,
+    plies: 4,
+    result: null,
+    endReason: null,
+    lesson: null,
+    resumable: true,
+  };
+  const EXPIRED_GAME: GameListEntry = {
+    id: 188,
+    gameNumber: 188,
+    startedAt: "2026-09-05 09:00:00",
+    lastMoveAt: "2026-09-05 09:05:00",
     opponent: "maia-1400",
     elo: 1400,
-    plies: 10,
-    result: "1-0",
+    plies: 5,
+    result: null,
     endReason: null,
-    lesson: "blunder",
+    lesson: null,
     resumable: false,
   };
 
@@ -616,81 +628,106 @@ describe("PastGamesDrawer (Wave 3.5, item 2): row restructure for the delete X",
     /* no-op -- this render never fires an event */
   }
 
-  it("renders the row as a div (not a button) with two sibling buttons, never a button nested inside a button", () => {
+  // The production change this pins: reverting the port (bringing back the
+  // flat finished-only list) makes both these spans disappear -- there is
+  // no "day group" and no per-row game number without gameGroups.ts wired in.
+  it("groups two games on one day and shows each row's own game number and the live resume button", () => {
     const html = renderToStaticMarkup(
-      <PastGamesDrawer open games={[GAME]} onSelect={noop} onClose={noop} onDelete={noop} />
+      <PastGamesDrawer open games={[LIVE_GAME, EXPIRED_GAME]} onSelect={noop} onClose={noop} onDelete={noop} onResume={noop} />
     );
-    const rowIdx = html.indexOf('class="past-games-row"');
-    expect(rowIdx).toBeGreaterThan(-1);
-    // The row's own opening tag is a div, not a button.
-    const rowTagStart = html.lastIndexOf("<", rowIdx);
-    expect(html.slice(rowTagStart, rowTagStart + 4)).toBe("<div");
-
-    // Both the select button and the delete button exist, as SIBLINGS --
-    // scan forward from the row for the select button's own close tag
-    // before the delete button opens (proves they're not nested).
-    const selectOpen = html.indexOf('class="past-games-select"', rowIdx);
-    const selectClose = html.indexOf("</button>", selectOpen);
-    const deleteOpen = html.indexOf("past-games-delete", rowIdx);
-    expect(selectOpen).toBeGreaterThan(-1);
-    expect(deleteOpen).toBeGreaterThan(selectClose); // delete button starts AFTER select's own closing tag
+    const dayGroups = html.match(/class="pg2-day"/g) ?? [];
+    expect(dayGroups.length).toBe(1);
+    expect(html).toContain(">game 195<");
+    expect(html).toContain(">game 188<");
+    expect(html).toContain(">in progress<");
+    const resumeButtons = html.match(/pg2-resume-btn/g) ?? [];
+    expect(resumeButtons.length).toBe(1);
+    expect(html).toContain(">resume game<");
+    // The expired unfinished row reads "unfinished", never as a loss, and
+    // carries no resume button.
+    expect(html).toContain(">unfinished<");
   });
 
-  it("the idle delete X carries aria-label 'delete game' and the × glyph, not the armed 'sure?' state", () => {
+  it("the drawer close is an X-glyph button, and delete reads the word 'delete' (armed: 'sure?'), no bare × text", () => {
     const html = renderToStaticMarkup(
-      <PastGamesDrawer open games={[GAME]} onSelect={noop} onClose={noop} onDelete={noop} />
+      <PastGamesDrawer open games={[LIVE_GAME]} onSelect={noop} onClose={noop} onDelete={noop} onResume={noop} />
     );
+    const closeOpen = html.indexOf('class="small pg2-close"');
+    expect(closeOpen).toBeGreaterThan(-1);
+    const closeClose = html.indexOf("</button>", closeOpen);
+    expect(html.slice(closeOpen, closeClose)).toContain("<svg");
     expect(html).toContain('aria-label="delete game"');
     expect(html).not.toContain('aria-label="confirm delete"');
-    expect(html).not.toContain(" armed");
+    expect(html).toContain(">delete<");
+    expect(html).not.toContain("×");
+  });
+
+  it("renders the row as a div wrapping sibling buttons, never a button nested inside a button", () => {
+    const html = renderToStaticMarkup(
+      <PastGamesDrawer open games={[LIVE_GAME]} onSelect={noop} onClose={noop} onDelete={noop} onResume={noop} />
+    );
+    const rowIdx = html.indexOf('class="pg2-row pg2-row-resumable"');
+    expect(rowIdx).toBeGreaterThan(-1);
+    const rowTagStart = html.lastIndexOf("<", rowIdx);
+    expect(html.slice(rowTagStart, rowTagStart + 4)).toBe("<div");
+    const selectOpen = html.indexOf('class="pg2-row-main"', rowIdx);
+    const selectClose = html.indexOf("</button>", selectOpen);
+    const deleteOpen = html.indexOf("pg2-del", rowIdx);
+    expect(selectOpen).toBeGreaterThan(-1);
+    expect(deleteOpen).toBeGreaterThan(selectClose);
   });
 
   it("renders the inline delete error text (past-games-empty styled) when GamePage passes one", () => {
     const html = renderToStaticMarkup(
       <PastGamesDrawer
         open
-        games={[GAME]}
+        games={[LIVE_GAME]}
         onSelect={noop}
         onClose={noop}
         onDelete={noop}
+        onResume={noop}
         deleteError="could not delete that game. try again."
       />
     );
     expect(html).toContain("could not delete that game. try again.");
   });
 
-  // Round 2, item 6 (owner ruling, 2026-08-01 playtest): "X is slightly too
-  // low (not vertically centered)". A text glyph's vertical placement rides
-  // on font metrics (ascent/descent), which is exactly why it drifted --
-  // swapping to a geometric SVG glyph (paired crossing lines, same
-  // construction the settings gear already uses) makes centering a layout
-  // fact instead of a font fact. This only covers the IDLE state; the
-  // armed "sure?" state is untouched text per the owner's "keep the armed
-  // color as is" ruling.
-  it("the idle delete X renders a geometric SVG glyph (not a text character), so its centering doesn't depend on font metrics", () => {
-    const html = renderToStaticMarkup(
-      <PastGamesDrawer open games={[GAME]} onSelect={noop} onClose={noop} onDelete={noop} />
-    );
-    const deleteOpen = html.indexOf('class="past-games-delete"');
-    expect(deleteOpen).toBeGreaterThan(-1);
-    const deleteClose = html.indexOf("</button>", deleteOpen);
-    const deleteButtonHtml = html.slice(deleteOpen, deleteClose);
-    expect(deleteButtonHtml).toContain("<svg");
-    expect(deleteButtonHtml).not.toContain("×"); // no bare × text glyph left in the idle button
+  it("the empty state reads 'no games yet. play one and it lands here.'", () => {
+    const html = renderToStaticMarkup(<PastGamesDrawer open games={[]} onSelect={noop} onClose={noop} onDelete={noop} onResume={noop} />);
+    expect(html).toContain("no games yet. play one and it lands here.");
   });
+});
 
-  // Opus review fix (round 2, applied 2026-08-02): the idle-state rewrite
-  // above dropped font-family/font-weight from the base
-  // `.gc-app button.past-games-delete` rule -- harmless for the idle state
-  // (an SVG glyph, unaffected by font weight) but the ARMED "sure?" state
-  // is still plain text and used to inherit weight 700 from that same base
-  // rule. With the base rule's font-weight gone, "sure?" silently fell back
-  // to the global `.gc-app button` rule's weight 600 -- a regression the
-  // owner's "keep the armed state as is" ruling explicitly forbids. Pinned
-  // directly on the armed rule (not the base one) so the weight is
-  // guaranteed regardless of which rule a future edit touches.
-  it("the armed 'sure?' state's own rule sets font-weight: 700 (owner: keep the armed state as is)", () => {
-    expect(cssSrc).toMatch(/\.gc-app button\.past-games-delete\.armed \{[^}]*font-weight: 700;[^}]*\}/);
+// Resume round (2026-09-06), Wave D: source pins on the pg2- CSS family,
+// same cssSrc pattern as every other pin in this file. Reverting the port
+// (mint gone from the resume button, or the two new destructive-red hexes
+// leaking outside pg2-close/pg2-del) makes these fail.
+describe("pg2- CSS pins (resume round, Wave D)", () => {
+  it("the resume button's base rule carries the mint fill (no white-in-card variant), and no pg2- rule block declares an animation", () => {
+    expect(cssSrc).toMatch(/\.gc-app button\.small\.pg2-resume-btn \{[^}]*#A9EFD3[^}]*\}/);
+    // Reconstruct each brace-delimited rule BODY (not the selector), and
+    // confirm any block whose selector mentions pg2- never carries
+    // `animation:` -- these buttons sit in the drawer all session.
+    const blocks = cssSrc.split("}");
+    for (const block of blocks) {
+      const openIdx = block.lastIndexOf("{");
+      if (openIdx === -1) continue;
+      const selector = block.slice(0, openIdx);
+      const body = block.slice(openIdx + 1);
+      if (selector.includes("pg2-")) expect(body).not.toMatch(/animation:/);
+    }
+  });
+  it("the two new destructive-red hexes appear only in rule blocks selected by pgdel-, pg2-close, or pg2-del", () => {
+    const blocks = cssSrc.split("}");
+    for (const block of blocks) {
+      const openIdx = block.lastIndexOf("{");
+      if (openIdx === -1) continue;
+      const selector = block.slice(0, openIdx);
+      const body = block.slice(openIdx + 1);
+      if (/#E5484D|#ED7F82/.test(body)) {
+        expect(selector).toMatch(/pgdel-|pg2-close|pg2-del/);
+      }
+    }
   });
 });
 

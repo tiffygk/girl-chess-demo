@@ -288,42 +288,144 @@
   box-shadow: 0 2px 0 #C22B7E, 0 6px 10px rgba(255,61,166,.22);
 }
 
-/* Task 6 fix round 2 (owner ruling 14): the pregame "continue card", ported
-   verbatim from docs/component-library.html (:3325-3372 CSS, :3560-3574
-   markup) -- flat-tint statement card holding one candy button, dest-chip
-   cyan wash: her game, her voice. Absent entirely when nothing is
-   resumable (GamePage.tsx's continueGame gate), so there's no reserved
-   dead space -- the picker row simply sits first in that case. */
+/* Resume round (2026-09-06), Wave D: the pregame "continue card" plus the
+   day-grouped past-games drawer, ported verbatim from the APPROVED
+   docs/component-library.html section 14 (library passes 2-5, owner
+   approval 2026-09-07). Two hexes are new to this file and ONLY these:
+   #E5484D (red, destructive controls) and #ED7F82 (lighter red, resting
+   destructive ink/fill) -- both confined to pg2-close and pg2-del below.
+   Everything else reuses existing palette values (mint = .egc-win verbatim,
+   neutral = white + the drawer rows' own lavender-grey stroke). No
+   `animation` on any pg2- rule: these buttons sit in the drawer/card all
+   session, unlike the egc-* arming buttons above. */
 .gc-app .pg2-continue {
   display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
-  background: #D7FAFF;
-  border: 1.5px solid rgba(35,168,199,.35); border-radius: 16px;
-  padding: 10px 14px;
-  /* Task 6 fix round 2: forces the card onto its own line inside
-     .pregame-panel's flex row -- that row already wraps via the shared
-     .gc-app .controls rule (its classes include "controls"), this just
-     ensures the card takes a full line rather than sharing one with the
-     elo picker/start-game/past-games controls -- "lives in the action slot
-     ABOVE the picker row". Not part of the library's own rule (that card
-     sits alone in its own mock container); needed only because this card
-     is nested inside the existing panel. */
+  /* Pass 2 (owner 2026-09-05): NEUTRAL ground, not her cyan -- "a game with
+     both of us" -- white on the drawer rows' own #E3D9F5 stroke. */
+  background: #fff;
+  border: 1.5px solid #E3D9F5; border-radius: 16px;
+  padding: 12px 14px;
+  /* Forces the card onto its own line inside .pregame-panel's flex row --
+     that row already wraps via the shared .gc-app .controls rule, this
+     just ensures the card takes a full line rather than sharing one with
+     the elo picker/start-game/past-games controls -- "lives in the action
+     slot ABOVE the picker row". Not part of the library's own rule (that
+     card sits alone in its own mock container); needed only because this
+     card is nested inside the existing panel. */
   flex: 1 1 100%;
 }
 .pg2-continue-kicker {
-  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
-  letter-spacing: .14em; text-transform: lowercase; color: #1A7A93;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 12px;
+  letter-spacing: .14em; text-transform: lowercase; color: #4A3B7E;
 }
 .pg2-continue-body {
   font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 12.5px;
-  color: #1A7A93; margin: 0;
+  color: #4A3B7E; margin: 0;
 }
+/* Pass 2 (owner 2026-09-05): ONE skin everywhere, the mint -- the
+   white-in-card variant is gone. Values = .egc-win verbatim (line 217). */
 .gc-app button.small.pg2-resume-btn {
   align-self: center; flex: none;
-  background: #fff; color: #1A7A93;
-  box-shadow: 0 3px 0 #D7FAFF, 0 6px 10px rgba(35,168,199,.14);
+  background: #A9EFD3; color: #2E9C74;
+  box-shadow: 0 3px 0 #7BD4B0, 0 6px 10px rgba(76,175,140,.25);
 }
-.gc-app button.small.pg2-resume-btn:hover { box-shadow: 0 5px 0 #D7FAFF, 0 8px 14px rgba(35,168,199,.18); }
-.gc-app button.small.pg2-resume-btn:active { box-shadow: 0 1px 0 #D7FAFF, 0 4px 8px rgba(35,168,199,.12); }
+.gc-app button.small.pg2-resume-btn:hover { box-shadow: 0 5px 0 #7BD4B0, 0 6px 10px rgba(76,175,140,.25); }
+.gc-app button.small.pg2-resume-btn:active { box-shadow: 0 1px 0 #7BD4B0, 0 6px 10px rgba(76,175,140,.25); }
+
+/* the drawer's own close button -- an X glyph only, the visual sibling of
+   the resting delete pill below (same two new reds). */
+.gc-app button.small.pg2-close {
+  width: 30px; height: 30px; padding: 0; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #ED7F82; color: #fff;
+  box-shadow: 0 3px 0 rgba(229,72,77,.18), 0 6px 10px rgba(229,72,77,.1);
+}
+.gc-app button.small.pg2-close:hover { background: #E5484D; color: #fff; box-shadow: 0 5px 0 rgba(229,72,77,.18), 0 8px 14px rgba(229,72,77,.12); }
+.gc-app button.small.pg2-close:active { box-shadow: 0 1px 0 rgba(229,72,77,.18), 0 4px 8px rgba(229,72,77,.1); }
+
+/* day header -- a machine statement about the record, flat, no shadow. */
+.pg2-day { display: flex; flex-direction: column; gap: 8px; }
+.pg2-day + .pg2-day { margin-top: 6px; }
+.pg2-day-head { display: flex; align-items: baseline; justify-content: space-between; padding: 2px 2px 0; }
+.pg2-day-name {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 10px;
+  letter-spacing: .12em; text-transform: lowercase; color: #7A6BB5;
+}
+.pg2-day-count {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .08em; color: #9C8FC7;
+  font-variant-numeric: tabular-nums;
+}
+.pg2-list { display: flex; flex-direction: column; gap: 8px; }
+.gc-app button.pg2-row-main {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  width: 100%; text-align: left;
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
+  color: #4A3B7E; background: #F4F0FF;
+  border: 1.5px solid #E3D9F5; border-radius: 14px;
+  padding: 10px 14px; box-shadow: none; transform: none;
+}
+.gc-app button.pg2-row-main:hover { box-shadow: none; transform: none; background: #E7DFFF; }
+.gc-app button.pg2-row-main:active { box-shadow: none; transform: none; }
+.pg2-time {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .08em; color: #9C8FC7;
+}
+/* game number, first span of every row -- a record id, not a name, so it
+   sits in the record's own small print (same register as the time). */
+.pg2-num {
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .08em; color: #9C8FC7;
+  font-variant-numeric: tabular-nums;
+}
+.pg2-opp { color: #4A3B7E; }
+.pg2-lesson {
+  flex: 1 1 100%; padding-right: 64px; /* room for the delete pill */
+  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 11.5px;
+  color: #7A6BB5;
+}
+.pg2-row { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; }
+.pg2-row .pg2-row-main { flex: 1 1 220px; }
+.pg2-row-resumable .pg2-row-main { border-color: rgba(35,168,199,.45); }
+/* every status or result is a chip pushed to the row's END slot
+   (margin-left: auto), so the row never reads as one sentence. */
+.pg2-chip {
+  margin-left: auto;
+  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 10px;
+  color: #7A6BB5; background: #E7DFFF;
+  border: 1.5px solid #E3D9F5; border-radius: 999px; padding: 2px 8px;
+}
+.pg2-chip-live { color: #1A7A93; background: #D7FAFF; border-color: rgba(35,168,199,.35); }
+/* result badge: Chakra Petch (the machine states the result), flat tint;
+   draw = the armed-draw lavender, "neutral not alarm" in the style guide. */
+.pg2-result {
+  margin-left: auto;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .1em; text-transform: lowercase;
+  border-radius: 999px; padding: 3px 9px; border: 1.5px solid transparent;
+}
+.pg2-result-won  { color: #2E9C74; background: #E7FFF4; border-color: rgba(46,156,116,.25); }
+.pg2-result-lost { color: #B5486E; background: #FFE9F4; border-color: rgba(240,97,158,.35); }
+.pg2-result-draw { color: #4A3B7E; background: #C9B8FF; border-color: #A99AE0; }
+/* the delete control on every row. Resting = the WORD delete as a small
+   filled pill, no glyph, bottom-right of the record (the row's end slot on
+   line one belongs to the result badge). Armed = the same pill gone
+   darker, solid #E5484D, white ink, "sure?": a text swap and a fill
+   change only, nothing moves or resizes. */
+.pg2-rec { position: relative; flex: 1 1 220px; display: flex; }
+.pg2-rec .pg2-row-main { flex: 1 1 auto; }
+.gc-app button.pg2-del {
+  position: absolute; right: 10px; bottom: 8px;
+  padding: 3px 9px; border-radius: 999px; background: #ED7F82; border: none;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
+  letter-spacing: .08em; text-transform: lowercase;
+  color: #fff; box-shadow: 0 2px 0 rgba(229,72,77,.35); transform: none;
+}
+.gc-app button.pg2-del:hover { background: #E5484D; color: #fff; box-shadow: 0 2px 0 rgba(229,72,77,.35); transform: none; }
+.gc-app button.pg2-del.armed {
+  padding: 3px 9px; color: #fff; background: #E5484D;
+  box-shadow: 0 2px 0 rgba(229,72,77,.35);
+}
 
 /* Wave B: fixed-height reserve directly under the board-stack card so the
    judge indicator and the controls (play it/take it back, resign/offer
@@ -1509,8 +1611,8 @@
    shadow — they're the machine speaking, same anatomy as .fallback-banner
    above); buttons stay candy pills (they're pressables). Lavender family by
    default; magenta only where a negative label sits; mint never (reserved
-   for the last-move/legal-move/win-button family). All copy lowercase, no
-   em-dashes.
+   for the last-move/legal-move/win-button family) and the standalone resume
+   button. All copy lowercase, no em-dashes.
    Wave 3.5, item 1 (owner ask, 2026-08-01): this comment used to also
    describe GameEndPanel's dotted "streaks" stub row (.game-end-stubs/
    .game-end-stub), removed at the owner's request along with its CSS — see
@@ -1992,103 +2094,26 @@
 .gc-app .past-games-drawer-head {
   display: flex; align-items: center; justify-content: space-between;
 }
+/* Resume round (2026-09-06), Wave D: bold and larger per the approved
+   library's pg2-title rule -- the old 11px weight read too quiet once the
+   drawer grew day headers of its own. */
 .gc-app .past-games-title {
-  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 11px;
-  letter-spacing: .14em; text-transform: lowercase; color: #23A8C7;
+  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 16px;
+  letter-spacing: .1em; text-transform: lowercase; color: #23A8C7;
 }
 .gc-app .past-games-empty {
   font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13px;
   color: #9C8FC7; text-align: center; padding: 12px 0;
 }
-.gc-app .past-games-list { display: flex; flex-direction: column; gap: 8px; }
-/* Wave 3.5, item 2 (owner ask, 2026-08-01): the row used to BE the button
-   (button.past-games-row); it's now a plain positioned div wrapping two
-   siblings -- the select button below (carries the old row's content/
-   styling verbatim) and the delete X, absolutely positioned against this
-   div. Nested buttons are invalid HTML, which is what forced the split. */
-.gc-app .past-games-row { position: relative; }
-.gc-app button.past-games-select {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  width: 100%; text-align: left;
-  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 12.5px;
-  color: #4A3B7E; background: #F4F0FF;
-  border: 1.5px solid #E3D9F5; border-radius: 14px;
-  padding: 10px 34px 10px 14px; /* right padding clears the delete X */
-  box-shadow: none;
-  transform: none;
-}
-.gc-app button.past-games-select:hover { box-shadow: none; transform: none; background: #EDE6FF; }
-.gc-app button.past-games-select:active { box-shadow: none; transform: none; }
-.gc-app .past-games-date {
-  font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
-  letter-spacing: .08em; color: #9C8FC7;
-}
-.gc-app .past-games-opponent { color: #4A3B7E; }
-.gc-app .past-games-result { color: #6952C4; }
-.gc-app .past-games-lesson {
-  flex: 1 1 100%;
-  font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 11.5px;
-  color: #7A6BB5;
-}
-
-/* Wave 3.5, item 2 (owner ask, 2026-08-01): "delete X" on each past-game
-   row, top-right, two-step confirm -- owner: "stylized from the palette",
-   "I need to double click it so that I don't accidentally delete it." Idle
-   state is a quiet lavender-outline circle (never reads as armed/dangerous
-   by itself). The armed ("sure?") state reuses the EXACT magenta/
-   magenta-dark pair (#FF3DA6 / #C22B7E) the house "you sure?" morph already
-   uses for endgame-controls' button.small.confirming (sugar-glitch.css:192)
-   -- same destructive accent everywhere in this palette (also
-   .debrief-card-negative's pink alarm tint), never a new color invented for
-   this one button.
-   Round 2, item 6 (owner ruling, 2026-08-01 playtest): idle resting palette
-   restyled to match the settings cog (GamePage.tsx's .settings-gear/
-   gear-svg) -- same #7A6BB5 signal-ink glyph color and the same squishy
-   press-shadow language the two-axis law requires of any touchable control
-   (was flat, box-shadow: none, which is what read as "cream/weird" against
-   the candy buttons around it). Border width/style (1.5px solid) is kept
-   as-is on purpose -- the armed rule below overrides only border-color and
-   relies on this shorthand for its own width/style, so touching it here
-   would silently change the armed look too. Geometry: the glyph itself
-   moved from a text "×" to DeleteXIcon's SVG (DebriefPage.tsx) so vertical
-   centering is a layout fact, not a font-metrics fact; this rule only
-   needs to center the icon's flex box, which align-items/justify-content
-   already did. */
-.gc-app button.past-games-delete {
-  position: absolute; top: 6px; right: 6px;
-  width: 22px; height: 22px; padding: 0;
-  display: flex; align-items: center; justify-content: center;
-  color: #7A6BB5; background: #fff;
-  border: 1.5px solid #E3D9F5; border-radius: 999px;
-  box-shadow: 0 2px 0 #C9BFEF, 0 4px 8px rgba(90,70,180,.18); transform: none;
-  transition: background .12s ease, color .12s ease, box-shadow .12s ease, transform .12s ease;
-}
-.gc-app button.past-games-delete:hover {
-  background: #F4F0FF; color: #7A6BB5; transform: translateY(-1px);
-  box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.22);
-}
-.gc-app button.past-games-delete:active {
-  transform: translateY(1px);
-  box-shadow: 0 1px 0 #C9BFEF, 0 3px 6px rgba(90,70,180,.16);
-}
-/* Armed ("sure?") -- the button itself morphs, no modal, same construction
-   as .confirming: text swaps to a compact "sure?" and the whole button
-   flips to the magenta/magenta-dark destructive pair. */
-.gc-app button.past-games-delete.armed {
-  width: auto; height: auto; padding: 4px 10px;
-  font-size: 10.5px; letter-spacing: .02em;
-  font-weight: 700;
-  color: #fff; background: #FF3DA6;
-  border-color: #C22B7E;
-  box-shadow: 0 2px 0 #C22B7E, 0 4px 8px rgba(255,61,166,.3);
-}
-.gc-app button.past-games-delete.armed:hover {
-  background: #FF3DA6;
-  box-shadow: 0 3px 0 #C22B7E, 0 6px 10px rgba(255,61,166,.35);
-}
-/* Inline error affordance for a failed delete -- same past-games-empty
-   base (no toast machinery in this app), tinted with the same destructive
-   ink debrief-card-negative's prose already uses. */
+/* Resume round (2026-09-06), Wave D: the flat finished-only row recipe
+   (.past-games-list/.past-games-row/button.past-games-select/
+   .past-games-date/-opponent/-result/-lesson/button.past-games-delete) is
+   retired -- the drawer is day-grouped now (.pg2-day/.pg2-list/.pg2-row/
+   .pg2-row-main/.pg2-num/.pg2-time/.pg2-opp/.pg2-lesson/.pg2-del above),
+   and the resting delete's magenta X becomes the red "delete" word pill
+   per owner ruling 2026-09-05 ("that x should say delete instead of x
+   because that's misleading"). .past-games-error stays -- the failed-
+   delete message still renders in the same whisper tier. */
 .gc-app .past-games-error { color: #C22B7E; }
 
 /* draw acknowledgment — a soft glow pulse on the board frame, quieter than

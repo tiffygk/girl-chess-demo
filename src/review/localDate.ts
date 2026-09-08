@@ -15,9 +15,18 @@
 // LOCAL calendar date off the resulting Date.
 const HAS_TZ_MARKER = /(Z|[+-]\d{2}:?\d{2})$/;
 
-export function localDateFromStartedAt(startedAt: string): string {
+// Resume round (2026-09-06), Wave D: gameGroups.ts's day-grouping needs the
+// same UTC-safe parse this file already worked out -- factored out here so
+// it stays the one place that decision lives (this file's own comment above
+// still applies: do not move localDateFromStartedAt; this is a new export
+// beside it, not a relocation).
+export function parseUtc(startedAt: string): Date {
   const iso = HAS_TZ_MARKER.test(startedAt) ? startedAt : startedAt.replace(" ", "T") + "Z";
-  const d = new Date(iso);
+  return new Date(iso);
+}
+
+export function localDateFromStartedAt(startedAt: string): string {
+  const d = parseUtc(startedAt);
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
