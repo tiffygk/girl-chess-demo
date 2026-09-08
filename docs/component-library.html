@@ -3258,7 +3258,7 @@ body.gc-app { align-items: center; }
   </div>
 </section>
 
-<!-- ============ 14. PAST GAMES + THE WAY BACK IN (round 2026-07-30, resumable games; revised 2026-09-06, numbers + resume game + mint; pass 2 2026-09-05 owner changes: red destructive controls, result badges, neutral card; pass 3 2026-09-07 rendered and checked, em-dashes out) ============ -->
+<!-- ============ 14. PAST GAMES + THE WAY BACK IN (round 2026-07-30, resumable games; revised 2026-09-06, numbers + resume game + mint; pass 2 2026-09-05 owner changes: red destructive controls, result badges, neutral card; pass 3 2026-09-07 rendered and checked, em-dashes out; pass 4 2026-09-07 resting delete and close in a solid lighter red #ED7F82) ============ -->
 <style>
 /* Section 14 styles live here so everything above stays byte-identical.
    Zero new hex: every value below is already in production sugar-glitch.css
@@ -3268,7 +3268,12 @@ body.gc-app { align-items: center; }
    New-this-round classes are pg2-*.
    Pass 2 (owner ruling 2026-09-05): ONE new hex enters the palette, red
    #E5484D, for destructive controls only (delete, close); magenta leaves
-   the delete control and stays the alarm colour elsewhere. */
+   the delete control and stays the alarm colour elsewhere.
+   Pass 4 (owner 2026-09-07): a second hex, #ED7F82, the lighter red
+   (#E5484D mixed 70/30 with white), used SOLID as the ink of the resting
+   delete word and the drawer close X. The 50% tint of pass 2 read almost
+   white on her screen; she asked for a lighter red, not a lower opacity.
+   sure? stays solid #E5484D, the darker of the two reds. */
 
 /* drawer shell -- production .past-games-drawer values, shown static (no
    fixed overlay on a library page; same convention as the settings card) */
@@ -3283,13 +3288,15 @@ body.gc-app { align-items: center; }
   font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 16px;
   letter-spacing: .1em; text-transform: lowercase; color: #23A8C7;
 }
-/* pass 2: the drawer's close is an X only, red at 50%, same candy shape as
-   the small button it replaces (rounded, press shadow in the same red at
-   low alpha). X = close, the word = delete. */
+/* pass 2: the drawer's close is an X only, same candy shape as the small
+   button it replaces (rounded, press shadow in #E5484D at low alpha).
+   Ink: lighter red #ED7F82, solid (pass 4, owner 2026-09-07: the 50% tint
+   read almost white on her screen). Hover: #E5484D. X = close, the word
+   = delete. */
 .gc-app button.small.pg2-close {
   width: 30px; height: 30px; padding: 0; border-radius: 999px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: #fff; color: rgba(229,72,77,.5);
+  background: #fff; color: #ED7F82;
   box-shadow: 0 3px 0 rgba(229,72,77,.18), 0 6px 10px rgba(229,72,77,.1);
 }
 .gc-app button.small.pg2-close:hover { color: #E5484D; box-shadow: 0 5px 0 rgba(229,72,77,.18), 0 8px 14px rgba(229,72,77,.12); }
@@ -3369,9 +3376,10 @@ body.gc-app { align-items: center; }
 .pg2-result-lost { color: #B5486E; background: #FFE9F4; border-color: rgba(240,97,158,.35); }
 .pg2-result-draw { color: #4A3B7E; background: #C9B8FF; border-color: #A99AE0; }
 /* pass 2: the delete control on every row. Resting = the WORD delete,
-   Chakra Petch small, red at 50%, no fill, no glyph, bottom-right of the
-   record (the row's end slot on line one belongs to the result badge).
-   Armed = the sure? pill, solid red, white ink. */
+   Chakra Petch small, lighter red #ED7F82, solid (pass 4, owner 2026-09-07:
+   the 50% tint read almost white on her screen), no fill, no glyph,
+   bottom-right of the record (the row's end slot on line one belongs to
+   the result badge). Armed = the sure? pill, solid #E5484D, white ink. */
 .pg2-rec { position: relative; flex: 1 1 220px; display: flex; }
 .pg2-rec .pg2-row-main { flex: 1 1 auto; }
 .gc-app button.pg2-del {
@@ -3379,7 +3387,7 @@ body.gc-app { align-items: center; }
   padding: 2px 4px; border-radius: 999px; background: none; border: none;
   font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
   letter-spacing: .08em; text-transform: lowercase;
-  color: rgba(229,72,77,.5); box-shadow: none; transform: none;
+  color: #ED7F82; box-shadow: none; transform: none;
 }
 .gc-app button.pg2-del:hover { color: #E5484D; box-shadow: none; transform: none; }
 .gc-app button.pg2-del.armed {
@@ -3486,7 +3494,7 @@ body.gc-app { align-items: center; }
   padding: 2px 4px; border-radius: 999px; background: none; border: none;
   font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 9px;
   letter-spacing: .08em; text-transform: lowercase;
-  color: rgba(229,72,77,.5); box-shadow: none; transform: none;
+  color: #ED7F82; box-shadow: none; transform: none;
   transition: color .12s ease, box-shadow .12s ease;
 }
 .gc-app button.pgdel-x:hover { color: #E5484D; box-shadow: none; transform: none; }
@@ -3499,13 +3507,13 @@ body.gc-app { align-items: center; }
 <section class="lib-section" id="sec-past-games">
   <span class="lib-kicker">AFTER THE GAME · 15</span>
   <h2>Past games + the way back in<span class="lib-status st-reserved">for review 2026-09-06</span><span class="lib-status st-asis">delete control shipped</span></h2>
-  <p class="lib-caption">The way back into a game, and the way to tell two games apart. The 2026-07-29 incident: an interrupted tab could only abandon a live game. Her 2026-09-06 ask: "when I click my past games ... it's just a row of dates", which cannot be matched to a game the coach mentions when two were played the same day, so <strong>every game now carries its number</strong>, in the drawer row, in the continue card, in the review banner, and in the live footer. Three surfaces: the past-games drawer regrown around <strong>day groups with a count per day</strong> and unfinished games (0-move stubs stay hidden server-side); a <strong>resume game</strong> button on any unfinished game whose last move is within 7 days (computed server-side, the client never re-derives the window); and a pregame <strong>continue card</strong> so the recovery isn't hidden behind the past-games button after a reload. The four owner rulings of 2026-07-30, one sentence each. <strong>Ruling 1:</strong> there is no failed-resume alarm; an expired game simply shows no button, and the missing button is the whole signal. <strong>Ruling 2:</strong> the standalone button gets the mint treatment, because the white pill "next to the lavender box is too light colored" and it "needs to be darker while still matching the rest of the style". <strong>Ruling 3</strong> (superseded 2026-09-05, below): context decided the skin, white inside the cyan card and mint standing alone next to lavender. <strong>Ruling 4:</strong> the copy is <span class="lib-code">resume game</span>. Voices: day headers, counts, and game numbers are machine statements (Chakra Petch, flat); the resume button is candy, armed-win mint in the row and in the card. <strong>Ruling of 2026-09-05 (her review of the first pass):</strong> destructive controls are red, not pink (one new hex, <span class="lib-code">#E5484D</span>, at 50% opacity resting and solid when armed), the resting delete says the word <span class="lib-code">delete</span> and the drawer close is an X, the resume button is mint everywhere including the card, the card sits on a neutral ground "because it's a game with both of us", and won/lost/draw are their own right-aligned badges. Otherwise zero new hex; drawer shell, row recipe, chip strokes, and the mint recipe are all shipped values. The delete control on this same drawer shipped 2026-08-01 (owner ask) and is shown first, in its own pgdel- scope so it can't be mistaken for part of the proposal.</p>
+  <p class="lib-caption">The way back into a game, and the way to tell two games apart. The 2026-07-29 incident: an interrupted tab could only abandon a live game. Her 2026-09-06 ask: "when I click my past games ... it's just a row of dates", which cannot be matched to a game the coach mentions when two were played the same day, so <strong>every game now carries its number</strong>, in the drawer row, in the continue card, in the review banner, and in the live footer. Three surfaces: the past-games drawer regrown around <strong>day groups with a count per day</strong> and unfinished games (0-move stubs stay hidden server-side); a <strong>resume game</strong> button on any unfinished game whose last move is within 7 days (computed server-side, the client never re-derives the window); and a pregame <strong>continue card</strong> so the recovery isn't hidden behind the past-games button after a reload. The four owner rulings of 2026-07-30, one sentence each. <strong>Ruling 1:</strong> there is no failed-resume alarm; an expired game simply shows no button, and the missing button is the whole signal. <strong>Ruling 2:</strong> the standalone button gets the mint treatment, because the white pill "next to the lavender box is too light colored" and it "needs to be darker while still matching the rest of the style". <strong>Ruling 3</strong> (superseded 2026-09-05, below): context decided the skin, white inside the cyan card and mint standing alone next to lavender. <strong>Ruling 4:</strong> the copy is <span class="lib-code">resume game</span>. Voices: day headers, counts, and game numbers are machine statements (Chakra Petch, flat); the resume button is candy, armed-win mint in the row and in the card. <strong>Ruling of 2026-09-05 (her review of the first pass):</strong> destructive controls are red, not pink (one new hex, <span class="lib-code">#E5484D</span>, at 50% opacity resting and solid when armed; then on 2026-09-07 a second, <span class="lib-code">#ED7F82</span>, a lighter red used solid for the resting word and the close X, because "the Delete and X buttons look almost white on my page. Instead of changing the opacity let's just make them a lighter red than the Sure button"), the resting delete says the word <span class="lib-code">delete</span> and the drawer close is an X, the resume button is mint everywhere including the card, the card sits on a neutral ground "because it's a game with both of us", and won/lost/draw are their own right-aligned badges. Otherwise zero new hex; drawer shell, row recipe, chip strokes, and the mint recipe are all shipped values. The delete control on this same drawer shipped 2026-08-01 (owner ask) and is shown first, in its own pgdel- scope so it can't be mistaken for part of the proposal.</p>
 
   <div class="lib-card" id="past-games-delete">
     <span class="lib-label" style="display:block;margin-bottom:12px">PAST-GAME DELETE: shipped 2026-08-01 as a magenta X; owner ruling 2026-09-05 makes it red and words it "delete"; two-click, no modal <span class="lib-pick">for review</span></span>
     <div class="lib-row" style="align-items:flex-start">
       <div class="lib-cell">
-        <span class="lib-label">RESTING: the word "delete", red at 50% opacity, no glyph, no fill</span>
+        <span class="lib-label">RESTING: the word "delete", lighter red #ED7F82, solid, no glyph, no fill</span>
         <div class="pgdel-row">
           <button type="button" class="pgdel-select">
             <span class="pgdel-date">jul 30</span>
@@ -3514,10 +3522,10 @@ body.gc-app { align-items: center; }
           </button>
           <button type="button" class="pgdel-x" aria-label="delete game">delete</button>
         </div>
-        <span class="lib-code" style="display:inline-block;margin-top:8px">the word delete, Chakra Petch 700 9px ls .08em, ink rgba(229,72,77,.5) (red at half opacity, owner: "these don't need to be bright red or super opaque"), no fill, no stroke, no shadow, top-right of the record · replaces the shipped 22px X circle (#7A6BB5 on #fff), which she read as misleading</span>
+        <span class="lib-code" style="display:inline-block;margin-top:8px">the word delete, Chakra Petch 700 9px ls .08em, ink #ED7F82, a lighter red, solid (owner 2026-09-05: "these don't need to be bright red or super opaque"; owner 2026-09-07: the 50% tint read almost white on her screen, "let's just make them a lighter red than the Sure button"), no fill, no stroke, no shadow, top-right of the record · replaces the shipped 22px X circle (#7A6BB5 on #fff), which she read as misleading</span>
       </div>
       <div class="lib-cell">
-        <span class="lib-label">ARMED: "sure?", solid red at 100% opacity</span>
+        <span class="lib-label">ARMED: "sure?", solid #E5484D, the darker of the two reds</span>
         <div class="pgdel-row">
           <button type="button" class="pgdel-select">
             <span class="pgdel-date">jul 30</span>
@@ -3628,7 +3636,7 @@ body.gc-app { align-items: center; }
         </div>
       </div>
     </div>
-    <span class="lib-code" style="display:inline-block;margin-top:12px">game number: first span of every row, Chakra Petch 700 9px ls .08em #9C8FC7 tabular-nums, the same register as the time · day header: Chakra Petch 700 10px ls .12em #7A6BB5 · count 9px #9C8FC7 tabular-nums, flat, no shadow (a statement) · day names: today, yesterday, else lowercase month and day (sep 3), the year only when it differs (sep 3, 2025) · rows keep the shipped #F4F0FF/#E3D9F5 record recipe; a resumable row's stroke warms to rgba(35,168,199,.45) · title: Chakra Petch 700 16px ls .1em #23A8C7 · close: an X only, rgba(229,72,77,.5) ink on a #fff 30px candy circle, press shadow in the same red at low alpha · result badge: Chakra Petch 700 9px ls .1em pill at the END of the row line (margin-left auto), won #E7FFF4/#2E9C74, lost #FFE9F4/#B5486E, draw #C9B8FF/#4A3B7E (the armed-draw lavender, "neutral not alarm" in the style guide) · "in progress" chip: dest-chip #D7FAFF fill, teal-ink #1A7A93, same end slot · "unfinished" chip: #E7DFFF/#7A6BB5, deliberately NOT a result word and NOT magenta, status is never the alarm colour · delete: the word, Chakra Petch 9px rgba(229,72,77,.5), bottom-right of every record; armed it becomes the solid #E5484D "sure?" pill · resume game button: mint #A9EFD3 on #2E9C74 ink, 0 3px 0 #7BD4B0 press shadow (the armed-win recipe) · row click still opens review; only the button resumes</span>
+    <span class="lib-code" style="display:inline-block;margin-top:12px">game number: first span of every row, Chakra Petch 700 9px ls .08em #9C8FC7 tabular-nums, the same register as the time · day header: Chakra Petch 700 10px ls .12em #7A6BB5 · count 9px #9C8FC7 tabular-nums, flat, no shadow (a statement) · day names: today, yesterday, else lowercase month and day (sep 3), the year only when it differs (sep 3, 2025) · rows keep the shipped #F4F0FF/#E3D9F5 record recipe; a resumable row's stroke warms to rgba(35,168,199,.45) · title: Chakra Petch 700 16px ls .1em #23A8C7 · close: an X only, #ED7F82 ink (lighter red, solid; owner 2026-09-07, the 50% tint read almost white on her screen) on a #fff 30px candy circle, press shadow in #E5484D at low alpha · result badge: Chakra Petch 700 9px ls .1em pill at the END of the row line (margin-left auto), won #E7FFF4/#2E9C74, lost #FFE9F4/#B5486E, draw #C9B8FF/#4A3B7E (the armed-draw lavender, "neutral not alarm" in the style guide) · "in progress" chip: dest-chip #D7FAFF fill, teal-ink #1A7A93, same end slot · "unfinished" chip: #E7DFFF/#7A6BB5, deliberately NOT a result word and NOT magenta, status is never the alarm colour · delete: the word, Chakra Petch 9px #ED7F82 (lighter red, solid), bottom-right of every record; armed it becomes the solid #E5484D "sure?" pill · resume game button: mint #A9EFD3 on #2E9C74 ink, 0 3px 0 #7BD4B0 press shadow (the armed-win recipe) · row click still opens review; only the button resumes</span>
     <p class="lib-note" style="margin-top:10px">Three games today, two of them against the same mallow 1300: the number is what tells game 194 from game 193 when the coach says "your game on the 6th". The result is a badge pushed to the row's end so the record does not read as one sentence; it is set in the machine's Chakra Petch, never in the opponent's Fredoka. An unfinished game older than seven days shows the unfinished chip and no button; the missing button is the whole signal. Empty state: "no games yet. play one and it lands here." in the existing 13px quicksand whisper, centered; the drawer reserves no space beyond its own padding. The drawer is a centered fixed overlay in production (unchanged), so it floats above the board at every width and cannot disturb the protected narrow-window fold; at narrow widths it is already min(92vw, 440px), see the narrow card below.</p>
   </div>
 
