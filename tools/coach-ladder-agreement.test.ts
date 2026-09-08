@@ -19,6 +19,8 @@ import {
   splitSentences,
   sentenceRecommends,
   factPresenceTotals,
+  bucketByGuard,
+  SPLIT_DATE,
   type LadderFact,
 } from "./coach-ladder-agreement";
 
@@ -46,6 +48,25 @@ describe("sentenceRecommends (unit, no db)", () => {
   it("is true for a sentence-initial imperative 'play', false for a mid-sentence descriptive 'play'", () => {
     expect(sentenceRecommends("play h4 now")).toBe(true);
     expect(sentenceRecommends("if you play it, mallow can push her pawn")).toBe(false);
+  });
+});
+
+describe("bucketByGuard (unit, no db)", () => {
+  // Controller correction (2026-09-08): guard commit da3be2d landed
+  // 2026-08-28T23:21 PDT = 2026-08-29 06:21 UTC, the same timezone every
+  // stored created_at uses. A bare "2026-08-28" date-only split (the old
+  // constant) put the whole game-192 cluster (2026-08-29 04:54-05:05 UTC,
+  // over an hour BEFORE the guard) on the wrong side of the split.
+  it("puts a row at 2026-08-29 05:05:00 UTC (before the guard's 06:21) in the pre bucket", () => {
+    expect(bucketByGuard("2026-08-29 05:05:00")).toBe("pre");
+  });
+
+  it("puts a row at 2026-08-29 06:21:00 UTC (the guard's own minute) in the post bucket", () => {
+    expect(bucketByGuard("2026-08-29 06:21:00")).toBe("post");
+  });
+
+  it("SPLIT_DATE is the guard's UTC timestamp, not a bare date", () => {
+    expect(SPLIT_DATE).toBe("2026-08-29 06:21");
   });
 });
 

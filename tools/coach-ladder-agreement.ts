@@ -585,6 +585,19 @@ export function buildRowRecord(row: ChatTraceRow, gameEvents: GameEventRow[], ve
   };
 }
 
+// Guard commit da3be2d (the same-fen search-variance guard) landed
+// 2026-08-28T23:21 PDT, which is 2026-08-29 06:21 UTC -- the same timezone
+// every stored `created_at`/`at` column uses (sqlite's `datetime('now')` is
+// UTC, no offset suffix). A bare "2026-08-28" date-only string, compared
+// lexically, put the whole 2026-08-29 04:54-05:05 UTC game-192 cluster in
+// "post," when it is in fact 1h16m-1h27m BEFORE the guard landed --
+// controller correction, 2026-09-08.
+export const SPLIT_DATE = "2026-08-29 06:21";
+
+export function bucketByGuard(createdAt: string): "pre" | "post" {
+  return createdAt < SPLIT_DATE ? "pre" : "post";
+}
+
 function fmtLadder(l: LadderFact | null): string {
   if (!l) return "none";
   const v = l.verified === true ? "verified" : l.verified === false ? "unverified" : "?";
@@ -690,9 +703,8 @@ export function analyze(db: InstanceType<typeof Database>, since: string, jsonOu
       records.push(buildRowRecord(row, eventsByGame.get(row.game_id)!, verdictsByGame.get(row.game_id)!));
     }
 
-    // ---- totals, split pre/post the 2026-08-28 same-fen search-variance
-    // guard (commit da3be2d) ------------------------------------------
-    const SPLIT_DATE = "2026-08-28";
+    // ---- totals, split pre/post the same-fen search-variance guard
+    // (commit da3be2d, SPLIT_DATE above) ------------------------------
     const totals: Record<AgreementClass, { pre: number; post: number }> = {
       "two-bests-in-prompt": { pre: 0, post: 0 },
       mixed: { pre: 0, post: 0 },
@@ -703,8 +715,7 @@ export function analyze(db: InstanceType<typeof Database>, since: string, jsonOu
       "no-claim": { pre: 0, post: 0 },
     };
     for (const r of records) {
-      const bucket = r.createdAt < SPLIT_DATE ? "pre" : "post";
-      totals[r.cls][bucket]++;
+      totals[r.cls][bucketByGuard(r.createdAt)]++;
     }
 
     console.log(`chat rows since ${since}: ${records.length}`);
@@ -734,8 +745,8 @@ export function analyze(db: InstanceType<typeof Database>, since: string, jsonOu
     // present on the SAME row, which is rare (context.best is a judge-time
     // fact about her just-played move; hintFindings is only populated when
     // a ladder hint's fen happened to match currentFen/focusPosition.fen).
-    const presencePre = factPresenceTotals(records.filter((r) => r.createdAt < SPLIT_DATE));
-    const presencePost = factPresenceTotals(records.filter((r) => r.createdAt >= SPLIT_DATE));
+    const presencePre = factPresenceTotals(records.filter((r) => bucketByGuard(r.createdAt) === "pre"));
+    const presencePost = factPresenceTotals(records.filter((r) => bucketByGuard(r.createdAt) === "post"));
     console.log(`\nFact presence, pre ${SPLIT_DATE} / post ${SPLIT_DATE}:`);
     console.log(`  rows: ${presencePre.total} / ${presencePost.total}`);
     console.log(`  ctxBest present: ${presencePre.ctxBestPresent} / ${presencePost.ctxBestPresent}`);
