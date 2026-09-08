@@ -1013,6 +1013,80 @@ describe("GameManager", () => {
         (gm as any).evaluator = realEvaluator;
       }
     }, 40000);
+
+    // review-A1.md (medium finding): the fallback above checks
+    // `!live.lastHint || live.lastHint.fen !== liveFen` BEFORE awaiting
+    // computePositionView, then writes live.lastHint unconditionally after
+    // that await resolves -- so a verified entry that lands (a concurrent
+    // ladder press, computeHint(gameId), at the SAME fen) while the fallback
+    // search is in flight gets clobbered by the unverified one once the
+    // fallback's own await finally resolves. Modeled deterministically here
+    // (real wall-clock race ordering can't be asserted in a unit test) by
+    // writing the "concurrent ladder press" entry from inside the fake
+    // evaluator's fast-path branch, i.e. mid-await from the fallback's own
+    // point of view.
+    it("does not overwrite a verified entry that lands during the fallback's own search (concurrent ladder press)", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const live = (gm as any).games.get(g.gameId);
+      const fen = live.chess.fen();
+
+      // A real verified HintFacts object, standing in for what a concurrent
+      // computeHint(gameId) ladder press would have written to live.lastHint.
+      class GoodEvaluator implements Evaluator {
+        async init() {}
+        async evaluate(): Promise<Evaluation> {
+          return { cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] };
+        }
+        async evaluateMulti(): Promise<Evaluation[]> {
+          return [{ cp: 20, mate: null, bestMove: "e2e4", pv: ["e2e4"] }];
+        }
+        quit() {}
+      }
+      const raceFacts = await computeHintFacts(fen, new GoodEvaluator());
+      expect(raceFacts).toBeTruthy();
+      expect(raceFacts!.verified).toBe(true);
+
+      class RaceEvaluator implements Evaluator {
+        async init() {}
+        async evaluate(_fen: string, movetimeMs: number): Promise<Evaluation> {
+          if (movetimeMs === CHAT_POSITION_MOVETIME_MS) {
+            // The fallback's own fast search is now in flight -- simulate a
+            // concurrent ladder press resolving FIRST and landing a
+            // verified entry for this exact fen before the fallback's own
+            // await returns.
+            live.lastHint = { fen, facts: raceFacts!, at: Date.now() };
+            return { cp: 0, mate: null, bestMove: "d2d4", pv: ["d2d4"] };
+          }
+          // Chat's own initial verified search (searchAndCacheVerifiedHint)
+          // must fail here so the fallback path runs at all -- an
+          // unparseable move fails deriveFacts on both the initial pick
+          // and the escalated retry.
+          return { cp: 0, mate: null, bestMove: "z9z9", pv: [] };
+        }
+        quit() {}
+      }
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = new RaceEvaluator();
+      try {
+        gm.setCoachBackendForTesting({
+          name: "fake-fallback-race",
+          async available() {
+            return true;
+          },
+          async generate() {
+            return "that keeps your development on track.";
+          },
+        });
+        const result = await gm.chat(g.gameId, { message: "why was that recommended?", context: { mode: "live" } });
+        expect(result.ok).toBe(true);
+        // The concurrent, verified entry must survive -- not be overwritten
+        // by the fallback's own, later-resolving, unverified read.
+        expect(live.lastHint.facts.verified).toBe(true);
+        expect(live.lastHint.facts.bestUci).toBe(raceFacts!.bestUci);
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 40000);
   });
 
   // Increment 3a Wave 2: narrate(). Uses setCoachBackendForTesting to inject
