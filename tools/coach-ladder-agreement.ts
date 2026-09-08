@@ -435,6 +435,64 @@ function findLadderFacts(
   return { before: toFact(before), after: toFact(after) };
 }
 
+// ---- same-position ladder variance (the recurrence metric) --------------
+//
+// The game-192 cluster found by hand in this round's earlier passes (295,
+// 296, 297, 298 -- the SAME fen's non-escalated hint_compute calls
+// alternating g1h1/h2h4 across six calls, nine minutes apart) is one
+// instance of a general shape: does the ladder ever hand back a DIFFERENT
+// bestUci for the identical stored fen, within the same game? This scans
+// every game_events row of type hint/hint_compute in the WHOLE db (not
+// just games that have a chat trace -- the chat sweep above is scoped to
+// advice_traces rows, but this is a fact about the ladder's own output,
+// independent of whether anyone ever asked chat about it), groups by
+// (game_id, fen), and reports every group whose bestUci values are not all
+// the same.
+export interface LadderVariancePosition {
+  gameId: number;
+  fen: string;
+  // Best-effort SAN, converted from each distinct bestUci by replay from
+  // this position's own fen; falls back to the raw uci when the replay
+  // fails (should not happen for a fen/uci pair the ladder itself
+  // produced, but never silently drops a distinct move over a conversion
+  // failure). Order is first-seen, not sorted.
+  distinctMoves: string[];
+  firstAt: string;
+  lastAt: string;
+}
+
+export function findLadderVariance(db: InstanceType<typeof Database>): LadderVariancePosition[] {
+  const rows = db
+    .prepare(`SELECT game_id, type, detail, at FROM game_events WHERE type IN ('hint','hint_compute') ORDER BY game_id, at, id`)
+    .all() as Array<{ game_id: number; type: string; detail: string | null; at: string }>;
+
+  const groups = new Map<
+    string,
+    { gameId: number; fen: string; ucis: Map<string, string>; first: string; last: string }
+  >();
+  for (const ev of rows) {
+    const detail = safeParse(ev.detail);
+    if (!detail?.fen || !detail?.bestUci) continue; // no best on this rung/event -- nothing to compare
+    const key = `${ev.game_id}::${detail.fen}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = { gameId: ev.game_id, fen: detail.fen, ucis: new Map(), first: ev.at, last: ev.at };
+      groups.set(key, g);
+    }
+    if (!g.ucis.has(detail.bestUci)) g.ucis.set(detail.bestUci, "");
+    if (ev.at < g.first) g.first = ev.at;
+    if (ev.at > g.last) g.last = ev.at;
+  }
+
+  const result: LadderVariancePosition[] = [];
+  for (const g of groups.values()) {
+    if (g.ucis.size < 2) continue;
+    const distinctMoves = [...g.ucis.keys()].map((uci) => uciToSan(g.fen, uci) ?? uci);
+    result.push({ gameId: g.gameId, fen: g.fen, distinctMoves, firstAt: g.first, lastAt: g.last });
+  }
+  return result;
+}
+
 // ---- classification --------------------------------------------------
 
 export function classifyRow(row: {
@@ -813,6 +871,22 @@ export function analyze(db: InstanceType<typeof Database>, since: string, jsonOu
           );
         }
       }
+    }
+
+    // ---- same-position ladder variance (the recurrence metric) --------
+    const variance = findLadderVariance(db);
+    const varianceGames = new Set(variance.map((v) => v.gameId)).size;
+    const variancePre = variance.filter((v) => bucketByGuard(v.firstAt) === "pre").length;
+    const variancePost = variance.filter((v) => bucketByGuard(v.firstAt) === "post").length;
+    console.log(
+      `\nladder same-position variance: ${variance.length} positions in ${varianceGames} games ` +
+        `(pre-guard ${variancePre}, post-guard ${variancePost})`
+    );
+    for (const v of variance) {
+      console.log(
+        `  game ${v.gameId} | fen ${v.fen.slice(0, 30)}... | moves ${v.distinctMoves.join(",")} | ` +
+          `first ${v.firstAt} | last ${v.lastAt}`
+      );
     }
 
     if (jsonOut) {

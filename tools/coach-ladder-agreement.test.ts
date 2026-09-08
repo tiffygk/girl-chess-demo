@@ -21,6 +21,7 @@ import {
   factPresenceTotals,
   bucketByGuard,
   SPLIT_DATE,
+  findLadderVariance,
   type LadderFact,
 } from "./coach-ladder-agreement";
 
@@ -420,5 +421,51 @@ describe("factPresenceTotals (unit, no db)", () => {
     expect(totals.verifiedTrue).toBe(1);
     expect(totals.verifiedFalse).toBe(1);
     expect(totals.verifiedAbsent).toBe(2);
+  });
+});
+
+describe("findLadderVariance (the recurrence metric)", () => {
+  // Red proof: this test was run once with the group threshold in
+  // findLadderVariance changed from `g.ucis.size < 2` to `g.ucis.size < 3`
+  // (i.e. requiring 3 distinct moves to count as variance, not 2) --
+  // confirmed FAIL (this two-move fixture stopped being reported at all) --
+  // then restored to PASS. Pasted output in this wave's report.
+  it("reports one position when two hint_compute events at the SAME fen carry DIFFERENT bestUci", () => {
+    const db = openDb(":memory:");
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1500", "w");
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    logGameEvent(gameId, "hint_compute", JSON.stringify({ bestUci: "g1f3", escalated: false, fen }));
+    logGameEvent(gameId, "hint_compute", JSON.stringify({ bestUci: "h2h4", escalated: false, fen }));
+
+    const positions = findLadderVariance(db);
+
+    expect(positions).toHaveLength(1);
+    expect(positions[0].gameId).toBe(gameId);
+    expect(positions[0].fen).toBe(fen);
+    expect(positions[0].distinctMoves.sort()).toEqual(["Nf3", "h4"]);
+  });
+
+  it("reports nothing when every event at a fen agrees on the same bestUci", () => {
+    const db = openDb(":memory:");
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1500", "w");
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    logGameEvent(gameId, "hint_compute", JSON.stringify({ bestUci: "h2h4", escalated: false, fen }));
+    logGameEvent(gameId, "hint_compute", JSON.stringify({ bestUci: "h2h4", escalated: false, fen }));
+
+    expect(findLadderVariance(db)).toHaveLength(0);
+  });
+
+  it("does not confuse variance across two DIFFERENT games at the same fen (proves grouping is per-game)", () => {
+    const db = openDb(":memory:");
+    const sessionId = createSession();
+    const gameA = createGame(sessionId, "maia-1500", "w");
+    const gameB = createGame(sessionId, "maia-1500", "w");
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    logGameEvent(gameA, "hint_compute", JSON.stringify({ bestUci: "g1f3", escalated: false, fen }));
+    logGameEvent(gameB, "hint_compute", JSON.stringify({ bestUci: "h2h4", escalated: false, fen }));
+
+    expect(findLadderVariance(db)).toHaveLength(0);
   });
 });
