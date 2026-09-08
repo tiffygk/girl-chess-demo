@@ -42,7 +42,7 @@ import type { ThreatFacts } from "../annotator/motifs";
 // below needs to seed a well-typed HintFacts object without a real engine,
 // and a fake Evaluator to count engine consultations -- same "mock the
 // Evaluator interface" pattern hint.test.ts's ScriptedMultiEvaluator uses.
-import { computeHint as computeHintFacts } from "../annotator/hint";
+import { computeHint as computeHintFacts, HINT_MOVETIME_MS, CHAT_POSITION_MOVETIME_MS } from "../annotator/hint";
 import type { Evaluator, Evaluation } from "../engines/types";
 
 // H3 fix, logic-only half (union review, 2026-07-31): pure, no real
@@ -626,13 +626,18 @@ describe("GameManager", () => {
   // engine view of the CURRENT live position on demand so the shelf isn't
   // empty for the coach's own most common "why" question (trace-185).
   //
-  // Whole-branch review correction (2026-08-03, Important finding 1): this
-  // test used to assert the prompt claimed "verified line for this
-  // position" for exactly this fast, explicitly-unverified path -- the
-  // overclaim finding 1 identified. computePositionView's own docstring
-  // forbids presenting its result as a verified hint; the assertions below
-  // now match that contract instead of the bug.
-  it("chat gets an engine view of the current position even with no prior hint (trace-185) -- and it is honestly labeled unverified, not 'verified'", async () => {
+  // Wave A1 (2026-09-08, voice-align): owner ruling -- "the live coaching
+  // that happens under the ladder hints is always more trustworthy and
+  // better" -- superseded the fast/unverified read this test used to pin.
+  // A chat that opens on a live position with NO verified cached entry now
+  // runs the ladder's own verified search (computeHint's engine path), not
+  // computePositionView's quick unverified look. The old "must not claim
+  // verified" assertions below are the exact opposite of the new contract;
+  // updated in place (test-honesty note: this rewrite is a deviation from
+  // the brief's literal ask, which only specified the 4 new tests below --
+  // this one would otherwise fail against the new behaviour it exists to
+  // pin).
+  it("chat opens on a live position with no prior hint (trace-185) and runs the ladder's own verified search, not the quick look", async () => {
     const { gameId } = await gm.newGame(sessionId, 1100);
     // No computeHint call -- she just asks "why was this recommended".
     let capturedPrompt = "";
@@ -649,14 +654,14 @@ describe("GameManager", () => {
     const result = await gm.chat(gameId, { message: "why was that recommended?", context: { mode: "live" } });
     expect(result.ok).toBe(true);
     expect(capturedPrompt).toContain('"hintFindings"');
-    // The fast position-view path must NOT claim to be a verified deep
-    // line, and must not tell the model to trust it over its own reasoning.
-    expect(capturedPrompt).not.toMatch(/verified/i);
-    expect(capturedPrompt).not.toMatch(/trust this over your own reasoning/i);
+    // The chat-triggered search is the SAME verified search a ladder press
+    // would run -- it must claim verified/trust-over-your-own-reasoning.
+    expect(capturedPrompt).toMatch(/verified/i);
+    expect(capturedPrompt).toMatch(/trust this over your own reasoning/i);
     const live = (gm as any).games.get(gameId);
     expect(live.lastHint).toBeDefined();
     expect(live.lastHint.facts.pv.length).toBeGreaterThan(0);
-    expect(live.lastHint.facts.verified).toBe(false);
+    expect(live.lastHint.facts.verified).toBe(true);
   }, 40000);
 
   // Companion to the trace-185 fix above: a REAL player-initiated deep hint
@@ -843,6 +848,170 @@ describe("GameManager", () => {
       const second = await gm.computeHint(g.gameId);
       expect(second.ok).toBe(true);
       expect(live.hintHistory).toHaveLength(1);
+    }, 40000);
+  });
+
+  // Wave A1 (2026-09-08, voice-align, brief-A1): "the live coaching that
+  // happens under the ladder hints is always more trustworthy and better"
+  // (owner). A chat that opens on a live position with no VERIFIED cached
+  // entry now runs the same verified search computeHint(gameId) runs
+  // (shared private helper), once per position, cached -- never the fast
+  // computePositionView look, and never recorded as a shown ladder hint
+  // (hintHistory/hint_compute are what the player was actually shown; a
+  // chat-triggered search was not).
+  describe("chat runs the ladder's own verified search on an unsearched live position (Wave A1)", () => {
+    // Counts evaluateMulti's own movetime argument -- the multipv seam
+    // computeHint's getCandidates uses -- so these tests can tell a real
+    // deep/verified search apart from computePositionView's single-line
+    // evaluate() call without depending on hint.ts's internal call shape.
+    // A legal, non-losing quiet move (e2e4 from the start position) so
+    // hintHoldsUp's own verify-pass evaluate() call (cp 0 before and after)
+    // never escalates into a second search.
+    class CountingMovetimeEvaluator implements Evaluator {
+      multiCalls: number[] = [];
+      async init() {}
+      async evaluate(): Promise<Evaluation> {
+        return { cp: 0, mate: null, bestMove: "e2e4", pv: ["e2e4"] };
+      }
+      async evaluateMulti(_fen: string, movetimeMs: number): Promise<Evaluation[]> {
+        this.multiCalls.push(movetimeMs);
+        return [{ cp: 0, mate: null, bestMove: "e2e4", pv: ["e2e4"] }];
+      }
+      quit() {}
+    }
+
+    it("chat with no cached entry runs the verified multipv search, caches it verified, and does not touch hintHistory/hint_compute", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const live = (gm as any).games.get(g.gameId);
+      const fake = new CountingMovetimeEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      try {
+        gm.setCoachBackendForTesting({
+          name: "fake-chat-verified",
+          async available() {
+            return true;
+          },
+          async generate() {
+            return "that keeps your development on track.";
+          },
+        });
+        const result = await gm.chat(g.gameId, { message: "why was that recommended?", context: { mode: "live" } });
+        expect(result.ok).toBe(true);
+        // The multipv search path (getCandidates -> evaluateMulti), same as
+        // a real ladder press, at HINT_MOVETIME_MS -- not the fast single
+        // -line CHAT_POSITION_MOVETIME_MS read.
+        expect(fake.multiCalls).toEqual([HINT_MOVETIME_MS]);
+        expect(live.lastHint).toBeDefined();
+        expect(live.lastHint.facts.verified).toBe(true);
+        // Ground truth of what she was actually shown must be untouched --
+        // a chat-triggered search was never shown on the ladder.
+        expect(live.hintHistory).toHaveLength(0);
+        expect(getGameEvents(g.gameId).filter((e) => e.type === "hint_compute")).toHaveLength(0);
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 40000);
+
+    it("a second chat question on the same fen does not search again (cache hit)", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const live = (gm as any).games.get(g.gameId);
+      const fake = new CountingMovetimeEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      try {
+        gm.setCoachBackendForTesting({
+          name: "fake-chat-verified-cached",
+          async available() {
+            return true;
+          },
+          async generate() {
+            return "that keeps your development on track.";
+          },
+        });
+        await gm.chat(g.gameId, { message: "why was that recommended?", context: { mode: "live" } });
+        // The first question must have run the verified multipv search
+        // (not the fast unverified look) -- otherwise "no second search"
+        // below would trivially hold for the wrong reason.
+        expect(fake.multiCalls.length).toBe(1);
+        expect(live.lastHint.facts.verified).toBe(true);
+        const result = await gm.chat(g.gameId, { message: "why not something else?", context: { mode: "live" } });
+        expect(result.ok).toBe(true);
+        expect(fake.multiCalls.length).toBe(1);
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 40000);
+
+    it("a prior ladder press (computeHint) at the same fen is reused by chat -- no second search", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const fake = new CountingMovetimeEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      try {
+        const hintResult = await gm.computeHint(g.gameId);
+        expect(hintResult.ok).toBe(true);
+        // The ladder press itself must have run the multipv search.
+        expect(fake.multiCalls.length).toBe(1);
+        gm.setCoachBackendForTesting({
+          name: "fake-chat-reuses-ladder",
+          async available() {
+            return true;
+          },
+          async generate() {
+            return "that keeps your development on track.";
+          },
+        });
+        const result = await gm.chat(g.gameId, { message: "why was that recommended?", context: { mode: "live" } });
+        expect(result.ok).toBe(true);
+        expect(fake.multiCalls.length).toBe(1);
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 40000);
+
+    it("falls back to the fast unverified position view when the verified search returns no facts", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const live = (gm as any).games.get(g.gameId);
+      // An evaluator whose deep-search bestMove ("z9z9") is unparseable by
+      // chess.js at every movetime EXCEPT CHAT_POSITION_MOVETIME_MS (the
+      // fast path's own movetime), so computeHintFacts's deriveFacts fails
+      // on both the initial pick and the escalated retry (facts === null),
+      // while computePositionView's independent fast-path evaluate() call
+      // still returns a legal move. No evaluateMulti, so getCandidates
+      // falls back to its own single evaluate() call -- same fake either
+      // way.
+      class NeverVerifiesEvaluator implements Evaluator {
+        async init() {}
+        async evaluate(_fen: string, movetimeMs: number): Promise<Evaluation> {
+          if (movetimeMs === CHAT_POSITION_MOVETIME_MS) {
+            return { cp: 0, mate: null, bestMove: "e2e4", pv: ["e2e4"] };
+          }
+          return { cp: 0, mate: null, bestMove: "z9z9", pv: [] };
+        }
+        quit() {}
+      }
+      const fake = new NeverVerifiesEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      try {
+        gm.setCoachBackendForTesting({
+          name: "fake-chat-fallback",
+          async available() {
+            return true;
+          },
+          async generate() {
+            return "that keeps your development on track.";
+          },
+        });
+        const result = await gm.chat(g.gameId, { message: "why was that recommended?", context: { mode: "live" } });
+        expect(result.ok).toBe(true);
+        expect(live.lastHint).toBeDefined();
+        expect(live.lastHint.facts.verified).toBe(false);
+        expect(live.lastHint.facts.bestUci).toBe("e2e4");
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
     }, 40000);
   });
 
