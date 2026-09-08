@@ -2118,6 +2118,14 @@ export function GamePage() {
   // position via the same fen/resyncTick seam handleRewind uses.
   const selectPastGame = useCallback(
     async (g: GameListEntry) => {
+      // Resume round (2026-09-06), Wave B: GameListEntry.result is now
+      // string | null (unfinished games are listed too). PastGamesDrawer's
+      // own row filter (result != null) guarantees any row that reaches
+      // onSelect has a real result, so this is a type guard on a fact
+      // already established upstream, not a real runtime check -- `?? ""`
+      // would instead paper over a genuinely-unfinished game reaching
+      // review mode. Wave D reworks this once unfinished rows are selectable.
+      if (g.result == null) return;
       const summary = await fetchSummary(g.id);
       preReviewFenRef.current = fen;
       setReviewGame({ id: g.id, opponent: g.opponent, result: g.result, summary });

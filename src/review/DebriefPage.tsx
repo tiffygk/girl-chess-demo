@@ -133,6 +133,13 @@ const NEGATIVE_CARD_LABELS = new Set([
   "conversion",
 ]);
 
+// Resume round (2026-09-06), Wave B: GameListEntry.result is now
+// string | null (unfinished games are listed too). PastGamesDrawer still
+// only renders finished rows this wave (see its finishedGames filter
+// below), so this narrows the type at the filter boundary instead of
+// pushing `?? ""` through resultWord and every other finished-only reader.
+type FinishedGameListEntry = GameListEntry & { result: string };
+
 function resultWord(result: string): string {
   if (result === "1-0") return "won";
   if (result === "0-1") return "lost";
@@ -979,6 +986,12 @@ export function PastGamesDrawer({ open, games, onSelect, onClose, onDelete, dele
     if (armed === gameId) clearDisarmTimer();
   };
 
+  // Wave D removes this filter: the drawer shows unfinished games with a
+  // chip once it is day-grouped. Until then, keep this flat list showing
+  // only finished games (result != null) so resultWord and onSelect's
+  // downstream `result: string` consumers stay untouched this wave.
+  const finishedGames = games === null ? null : games.filter((g): g is FinishedGameListEntry => g.result != null);
+
   return (
     <div className="past-games-overlay" role="dialog" aria-label="past games" onClick={disarmOnElsewhereClick}>
       <div className="past-games-drawer pop-in">
@@ -989,11 +1002,11 @@ export function PastGamesDrawer({ open, games, onSelect, onClose, onDelete, dele
           </button>
         </div>
         {deleteError && <p className="past-games-empty past-games-error">{deleteError}</p>}
-        {games === null && <p className="past-games-empty">loading...</p>}
-        {games !== null && games.length === 0 && <p className="past-games-empty">no finished games yet.</p>}
-        {games !== null && games.length > 0 && (
+        {finishedGames === null && <p className="past-games-empty">loading...</p>}
+        {finishedGames !== null && finishedGames.length === 0 && <p className="past-games-empty">no finished games yet.</p>}
+        {finishedGames !== null && finishedGames.length > 0 && (
           <div className="past-games-list">
-            {games.map((g) => (
+            {finishedGames.map((g) => (
               <div
                 key={g.id}
                 className="past-games-row"

@@ -493,7 +493,7 @@ describe("GameManager", () => {
   // — a hint on an already-decided game is harmless to log).
   it("logHint writes a game_events row with the expected detail shape", async () => {
     const g = await gm.newGame(sessionId, 1100);
-    const r = gm.logHint(g.gameId, {
+    const r = await gm.logHint(g.gameId, {
       level: 2,
       tier: "warning",
       deltaCp: 220,
@@ -513,8 +513,8 @@ describe("GameManager", () => {
     });
   }, 20000);
 
-  it("logHint refuses cleanly on an unknown game", () => {
-    const r = gm.logHint(999999, { level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: "x" });
+  it("logHint refuses cleanly on an unknown game", async () => {
+    const r = await gm.logHint(999999, { level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: "x" });
     expect(r.ok).toBe(false);
   });
 
@@ -2635,6 +2635,128 @@ describe("GameManager", () => {
       expect(capturedPrompt).toContain('"ply":54,"san":"Kh6","side":"mallow","bestSan":"Kh7"');
       expect(capturedPrompt).toContain('"ply":55,"san":"Nf7+","side":"you","bestSan":"Qh8#"');
     }, 20000);
+  });
+
+  describe("a game the process forgot (server restart)", () => {
+    function forgottenGame(sans: string[]): number {
+      const s = createSession();
+      const id = createGame(s, "maia-1100", "w");
+      const c = new Chess();
+      sans.forEach((san, i) => {
+        const mv = c.move(san);
+        recordMove({
+          gameId: id,
+          ply: i + 1,
+          san: mv.san,
+          uci: mv.from + mv.to + (mv.promotion ?? ""),
+          fenAfter: c.fen(),
+          timeSpentMs: 0,
+          side: i % 2 === 0 ? "her" : "mallow",
+        });
+      });
+      expect((gm as any).games.has(id)).toBe(false);
+      return id;
+    }
+
+    it("resume rebuilds the position from the stored moves and says it is her turn", async () => {
+      const id = forgottenGame(["e4", "e5"]);
+      const r = await gm.resume(id);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.plies).toBe(2);
+      expect(r.yourTurn).toBe(true);
+      expect(r.fen.split(" ")[1]).toBe("w");
+      expect((gm as any).games.has(id)).toBe(true);
+    }, 20000);
+
+    it("a move on a forgotten game lands and mallow replies", async () => {
+      const id = forgottenGame(["e4", "e5"]);
+      const r = await gm.playerMove(id, "g1", "f3");
+      expect(r.ok).toBe(true);
+      expect(getGameMoves(id).length).toBe(4);
+    }, 20000);
+
+    it("resume answers mallow's pending reply when the last stored move was hers", async () => {
+      const id = forgottenGame(["e4"]);
+      const r = await gm.resume(id);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.yourTurn).toBe(true);
+      expect(r.plies).toBe(2);
+      expect(getGameMoves(id).length).toBe(2);
+    }, 20000);
+
+    it("resign works on a forgotten game", async () => {
+      const id = forgottenGame(["e4", "e5"]);
+      const r = await gm.resign(id);
+      expect(r.ok).toBe(true);
+      expect(getGame(id)?.result).toBe("0-1");
+    }, 20000);
+
+    it("a finished game, an empty game, and an unknown id are refused with a reason", async () => {
+      const s = createSession();
+      const finished = createGame(s, "maia-1100", "w");
+      finishGame(finished, "1-0");
+      expect(await gm.resume(finished)).toEqual({ ok: false, reason: "finished" });
+      const empty = createGame(s, "maia-1100", "w");
+      expect(await gm.resume(empty)).toEqual({ ok: false, reason: "empty" });
+      expect(await gm.resume(999999)).toEqual({ ok: false, reason: "not_found" });
+    });
+
+    it("two simultaneous requests rebuild once", async () => {
+      const id = forgottenGame(["e4", "e5"]);
+      const [a, b] = await Promise.all([gm.resume(id), gm.resume(id)]);
+      expect(a.ok && b.ok).toBe(true);
+      expect((gm as any).rebuilds.size).toBe(0);
+      expect(getGameMoves(id).length).toBe(2);
+    }, 20000);
+
+    it("a corrupt stored move refuses the rebuild instead of throwing", async () => {
+      const s = createSession();
+      const id = createGame(s, "maia-1100", "w");
+      recordMove({
+        gameId: id,
+        ply: 1,
+        san: "e4",
+        uci: "e2e4",
+        fenAfter: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+        timeSpentMs: 0,
+        side: "her",
+      });
+      recordMove({
+        gameId: id,
+        ply: 2,
+        san: "Zz9",
+        uci: "zz99",
+        fenAfter: "garbage",
+        timeSpentMs: 0,
+        side: "mallow",
+      });
+      expect(await gm.resume(id)).toEqual({ ok: false, reason: "corrupt" });
+      expect(await gm.resign(id)).toEqual({ ok: false });
+    });
+
+    it("resign on a rebuilt game where mallow is to move makes no engine call", async () => {
+      const id = forgottenGame(["e4"]);
+      const live0 = await (gm as any).ensureLive(id);
+      const spy = vi.spyOn(live0.opponent, "pickMove");
+      const r = await gm.resign(id);
+      expect(r.ok).toBe(true);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    }, 20000);
+
+    // Correction (brief-A #2): deleteGame already refuses any game with
+    // result == null via getGame -- a forgotten unfinished game returns
+    // {ok:false, reason:"live"}, same as an unfinished game with a live
+    // in-memory entry. This pins that deleteGame must NOT route through
+    // ensureLive/rebuild to get there.
+    it("deleteGame never rebuilds", async () => {
+      const id = forgottenGame(["e4", "e5"]);
+      const r = gm.deleteGame(id);
+      expect(r).toEqual({ ok: false, reason: "live" });
+      expect((gm as any).games.has(id)).toBe(false);
+    });
   });
 });
 
