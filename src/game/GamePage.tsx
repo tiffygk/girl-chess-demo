@@ -14,6 +14,8 @@ import {
   fetchSummary,
   fetchChatHistory,
   fetchGames,
+  fetchGameStatus,
+  resumeGame,
   deleteGame,
   getTurningLines,
   getHighlightLines,
@@ -63,8 +65,8 @@ import { DebriefPage, PastGamesButton, PastGamesDrawer } from "../review/Debrief
 import { shouldClearLiveDebrief } from "../review/deleteArm";
 import { fenAtPly } from "../review/Rewind";
 import { resolveMoveFlow, isOverrideConfirm } from "./moveFlow";
-import { readGameParam, withGameParam, isResumableSummary } from "./resumeParam";
-import { readActiveGame, writeActiveGame, continueCardBody } from "./activeGame";
+import { readGameParam, withGameParam } from "./resumeParam";
+import { readActiveGame, writeActiveGame, continueCardBody, plateElo } from "./activeGame";
 import {
   decideBranch,
   maxPress,
@@ -238,7 +240,7 @@ export function GamePage() {
   // fetched once when the pregame panel would show and a stored active-game
   // id exists with no ?game= param already resuming it. null = nothing to
   // offer (either no stored id, or the fetch proved it's not resumable).
-  const [continueGame, setContinueGame] = useState<{ id: number; plies: number; elo: number | null } | null>(null);
+  const [continueGame, setContinueGame] = useState<{ id: number; gameNumber: number; plies: number; elo: number | null } | null>(null);
   const [fen, setFen] = useState(() => new Chess().fen());
   const [fallback, setFallback] = useState(false);
   // Round 3 (session-gone recovery, owner ruling 2026-08-02): "can we
@@ -365,6 +367,15 @@ export function GamePage() {
   // echoes it back, so this state always converges on a real band even if
   // localStorage somehow held something stale.
   const [opponentElo, setOpponentElo] = useState<number>(readEloPref);
+  // Wave D fix round 1 (2026-09-06): the elo the CURRENTLY LIVE game is
+  // actually playing at, once known -- kept separate from opponentElo
+  // (the picker's own preference default) on purpose. A resume must never
+  // call setOpponentElo: that would silently overwrite her saved default
+  // for the NEXT new game with whatever elo this resumed game happened to
+  // be. Null while no resumed game has reported its own elo yet, in which
+  // case the mallow plate falls back to opponentElo (a fresh/new game's own
+  // elo already rides opponentElo via startGame's setOpponentElo(g.elo)).
+  const [liveElo, setLiveElo] = useState<number | null>(null);
   // V1: independent of coachOn (judging) — not read by any hint logic yet.
   const [coachHints, setCoachHints] = useState<boolean>(() => readBoolPref(COACH_HINTS_KEY));
   // Task 5 (F17): which backend narrate()/chatWithCoach() ask for, per
@@ -412,8 +423,9 @@ export function GamePage() {
   const [resumedChat, setResumedChat] = useState<ChatHistoryMessage[] | null>(null);
   const [reviewGame, setReviewGame] = useState<{
     id: number;
+    gameNumber: number;
     opponent: string;
-    result: string;
+    result: string | null;
     summary: SummaryResponse;
   } | null>(null);
   const [rewindPly, setRewindPly] = useState<number | null>(null);
@@ -580,6 +592,9 @@ export function GamePage() {
     setLastMove(null);
     setLiveMoves([]);
     setMallowThinking(false);
+    // Wave D fix round 1: never let a resumed game's elo leak into the
+    // NEXT game (fresh or resumed) before it reports its own.
+    setLiveElo(null);
     if (inputHintTimerRef.current) {
       window.clearTimeout(inputHintTimerRef.current);
       inputHintTimerRef.current = null;
@@ -645,16 +660,21 @@ export function GamePage() {
   // this is read-only: fetchSummary on an UNFINISHED game cannot write,
   // because getSummary's on-read backfill is gated on `game?.result` being
   // set, and an unfinished game has none.
-  const resumeGame = useCallback(
+  //
+  // Resume round (2026-09-06), Wave D: the restart bug -- after a server
+  // restart the in-memory GameManager map is empty, so a stale tab's next
+  // move would 404 with no way back in. POST /api/game/:id/resume (Wave A)
+  // rebuilds the server's live game from the persisted moves BEFORE this
+  // fetches the summary, so the game is live again before the first move;
+  // its own `ok:false` (not_found/finished/empty/corrupt) is the failed-resume
+  // signal now, replacing the old isResumableSummary guard on the summary
+  // itself (retired -- see resumeParam.ts).
+  const resumeLiveGame = useCallback(
     async (id: number) => {
       resetGameState();
+      const r = await resumeGame(id);
+      if (!r.ok) throw new Error(r.reason);
       const s = await fetchSummary(id);
-      // Dead-id guard: a summary with no moves is the orphaned 0-move stub --
-      // resuming it would mount an empty board wired to a gameId the server
-      // no longer holds live. Treat it as a failed resume (throw -> the
-      // effect's catch clears the param and stays on the start state) instead
-      // of silently arming a dead game.
-      if (!isResumableSummary(s)) throw new Error("no resumable game for that id");
       const mirror = new Chess();
       for (const m of s.moves) mirror.move(m.san);
       mirrorRef.current = mirror;
@@ -685,6 +705,21 @@ export function GamePage() {
       fetchChatHistory(id)
         .then((r) => setResumedChat(r.ok ? r.messages : null))
         .catch(() => setResumedChat(null));
+      // Wave D fix round 1 (2026-09-06, controller fix after gate-D-resumed
+      // shot): the mallow plate must show the strength THIS game is
+      // actually playing at, not her saved picker preference -- opponentElo
+      // is seeded from readEloPref and a resume never touched it, so a game
+      // stored at 1600 showed "mallow 1100" whenever her preference
+      // happened to be 1100. fetchGameStatus's game.elo is the db-recorded
+      // value for this row, read not derived (no new route: the pregame
+      // continue-card effect above already calls this same function).
+      // setLiveElo only -- never setOpponentElo, which would leak this
+      // game's elo into her saved default for the next NEW game.
+      fetchGameStatus(id)
+        .then((status) => {
+          if (status.ok && status.game.elo != null) setLiveElo(status.game.elo);
+        })
+        .catch(() => {});
     },
     [resetGameState]
   );
@@ -693,7 +728,7 @@ export function GamePage() {
     const id = readGameParam(window.location.search);
     if (id == null) return;
     let cancelled = false;
-    resumeGame(id).catch(() => {
+    resumeLiveGame(id).catch(() => {
       if (cancelled) return;
       // Failed/dead resume: drop the param so a further reload doesn't retry
       // a game that can't be resumed, and stay on the start state.
@@ -706,7 +741,7 @@ export function GamePage() {
     return () => {
       cancelled = true;
     };
-  }, [resumeGame]);
+  }, [resumeLiveGame]);
 
   // Task 6 (Appendix B step 6): leaving mid-game with no warning is how a
   // reload silently orphaned a game before the resume path existed. The
@@ -727,35 +762,30 @@ export function GamePage() {
   // Fires whenever the pregame panel is about to show (gameId falls back to
   // null, or on mount) and there's no ?game=<id> already resuming a game --
   // that path's own mount effect (above) handles the URL-driven resume, and
-  // this effect must not double-fetch/duplicate it. Fetches the stored
-  // active game's summary ONCE, shows the card only if it's genuinely
-  // resumable (moves and no result -- the same isResumableSummary gate
-  // resumeGame uses), and clears a dead stored id with no card and no dead
-  // space, per the component library's own rule ("card absent when nothing
-  // is resumable").
+  // this effect must not double-fetch/duplicate it. Clears a dead stored id
+  // with no card and no dead space, per the component library's own rule
+  // ("card absent when nothing is resumable").
   //
-  // Elo: checked whether SummaryResponse or SummaryMove carry the opponent
-  // elo (they don't -- see src/game/api.ts) and whether fetchGames() could
-  // supply it (it can't: GET /api/games is listFinishedGames(), filtered to
-  // `WHERE result IS NOT NULL`, so it never lists the live game being
-  // resumed, and it carries no elo field regardless). No server field was
-  // added this round (out of scope per the fix instructions), so elo is
-  // omitted and continueCardBody(null, plies) renders the elo-less body.
+  // Resume round (2026-09-06), Wave D: fetchSummary + isResumableSummary is
+  // replaced by fetchGameStatus, whose GameListEntry carries the server's
+  // own seven-day resumable rule plus the game's number and the opponent's
+  // elo the old fix round couldn't cheaply get -- the client never
+  // re-derives that window (owner ruling 2026-07-30).
   useEffect(() => {
     if (!sessionId || gameId) return;
     if (readGameParam(window.location.search) != null) return;
     const id = readActiveGame(localStorage);
     if (id == null) return;
     let cancelled = false;
-    fetchSummary(id)
-      .then((s) => {
+    fetchGameStatus(id)
+      .then((status) => {
         if (cancelled) return;
-        if (!isResumableSummary(s)) {
+        if (!status.ok || !status.game.resumable) {
           writeActiveGame(null, localStorage);
           setContinueGame(null);
           return;
         }
-        setContinueGame({ id, plies: s.moves.length, elo: null });
+        setContinueGame({ id, gameNumber: status.game.gameNumber, plies: status.game.plies, elo: status.game.elo });
       })
       .catch((err) => {
         if (cancelled) return;
@@ -2118,9 +2148,14 @@ export function GamePage() {
   // position via the same fen/resyncTick seam handleRewind uses.
   const selectPastGame = useCallback(
     async (g: GameListEntry) => {
+      // Resume round (2026-09-06), Wave D: the drawer now shows unfinished
+      // games too (with a chip, not a result), and any row -- resumable or
+      // not -- opens review; only the row's own "resume game" button goes
+      // through resumeLiveGame instead. result stays null for an unfinished
+      // game rather than papering over it with `?? ""`.
       const summary = await fetchSummary(g.id);
       preReviewFenRef.current = fen;
-      setReviewGame({ id: g.id, opponent: g.opponent, result: g.result, summary });
+      setReviewGame({ id: g.id, gameNumber: g.gameNumber, opponent: g.opponent, result: g.result ?? null, summary });
       setFen(fenAtPly(summary.moves, summary.moves.length));
       setResyncTick((t) => t + 1);
       setRewindPly(null);
@@ -2605,7 +2640,7 @@ export function GamePage() {
           materialLead={material.leader === "mallow" ? material.points : null}
           active={mallowActive}
           chip={mallowChip}
-          elo={opponentElo}
+          elo={plateElo(liveElo, opponentElo)}
         />
         <div className={"mallow-stripe " + (mallowThinking ? "ms-thinking" : "ms-dormant")} aria-hidden="true"></div>
         <Board
@@ -2642,6 +2677,7 @@ export function GamePage() {
           active={youActive}
           chip={youChip}
           moveNumber={moveNumber}
+          gameNumber={gameId ?? undefined}
           elo={PLAYER_ELO}
           // Highlight-a-move (Task 3): live play only — in review mode
           // liveMoves belongs to the live game, not the reviewed one, and
@@ -2777,7 +2813,7 @@ export function GamePage() {
                   // the library's own rule, so there's no reserved dead space.
                   <div className="pg2-continue">
                     <span className="pg2-continue-kicker">game in progress</span>
-                    <p className="pg2-continue-body">{continueCardBody(continueGame.elo, continueGame.plies)}</p>
+                    <p className="pg2-continue-body">{continueCardBody(continueGame.gameNumber, continueGame.elo, continueGame.plies)}</p>
                     <button
                       type="button"
                       className="small pg2-resume-btn"
@@ -2935,7 +2971,7 @@ export function GamePage() {
           onRewind={handleRewind}
           onBackToEnd={handleBackToEnd}
           onOpenPastGames={openPastGames}
-          reviewing={{ opponent: reviewGame.opponent, result: reviewGame.result }}
+          reviewing={{ gameNumber: reviewGame.gameNumber, opponent: reviewGame.opponent, result: reviewGame.result }}
           onBackToPlay={backToPlay}
           exploring={explore ? { thinking: exploreThinking, over: explore.over, ply: exploreSourcePly } : null}
           onTryLine={openExplore}
@@ -2950,6 +2986,9 @@ export function GamePage() {
         onSelect={selectPastGame}
         onClose={closePastGames}
         onDelete={deletePastGame}
+        onResume={(id) => {
+          window.location.href = withGameParam(window.location.pathname, window.location.search, id);
+        }}
         deleteError={pastGamesDeleteError}
       />
     </div>

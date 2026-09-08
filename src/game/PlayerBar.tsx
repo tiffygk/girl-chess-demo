@@ -16,6 +16,12 @@ interface PlayerBarProps {
   chip: string | null;
   /** Fullmove counter, shown only on the bar that's asked to carry it. */
   moveNumber?: number | null;
+  /** Resume round (2026-09-06), Wave D: her ask -- "let's make sure that we
+   *  actually make the name visible to me" -- so the live footer carries the
+   *  game number too, appended after moveNumber with a U+00B7 (the same
+   *  divider the review banner uses). Only rendered when moveNumber is also
+   *  set. */
+  gameNumber?: number;
   /** Mallow-only decline bark, anchored to this bar. */
   bark?: string | null;
   /** Rating to surface inside the name plate; null/undefined renders no rating. */
@@ -49,6 +55,7 @@ export function PlayerBar({
   active,
   chip,
   moveNumber,
+  gameNumber,
   bark,
   elo,
   pocket,
@@ -94,7 +101,12 @@ export function PlayerBar({
             </span>
           </span>
         )}
-        {typeof moveNumber === "number" && <span className="bar-move-count">move {moveNumber}</span>}
+        {typeof moveNumber === "number" && (
+          <span className="bar-move-count">
+            move {moveNumber}
+            {typeof gameNumber === "number" && <> · game {gameNumber}</>}
+          </span>
+        )}
       </div>
       <div className="bar-captures" aria-label={label}>
         {sorted.map(({ kind, origIndex }) => (

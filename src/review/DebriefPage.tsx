@@ -36,7 +36,12 @@ import type {
 import { clickDelete, disarmArmed, type ArmState } from "./deleteArm";
 // Round 2, item 9 (owner ruling, 2026-08-01 playtest): render startedAt in
 // the viewer's local timezone, not a raw slice of the server's UTC string.
-import { localDateFromStartedAt } from "./localDate";
+import { parseUtc } from "./localDate";
+// Resume round (2026-09-06), Wave D: day-grouping + the won/lost/draw/
+// in-progress/unfinished word, shared with the pregame continue card via
+// GameListEntry -- see gameGroups.ts's own comment.
+import { groupGamesByDay, resultOrStatusWord } from "../game/gameGroups";
+import { movesIn } from "../game/activeGame";
 import { moveNumberForPly } from "./debriefLesson";
 import { debriefBullets, affordancesForBullet, type DebriefBullet } from "./debriefBullets";
 // N1 (owner report 2026-08-21): the shared "what actually happened" module.
@@ -133,10 +138,16 @@ const NEGATIVE_CARD_LABELS = new Set([
   "conversion",
 ]);
 
-function resultWord(result: string): string {
+// Resume round (2026-09-06), Wave D: the review banner's own word --
+// GameListEntry rows go through resultOrStatusWord (gameGroups.ts) instead,
+// which also knows "in progress"; the banner never shows a live game as
+// "in progress" (it isn't a status you'd review mid-play from this button),
+// so a null result here just reads "unfinished".
+function reviewResultWord(result: string | null): string {
   if (result === "1-0") return "won";
   if (result === "0-1") return "lost";
-  return "draw";
+  if (result != null) return "draw";
+  return "unfinished";
 }
 
 // "maia-1400" / "fallback-1400" -> "1400". Falls back to the raw string on
@@ -146,16 +157,28 @@ function eloFromOpponent(opponent: string): string {
   return m ? m[1] : opponent;
 }
 
-// Round 2, item 6 (owner ruling, 2026-08-01 playtest): the idle delete X was
-// "slightly too low (not vertically centered)" -- a bare "×" text glyph's
-// on-screen position rides on the font's own ascent/descent metrics, which
-// is exactly the kind of thing that silently drifts. A geometric SVG glyph
+// Resume round (2026-09-06), Wave D: the drawer row's "4:12 pm" local time,
+// same UTC-safe parse as localDateFromStartedAt/gameGroups.ts.
+function localTimeFromStartedAt(startedAt: string): string {
+  const d = parseUtc(startedAt);
+  let h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, "0");
+  const suffix = h >= 12 ? "pm" : "am";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${m} ${suffix}`;
+}
+
+// Round 2, item 6 (owner ruling, 2026-08-01 playtest): a geometric SVG glyph
 // (two crossing lines, same construction the settings-gear icon already
 // uses -- GamePage.tsx's gear-svg) makes centering a layout fact instead of
-// a font fact: stroke=currentColor so it inherits .past-games-delete's CSS
-// color/hover rules with no duplicated palette. Idle state only -- the
-// armed "sure?" state stays plain text, untouched (owner: keep its color
-// exactly as is).
+// a font fact: stroke=currentColor so it inherits its parent's CSS color/
+// hover rules with no duplicated palette.
+// Resume round (2026-09-06), Wave D (owner ruling 2026-09-05, "that x should
+// say delete instead of x because that's misleading"): the per-row delete
+// control is words now ("delete" / armed "sure?"), not this glyph -- this
+// SVG moves to the drawer's own CLOSE button instead (pg2-close), which
+// stays an X-only glyph per the library.
 function DeleteXIcon() {
   return (
     <svg className="past-games-delete-icon" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
@@ -592,8 +615,12 @@ export function computeShowAllowedRow(
 }
 
 export interface DebriefReviewing {
+  gameNumber: number;
   opponent: string;
-  result: string;
+  // Resume round (2026-09-06), Wave D: the drawer now lists unfinished
+  // games too, and any row opens review -- null here means the reviewed
+  // game has no result yet ("unfinished" in the banner), not a bug.
+  result: string | null;
 }
 
 export interface DebriefPageProps {
@@ -785,7 +812,7 @@ export function DebriefPage({
         <div className="debrief-review-banner">
           <span className="debrief-review-kicker">reviewing</span>
           <span className="debrief-review-meta">
-            mallow {eloFromOpponent(reviewing.opponent)} · {resultWord(reviewing.result)}
+            game {reviewing.gameNumber} · mallow {eloFromOpponent(reviewing.opponent)} · {reviewResultWord(reviewing.result)}
           </span>
           <button className="small" onClick={onBackToPlay}>
             back to play
@@ -922,9 +949,14 @@ export interface PastGamesDrawerProps {
   // style the loading/empty states already use (no toast machinery exists
   // in this app).
   deleteError?: string | null;
+  // Resume round (2026-09-06), Wave D: fires when a resumable row's own
+  // "resume game" button is clicked -- a different action than onSelect
+  // (which opens review). GamePage.tsx navigates through withGameParam, the
+  // same path the pregame continue card uses.
+  onResume: (gameId: number) => void;
 }
 
-export function PastGamesDrawer({ open, games, onSelect, onClose, onDelete, deleteError }: PastGamesDrawerProps) {
+export function PastGamesDrawer({ open, games, onSelect, onClose, onDelete, onResume, deleteError }: PastGamesDrawerProps) {
   const [armed, setArmed] = useState<ArmState>(null);
   const disarmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -979,44 +1011,82 @@ export function PastGamesDrawer({ open, games, onSelect, onClose, onDelete, dele
     if (armed === gameId) clearDisarmTimer();
   };
 
+  // Resume round (2026-09-06), Wave D: her ask -- "when I click my past
+  // games ... it's just a row of dates ... let's make sure that we actually
+  // make the name visible to me" -- so the flat finished-only list is gone;
+  // every game with a move is grouped by local day (gameGroups.ts), numbered,
+  // and an unfinished one shows a chip instead of a result.
+  const groups = games === null ? null : groupGamesByDay(games, new Date());
+
   return (
     <div className="past-games-overlay" role="dialog" aria-label="past games" onClick={disarmOnElsewhereClick}>
       <div className="past-games-drawer pop-in">
         <div className="past-games-drawer-head">
           <span className="past-games-title">past games</span>
-          <button className="small" onClick={onClose}>
-            close
+          <button type="button" className="small pg2-close" aria-label="close" onClick={onClose}>
+            <DeleteXIcon />
           </button>
         </div>
         {deleteError && <p className="past-games-empty past-games-error">{deleteError}</p>}
-        {games === null && <p className="past-games-empty">loading...</p>}
-        {games !== null && games.length === 0 && <p className="past-games-empty">no finished games yet.</p>}
-        {games !== null && games.length > 0 && (
-          <div className="past-games-list">
-            {games.map((g) => (
-              <div
-                key={g.id}
-                className="past-games-row"
-                onMouseLeave={() => handleRowMouseLeave(g.id)}
-                onMouseEnter={() => handleRowMouseEnter(g.id)}
-              >
-                <button className="past-games-select" onClick={() => onSelect(g)}>
-                  <span className="past-games-date">{localDateFromStartedAt(g.startedAt)}</span>
-                  <span className="past-games-opponent">mallow {eloFromOpponent(g.opponent)}</span>
-                  <span className="past-games-result">{resultWord(g.result)}</span>
-                  <span className="past-games-lesson">{g.lesson ?? "no clear lesson yet"}</span>
-                </button>
-                <button
-                  className={"past-games-delete" + (armed === g.id ? " armed" : "")}
-                  aria-label={armed === g.id ? "confirm delete" : "delete game"}
-                  onClick={(e) => handleDeleteClick(e, g.id)}
-                >
-                  {armed === g.id ? "sure?" : <DeleteXIcon />}
-                </button>
-              </div>
-            ))}
-          </div>
+        {groups === null && <p className="past-games-empty">loading...</p>}
+        {groups !== null && groups.length === 0 && (
+          <p className="past-games-empty">no games yet. play one and it lands here.</p>
         )}
+        {groups !== null &&
+          groups.length > 0 &&
+          groups.map((group) => (
+            <div className="pg2-day" key={group.label}>
+              <div className="pg2-day-head">
+                <span className="pg2-day-name">{group.label}</span>
+                <span className="pg2-day-count">
+                  {group.games.length} game{group.games.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="pg2-list">
+                {group.games.map((g) => (
+                  <div
+                    key={g.id}
+                    className={"pg2-row" + (g.resumable ? " pg2-row-resumable" : "")}
+                    onMouseLeave={() => handleRowMouseLeave(g.id)}
+                    onMouseEnter={() => handleRowMouseEnter(g.id)}
+                  >
+                    <div className="pg2-rec">
+                      <button type="button" className="pg2-row-main" onClick={() => onSelect(g)}>
+                        <span className="pg2-num">game {g.gameNumber}</span>
+                        <span className="pg2-time">{localTimeFromStartedAt(g.startedAt)}</span>
+                        <span className="pg2-opp">mallow {g.elo ?? eloFromOpponent(g.opponent)}</span>
+                        {g.result != null ? (
+                          <span className={"pg2-result pg2-result-" + resultOrStatusWord(g).replace(" ", "-")}>
+                            {resultOrStatusWord(g)}
+                          </span>
+                        ) : (
+                          <span className={"pg2-chip" + (g.resumable ? " pg2-chip-live" : "")}>
+                            {resultOrStatusWord(g)}
+                          </span>
+                        )}
+                        <span className="pg2-lesson">
+                          {g.lesson ?? (g.result == null ? movesIn(g.plies) : "no clear lesson yet")}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={"pg2-del" + (armed === g.id ? " armed" : "")}
+                        aria-label={armed === g.id ? "confirm delete" : "delete game"}
+                        onClick={(e) => handleDeleteClick(e, g.id)}
+                      >
+                        {armed === g.id ? "sure?" : "delete"}
+                      </button>
+                    </div>
+                    {g.resumable && (
+                      <button type="button" className="small pg2-resume-btn" onClick={() => onResume(g.id)}>
+                        resume game
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
       </div>
     </div>
   );

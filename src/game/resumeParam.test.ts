@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readGameParam, withGameParam, isResumableSummary } from "./resumeParam";
+import { readGameParam, withGameParam } from "./resumeParam";
 
 describe("readGameParam", () => {
   it("reads a valid positive integer id", () => {
@@ -35,20 +35,5 @@ describe("withGameParam (returns a full path+search so the empty case is never '
   });
   it("overwrites an existing game id rather than duplicating it", () => {
     expect(withGameParam("/", "?game=1", 9)).toBe("/?game=9");
-  });
-});
-
-describe("isResumableSummary", () => {
-  it("a summary with moves is resumable", () => {
-    expect(isResumableSummary({ moves: [{ ply: 1 }] })).toBe(true);
-  });
-  it("a zero-move summary (orphaned stub) is NOT resumable", () => {
-    expect(isResumableSummary({ moves: [] })).toBe(false);
-  });
-  // Task 6 review, Important finding: a second tab left on `?game=<id>` for
-  // a game that finished elsewhere must not resume as if it were live -- a
-  // summary with moves AND a result is a finished game, not a live one.
-  it("a summary with moves and a result (a finished game) is NOT resumable", () => {
-    expect(isResumableSummary({ moves: [{ ply: 1 }], result: "1-0" })).toBe(false);
   });
 });
