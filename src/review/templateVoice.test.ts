@@ -60,25 +60,21 @@ const FORBIDDEN_PATTERNS: Pattern[] = [
   { name: "nuanced", re: /\bnuanced\b/i },
 ];
 
-// coach.md deviation (noted in the wave report): the file's own descriptive
-// prose (talking ABOUT the persona to the model -- "our chess brain hasn't
-// worked that moment out yet", the jargon-avoidance paragraph, etc.) has
-// long used " -- " as its house ASCII substitute for an em-dash, in 8
-// places, none of them in this wave's V1/V2 tables and none of them
-// player-facing copy. Rewriting those would violate "do not rewrite
-// anything not in the table"; so coach.md is scanned with every pattern
-// EXCEPT the spaced-double-hyphen one. The literal em-dash/en-dash
-// characters stay banned everywhere (global-constraints.md's "no
-// em-dashes... anywhere in copy"), and every other AI-ism pattern still
-// applies to the whole file.
+// coach.md deviation (noted in the wave report, controller-ruled 2026-09-08):
+// "needed, not just whether the move was good." (system prompt, one
+// pre-existing line) is ordinary contrastive English, not the AI-ism filler
+// rhythm ("not just an X, but a Y") the pattern is meant to catch. It is the
+// only "not just" in the file and isn't in this wave's tables, so "not just"
+// is excluded for coach.md and stays enforced on the .ts files, where it has
+// zero current hits.
 //
-// Same deviation, one more pattern: "needed, not just whether the move was
-// good." (system prompt, one pre-existing line) is ordinary contrastive
-// English, not the AI-ism filler rhythm ("not just an X, but a Y") the
-// pattern is meant to catch. It is the only "not just" in the file and
-// isn't in this wave's tables, so "not just" is excluded for coach.md too
-// and stays enforced on the .ts files, where it has zero current hits.
-const COACH_MD_EXCLUDED = new Set(["spaced double-hyphen", "not just"]);
+// The file's own prose used to also lean on " -- " as an ASCII em-dash
+// substitute in 8 places; the controller ruled (2026-09-08) that this text
+// is a style example the model reads, same as any other persona prose, so
+// those 8 were rewritten to real punctuation rather than excluded here.
+// coach.md is now held to the spaced-double-hyphen rule like everything
+// else.
+const COACH_MD_EXCLUDED = new Set(["not just"]);
 const COACH_MD_PATTERNS = FORBIDDEN_PATTERNS.filter((p) => !COACH_MD_EXCLUDED.has(p.name));
 
 interface Literal {
