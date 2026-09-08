@@ -137,6 +137,47 @@ describe("checkVoice -- ai-ism axis", () => {
     const violations = checkVoice("moving there leaves your knight free to be taken. move it to f6 instead.");
     expect(violations.filter((v) => v.axis === "ai-ism")).toEqual([]);
   });
+
+  // Voice-align round (2026-09-08): the same recurrence patterns
+  // src/review/templateVoice.test.ts lints template copy against, one
+  // case per newly added AI_ISM_WORDS entry / AI_ISM_PHRASES regex.
+  it("fails on 'quietly' as a softener", () => {
+    const violations = checkVoice("no piece drops, but this quietly gives ground.");
+    expect(violations.some((v) => v.axis === "ai-ism" && v.id === "quietly")).toBe(true);
+  });
+
+  it("fails on 'genuinely'", () => {
+    const violations = checkVoice("that's a genuinely good move.");
+    expect(violations.some((v) => v.axis === "ai-ism" && v.id === "genuinely")).toBe(true);
+  });
+
+  it("fails on 'real' used as a hollow booster (slip/gift/ground/pressure/issue/reason/plan/mistake)", () => {
+    expect(checkVoice("that was a real slip.").some((v) => v.axis === "ai-ism")).toBe(true);
+    expect(checkVoice("it handed you real ground.").some((v) => v.axis === "ai-ism")).toBe(true);
+    expect(checkVoice("the real issue is your king safety.").some((v) => v.axis === "ai-ism")).toBe(true);
+  });
+
+  it("fails on 'worth a look/a rewind/knowing/noting'", () => {
+    expect(checkVoice("that line is worth a look.").some((v) => v.axis === "ai-ism")).toBe(true);
+    expect(checkVoice("today's lesson: worth a rewind.").some((v) => v.axis === "ai-ism")).toBe(true);
+    expect(checkVoice("that's worth knowing.").some((v) => v.axis === "ai-ism")).toBe(true);
+    expect(checkVoice("this is worth noting.").some((v) => v.axis === "ai-ism")).toBe(true);
+  });
+
+  it("fails on 'not just' as filler contrast", () => {
+    const violations = checkVoice("say what the position needed, not just whether it was good.");
+    expect(violations.some((v) => v.axis === "ai-ism")).toBe(true);
+  });
+
+  it("fails on opening with 'that's the thing'", () => {
+    const violations = checkVoice("that's the thing about this position.");
+    expect(violations.some((v) => v.axis === "ai-ism")).toBe(true);
+  });
+
+  it("fails on opening with 'here's the real'", () => {
+    const violations = checkVoice("here's the real issue: pushing to e5 let her knight take it.");
+    expect(violations.some((v) => v.axis === "ai-ism")).toBe(true);
+  });
 });
 
 describe("checkVoice -- casing axis", () => {

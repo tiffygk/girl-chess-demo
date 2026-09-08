@@ -335,7 +335,7 @@ describe("couldImprove (part ii)", () => {
       undefined,
       undefined
     );
-    expect(note.couldImprove).toBe("her Qh4 on move 2 was a real slip. it handed you real ground.");
+    expect(note.couldImprove).toBe("her Qh4 on move 2 was a slip. it handed you ground.");
   });
 
   // Fix round 1, F2 (2026-08-29): OPPONENT_SLIP was reachable even when
@@ -885,7 +885,7 @@ describe("lead-change card copy (Wave E)", () => {
       "this is where the game tipped. after her Bb4 on move 11 you were ahead by about a piece's worth, and the lead was still there a move later. from here, steady play is what wins."
     );
     expect(note.nextTime).toBe(
-      "learn to feel this moment as you play: when you are up about a piece and nothing hangs, the job changes. trade pieces, keep your king safe, and let the lead win the game."
+      "learn to feel this moment as you play: when you are up about a piece and nothing hangs, the job changes. trade pieces and keep your king safe. the lead wins the game by itself."
     );
     expect(note.couldImprove).toBeUndefined();
   });
@@ -913,7 +913,7 @@ describe("lead-change card copy (Wave E)", () => {
       "this is where the game tipped away. your Be2 on move 8 left mallow ahead by about a piece's worth, and it held into the next move. the time for careful defence started here."
     );
     expect(note.nextTime).toBe(
-      "when the lead tips against you, the job changes too: keep pieces on, make her prove it, and look for chances to complicate."
+      "when the lead tips against you, the job changes too: keep pieces on and make her prove it. look for a chance to complicate."
     );
     expect(note.didWell).toBeUndefined();
   });
