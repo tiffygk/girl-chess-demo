@@ -44,6 +44,7 @@ import type { ThreatFacts } from "../annotator/motifs";
 // Evaluator interface" pattern hint.test.ts's ScriptedMultiEvaluator uses.
 import { computeHint as computeHintFacts, HINT_MOVETIME_MS, CHAT_POSITION_MOVETIME_MS } from "../annotator/hint";
 import type { Evaluator, Evaluation } from "../engines/types";
+import { StockfishEvaluator } from "../engines/stockfish";
 
 // H3 fix, logic-only half (union review, 2026-07-31): pure, no real
 // evaluator or crafted mate position needed -- classify.ts already owns
@@ -1087,6 +1088,257 @@ describe("GameManager", () => {
         (gm as any).evaluator = realEvaluator;
       }
     }, 40000);
+  });
+
+  // Wave A2 (2026-09-08, voice-align): a move she NAMES in chat but has not
+  // picked up on the board gets the ladder's own verified line -- owner's
+  // ask, verbatim: "why would I do knight to e4 when I could bring my queen
+  // to a4"; the chat said "our chess brain hasn't worked out that line for
+  // this position"; when she then picked up queen to a4, the ladder
+  // computed it and found the fork.
+  describe("chat resolves a move she names but has not picked up (Wave A2)", () => {
+    // Same counting technique as the A1 describe block above, widened to
+    // record the FEN each multipv search ran on -- A2's own search happens
+    // on a DIFFERENT fen (the position after the named candidate) from A1's
+    // own live-position search, so counting by fen is what actually proves
+    // "exactly one evaluator call on the post-candidate fen" rather than
+    // just "some call happened somewhere." bestMove is parity-conditioned
+    // (whiteToMove ? e2e4 : e7e5) so both the current live position (white
+    // to move at a fresh game) and the position after her candidate (black
+    // to move) each get a evaluator pick that is actually legal there, so
+    // deriveFacts/hintHoldsUp never fail for an unrelated reason.
+    class CountingByFenEvaluator implements Evaluator {
+      multiCalls: { fen: string; movetimeMs: number }[] = [];
+      async init() {}
+      async evaluate(fen: string): Promise<Evaluation> {
+        const bestMove = fen.includes(" w ") ? "e2e4" : "e7e5";
+        return { cp: 0, mate: null, bestMove, pv: [bestMove] };
+      }
+      async evaluateMulti(fen: string, movetimeMs: number): Promise<Evaluation[]> {
+        this.multiCalls.push({ fen, movetimeMs });
+        const bestMove = fen.includes(" w ") ? "e2e4" : "e7e5";
+        return [{ cp: 0, mate: null, bestMove, pv: [bestMove] }];
+      }
+      quit() {}
+    }
+
+    it("a named candidate she has not picked up triggers exactly one evaluator call on the post-candidate fen, and lands candidateLine in the fact list", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const fake = new CountingByFenEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      let capturedPrompt = "";
+      try {
+        gm.setCoachBackendForTesting({
+          name: "fake-a2-candidate",
+          async available() {
+            return true;
+          },
+          async generate(prompt: string) {
+            capturedPrompt = prompt;
+            return "that keeps your development on track.";
+          },
+        });
+        const result = await gm.chat(g.gameId, {
+          message: "what about knight to c3 instead",
+          context: { mode: "live" },
+        });
+        expect(result.ok).toBe(true);
+        const startFen = new Chess().fen();
+        const postCandidateFen = (() => {
+          const c = new Chess();
+          c.move({ from: "b1", to: "c3" });
+          return c.fen();
+        })();
+        // The A1 live-position search runs once on startFen; A2's own
+        // search runs once, separately, on the position AFTER Nc3 -- never
+        // conflated into one call.
+        expect(fake.multiCalls.filter((c) => c.fen === startFen)).toHaveLength(1);
+        expect(fake.multiCalls.filter((c) => c.fen === postCandidateFen)).toHaveLength(1);
+        expect(capturedPrompt).toContain('"candidateLine"');
+        expect(capturedPrompt).toContain('"san":"Nc3"');
+        expect(capturedPrompt).toContain("her best reply is");
+        // Never a raw centipawn number anywhere in the prompt's
+        // candidateLine section -- factsForModel's candidateLineForModel
+        // carries no evalCp field at all, only a prose note and sans.
+        const candidateLineJson = capturedPrompt.match(/"candidateLine":\{[^}]*\}/)?.[0] ?? "";
+        expect(candidateLineJson).not.toMatch(/evalCp/);
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 40000);
+
+    it("the same question again is a cache hit -- no second evaluator call on the post-candidate fen", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const fake = new CountingByFenEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      try {
+        gm.setCoachBackendForTesting({
+          name: "fake-a2-cache",
+          async available() {
+            return true;
+          },
+          async generate() {
+            return "that keeps your development on track.";
+          },
+        });
+        await gm.chat(g.gameId, { message: "what about knight to c3 instead", context: { mode: "live" } });
+        const countAfterFirst = fake.multiCalls.length;
+        const result = await gm.chat(g.gameId, {
+          message: "what about knight to c3 instead",
+          context: { mode: "live" },
+        });
+        expect(result.ok).toBe(true);
+        expect(fake.multiCalls.length).toBe(countAfterFirst);
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 40000);
+
+    it("a question naming the ladder's own current best does not search, and carries no candidateLine", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const live = (gm as any).games.get(g.gameId);
+      const fake = new CountingByFenEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      let capturedPrompt = "";
+      try {
+        gm.setCoachBackendForTesting({
+          name: "fake-a2-ladder-best",
+          async available() {
+            return true;
+          },
+          async generate(prompt: string) {
+            capturedPrompt = prompt;
+            return "that keeps your development on track.";
+          },
+        });
+        // First question populates live.lastHint (verified) at the start
+        // fen with bestMove e2e4 (this fake's own white-to-move pick).
+        await gm.chat(g.gameId, { message: "why was that recommended?", context: { mode: "live" } });
+        expect(live.lastHint.facts.bestUci).toBe("e2e4");
+        const countBefore = fake.multiCalls.length;
+        // "pawn to e4" resolves to the SAME uci as the ladder's own best --
+        // nothing new to look up.
+        const result = await gm.chat(g.gameId, { message: "why not pawn to e4", context: { mode: "live" } });
+        expect(result.ok).toBe(true);
+        expect(fake.multiCalls.length).toBe(countBefore);
+        expect(capturedPrompt).not.toContain('"candidateLine"');
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 40000);
+
+    it("a question naming the already-pending move does not search, and carries no candidateLine", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const fake = new CountingByFenEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      let capturedPrompt = "";
+      try {
+        gm.setCoachBackendForTesting({
+          name: "fake-a2-pending",
+          async available() {
+            return true;
+          },
+          async generate(prompt: string) {
+            capturedPrompt = prompt;
+            return "that keeps your development on track.";
+          },
+        });
+        // Populates live.lastHint at the start fen with bestMove e2e4 --
+        // deliberately DIFFERENT from the pending move below, so this test
+        // proves the pendingMove gate specifically, not the ladder-best one.
+        await gm.chat(g.gameId, { message: "why was that recommended?", context: { mode: "live" } });
+        const countBefore = fake.multiCalls.length;
+        const result = await gm.chat(g.gameId, {
+          message: "why not pawn to d4",
+          context: {
+            mode: "live",
+            pendingMove: { pieceKind: "p", from: "d2", to: "d4", judged: false },
+          },
+        });
+        expect(result.ok).toBe(true);
+        expect(fake.multiCalls.length).toBe(countBefore);
+        expect(capturedPrompt).not.toContain('"candidateLine"');
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 40000);
+
+    it("an ordinary message naming no move at all carries no candidateLine and adds no evaluator call beyond A1's own", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const fake = new CountingByFenEvaluator();
+      const realEvaluator = (gm as any).evaluator;
+      (gm as any).evaluator = fake;
+      let capturedPrompt = "";
+      try {
+        gm.setCoachBackendForTesting({
+          name: "fake-a2-no-candidate",
+          async available() {
+            return true;
+          },
+          async generate(prompt: string) {
+            capturedPrompt = prompt;
+            return "that keeps your development on track.";
+          },
+        });
+        const result = await gm.chat(g.gameId, { message: "how is my position looking?", context: { mode: "live" } });
+        expect(result.ok).toBe(true);
+        expect(capturedPrompt).not.toContain('"candidateLine"');
+        // Only A1's own single live-position search happened.
+        expect(fake.multiCalls.length).toBe(1);
+      } finally {
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 40000);
+
+    // Latency (brief item 4): the real wall-clock cost of ONE candidate
+    // search, against the real evaluator this suite already spawns
+    // elsewhere (factShelf.acceptance.test.ts). Not a regression gate on an
+    // exact number (Stockfish timing on shared CI hardware is not
+    // reproducible to the millisecond) -- it exists to report the measured
+    // figure against the constant arithmetic (HINT_MOVETIME_MS 1500ms +
+    // HINT_VERIFY_MOVETIME_MS 500ms verify pass = ~2.0s typical, worst case
+    // with the HINT_RETRY_MOVETIME_MS 3000ms escalation ~5.0s -- the same
+    // arithmetic A1's report.md already used, and the ceiling this wave's
+    // own report cites) rather than assert a specific millisecond value.
+    it("LATENCY: measures the real wall time of one candidate-line search (report only, real Stockfish)", async () => {
+      const g = await gm.newGame(sessionId, 1100);
+      const realEvaluator = (gm as any).evaluator;
+      const stockfish = new StockfishEvaluator();
+      await stockfish.init();
+      (gm as any).evaluator = stockfish;
+      try {
+        gm.setCoachBackendForTesting({
+          name: "fake-a2-latency",
+          async available() {
+            return true;
+          },
+          async generate() {
+            return "that keeps your development on track.";
+          },
+        });
+        const start = Date.now();
+        const result = await gm.chat(g.gameId, {
+          message: "what about knight to c3 instead",
+          context: { mode: "live" },
+        });
+        const elapsedMs = Date.now() - start;
+        expect(result.ok).toBe(true);
+        // Two verified searches happen in this one call (A1's own
+        // live-position search, plus A2's own candidate search) -- report
+        // the total, not a per-search isolate, since that IS what one real
+        // chat message pays. Sanity bound only: well under a minute even on
+        // slow CI hardware, so a real hang is still caught.
+        console.log(`[A2 latency] chat() with one named candidate: ${elapsedMs}ms wall time (real Stockfish, two searches)`);
+        expect(elapsedMs).toBeLessThan(60000);
+      } finally {
+        await stockfish.quit();
+        (gm as any).evaluator = realEvaluator;
+      }
+    }, 65000);
   });
 
   // Increment 3a Wave 2: narrate(). Uses setCoachBackendForTesting to inject
