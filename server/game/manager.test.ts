@@ -225,6 +225,75 @@ describe("GameManager", () => {
     expect((gm as any).games.has(g.gameId)).toBe(true);
   }, 20000);
 
+  // Wave D fix round 1 (2026-09-06): section 14 puts a two-click delete pill
+  // on unfinished/in-progress drawer rows, and since Wave A a forgotten game
+  // is rebuilt on demand -- so a null-result row with no live in-memory
+  // entry is not actually being played, and must be deletable. This models
+  // a restarted server: the game has a real row and a real move, but no
+  // `this.games` entry (evicted below rather than constructed via the
+  // db-fixture helpers, so it goes through the exact same newGame/playerMove
+  // path a real in-progress game would).
+  it("deleteGame removes an unfinished game that is not live in memory", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const mv = await gm.playerMove(g.gameId, "e2", "e4");
+    expect(mv.ok).toBe(true);
+    (gm as any).games.delete(g.gameId);
+    expect((gm as any).games.has(g.gameId)).toBe(false);
+
+    const r = gm.deleteGame(g.gameId);
+    expect(r).toEqual({ ok: true });
+    expect(getGame(g.gameId)).toBeUndefined();
+    expect(getGameMoves(g.gameId)).toEqual([]);
+
+    // Must not resurrect the deleted game as a "forgotten" one to rebuild.
+    const resumed = await gm.resume(g.gameId);
+    expect(resumed).toEqual({ ok: false, reason: "not_found" });
+  }, 20000);
+
+  // Wave D fix round 2 (2026-09-06, review-D2's Important finding): the
+  // race the fix above opened up. rebuildFromDb's only await is
+  // `this.opponentFor(elo)`, BEFORE it reaches `this.games.set`. If a
+  // deleteGame lands while a rebuild is suspended there, deleteGame sees
+  // no live entry (correctly, per the fix above) and deletes the rows --
+  // but when the suspended await resolves, the old code called
+  // `this.games.set` unconditionally, resurrecting a live game whose rows
+  // are already gone and which could never be deleted again until restart.
+  // opponentFor is stubbed with a manually-controlled deferred promise so
+  // the test can land the delete exactly inside that window, resolved with
+  // the REAL opponent instance newGame already cached for elo 1100 (a
+  // placeholder object would make the post-resume opponentReply call below
+  // throw on a missing pickMove, a different failure than the one under
+  // test).
+  it("a delete that lands during a rebuild's engine await wins; the rebuild sets no live entry", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const mv = await gm.playerMove(g.gameId, "e2", "e4");
+    expect(mv.ok).toBe(true);
+    (gm as any).games.delete(g.gameId);
+
+    const realOpponent = (gm as any).opponents.get(1100);
+    let releaseOpponent!: (o: unknown) => void;
+    const deferred = new Promise((resolve) => {
+      releaseOpponent = resolve;
+    });
+    const opponentSpy = vi.spyOn(gm as any, "opponentFor").mockReturnValue(deferred);
+
+    // resume() runs synchronously through its own row checks and into
+    // rebuildFromDb, suspending at the mocked opponentFor await -- by the
+    // time this line finishes, this.games has NOT been set yet.
+    const p = gm.resume(g.gameId);
+
+    const del = gm.deleteGame(g.gameId);
+    expect(del).toEqual({ ok: true });
+
+    releaseOpponent(realOpponent);
+    const resumed = await p;
+    expect(resumed).toEqual({ ok: false, reason: "corrupt" });
+    expect((gm as any).games.has(g.gameId)).toBe(false);
+    expect(getGame(g.gameId)).toBeUndefined();
+
+    opponentSpy.mockRestore();
+  }, 20000);
+
   // Finished -> gone from BOTH the db-backed listGames() and the in-memory
   // `this.games` map. Evicting the map entry matters on its own: a stale
   // LiveGame handle for a row that no longer exists in the db must never be
@@ -2746,15 +2815,20 @@ describe("GameManager", () => {
       spy.mockRestore();
     }, 20000);
 
-    // Correction (brief-A #2): deleteGame already refuses any game with
-    // result == null via getGame -- a forgotten unfinished game returns
-    // {ok:false, reason:"live"}, same as an unfinished game with a live
-    // in-memory entry. This pins that deleteGame must NOT route through
-    // ensureLive/rebuild to get there.
+    // Correction (Wave D fix round 1, 2026-09-06): the db-level
+    // result==null refusal this test used to pin is gone (see deleteGame's
+    // own comment) -- a forgotten unfinished game is now deletable, same as
+    // any other null-result row with no live in-memory entry. What still
+    // matters, and what this test now pins instead, is that deleteGame gets
+    // there WITHOUT routing through ensureLive/rebuildFromDb -- it must
+    // decide from the row alone, never pay for a rebuild just to delete.
     it("deleteGame never rebuilds", async () => {
       const id = forgottenGame(["e4", "e5"]);
+      const spy = vi.spyOn(gm as any, "rebuildFromDb");
       const r = gm.deleteGame(id);
-      expect(r).toEqual({ ok: false, reason: "live" });
+      expect(r).toEqual({ ok: true });
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
       expect((gm as any).games.has(id)).toBe(false);
     });
   });

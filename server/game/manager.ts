@@ -529,6 +529,18 @@ export class GameManager {
     if (!chess) return undefined;
     const elo = eloFromOpponentLabel(row.opponent) ?? 1100;
     const opponent = await this.opponentFor(elo);
+    // Wave D fix round 2 (2026-09-06): the row can be deleted while this was
+    // suspended on the await above (deleteGame requires no live entry to
+    // succeed, and there is none yet -- this method has not reached
+    // this.games.set below). Without this re-check the resumed await
+    // returns and sets a live entry anyway, resurrecting a game whose rows
+    // are already gone and which could never be deleted again until
+    // restart. A second concurrent rebuild for the same id can also have
+    // finished and set an entry while this one waited; return that one
+    // rather than clobbering it with a fresh (redundant) engine handle.
+    if (!getGame(gameId)) return undefined;
+    const already = this.games.get(gameId);
+    if (already) return already;
     // The stored label is a write-once fact about the engine that started
     // the game; it is not rewritten. If the engine tier differs now (lc0 was
     // up then and is down now, or the reverse) leave a trace, the way
@@ -1072,17 +1084,27 @@ export class GameManager {
   // misleading answer for an id nothing was ever created under. Reported as
   // reason:"not-found" so the route can answer 404 instead.
   //
-  // On success, ALSO evicts any (already-finished) `this.games` entry for
-  // this id -- the same "in-memory state can't outlive the db row"
-  // discipline the B6 fix already established for playerMove's finished
-  // guard: a stale handle for a row that no longer exists must never be
-  // able to act on it again.
+  // Wave D fix round 1 (2026-09-06): the db-level `result == null` refusal
+  // that used to sit here is GONE. It was written when the drawer only ever
+  // listed finished games; section 14 (owner-approved 2026-09-07) puts a
+  // two-click delete pill on unfinished and in-progress rows too, and since
+  // Wave A a forgotten game is rebuilt on demand from its row -- so a
+  // null-result row with no `this.games` entry is not actually being
+  // played, and the in-memory guard above is the only guard that still
+  // needs to hold (a game she is mid-move on must never vanish, per the
+  // original 2026-08-01 owner ask). This method must never call
+  // ensureLive/rebuildFromDb to decide that -- see the comment on
+  // ensureLive above.
+  //
+  // On success, ALSO evicts any `this.games` entry for this id -- the same
+  // "in-memory state can't outlive the db row" discipline the B6 fix
+  // already established for playerMove's finished guard: a stale handle
+  // for a row that no longer exists must never be able to act on it again.
   deleteGame(gameId: number): { ok: boolean; reason?: string } {
     const live = this.games.get(gameId);
     if (live && !live.finished) return { ok: false, reason: "live" };
     const game = getGame(gameId);
     if (!game) return { ok: false, reason: "not-found" };
-    if (game.result == null) return { ok: false, reason: "live" };
     deleteGameRows(gameId);
     this.games.delete(gameId);
     return { ok: true };
