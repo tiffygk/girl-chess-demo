@@ -617,7 +617,7 @@ function buildDoneWell(
   if (episode && result !== "0-1") {
     return {
       section: "done well",
-      text: "you held a worse position under real pressure and got through it.",
+      text: "you held a worse position under pressure and got through it.",
       phase: phases.phaseAt(episode.ply),
       category: "defense",
       ply: episode.ply,

@@ -254,7 +254,7 @@ function opponentRungPool(rung: OpponentRung, ctx: HintCopyCtx): readonly string
       return [
         "this loses ground. nothing hangs, but the position gets worse.",
         "nothing hangs here, but you're drifting into a worse spot.",
-        "no piece drops, but this quietly gives ground.",
+        "no piece drops, but this gives ground for nothing.",
       ];
   }
 }
