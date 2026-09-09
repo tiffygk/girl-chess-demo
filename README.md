@@ -100,7 +100,7 @@ npm run doctor  # says what, if anything, is still missing and how to fix it
 npm run dev     # starts the game; the last line tells you the address to open
 ```
 
-Open http://localhost:5173. You will see the board, a strength picker, and "start game". Click a piece, then a square; the judge weighs the move while the piece sits ghosted, and "play it" confirms. Your games are saved to `data/girlchess.db` on your machine and never leave it. To browse the 51 games I played instead of starting empty, run `npm run demo`.
+Open http://localhost:5173. You will see the board, a strength picker, and "start new game". Click a piece, then a square; the judge weighs the move while the piece sits ghosted, and "play it" confirms. Your games are saved to `data/girlchess.db` on your machine and never leave it. To browse the 51 games I played instead of starting empty, run `npm run demo`.
 
 The coach, cookie, needs you signed in to Claude on this Mac (the Claude Code app's sign-in; install it from https://claude.com/claude-code, run claude once in Terminal, and sign in). Without that, cookie says so in the chat panel, and everything else still works: the opponent, the judge's warnings and hints, and the full debrief after each game. If `ANTHROPIC_API_KEY` happens to be set in your shell, the coach ignores it and uses your Claude login only; nothing here bills a metered key. The API listens on 127.0.0.1 and refuses requests from other origins.
 

@@ -2064,12 +2064,36 @@
   box-shadow: 0 3px 0 #BEEBD8, 0 6px 10px rgba(76,175,140,.14);
 }
 
-/* "past games" trigger — a plain candy pill, reused verbatim at both call
-   sites (pregame panel, live debrief footer). */
+/* "past games" trigger — a sky candy pill, reused verbatim at both call
+   sites (pregame panel, live debrief footer). Owner ask 2026-09-09: a
+   colour other than white. The start pill keeps the pregame panel's own
+   magenta (.pregame-panel button.small, :277-284); past games sits beside
+   it in sky, and the continue card's resume game stays mint. Fill/ink are
+   the in-progress chip's pair (:398), band is the cyan voice's ink (:43),
+   ambient rgba is the pill's own resting value. */
 .gc-app button.small.past-games-btn {
-  background: #fff; color: #7A6BB5;
-  box-shadow: 0 3px 0 #E3D9F5, 0 6px 10px rgba(90,70,180,.12);
+  background: #D7FAFF; color: #1A7A93;
+  box-shadow: 0 3px 0 #23A8C7, 0 6px 10px rgba(90,70,180,.12);
 }
+.gc-app button.small.past-games-btn:hover { box-shadow: 0 5px 0 #23A8C7, 0 8px 14px rgba(90,70,180,.16); }
+.gc-app button.small.past-games-btn:active { box-shadow: 0 1px 0 #23A8C7, 0 4px 8px rgba(90,70,180,.12); }
+
+/* UI small fixes round (2026-09-09): the mid-game "back" button. A
+   candied-lemon pill (owner tint, 2026-09-09, so it never reads as the
+   idle end button): fill = the stripe's yellow (line ~1045), ink = the
+   plain button's ink (~172), band and lift = button.small's own shadows
+   (~188-191), 15px so it sits level with the end button. No glyph, no
+   animation; the end button still earns its own colour only when armed.
+   Isolated additive selector; touches no protected fold element. Hover
+   is guarded :not(:disabled) so a disabled back button never shows the
+   hover lift (controller ruling, 2026-09-09). */
+.gc-app button.small.back-btn {
+  background: #FFD84D; color: #4A3B7E;
+  box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.2);
+  font-size: 15px;
+}
+.gc-app button.small.back-btn:hover:not(:disabled) { box-shadow: 0 5px 0 #C9BFEF, 0 8px 14px rgba(90,70,180,.24); }
+.gc-app button.small.back-btn:active { box-shadow: 0 1px 0 #C9BFEF, 0 4px 8px rgba(90,70,180,.18); }
 
 /* Saved-games drawer — a centered overlay, same pop-in as the game-over
    panel. Organized by each game's lesson tag (rank-1 turning point label),

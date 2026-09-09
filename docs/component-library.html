@@ -1445,6 +1445,7 @@ body.gc-app { align-items: center; }
     <div class="lib-toc-group"><span class="lib-toc-head">cookie</span><a href="#sec-chat-corner">coach chat</a><a href="#sec-chat-opener-glyph">chat opener</a></div>
     <div class="lib-toc-group"><span class="lib-toc-head">after the game</span><a href="#sec-endpanel">game end</a><a href="#sec-debrief">analysis &amp; debrief</a><a href="#mallow-highlighted-drawer">mallow drawer</a><a href="#sec-past-games">past games</a></div>
     <div class="lib-toc-group"><span class="lib-toc-head">paper</span><a href="#sec-docs">round reviews</a></div>
+    <div class="lib-toc-group"><span class="lib-toc-head">for review</span><a href="#sec-back-and-start">back button + start new game · shipped 2026-09-09</a></div>
   </nav>
 </header>
 
@@ -3666,7 +3667,7 @@ body.gc-app { align-items: center; }
       <div class="pg2-pregame-row">
         <span class="pg2-pregame-label">mallow plays at</span>
         <span class="pg2-pregame-select">1300</span>
-        <button type="button" class="small">start game</button>
+        <button type="button" class="small">start new game</button>
         <button type="button" class="small" style="background:#fff;color:#7A6BB5;box-shadow:0 3px 0 #E3D9F5, 0 6px 10px rgba(90,70,180,.12)">past games</button>
       </div>
     </div>
@@ -4058,6 +4059,78 @@ body.gc-app { align-items: center; }
 </section>
 
 </div><!-- /lib-tab-panel-archive -->
+
+<!-- ============ FOR REVIEW 2026-09-09: BACK BUTTON + START NEW GAME (ui small fixes round) ============
+     Deliberately OUTSIDE both tabs, the library's convention for a pending review: neither
+     shipped nor archived, so it shows on either tab until the owner rules. Nothing built. -->
+<section class="lib-section" id="sec-back-and-start">
+  <span class="lib-kicker">CONTROLS · 05 · FOR REVIEW · 2026-09-09</span>
+  <h2>The way out mid-game, and a clearer start<span class="lib-status st-reserved">shipped 2026-09-09</span></h2>
+  <p class="lib-caption">her ask, 2026-09-08: a "back" button to the left of "end the game?" that goes to the start screen without ending the game, and "start game" renamed "start new game" because it sat under "resume game". back is the same reset the post-game "new game" button uses; the game stays open, the continue card and the drawer keep naming it, and resume game brings it back.</p>
+  <style>
+    /* back: candied lemon, so it never reads as the idle end button (owner, 2026-09-09).
+       fill = the stripe's yellow (sugar-glitch.css:1045); ink = the plain button's ink (:172);
+       band and lift = button.small's own shadows (:188-191); 15px to sit level with the end
+       button. no new hex, no glyph, no animation. disabled keeps opacity .5 over the tint. */
+    .gc-app button.small.back-btn { background: #FFD84D; color: #4A3B7E; box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.2); font-size: 15px; }
+    .gc-app button.small.back-btn:hover { box-shadow: 0 5px 0 #C9BFEF, 0 8px 14px rgba(90,70,180,.24); }
+    .gc-app button.small.back-btn:active { box-shadow: 0 1px 0 #C9BFEF, 0 4px 8px rgba(90,70,180,.18); }
+    /* past games: sky, so the start row reads white (start new game), sky, and the card's mint
+       (owner ask, 2026-09-09). fill = the in-progress chip's #D7FAFF, ink = its teal #1A7A93
+       (sugar-glitch.css:398), band = the cyan voice's #23A8C7 (:43); the ambient stays the pill's
+       own rgba(90,70,180,.12) (:2071), lifts follow button.small's pattern. replaces the white
+       .past-games-btn at :2069-2072 when ported. no new hex, no animation. */
+    .gc-app button.small.past-games-btn { background: #D7FAFF; color: #1A7A93; box-shadow: 0 3px 0 #23A8C7, 0 6px 10px rgba(90,70,180,.12); }
+    .gc-app button.small.past-games-btn:hover { box-shadow: 0 5px 0 #23A8C7, 0 8px 14px rgba(90,70,180,.16); }
+    .gc-app button.small.past-games-btn:active { box-shadow: 0 1px 0 #23A8C7, 0 4px 8px rgba(90,70,180,.12); }
+    /* library mock only, not part of the port: two shipped rules this file never carried,
+       reproduced here so the row renders as it does in the app.
+       sugar-glitch.css:225 bumps every egc-* button to 15px (why back is 15px too);
+       sugar-glitch.css:182 dims any disabled button to opacity .5 (the state rule's "wait"). */
+    #sec-back-and-start .game-controls button.small[class*="egc-"] { font-size: 15px; }
+    #sec-back-and-start .game-controls button.small:disabled { opacity: .5; cursor: default; transform: none; }
+  </style>
+  <div class="lib-card">
+    <span class="lib-label" style="display:block;margin-bottom:12px">THE LIVE ROW: back, then end the game? (idle, then each armed skin, then disabled while mallow moves)</span>
+    <div class="lib-row">
+      <div class="lib-cell"><span class="lib-label">IDLE</span>
+        <div class="controls game-controls"><button type="button" class="small back-btn">back</button><button type="button" class="small egc-idle">end the game?</button></div></div>
+      <div class="lib-cell"><span class="lib-label">ARMED, WIN</span>
+        <div class="controls game-controls"><button type="button" class="small back-btn">back</button><button type="button" class="small egc-win">call it: you're winning. take the win?</button></div></div>
+      <div class="lib-cell"><span class="lib-label">ARMED, RESIGN</span>
+        <div class="controls game-controls"><button type="button" class="small back-btn">back</button><button type="button" class="small egc-resign">call it: mallow has this. resign?</button></div></div>
+    </div>
+    <div class="lib-row" style="margin-top:22px">
+      <div class="lib-cell"><span class="lib-label">MALLOW'S MOVE: back waits</span>
+        <div class="controls game-controls"><button type="button" class="small back-btn" disabled>back</button><button type="button" class="small egc-idle" disabled>end the game?</button></div></div>
+    </div>
+    <span class="lib-code" style="display:inline-block;margin-top:12px">back = candied lemon #FFD84D (the stripe's yellow, sugar-glitch.css:1045) with the plain button's #4A3B7E ink (:172) and button.small's own 0 3px 0 #C9BFEF band (:188) at 15px · dom order back, end · gap 12px, the row centres and wraps as today · no glyph, no animation · her ruling 2026-09-09: a tint, so back never reads as the idle end button; the end button still earns its own colour only when armed</span>
+    <p class="lib-note" style="margin-top:10px">back keeps the game open. it is absent while a move is picked up (play it / take it back own that row), disabled while mallow is thinking, and clears an armed end-the-game state without ending anything.</p>
+  </div>
+  <div class="lib-card">
+    <span class="lib-label" style="display:block;margin-bottom:12px">THE START SCREEN AFTER BACK: the continue card names the game; start new game, not start game; past games in sky</span>
+    <div class="pg2-pregame-mock">
+      <div class="pg2-continue">
+        <span class="pg2-continue-kicker">game in progress</span>
+        <p class="pg2-continue-body">game 195: you and mallow 1300 are mid-game, 4 moves in.</p>
+        <button type="button" class="small pg2-resume-btn">resume game</button>
+      </div>
+      <div class="pg2-pregame-row">
+        <span class="pg2-pregame-label">mallow plays at</span>
+        <span class="pg2-pregame-select">1300</span>
+        <button type="button" class="small">start new game</button>
+        <button type="button" class="small past-games-btn">past games</button>
+      </div>
+    </div>
+    <span class="lib-code" style="display:inline-block;margin-top:12px">one string changes: start game becomes start new game · past games = sky #D7FAFF / #1A7A93 / #23A8C7, so start new game is the one white pill · the card and resume game are the shipped section 15 pieces, untouched · the frame is section 15's pregame mock at its own width, min(92vw, 440px)</span>
+    <p class="lib-note" style="margin-top:10px">this is the screen back lands on. the card is there because the stored game id still points at the open game and the server still calls it resumable; start new game starts a fresh game and leaves this one in the drawer as in progress.</p>
+  </div>
+  <div class="lib-card">
+    <span class="lib-label" style="display:block;margin-bottom:12px">NARROW: the live row at 340px wraps, nothing shears</span>
+    <div class="lib-cell" style="width:340px;flex:none"><div class="controls game-controls" style="width:340px"><button type="button" class="small back-btn">back</button><button type="button" class="small egc-win">call it: you're winning. take the win?</button></div></div>
+    <span class="lib-code" style="display:inline-block;margin-top:12px">340px is section 15's narrow width · the lemon back pill holds line one and the row's own flex-wrap drops the armed label under it; no clipping, no scaling, no rule of the protected fold touched</span>
+  </div>
+</section>
 
 <footer class="lib-footer">
   Girl Chess — Sugar Glitch component library · Phase 3, Round 2 (visual library refinement) · rebuilt 2026-07-17 against <span class="lib-code">design/front-end-components.md</span> and <span class="lib-code">src/skin/sugar-glitch.css</span> (commit fafa6e4).<br>
