@@ -1,6 +1,6 @@
 // COUNT IS MIRRORED IN PROSE. Adding or removing a rule here also means updating:
 //   docs/evaluation.md ("Nineteen rules run over...", "that rule and the other eighteen")
-//   docs/README.md ("Nineteen rules replay the post-game analysis")
+//   docs/index.md ("Nineteen rules replay the post-game analysis")
 //   tools/replay-check.ts and replay-check.test.ts ("ALL 19 debriefInvariants.ts rules")
 // The count drifted from 17 to 19 unnoticed between 2026-08-25 and 2026-09-03 because
 // nothing pointed here from there. Verify with: grep -oE 'rule: *"[^"]+"' this file | sort -u | wc -l
