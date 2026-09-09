@@ -34,4 +34,9 @@ describe("the mid-game back button (owner ask 2026-09-08)", () => {
     expect(cssSrc).toMatch(/\.gc-app button\.small\.back-btn \{[^}]*background: #FFD84D;[^}]*color: #4A3B7E;[^}]*box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba\(90,70,180,\.2\);[^}]*font-size: 15px;/);
     expect(cssSrc).not.toMatch(/\.back-btn[^{]*\{[^}]*animation/);
   });
+  // RED when the past-games pill is missing the sky recipe or is still white.
+  it("past games wears the sky pill, not white", () => {
+    expect(cssSrc).toMatch(/\.gc-app button\.small\.past-games-btn \{[^}]*background: #D7FAFF;[^}]*color: #1A7A93;[^}]*box-shadow: 0 3px 0 #23A8C7, 0 6px 10px rgba\(90,70,180,\.12\);/);
+    expect(cssSrc).not.toMatch(/\.gc-app button\.small\.past-games-btn \{[^}]*background: #fff;/);
+  });
 });

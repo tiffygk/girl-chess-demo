@@ -2064,12 +2064,18 @@
   box-shadow: 0 3px 0 #BEEBD8, 0 6px 10px rgba(76,175,140,.14);
 }
 
-/* "past games" trigger — a plain candy pill, reused verbatim at both call
-   sites (pregame panel, live debrief footer). */
+/* "past games" trigger — a sky candy pill, reused verbatim at both call
+   sites (pregame panel, live debrief footer). Owner ask 2026-09-09: a
+   colour other than white, so the pregame start row reads white (start
+   new game), sky (past games), and the continue card's mint (resume
+   game). Fill/ink are the in-progress chip's pair (:398), band is the
+   cyan voice's ink (:43), ambient rgba is the pill's own resting value. */
 .gc-app button.small.past-games-btn {
-  background: #fff; color: #7A6BB5;
-  box-shadow: 0 3px 0 #E3D9F5, 0 6px 10px rgba(90,70,180,.12);
+  background: #D7FAFF; color: #1A7A93;
+  box-shadow: 0 3px 0 #23A8C7, 0 6px 10px rgba(90,70,180,.12);
 }
+.gc-app button.small.past-games-btn:hover { box-shadow: 0 5px 0 #23A8C7, 0 8px 14px rgba(90,70,180,.16); }
+.gc-app button.small.past-games-btn:active { box-shadow: 0 1px 0 #23A8C7, 0 4px 8px rgba(90,70,180,.12); }
 
 /* UI small fixes round (2026-09-09): the mid-game "back" button. A
    candied-lemon pill (owner tint, 2026-09-09, so it never reads as the
