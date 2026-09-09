@@ -13,7 +13,10 @@ import { adjudicatePosition } from "../annotator/adjudicate";
 import { computeHint as computeHintFacts, computePositionView, type HintFacts } from "../annotator/hint";
 import { moveEndpoints } from "../annotator/moveEndpoints";
 import { deriveContinuation } from "../annotator/continuation";
-import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
+import { deriveThreatFacts, type ThreatFacts, type RecommendationFacts } from "../annotator/motifs";
+// Wave A2 (2026-09-08, voice-align): the pure parser for a move she names in
+// chat but has not picked up on the board -- see that file's own header.
+import { parseCandidateMove } from "../coach/candidateMove";
 // Increment 3b: panel-ruled turning points + move classifications. Reads
 // STORED evals only (see persistGameSummary below) — never touches
 // this.evaluator or the shared queue, same "engine math only" boundary as
@@ -34,7 +37,7 @@ import { assembleFactList, narrate as narrateFacts } from "../coach";
 import {
   chat as chatWithCoach, assembleChatFactList, CHAT_HISTORY_WINDOW, CHAT_MAX_LEN,
   CHAT_TIMEOUT_MS, CHAT_REVIEW_BUDGET_MS,
-  type ChatContext, type ChatOutcome,
+  type ChatContext, type ChatOutcome, type CandidateLine,
 } from "../coach/chat";
 // Wave D (coach-truth-speed round): the deterministic board/general router --
 // computed here, server-side, from the user's own message text plus whether
@@ -75,7 +78,20 @@ interface LiveGame {
    *  is dropped at the chat.ts fold (ChatFactList.recentHints carries only
    *  moveNumber + bestSan). In-memory only, no schema change. */
   hintHistory: { fen: string; bestSan: string; moveNumber: number }[];
+  /** Wave A2 (2026-09-08, voice-align): the ladder's own verified line for a
+   *  move she NAMES in chat but has not picked up on the board -- keyed
+   *  `${fen}|${uci}` so the same question about the same position is a
+   *  cache hit (no second search). In-memory only, no schema change; never
+   *  persisted (a fresh server process starts every game's shelf empty,
+   *  same as lastHint/hintHistory above). Cap 8 entries, oldest dropped --
+   *  same "keep it small" discipline HINT_HISTORY_CAP already applies. */
+  candidateLines: Map<string, CandidateLine>;
 }
+
+// Wave A2: cap on LiveGame.candidateLines, mirrors HINT_HISTORY_CAP's own
+// "keep it small" reasoning -- a single conversation rarely names more than
+// a handful of moves it hasn't played.
+const CANDIDATE_LINES_CAP = 8;
 
 // Task 3: cap on LiveGame.hintHistory -- owner-calibratable, mirrors the
 // "keep it small" discipline CHAT_HISTORY_WINDOW already applies to chat
@@ -560,6 +576,7 @@ export class GameManager {
       finished: false,
       playerColor: row.player_color === "b" ? "b" : "w",
       hintHistory: [],
+      candidateLines: new Map(),
     };
     this.games.set(gameId, live);
     return live;
@@ -593,7 +610,15 @@ export class GameManager {
     // is her as white, but this is the one place that fact gets recorded
     // rather than assumed.
     const gameId = createGame(sessionId, (opponent.fallback ? "fallback-" : "maia-") + elo, "w");
-    this.games.set(gameId, { chess: new Chess(), opponent, ply: 0, finished: false, playerColor: "w", hintHistory: [] });
+    this.games.set(gameId, {
+      chess: new Chess(),
+      opponent,
+      ply: 0,
+      finished: false,
+      playerColor: "w",
+      hintHistory: [],
+      candidateLines: new Map(),
+    });
     return { gameId, fen: new Chess().fen(), fallback: opponent.fallback, elo };
   }
 
@@ -1392,6 +1417,128 @@ export class GameManager {
     return facts;
   }
 
+  // Wave A2 (2026-09-08, voice-align): the on-demand lookup for a move she
+  // NAMES in chat but has not picked up on the board -- owner's ask,
+  // verbatim: "why would I do knight to e4 when I could bring my queen to
+  // a4"; the chat said "our chess brain hasn't worked out that line for
+  // this position"; when she then picked up queen to a4, the ladder
+  // computed it and found the fork. Returns undefined when the message
+  // names no move (parseCandidateMove, never a guess), or the named move IS
+  // already the pending move or the ladder's own current best -- nothing
+  // new to look up. Otherwise runs exactly one verified search
+  // (computeHintFacts, the same call searchAndCacheVerifiedHint above uses)
+  // on the position AFTER the candidate, cached on live.candidateLines keyed
+  // `${fen}|${uci}` so the same question about the same position is a cache
+  // hit, never a second search.
+  private async resolveCandidateLine(
+    live: LiveGame,
+    message: string,
+    liveFen: string,
+    pendingUci: string | undefined,
+    ladderBestUci: string | undefined
+  ): Promise<CandidateLine | undefined> {
+    const candidate = parseCandidateMove(message, liveFen);
+    if (!candidate) return undefined;
+    if (candidate.uci === pendingUci || candidate.uci === ladderBestUci) return undefined;
+
+    const key = `${liveFen}|${candidate.uci}`;
+    const cached = live.candidateLines.get(key);
+    if (cached) return cached;
+
+    // parseCandidateMove already verified this is a legal move at liveFen
+    // (its own honesty gate); replay it here purely to reach the position
+    // AFTER it, never re-checking legality.
+    const probe = new Chess(liveFen);
+    const mv = probe.move({
+      from: candidate.uci.slice(0, 2),
+      to: candidate.uci.slice(2, 4),
+      promotion: (candidate.uci.slice(4, 5) || undefined) as "q" | "r" | "b" | "n" | undefined,
+    });
+    if (!mv) return undefined;
+    const postFen = probe.fen();
+
+    const hint = await computeHintFacts(postFen, this.evaluator);
+    let line: CandidateLine;
+    if (!hint) {
+      // Same "no facts, no claim" contract as the rest of the annotator --
+      // a position computeHintFacts's own isGameOver() guard rejects (e.g.
+      // the candidate itself is checkmate) still names the candidate, just
+      // with no reply to report.
+      line = { san: candidate.san, uci: candidate.uci, evalCp: null, evalMate: null, verified: false };
+    } else {
+      // Review-A2 defect 2: hint.bestUci is computeHint's CHOSEN move --
+      // for a real hint, that is deliberately trade-averse within
+      // HINT_TRADE_MARGIN_CP (a quieter move preferred over the engine's
+      // own top pick, when comparable), because that field exists to
+      // answer "what should SHE play." Mallow's reply is not a
+      // recommendation to a human who might regret a trade -- mallow plays
+      // the engine's actual best move, i.e. the ONE multipv search's own
+      // top candidate, best-first at index 0 (HintFacts.candidates, see
+      // hint.ts's own comment on that field). candidates is `[]` only when
+      // escalated (the verification retry is itself a single-line
+      // re-search with no trade-aware reselection to correct for), in
+      // which case hint.bestUci already IS that single raw line.
+      const top = hint.candidates[0];
+      const replyUci = top ? top.uci : hint.bestUci;
+      const replyEvalCp = top ? top.evalCp : hint.evalCp;
+      const replyEvalMate = top ? top.evalMate : hint.evalMate;
+      const replyPv = top ? [] : hint.pv;
+
+      const replyBoard = new Chess(postFen);
+      let replyMv;
+      try {
+        replyMv = replyBoard.move({
+          from: replyUci.slice(0, 2),
+          to: replyUci.slice(2, 4),
+          promotion: (replyUci.slice(4, 5) || undefined) as "q" | "r" | "b" | "n" | undefined,
+        });
+      } catch {
+        replyMv = null;
+      }
+      const replySan = replyMv?.san;
+      // Mirrors classify.ts's own deriveThreatFacts call: postFen is the
+      // position AFTER her candidate move, mallow to move, exactly the
+      // shape deriveThreatFacts expects ("her" = whoever just moved, here
+      // the candidate's own mover). The Evaluation-shaped object built here
+      // is the RAW top line's own uci/cp/mate (never the trade-averse
+      // chosen one) -- no second engine call, the multipv search already
+      // paid for this candidate. pv is `[]` for the raw-top case
+      // (HintFacts.candidates carries uci/evalCp/evalMate only, no pv --
+      // deriveThreatFacts's OWN optional recapture-holds refinement simply
+      // has nothing to refine on then, same "no facts, no claim" contract
+      // as the rest of this file; the motif itself never depends on pv).
+      let replyMotif: ThreatFacts["motif"] | undefined;
+      try {
+        const threat = deriveThreatFacts(
+          postFen,
+          mv.to,
+          live.playerColor,
+          { bestMove: replyUci, cp: replyEvalCp, mate: replyEvalMate, pv: replyPv },
+          mv.captured
+        );
+        replyMotif = threat?.motif;
+      } catch {
+        replyMotif = undefined;
+      }
+      line = {
+        san: candidate.san,
+        uci: candidate.uci,
+        replySan,
+        replyMotif,
+        evalCp: replyEvalCp,
+        evalMate: replyEvalMate,
+        verified: hint.verified,
+      };
+    }
+
+    live.candidateLines.set(key, line);
+    if (live.candidateLines.size > CANDIDATE_LINES_CAP) {
+      const oldestKey = live.candidateLines.keys().next().value;
+      if (oldestKey !== undefined) live.candidateLines.delete(oldestKey);
+    }
+    return line;
+  }
+
   // Increment 2.5: player-initiated deep hint. The pending move is client-only
   // state, so live.chess.fen() IS the before-position the hint applies to.
   // Runs on the shared serialized evaluator queue: a hint can briefly delay a
@@ -1663,6 +1810,29 @@ export class GameManager {
         }
       }
     }
+    // Wave A2 (2026-09-08, voice-align): owner's ask, verbatim -- "why would
+    // I do knight to e4 when I could bring my queen to a4"; the chat said
+    // "our chess brain hasn't worked out that line for this position"; when
+    // she then picked up queen to a4, the ladder computed it and found the
+    // fork. If this message names a move she has not picked up (parsed by
+    // parseCandidateMove, never a guess) and it differs from both the
+    // pending move and the ladder's own current best, resolve and cache the
+    // ladder's own verified line for it -- one search at most per distinct
+    // position, ever (resolveCandidateLine's own cache).
+    let candidateLine: CandidateLine | undefined;
+    if (live && !live.finished && body.context.mode === "live") {
+      const liveFen = live.chess.fen();
+      const pending = body.context.pendingMove;
+      // ChatContext.pendingMove carries from/to, never a uci field (checked
+      // against chat.ts and chatFocus.ts's pendingMoveContext, which builds
+      // it -- deviation from the brief's own "verify field name" note: there
+      // is no uci field to read, so it is built here from from+to, the same
+      // way every other uci string in this file is built).
+      const pendingUci = pending ? `${pending.from}${pending.to}` : undefined;
+      const ladderBestUci =
+        live.lastHint && live.lastHint.fen === liveFen ? live.lastHint.facts.bestUci : undefined;
+      candidateLine = await this.resolveCandidateLine(live, message, liveFen, pendingUci, ladderBestUci);
+    }
     const facts = assembleChatFactList(
       gameMoves,
       body.context,
@@ -1679,7 +1849,10 @@ export class GameManager {
       // manager.ts is the one place that knows the live game's hint history.
       // Undefined (not an empty array) when nothing has been shown yet, same
       // convention highlightedPlies just above follows.
-      live?.hintHistory.length ? live.hintHistory : undefined
+      live?.hintHistory.length ? live.hintHistory : undefined,
+      // Wave A2 (2026-09-08, voice-align): copied through as-is -- see
+      // resolveCandidateLine and ChatFactList.candidateLine's own comments.
+      candidateLine
     );
 
     const historyRows = getChatMessages(gameId, CHAT_HISTORY_WINDOW);
