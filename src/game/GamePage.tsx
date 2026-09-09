@@ -2849,7 +2849,7 @@ export function GamePage() {
                   ))}
                 </select>
                 <button className="small" onClick={() => startGame(sessionId, opponentElo)}>
-                  start game
+                  start new game
                 </button>
                 <PastGamesButton onClick={openPastGames} />
               </div>
