@@ -18,13 +18,9 @@ By default, selecting a move is not playing it. Click a piece, click a square, a
 
 Girl Chess is meant to be played on a computer, not on a phone or a small screen.
 
-Move 11 of a real game, knight to d5 selected but not confirmed: I ask the coach why not queen to a4 instead.
+Move 2 of game 195, knight to h3 selected, not confirmed: the judge nudges, the per-move note says pawn to d4, and I ask why castling first is worse. Since a recent improvement, the chat reads the same verified search as the hint ladder and the per-move note. It defends the move: a rim knight guards less, and d4 castles just as fast and takes the center first.
 
-![Knight ghosted on d5, the judge warning against it and naming Ne4, and the coach chat below answering why not queen to a4](docs/images/01-coach-chat-why-not-queen-a4.png)
-
-This chat reveals a current weakness of our coach integration; the coach doesn't always correctly fetch the chess math available to it as well as our hint tree does. So I selected queen to a4 instead: the judge found the fork and better explained the misstep, so I took it back and played the knight as recommended.
-
-![Queen ghosted on a4, unconfirmed: the judge line "careful. this one hurts. look at your knight on c3." and the fork explained beneath it](docs/images/02-judge-fork-warning-queen-a4.png)
+![Move 2 of game 195, knight ghosted on h3: the judge's nudge, the per-move note recommending pawn to d4, the hint pinned in the chat, and the reply backing d4 over the rim knight](docs/images/01-hint-and-chat-agree-knight-h3.png)
 
 Move 29 of another game, 21 points up: the judge nudges a winning move because a faster checkmate was there.
 
@@ -48,13 +44,12 @@ The move-4 turning point replayed: solid arrows for what happened, dashed for wh
 
 ## Coach guardrails
 
-The coach kept giving confidently wrong advice, and the easy story was "try a bigger model" or "shrink the system prompt." I measured our baseline first. The cause was a fact gap: the coach reasoned about chess from facts it never had. Feeding it the facts and forcing it to stick to them deterministically, not a bigger model, fixed it. Placement errors in that measurement went from 7.5% to 0; explanation answers from 13-15 seconds to about 4. In the committed games, one first draft in nine still trips the placement check.
+The coach kept giving confidently wrong advice, and the easy story was "try a bigger model" or "shrink the system prompt." I measured our baseline first. The cause was a fact gap: the coach reasoned about chess from facts it never had. Feeding it the facts and forcing it to stick to them deterministically, not a bigger model, fixed it. Since 2026-09-08 those facts come from the hint ladder's own verified search, for the position and any move you name but have not picked up (PRs #16 and #17). Placement errors in that measurement went from 7.5% to 0; explanation answers from 13-15 seconds to about 4. In the committed games, one first draft in nine still trips the placement check.
 
 Two guardrails: every coach reply is checked before it reaches you, and the debrief code is checked before it ships. On questions about the board, a claim about a move, placement, defence or checkmate that the facts don't support gets one retry, then a written fallback answer. The check overcorrects: ten of the 113 committed chat replies ended in a fallback answer. That is the trade I chose, so nothing the checks can disprove reaches the player. The post-game analysis is written by code, not the model, from a replay of the game's own moves. Nineteen deterministic rules check it against that replay over every finished game in my history before any change can merge. That took the debrief's "you could have won faster" claims from 60% contradicted to about zero. [docs/evaluation.md](docs/evaluation.md) explains the checks, thinking budget iterations, and model comparisons; [docs/technical-decisions.md](docs/technical-decisions.md) has the fact-gap diagnosis.
 
-*Three limits*:
+*Two limits*:
 
-- Facts pass from Stockfish through a fact layer to Sonnet, and that handoff is still lossy. The coach can't yet fetch everything the judge and the hints work from, which is why the queen-to-a4 refutation is more complete from the judge than from the coach. That is the open alignment work.
 - Missed checkmates are measured only on the flagged move, not the whole game, so a second one later in the game goes uncounted.
 - My 1350 rating is a hard-coded placeholder anyone who downloads this inherits. A rating judged from how you actually play is on the roadmap.
 

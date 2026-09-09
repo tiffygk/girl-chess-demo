@@ -43,7 +43,7 @@ Two instruments live in there, and they did different jobs. Keeping them apart i
 
 ## Two ordinary questions, from the record
 
-The repository README shows the showpiece, a move-11 fork. Most coaching is smaller. Two exchanges from `data/girlchess-demo.db`, both against mallow at 1300, both games I won.
+The repository README shows the showpiece, the chat defending a hint at move 2. Most coaching is smaller. Two exchanges from `data/girlchess-demo.db`, both against mallow at 1300, both games I won.
 
 Game 141, before my tenth move. I had a bishop check lined up and asked why the judge disliked it:
 
@@ -60,10 +60,6 @@ Game 148, asked from the debrief after the game, about my second move:
 > no, after your pawn to g4 she played her pawn to a5. the pawn to d5 you're thinking of only shows up in our chess brain's line for the move it wanted instead: pawn to d4.
 
 Two follow-ups on the same moment sit beside it, one rated down, one up. The 82 thumbs in the database split 48 up, 34 down. These are `advice_traces` rows 63 and 107; my questions are in the `prompt` column.
-
-The README's two move-11 screenshots show the coach declining to evaluate queen to a4 and the judge refuting it moments later. The judge's line, copied from the second screenshot (that game is not in the demo database):
-
-> moving your queen to a4 walks into a fork, one piece hitting two: her bishop to c6 would hit both your queen and your knight on f3 at once, and you can only save one. moving your knight to e4 instead attacks her bishop on f6, keeping the pressure on you.
 
 ## Live demo
 
