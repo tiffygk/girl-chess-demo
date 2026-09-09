@@ -1930,7 +1930,7 @@ body.gc-app { align-items: center; }
         <button type="button" class="small past-games-btn">past games</button>
       </div>
     </div>
-    <span class="lib-code" style="display:inline-block;margin-top:12px">one string changes: start game becomes start new game · the start pill is magenta from the pregame panel's own rule, past games is sky #D7FAFF / #1A7A93 / #23A8C7, the card's resume game is mint · the frame is section 15's pregame mock at min(92vw, 440px)</span>
+    <span class="lib-code" style="display:inline-block;margin-top:12px">one string changes: start game becomes start new game · the start pill is magenta from the pregame panel's own rule, past games is sky #D7FAFF / #1A7A93 / #23A8C7, the card's resume game is mint · the frame is section 15's pregame mock at the action slot's 556px</span>
     <p class="lib-note" style="margin-top:10px">this is the screen back lands on. the card is there because the stored game id still points at the open game and the server still calls it resumable; start new game starts a fresh game and leaves this one in the drawer as in progress.</p>
   </div>
   <div class="lib-card">
@@ -3476,7 +3476,7 @@ body.gc-app { align-items: center; }
 /* pregame-panel mock chrome for context only */
 .pg2-pregame-mock {
   display: flex; flex-direction: column; gap: 12px; align-items: center;
-  width: min(92vw, 440px);
+  width: min(92vw, 556px); /* the action slot's width at the 1512x982 laptop viewport: min(92vw, --board-size), the board height-bound at 556px */
 }
 .pg2-pregame-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: center; }
 .pg2-pregame-label { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13px; color: #7A6BB5; }
