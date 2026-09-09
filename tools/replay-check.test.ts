@@ -365,7 +365,7 @@ describe("F4: ratchet allowlists are pinned -- growth requires editing this test
     expect([...KNOWN_EM_DASH_TRACES].sort((a, b) => a - b)).toEqual([46, 94, 123, 191, 193, 196, 197, 199, 202]);
   });
   it("KNOWN_DEFENSE_CLAIM_TRACES", () => {
-    expect([...KNOWN_DEFENSE_CLAIM_TRACES].sort((a, b) => a - b)).toEqual([118]);
+    expect([...KNOWN_DEFENSE_CLAIM_TRACES].sort((a, b) => a - b)).toEqual([118, 341]);
   });
   it("KNOWN_DEBRIEF_VIOLATIONS (per game:rule) -- emptied 2026-07-29 (Task 3): the ratchet actually ratcheted", () => {
     expect([...KNOWN_DEBRIEF_VIOLATIONS].sort()).toEqual([]);

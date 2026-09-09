@@ -17,7 +17,7 @@ import { toMoverCp } from "../annotator/classify";
 // mirrored. If you are about to copy a phase threshold into this file,
 // stop: phaseParity.test.ts will fail.
 import { phasesForGame, type GamePhase } from "../../src/review/gamePhases";
-import type { ThreatFacts, RecommendationFacts } from "../annotator/motifs";
+import type { ThreatFacts, RecommendationFacts, ThreatMotif } from "../annotator/motifs";
 import type { CoachBackend, CoachUsage } from "./backends/types";
 import { getPersona, isTimeoutError, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
@@ -395,6 +395,37 @@ export interface ChatFactList {
   // here. Absent when the live record carries no hints yet, so ordinary
   // chat and every existing call site are untouched.
   recentHints?: { moveNumber: number; bestSan: string }[];
+  // Wave A2 (2026-09-08, voice-align): owner's ask, verbatim -- "why would
+  // I do knight to e4 when I could bring my queen to a4"; a move she NAMES
+  // in chat but has not picked up on the board has no computed line behind
+  // it. manager.ts's chat handler resolves the named move with
+  // parseCandidateMove, runs the ladder's own verified search on the
+  // position after it (cached per fen+uci, one search at most), and passes
+  // the result straight through here -- unlike hintFindings above, there is
+  // no fen-matching fold: this is freshly computed for THIS message, about
+  // the exact move THIS message named, so it is copied through as-is.
+  // Absent whenever the message names no move, or names the move already
+  // pending/the ladder's own best (manager.ts's own gate).
+  candidateLine?: CandidateLine;
+}
+
+// Wave A2 (2026-09-08, voice-align): the ladder's verified line for a move
+// the player named but has not played -- san/uci of the named candidate
+// itself, mallow's best reply to it (replySan, converted uci->san from the
+// post-candidate fen, same discipline hintFindings.bestSan already
+// follows), and why that reply works (replyMotif, the same ThreatMotif
+// token context.threat already carries to the model). evalCp/evalMate are
+// the reply's own eval, side-to-move signed at the post-candidate fen --
+// never spoken as a raw cp number (factsForModel's candidateLineForModel
+// below is the one place this reaches the model, and it never states cp).
+export interface CandidateLine {
+  san: string;
+  uci: string;
+  replySan?: string;
+  replyMotif?: ThreatMotif;
+  evalCp: number | null;
+  evalMate: number | null;
+  verified: boolean;
 }
 
 // Every position-shaped fact the coach gets, derived from one chess.js
@@ -615,7 +646,15 @@ export function assembleChatFactList(
   // was actually shown, not a claim about the CURRENT position, so there is
   // no staleness to check). fen is carried on this param only so the shape
   // matches LiveGame.hintHistory byte-for-byte; the fold below drops it.
-  hintHistory?: { fen: string; bestSan: string; moveNumber: number }[]
+  hintHistory?: { fen: string; bestSan: string; moveNumber: number }[],
+  // Wave A2 (2026-09-08, voice-align): additive optional 9th param, same
+  // "caller derives, this function only carries it through" discipline as
+  // every other optional param here -- manager.ts is the one place that
+  // resolves the message's named candidate and runs the search. Unlike
+  // hintCandidate above, this is copied straight through with no
+  // fen-matching gate: it was computed for THIS exact message, about the
+  // exact move THIS message named, so there is no staleness to check.
+  candidateLine?: CandidateLine
 ): ChatFactList {
   const chess = new Chess();
   const ordered = [...gameMoves].sort((a, b) => a.ply - b.ply);
@@ -764,6 +803,13 @@ export function assembleChatFactList(
   // not be rejected" reasoning as every other fold here -- if she asks "why
   // did you say Kh1 earlier" the coach must be able to name Kh1.
   for (const h of hintHistory ?? []) sans.add(h.bestSan);
+  // Wave A2 (2026-09-08, voice-align): the named candidate itself and
+  // mallow's best reply to it must both be speakable, same "the coach's own
+  // true statement must not be rejected" reasoning as every fold here.
+  if (candidateLine) {
+    sans.add(candidateLine.san);
+    if (candidateLine.replySan) sans.add(candidateLine.replySan);
+  }
 
   // Round 3 (Q2 step 3): fold the hint shelf into the fact list ONLY when
   // its fen matches the position actually in play -- live currentFen, or the
@@ -860,6 +906,9 @@ export function assembleChatFactList(
     // re-derive facts from. Undefined (not an empty array) when the caller
     // passes nothing, same convention hintFindings just above follows.
     recentHints: hintHistory?.map((h) => ({ moveNumber: h.moveNumber, bestSan: h.bestSan })),
+    // Wave A2 (2026-09-08, voice-align): copied through as-is -- see the
+    // param's own comment for why this gets no fen-matching fold.
+    candidateLine,
   };
 }
 
@@ -1168,6 +1217,14 @@ export function validateChat(
   for (const line of [facts.context?.hintFocus?.pvSans, facts.context?.turningPointFocus?.pvSans]) {
     const last = line?.[line.length - 1];
     if (line && last && last.endsWith("#")) focusMateNs.push(Math.ceil(line.length / 2));
+  }
+  // Wave A2 (2026-09-08, voice-align): the candidate line's own evalMate is
+  // a real, checked answer too (candidateLineForModel's note states it in
+  // exactly this digit form when present) -- fold it into the same truth
+  // array rather than widen checkMateClaims's signature, reusing the
+  // existing exemption mechanism unchanged.
+  if (facts.candidateLine?.evalMate !== undefined && facts.candidateLine?.evalMate !== null) {
+    focusMateNs.push(Math.abs(facts.candidateLine.evalMate));
   }
   // Round 3 (Q2 step 4): facts.hintFindings?.evalMate is undefined when no
   // shelf entry matches this position (preserves the no-truth-source cut),
@@ -1606,8 +1663,37 @@ function hintFindingsForModel(hintFindings: ChatFactList["hintFindings"]) {
 const RECENT_HINTS_NOTE =
   "hints the player was actually shown this game, oldest first. two different bestSan entries for the same move number are search variance between looks, not a change in the position -- if she asks why a suggestion changed, this list is the only ground truth; never invent a timeline beyond it.";
 
+// Wave A2 (2026-09-08, voice-align): the model-facing rendering of
+// ChatFactList.candidateLine, in the style of hintFindingsForModel just
+// above -- a fact paired with a note explaining how to read it, never a
+// raw centipawn number (the persona's own ban list, made mechanical the
+// same way hintFindingsForModel's `score` field is). An evalMate IS stated
+// as "mate in N" -- the existing exemption checkMateClaims already grants
+// evalMate-sourced claims, widened in validateChat below to also vouch for
+// this field.
+function candidateLineForModel(candidateLine: NonNullable<ChatFactList["candidateLine"]>) {
+  const c = candidateLine;
+  let note = `the player asked about ${c.san}, which is not on the board; our chess brain looked at it`;
+  if (c.replySan) {
+    note += `: her best reply is ${c.replySan}`;
+    if (c.replyMotif) note += ` (${c.replyMotif})`;
+    note += ".";
+  } else {
+    note += ", but could not resolve a clean reply for it.";
+  }
+  note += c.verified
+    ? " this is the ladder's own verified search, trust this over your own reasoning."
+    : " this is a quick look, not deeply checked -- weigh it, don't just defer to it.";
+  if (c.evalMate !== null) note += ` this line ends in mate in ${Math.abs(c.evalMate)}.`;
+  return {
+    note,
+    san: c.san,
+    ...(c.replySan ? { replySan: c.replySan } : {}),
+  };
+}
+
 function factsForModel(facts: ChatFactList, mentioned: number[] = []) {
-  const { allowedSans, context, focusPosition, perPlyAnalysis, hintFindings, ...rest } = facts;
+  const { allowedSans, context, focusPosition, perPlyAnalysis, hintFindings, candidateLine, ...rest } = facts;
   let strippedContext: Record<string, unknown> | undefined;
   if (context) {
     const { best, threat, herMove, hintFocus, pendingMove, ...restCtx } = context;
@@ -1641,6 +1727,11 @@ function factsForModel(facts: ChatFactList, mentioned: number[] = []) {
     // it, following hintFindingsForModel's own "note" field as the idiomatic
     // shape for pairing a fact with how to read it).
     ...(facts.recentHints?.length ? { recentHintsNote: RECENT_HINTS_NOTE } : {}),
+    // Wave A2 (2026-09-08, voice-align): omitted entirely (not even
+    // `candidateLine: undefined`) when the message named no move --
+    // candidateLineForModel returns undefined and the spread below drops
+    // the key rather than emit an explicit undefined.
+    ...(candidateLine ? { candidateLine: candidateLineForModel(candidateLine) } : {}),
   };
 }
 
