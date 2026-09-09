@@ -402,7 +402,7 @@ export const KNOWN_EM_DASH_TRACES = new Set([46, 94, 123, 191, 193, 196, 197, 19
 // pending-move claim shape (context.pendingMove + currentFen); of those,
 // exactly one -- trace 118 -- flags a real pre/post-move adjudication
 // mismatch. See report-1.md for the verbatim run this was read off of.
-export const KNOWN_DEFENSE_CLAIM_TRACES = new Set<number>([118]);
+export const KNOWN_DEFENSE_CLAIM_TRACES = new Set<number>([118, 341]); // 341 (2026-09-09): game 197 ply 4, a chat reply on the pending move f3 whose "doesn't defend e4" claim is false after the move (and wrong in chess: f3 is diagonal to e4); served build 974fe80, before the verified-search change; a REAL coach defect, ledgered for the next round in .superpowers/sdd/rounds/2026-09-08-voice-align/progress.md, not a checker false positive
 // Fix-wave F1 (2026-07-29): this was a per-GAME allowlist -- skipping a
 // listed game id from ALL 19 debriefInvariants.ts rules, not just the one
 // rule it is known to break. Concrete failure this caused: once Task 2's
