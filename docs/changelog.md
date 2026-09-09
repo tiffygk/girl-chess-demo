@@ -7,7 +7,7 @@ abridged from the original. Newest first, matching `CLAUDE.md`'s own convention.
 
 This is an internal engineering work log, written for the next session rather than for a reader. It is
 published because the record is part of what this repo shows, not because it is a tour. Start at
-[README.md](README.md) if you want one.
+[index.md](index.md) if you want one.
 
 Paths in the shape `1 product/`, `2 build/`, `3 visual/` and `6 handoffs/` point into a private
 Obsidian vault holding the product docs, plans and handoffs. They are not in this repository and will
