@@ -18,9 +18,9 @@ By default, selecting a move is not playing it. Click a piece, click a square, a
 
 Girl Chess is meant to be played on a computer, not on a phone or a small screen.
 
-Move 2 of game 195, knight to h3 selected, not confirmed: the judge nudges, the per-move note says pawn to d4, and I ask why castling first is worse. Since a recent improvement, the chat reads the same verified search as the hint ladder and the per-move note. It defends the move: a rim knight guards less, and d4 castles just as fast and takes the center first.
+Move 2 of game 195. The knight is selected and sits ghosted on h3, not yet played. Before you confirm, the judge weighs the move and the hint tells you where to look; "more?" adds detail. "ask about this" opens the coach chat on that moment, so you can push back and get the reasoning, drawn from the same verified search as the hint.
 
-![Move 2 of game 195, knight ghosted on h3: the judge's nudge, the per-move note recommending pawn to d4, the hint pinned in the chat, and the reply backing d4 over the rim knight](docs/images/01-hint-and-chat-agree-knight-h3.png)
+![Move 2 of game 195: a knight ghosted on h3 awaiting confirmation, the judge's hint with "ask about this" and "more?", the note under the board, and the coach chat with the hint pinned and a follow-up answered](docs/images/01-hint-and-chat-agree-knight-h3.png)
 
 Move 29 of another game, 21 points up: the judge nudges a winning move because a faster checkmate was there.
 
@@ -71,7 +71,7 @@ I designed and built this 0-to-1 as a product manager's first vibed project ever
 
 The docs are published at [tiffygk.github.io/girl-chess-demo](https://tiffygk.github.io/girl-chess-demo/), so none of them need a clone to read.
 
-- [docs/README.md](docs/README.md) is the front door: the product spec, one increment plan-to-gate, three real review catches, and the coach-transport decision.
+- [docs/index.md](docs/index.md) is the docs site's home page: the product spec, one increment plan-to-gate, three real review catches, and the coach-transport decision.
 - [docs/evaluation.md](docs/evaluation.md) is how the tutor is kept honest.
 - [CLAUDE.md](CLAUDE.md) is the architecture map and runbook a future Claude session reads first.
 
