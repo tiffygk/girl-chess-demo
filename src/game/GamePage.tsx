@@ -2229,6 +2229,19 @@ export function GamePage() {
     setExploreSourcePly(null);
   }, [resetGameState]);
 
+  // UI small fixes round (2026-09-09), owner ask: "a button that says
+  // 'back' ... that takes me to the previous screen ... without ending
+  // the game". The same reset the post-game "new game" button runs,
+  // exposed mid-game. It never adjudicates and never touches the stored
+  // active-game id, so the game stays open on the server and the pregame
+  // continue card and the past-games drawer keep offering it. Guarded like
+  // handleEndGameClick: never mid-reply, never during an end-game preview,
+  // never during the takedown replay (handleNewGame checks replayingRef).
+  const handleLeaveGame = useCallback(() => {
+    if (!gameId || gameOver || busyRef.current || endGameBusyRef.current) return;
+    handleNewGame();
+  }, [gameId, gameOver, handleNewGame]);
+
   // Wave 3.5, item 2 (owner ask, 2026-08-01): real per-game deletion, fired
   // only on the drawer's own confirmed (second-click) delete. Optimistic --
   // the row disappears immediately, restored on failure since there's no
@@ -2855,6 +2868,9 @@ export function GamePage() {
               </div>
             ) : (
               <div className="controls game-controls">
+                <button className="small back-btn" disabled={!gameId || uiBusy} onClick={handleLeaveGame}>
+                  back
+                </button>
                 {/* Wave C, task C-A: one button replaces separate resign /
                     offer-draw. First click previews the engine's own call
                     on the position; the armed second click always shows
@@ -2872,7 +2888,7 @@ export function GamePage() {
                           : "egc-idle") +
                     (winningResign ? " egc-shake" : "")
                   }
-                  disabled={!gameId}
+                  disabled={!gameId || uiBusy}
                   onClick={handleEndGameClick}
                 >
                   {endGameLabel}

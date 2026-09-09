@@ -2071,6 +2071,23 @@
   box-shadow: 0 3px 0 #E3D9F5, 0 6px 10px rgba(90,70,180,.12);
 }
 
+/* UI small fixes round (2026-09-09): the mid-game "back" button. A
+   candied-lemon pill (owner tint, 2026-09-09, so it never reads as the
+   idle end button): fill = the stripe's yellow (line ~1045), ink = the
+   plain button's ink (~172), band and lift = button.small's own shadows
+   (~188-191), 15px so it sits level with the end button. No glyph, no
+   animation; the end button still earns its own colour only when armed.
+   Isolated additive selector; touches no protected fold element. Hover
+   is guarded :not(:disabled) so a disabled back button never shows the
+   hover lift (controller ruling, 2026-09-09). */
+.gc-app button.small.back-btn {
+  background: #FFD84D; color: #4A3B7E;
+  box-shadow: 0 3px 0 #C9BFEF, 0 6px 10px rgba(90,70,180,.2);
+  font-size: 15px;
+}
+.gc-app button.small.back-btn:hover:not(:disabled) { box-shadow: 0 5px 0 #C9BFEF, 0 8px 14px rgba(90,70,180,.24); }
+.gc-app button.small.back-btn:active { box-shadow: 0 1px 0 #C9BFEF, 0 4px 8px rgba(90,70,180,.18); }
+
 /* Saved-games drawer — a centered overlay, same pop-in as the game-over
    panel. Organized by each game's lesson tag (rank-1 turning point label),
    not by raw game id, per the UX research's "saving is organized by
