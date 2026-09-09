@@ -24,7 +24,7 @@ Protected behaviour: the narrow-window fold, where at narrow widths the coach pa
 Standing rule: anything that SHIPS goes into the front-end component library (vault `3 visual/component-library.html`). A mockup is a proposal, not a record; where a mockup and the shipped code disagree, the shipped code wins. The library lives OUTSIDE the repo and never merges; it has to be updated deliberately.
 
 UI module map (update when structure shifts):
-- `src/game/GamePage.tsx`: owns all move-flow state (pending/judge tokens, hint fetch, captures, end-game arming), the pregame elo picker, and the pending-gated keydown effect.
+- `src/game/GamePage.tsx`: owns all move-flow state (pending/judge tokens, hint fetch, captures, end-game arming), the pregame elo picker, and the pending-gated keydown effect, and the mid-game back button (handleLeaveGame, the same reset as new game).
 - `src/board/Board.tsx`: render and animation only, driven by props and a handle.
 - `src/game/resolveClick.ts`: click to move, including castle by rook.
 - `src/game/resolvePendingClick.ts`: retarget/cancel/confirm state machine.
