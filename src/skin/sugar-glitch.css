@@ -2066,10 +2066,11 @@
 
 /* "past games" trigger — a sky candy pill, reused verbatim at both call
    sites (pregame panel, live debrief footer). Owner ask 2026-09-09: a
-   colour other than white, so the pregame start row reads white (start
-   new game), sky (past games), and the continue card's mint (resume
-   game). Fill/ink are the in-progress chip's pair (:398), band is the
-   cyan voice's ink (:43), ambient rgba is the pill's own resting value. */
+   colour other than white. The start pill keeps the pregame panel's own
+   magenta (.pregame-panel button.small, :277-284); past games sits beside
+   it in sky, and the continue card's resume game stays mint. Fill/ink are
+   the in-progress chip's pair (:398), band is the cyan voice's ink (:43),
+   ambient rgba is the pill's own resting value. */
 .gc-app button.small.past-games-btn {
   background: #D7FAFF; color: #1A7A93;
   box-shadow: 0 3px 0 #23A8C7, 0 6px 10px rgba(90,70,180,.12);
