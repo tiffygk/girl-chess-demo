@@ -148,6 +148,13 @@ const STEPS: Step[] = [
     check: (out) =>
       /VERDICT:\s*PASS/.test(out) ? undefined : "replay-check did not print 'VERDICT: PASS'",
   },
+  {
+    name: "publish-scan",
+    cmd: "npx",
+    args: ["tsx", "tools/publish-scan.ts"],
+    check: (out) =>
+      /VERDICT:\s*(PASS|SKIP)/.test(out) ? undefined : "publish-scan did not print 'VERDICT: PASS' or 'VERDICT: SKIP'",
+  },
 ];
 
 function main() {
