@@ -7,9 +7,10 @@
 // already sitting in a tracked file that was merged before that pattern
 // file existed, or that was added and merged without ever going through a
 // git push from a guarded worktree. This script closes that gap: it scans
-// every TRACKED file in the repo, the same way, against the same pattern
-// file, and is wired into `npm run gate` (tools/gate.ts) so a bad merge
-// cannot go green.
+// every TRACKED file in the repo except anything under data/ (the owner's
+// db and its scratch copies, never source text worth scanning), the same
+// way, against the same pattern file, and is wired into `npm run gate`
+// (tools/gate.ts) so a bad merge cannot go green.
 //
 // The pattern file itself is never read here except at runtime, never
 // copied, never printed in full, and never committed. See CLAUDE.md for
