@@ -162,7 +162,7 @@ function main() {
   const failures: string[] = [];
 
   console.log(
-    "[gate] seven checks: database, in-play guard, tests, types, lint, truth-check, replay-check. about 2 to 4 minutes."
+    "[gate] eight checks: database, in-play guard, tests, types, lint, truth-check, replay-check, publish-scan. about 2 to 4 minutes."
   );
 
   // Runs FIRST: if her history is damaged, nothing else matters and the run
