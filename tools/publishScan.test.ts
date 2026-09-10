@@ -101,6 +101,23 @@ describe("publish-scan", () => {
     expect(result.stdout).not.toContain("VERDICT: PASS");
   });
 
+  it("ignores blank lines and # comments in the pattern file when matching, not only when deciding SKIP", () => {
+    // A blank line is an empty regex to grep -f, which matches every line of
+    // every file. readPatternLines already strips blanks/comments to decide
+    // SKIP-vs-scan; the actual grep invocation must scan against that SAME
+    // cleaned list, not the raw file, or a harmless blank/comment line turns
+    // into a match-everything pattern.
+    const patternsPath = path.join(tmpRepo, "fixture-patterns-with-noise.txt");
+    fs.writeFileSync(patternsPath, "# a comment line, not a pattern\n\nzeppelin\n");
+    fs.writeFileSync(path.join(tmpRepo, "clean.md"), "nothing to see here, no fixture words at all\n");
+    git(["add", "clean.md"], tmpRepo);
+
+    const result = run(["--patterns", patternsPath], tmpRepo);
+
+    expect(result.stdout).toContain("VERDICT: PASS");
+    expect(result.status).toBe(0);
+  });
+
   it("does not trip on an untracked file containing a fixture word (tracked-only scope)", () => {
     const patternsPath = writePatternFile(tmpRepo, FIXTURE_WORDS);
     fs.writeFileSync(path.join(tmpRepo, "clean.md"), "nothing to see here\n");

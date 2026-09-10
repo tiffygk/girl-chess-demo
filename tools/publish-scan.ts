@@ -26,6 +26,7 @@
 // Exit code 0 iff VERDICT is PASS or SKIP; 1 iff VERDICT is FAIL.
 
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { spawnSync } from "node:child_process";
@@ -119,15 +120,35 @@ export function runScan(toplevel: string, patternsPath: string): { hits: Hit[]; 
   if (patternLines.length === 0) {
     return { hits: [], skipped: true };
   }
-  const files = listTrackedFiles(toplevel);
-  const hits: Hit[] = [];
-  for (const rel of files) {
-    const abs = path.join(toplevel, rel);
-    if (!fs.existsSync(abs)) continue; // e.g. a gitlink/submodule entry, nothing to read
-    if (looksBinary(abs)) continue;
-    hits.push(...scanFile(abs, rel, patternsPath));
+
+  // grep -f reads the file RAW: a blank line in it is an empty regex, which
+  // matches every line of every file it scans; a `#` line would need to
+  // literally start a line with `#` to matter here (nothing does), but
+  // treating it as a comment is exactly what readPatternLines already
+  // promises the SKIP-vs-scan decision above. The cleaned lines must be
+  // what grep actually matches against, not just what decided whether to
+  // run at all -- so write them to a scratch file and point grep there,
+  // never at patternsPath directly. Kept as plain grep (BRE, no -E) so this
+  // stays byte-identical in dialect to guard #16's own invocation.
+  const cleanedPatternsPath = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "publish-scan-")),
+    "cleaned-patterns.txt"
+  );
+  fs.writeFileSync(cleanedPatternsPath, patternLines.join("\n") + "\n");
+
+  try {
+    const files = listTrackedFiles(toplevel);
+    const hits: Hit[] = [];
+    for (const rel of files) {
+      const abs = path.join(toplevel, rel);
+      if (!fs.existsSync(abs)) continue; // e.g. a gitlink/submodule entry, nothing to read
+      if (looksBinary(abs)) continue;
+      hits.push(...scanFile(abs, rel, cleanedPatternsPath));
+    }
+    return { hits, skipped: false };
+  } finally {
+    fs.rmSync(path.dirname(cleanedPatternsPath), { recursive: true, force: true });
   }
-  return { hits, skipped: false };
 }
 
 function main() {
