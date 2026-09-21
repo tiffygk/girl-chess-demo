@@ -13,7 +13,7 @@ import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import { inspectWeights } from "../server/engines/weightsCheck";
-import { ENGINE_PATHS, ALLOWED_ELOS } from "../server/engines/paths";
+import { ENGINE_PATHS, ALLOWED_ELOS, resolveStockfishPath } from "../server/engines/paths";
 import { probeCoach } from "../server/coach/backends/probe";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -119,6 +119,50 @@ export function nodeCheckResult(runningVersion: string, nvmrcMajor: number | nul
   return { ok: true, line: `Node v${runningVersion}` };
 }
 
+// A different Stockfish than the pin is a NOTE (exit 0), never a failure
+// (owner ruling 2026-09-21): the game works fine on another version, only
+// the eval fixtures may read differently. CI still asserts the pin by name
+// (tools/engineVersion.sh); the doctor is the friendly, non-blocking signal
+// for a stranger's machine. Factored as a function taking an injectable
+// path resolver (default resolveStockfishPath) so the "pinned wins over
+// PATH" preference is testable against a synthesized binary, never this
+// real checkout's own engines/ directory.
+export function makeStockfishCheck(resolvePath: () => string = resolveStockfishPath): Check {
+  return {
+    name: "stockfish",
+    run: async () => {
+      const sfPath = resolvePath();
+      const pinned = sfPath !== "stockfish";
+      if (!pinned && !has("stockfish")) {
+        return { ok: false, line: "stockfish (the chess engine) is not installed. run ./setup.sh." };
+      }
+      const out = runUciExchange(sfPath);
+      if (out === null || !/uciok/.test(out)) {
+        return {
+          ok: false,
+          line: pinned
+            ? `the pinned stockfish at ${sfPath} does not answer. delete engines/ and run ./setup.sh again.`
+            : "stockfish is installed but does not answer. run: brew reinstall stockfish",
+        };
+      }
+      const idName = parseIdName(out);
+      if (idName && idName.includes(EXPECTED_STOCKFISH_ID)) {
+        return {
+          ok: true,
+          line: pinned
+            ? `stockfish answers (${EXPECTED_STOCKFISH_ID}, the pinned engine in engines/)`
+            : `stockfish answers (${EXPECTED_STOCKFISH_ID}, found on PATH)`,
+        };
+      }
+      return {
+        ok: true,
+        note: true,
+        line: `${idName ?? "stockfish"} found at ${sfPath}; this repo is tested on ${EXPECTED_STOCKFISH_ID}. the game works; eval tests may differ. run ./setup.sh to install the pinned engine.`,
+      };
+    },
+  };
+}
+
 export const realChecks: Check[] = [
   {
     name: "node",
@@ -140,22 +184,7 @@ export const realChecks: Check[] = [
         ? { ok: true, line: "Homebrew installed" }
         : { ok: false, line: "Homebrew is not installed. install it from https://brew.sh (one command, about 5 minutes), then run ./setup.sh." },
   },
-  {
-    name: "stockfish",
-    run: async () => {
-      if (!has("stockfish")) return { ok: false, line: "stockfish (the chess engine) is not installed. run ./setup.sh." };
-      const out = runUciExchange("stockfish");
-      if (out === null || !/uciok/.test(out)) return { ok: false, line: "stockfish is installed but does not answer. run: brew reinstall stockfish" };
-      const idName = parseIdName(out);
-      if (idName && idName.includes(EXPECTED_STOCKFISH_ID)) {
-        return { ok: true, line: `stockfish answers (${EXPECTED_STOCKFISH_ID}, the version the eval fixtures are baselined on)` };
-      }
-      return {
-        ok: false,
-        line: `${idName ?? "stockfish"} installed; this repo's eval fixtures are baselined on ${EXPECTED_STOCKFISH_ID}. the game works; eval tests may differ. see .claude/rules/data-and-gate.md`,
-      };
-    },
-  },
+  makeStockfishCheck(),
   {
     name: "lc0",
     run: async () =>

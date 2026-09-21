@@ -9,6 +9,7 @@ import {
   EXPECTED_STOCKFISH_ID,
   parseNvmrcMajor,
   nodeCheckResult,
+  makeStockfishCheck,
   type Check,
   type CheckResult,
 } from "./doctor";
@@ -90,7 +91,7 @@ describe("doctor", () => {
     expect(uciIdName(bin)).toBeNull();
   });
 
-  describe("the stockfish check, run against a stub binary on PATH", () => {
+  describe("the stockfish check (Task 9, 2026-09-21 engine-pin round: a mismatch is a note, exit 0, not a failure)", () => {
     let oldPath: string | undefined;
     let dir: string;
 
@@ -106,29 +107,83 @@ describe("doctor", () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
 
-    it("passes and names the baseline version when it matches", async () => {
+    function pinnedBinAt(dirName: string, idLine: string): string {
+      const d = fs.mkdtempSync(path.join(os.tmpdir(), dirName));
+      const p = path.join(d, "stockfish");
+      fs.writeFileSync(p, `#!/bin/bash\necho "id name ${idLine}"\necho uciok\n`);
+      fs.chmodSync(p, 0o755);
+      return p;
+    }
+
+    it("passes and names the baseline version when it matches, on PATH (no pinned binary)", async () => {
       withStub(EXPECTED_STOCKFISH_ID);
       try {
-        const check = realChecks.find((c) => c.name === "stockfish")!;
+        const check = makeStockfishCheck(() => "stockfish");
         const result = await check.run();
-        expect(result).toEqual({ ok: true, line: `stockfish answers (${EXPECTED_STOCKFISH_ID}, the version the eval fixtures are baselined on)` });
+        expect(result).toEqual({ ok: true, line: `stockfish answers (${EXPECTED_STOCKFISH_ID}, found on PATH)` });
       } finally {
         restorePath();
       }
     });
 
-    it("fails and names the installed version when it does not match the baseline", async () => {
+    it("passes and names the baseline version when it matches, pinned", async () => {
+      const sf = pinnedBinAt("gc-doctor-pinned-", EXPECTED_STOCKFISH_ID);
+      const check = makeStockfishCheck(() => sf);
+      const result = await check.run();
+      expect(result).toEqual({ ok: true, line: `stockfish answers (${EXPECTED_STOCKFISH_ID}, the pinned engine in engines/)` });
+      fs.rmSync(path.dirname(sf), { recursive: true, force: true });
+    });
+
+    // Was "fails and names the installed version when it does not match the
+    // baseline" before the owner's 2026-09-21 ruling; now a note, exit 0,
+    // not a failure. Red when the note is turned back into a failure.
+    it("is a note, not a failure, when the installed version does not match the baseline, on PATH", async () => {
       withStub("Stockfish 18");
       try {
-        const check = realChecks.find((c) => c.name === "stockfish")!;
+        const check = makeStockfishCheck(() => "stockfish");
         const result = await check.run();
         expect(result).toEqual({
-          ok: false,
-          line: `Stockfish 18 installed; this repo's eval fixtures are baselined on ${EXPECTED_STOCKFISH_ID}. the game works; eval tests may differ. see .claude/rules/data-and-gate.md`,
+          ok: true,
+          note: true,
+          line: `Stockfish 18 found at stockfish; this repo is tested on ${EXPECTED_STOCKFISH_ID}. the game works; eval tests may differ. run ./setup.sh to install the pinned engine.`,
         });
       } finally {
         restorePath();
       }
+    });
+
+    it("is a note, not a failure, when the pinned binary does not match the baseline", async () => {
+      const sf = pinnedBinAt("gc-doctor-pinned-mismatch-", "Stockfish 18");
+      const check = makeStockfishCheck(() => sf);
+      const result = await check.run();
+      expect(result).toEqual({
+        ok: true,
+        note: true,
+        line: `Stockfish 18 found at ${sf}; this repo is tested on ${EXPECTED_STOCKFISH_ID}. the game works; eval tests may differ. run ./setup.sh to install the pinned engine.`,
+      });
+      fs.rmSync(path.dirname(sf), { recursive: true, force: true });
+    });
+
+    // Red when the preference is removed (the PATH stub's "Stockfish 20"
+    // would then win, giving a note instead of a clean pass).
+    it("the pinned binary wins over a PATH stub", async () => {
+      withStub("Stockfish 20");
+      try {
+        const sf = pinnedBinAt("gc-doctor-pinned-wins-", EXPECTED_STOCKFISH_ID);
+        const check = makeStockfishCheck(() => sf);
+        const result = await check.run();
+        expect(result.ok).toBe(true);
+        expect(result.note).toBeUndefined();
+        expect(result.line).toContain("the pinned engine in engines/");
+        fs.rmSync(path.dirname(sf), { recursive: true, force: true });
+      } finally {
+        restorePath();
+      }
+    });
+
+    it("realChecks wires the production resolver (no override), still a Check named stockfish", () => {
+      const check = realChecks.find((c) => c.name === "stockfish")!;
+      expect(check).toBeDefined();
     });
   });
 
