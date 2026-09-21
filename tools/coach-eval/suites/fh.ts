@@ -34,7 +34,7 @@ import { discoverRun } from "./discoverRun";
 // get scored under FH-02's broader >= 90% gate; per the round's dispatch
 // note, confirming them onto the zero-tolerance set requires a human hand
 // audit of the real chess, not a mechanical filter.
-const GAME_160_PROVEN_FORCED_IDS: readonly string[] = ["FK3"];
+export const GAME_160_PROVEN_FORCED_IDS: readonly string[] = ["FK3"];
 
 export interface FhRowAudit {
   rowId: string;
