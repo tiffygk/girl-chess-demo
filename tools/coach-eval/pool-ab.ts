@@ -76,6 +76,7 @@
 import fs from "fs";
 import path from "path";
 import type { AnswerRow } from "./score";
+import type { DifficultyTag } from "./difficulty";
 import type { SuiteResult, Verdict } from "../rca-eval/lib/types";
 import { checkCompleteness, checkPendingAwareness } from "./score";
 import { fileURLToPath } from "url";
@@ -540,7 +541,7 @@ export function poolAb(runsDir: string): PoolInput {
   for (const { phase, rows } of discovered) {
     const code = phase.code;
     expectedDirsByCode[code] = (expectedDirsByCode[code] ?? 0) + 1;
-    const difficultiesInDir = new Set(rows.map((r) => r.difficulty).filter((d): d is string => !!d));
+    const difficultiesInDir = new Set(rows.map((r) => r.difficulty).filter((d): d is DifficultyTag => d !== undefined));
     const perBucket = (expectedDirsByCodeAndBucket[code] ??= {});
     for (const bucket of difficultiesInDir) perBucket[bucket] = (perBucket[bucket] ?? 0) + 1;
   }
@@ -549,7 +550,7 @@ export function poolAb(runsDir: string): PoolInput {
     const code = phase.code;
     const codeSummary = byCode[code] ?? (byCode[code] = newCodeSummary());
     const bucketSet = byCodeAndDifficulty[code] ?? (byCodeAndDifficulty[code] = { buckets: {}, unattributed: 0 });
-    const difficultiesInDir = new Set(rows.map((r) => r.difficulty).filter((d): d is string => !!d));
+    const difficultiesInDir = new Set(rows.map((r) => r.difficulty).filter((d): d is DifficultyTag => d !== undefined));
     const rowById = new Map(rows.map((r) => [r.id, r]));
     const rowByFixtureId = new Map(rows.map((r) => [r.fixtureId, r]));
 
