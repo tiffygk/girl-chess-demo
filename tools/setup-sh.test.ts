@@ -57,12 +57,18 @@ beforeEach(() => {
   work = fs.mkdtempSync(path.join(os.tmpdir(), "gc-setup-"));
   bin = path.join(work, "bin");
   fs.mkdirSync(bin);
-  stub(bin, "uname", 'echo Darwin');
+  stub(bin, "uname", 'case "$1" in -m) echo arm64 ;; *) echo Darwin ;; esac');
   stub(bin, "brew", 'exit 0'); // "already installed" for every `brew list`
-  stub(bin, "stockfish", 'echo "id name Stockfish 19"; echo uciok');
   stub(bin, "lc0", 'echo uciok');
   fixedGz = writeFixedGz(work, "fixed.gz", "gc-test-weight-payload");
   defaultShaFile = writeShaFile(work, ELOS.map((elo) => ({ elo, sha256: fixedGz.sha256 })));
+  // Every test not exercising the pinned-stockfish install itself gets a
+  // ready-made, already-matching engines/stockfish under $work/engines (the
+  // default GC_ENGINE_DIR, unset), so the install step's idempotent skip
+  // fires before ever touching curl or the checksum table -- these tests
+  // are about the weight-download flow, not the engine install.
+  fs.mkdirSync(path.join(work, "engines"), { recursive: true });
+  stub(path.join(work, "engines"), "stockfish", 'echo "id name Stockfish 19"; echo uciok');
 });
 afterEach(() => fs.rmSync(work, { recursive: true, force: true }));
 
@@ -118,11 +124,11 @@ describe("setup.sh", { timeout: 30_000 }, () => {
     expect(r.stdout).toMatch(/this takes about 2 to 10 minutes/);
   });
 
-  it("echoes the engine's own id name in the OK line", () => {
+  it("prints the pinned success line (the PATH stockfish stub is not what setup verifies anymore)", () => {
     stub(bin, "curl", curlCopyingFixedGz());
     const r = run();
     expect(r.status, r.stdout + r.stderr).toBe(0);
-    expect(r.stdout).toMatch(/stockfish OK \(Stockfish 19\)/);
+    expect(r.stdout).toMatch(/stockfish OK \(Stockfish 19, pinned\)/);
   });
 
   it("retries once, then fails with one plain sentence naming the file, when a download's checksum does not match", () => {
@@ -198,5 +204,101 @@ describe("setup.sh", { timeout: 30_000 }, () => {
     expect(r.status, r.stdout + r.stderr).toBe(0);
     const log = fs.readFileSync(path.join(work, "curl.log"), "utf8");
     expect(log).toMatch(/maia-1500\.pb\.gz/);
+  });
+});
+
+// A tar with one file at stockfish/<binName> (default "stockfish"), a tiny
+// shell script standing in for the real engine binary -- real setup.sh
+// usage downloads a release asset shaped like this (the actual asset is
+// stockfish/stockfish-macos-universal; the pattern setup.sh greps for,
+// ^stockfish/stockfish[^/]*$, matches either name, which is the point).
+function buildEngineTar(dir: string, tarName: string, engineBody: string, binName = "stockfish"): { path: string; sha256: string } {
+  const stage = fs.mkdtempSync(path.join(os.tmpdir(), "gc-sftar-"));
+  fs.mkdirSync(path.join(stage, "stockfish"));
+  const binPath = path.join(stage, "stockfish", binName);
+  fs.writeFileSync(binPath, `#!/bin/bash\n${engineBody}\n`);
+  fs.chmodSync(binPath, 0o755);
+  const tarPath = path.join(dir, tarName);
+  const r = spawnSync("tar", ["czf", tarPath, "-C", stage, `stockfish/${binName}`]);
+  fs.rmSync(stage, { recursive: true, force: true });
+  if (r.status !== 0) throw new Error(`tar czf failed: ${r.stderr}`);
+  return { path: tarPath, sha256: sha256Of(tarPath) };
+}
+
+function writeEngineShaFile(dir: string, entries: Array<{ asset: string; sha256: string }>): string {
+  const p = path.join(dir, "engines-sha256.txt");
+  fs.writeFileSync(p, entries.map((e) => `${e.sha256}  ${e.asset}`).join("\n") + (entries.length ? "\n" : ""));
+  return p;
+}
+
+function curlCopyingTar(tarPath: string): string {
+  return `out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done; echo "curl $out" >> "$HOME/curl.log"; cp "${tarPath}" "$out"`;
+}
+
+const ASSET = "stockfish-macos-universal.tar.gz";
+
+describe("setup.sh: pinned stockfish install", { timeout: 30_000 }, () => {
+  function placeAllWeights() {
+    fs.mkdirSync(path.join(work, "weights"), { recursive: true });
+    for (const elo of ELOS) fs.writeFileSync(path.join(work, "weights", `maia-${elo}.pb.gz`), goodGz());
+  }
+
+  // Overrides the default beforeEach engines dir (which is already valid,
+  // and would make every test here skip the download) with a FRESH,
+  // untouched one, so the install path actually runs.
+  function isolatedEngineDir(): string {
+    fs.rmSync(path.join(work, "engines"), { recursive: true, force: true });
+    return path.join(work, "engines");
+  }
+
+  it("(a) matching table: setup passes and prints the pinned success line; red when the pinned install is removed or the success line changes", () => {
+    placeAllWeights();
+    const engineDir = isolatedEngineDir();
+    const tar = buildEngineTar(work, "sf-good.tar.gz", 'echo "id name Stockfish 19"; echo uciok');
+    const shaFile = writeEngineShaFile(work, [{ asset: ASSET, sha256: tar.sha256 }]);
+    stub(bin, "curl", curlCopyingTar(tar.path));
+    const r = run({ GC_ENGINE_DIR: engineDir, GC_ENGINES_SHA256_FILE: shaFile });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/stockfish OK \(Stockfish 19, pinned\)/);
+    expect(fs.existsSync(path.join(engineDir, "stockfish"))).toBe(true);
+  });
+
+  it("(b) wrong hash in the table: setup fails, prints the mismatch sentence, and no engines/stockfish exists afterwards; red when the checksum gate is bypassed", () => {
+    placeAllWeights();
+    const engineDir = isolatedEngineDir();
+    const tar = buildEngineTar(work, "sf-good.tar.gz", 'echo "id name Stockfish 19"; echo uciok');
+    const shaFile = writeEngineShaFile(work, [{ asset: ASSET, sha256: "0".repeat(64) }]);
+    stub(bin, "curl", curlCopyingTar(tar.path));
+    const r = run({ GC_ENGINE_DIR: engineDir, GC_ENGINES_SHA256_FILE: shaFile });
+    const out = r.stdout + r.stderr;
+    expect(r.status, out).toBe(1);
+    expect(out).toMatch(/did not match its expected checksum/);
+    expect(fs.existsSync(path.join(engineDir, "stockfish"))).toBe(false);
+  });
+
+  it("(c) no row for the asset: setup fails with a sentence containing 'cannot be verified'; red when a missing row is treated as nothing to check (unlike the weights' checksum_ok())", () => {
+    placeAllWeights();
+    const engineDir = isolatedEngineDir();
+    const tar = buildEngineTar(work, "sf-good.tar.gz", 'echo "id name Stockfish 19"; echo uciok');
+    const shaFile = writeEngineShaFile(work, []); // empty table, no row for ASSET
+    stub(bin, "curl", curlCopyingTar(tar.path));
+    const r = run({ GC_ENGINE_DIR: engineDir, GC_ENGINES_SHA256_FILE: shaFile });
+    const out = r.stdout + r.stderr;
+    expect(r.status, out).toBe(1);
+    expect(out).toMatch(/cannot be verified/);
+    expect(fs.existsSync(path.join(engineDir, "stockfish"))).toBe(false);
+  });
+
+  it("(d) an existing good engines/stockfish skips the download; red when the skip is removed", () => {
+    placeAllWeights();
+    const engineDir = isolatedEngineDir();
+    fs.mkdirSync(engineDir, { recursive: true });
+    stub(engineDir, "stockfish", 'echo "id name Stockfish 19"; echo uciok');
+    stub(bin, "curl", 'out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done; echo "curl $out" >> "$HOME/curl.log"; exit 1');
+    const shaFile = writeEngineShaFile(work, []); // would fail to verify if reached, proving the skip actually happened
+    const r = run({ GC_ENGINE_DIR: engineDir, GC_ENGINES_SHA256_FILE: shaFile });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(fs.existsSync(path.join(work, "curl.log"))).toBe(false);
+    expect(r.stdout).toMatch(/stockfish OK \(Stockfish 19, pinned\)/);
   });
 });

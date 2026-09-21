@@ -1,0 +1,6 @@
+# Stockfish 19, official-stockfish/Stockfish, tag sf_19
+# https://github.com/official-stockfish/Stockfish/releases/tag/sf_19
+# macOS ships one universal binary asset covering both arm64 and x86_64
+# (Mach-O universal, checked with `file`), so there is only one row below.
+# Downloaded and hashed 2026-09-21.
+a1f0e3bcc5a6927a11fe6fc8e54a779754645f3c2bae2cf13420fd1957adaa77  stockfish-macos-universal.tar.gz
