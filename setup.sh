@@ -21,11 +21,28 @@ fi
 mkdir -p weights
 BASE="https://github.com/CSSLab/maia-chess/releases/download/v1.0"
 ELOS=(1100 1200 1300 1400 1500 1600 1700 1800 1900)
+# The checksum table lives at tools/weights-sha256.txt (one line per file, the
+# same "<sha256>  <path>" format `shasum -a 256` prints); override with
+# GC_WEIGHTS_SHA256_FILE for tests. A downloaded file that is valid gzip but
+# does not match its expected checksum has been tampered with or corrupted
+# in a way `gzip -t` cannot see -- gzip only proves the bytes decompress, not
+# that they are the right bytes.
+SHA_FILE="${GC_WEIGHTS_SHA256_FILE:-tools/weights-sha256.txt}"
 valid() { gzip -t "$1" 2>/dev/null; }
+expected_sha() { awk -v f="weights/maia-$1.pb.gz" '$2==f{print $1}' "$SHA_FILE" 2>/dev/null; }
+checksum_ok() {
+  # $1 = file to check, $2 = elo. No entry for this elo in the table is not
+  # a failure here -- it means nothing to check against.
+  local exp actual
+  exp="$(expected_sha "$2")"
+  [ -n "$exp" ] || return 0
+  actual="$(shasum -a 256 "$1" | awk '{print $1}')"
+  [ "$actual" = "$exp" ]
+}
 present=0
 for elo in "${ELOS[@]}"; do
   f="weights/maia-$elo.pb.gz"
-  [ -f "$f" ] && valid "$f" && present=$((present+1)) || true
+  [ -f "$f" ] && valid "$f" && checksum_ok "$f" "$elo" && present=$((present+1)) || true
 done
 if [ "$present" = "9" ]; then
   say "all 9 opponent files already present"
@@ -34,7 +51,7 @@ else
   for elo in "${ELOS[@]}"; do
     n=$((n+1))
     f="weights/maia-$elo.pb.gz"
-    if [ -f "$f" ] && valid "$f"; then continue; fi
+    if [ -f "$f" ] && valid "$f" && checksum_ok "$f" "$elo"; then continue; fi
     [ -f "$f" ] && say "maia-$elo is damaged (a download was interrupted); fetching it again"
     say "downloading maia-$elo ($n of 9)"
     ok=0
@@ -47,6 +64,17 @@ else
       rm -f "$f.part"
     done
     [ "$ok" = "1" ] || fail "maia-$elo did not download correctly after 3 tries. check your internet connection and run ./setup.sh again."
+
+    if ! checksum_ok "$f" "$elo"; then
+      say "maia-$elo did not match its expected checksum; downloading it again"
+      rm -f "$f"
+      if curl -fL --progress-bar --retry 2 --retry-delay 2 --connect-timeout 20 -o "$f.part" "$BASE/maia-$elo.pb.gz" && valid "$f.part" && checksum_ok "$f.part" "$elo"; then
+        mv "$f.part" "$f"
+      else
+        rm -f "$f.part"
+        fail "maia-$elo downloaded but did not match its expected checksum. delete weights/maia-$elo.pb.gz and run ./setup.sh again, or check your internet connection."
+      fi
+    fi
   done
 fi
 
