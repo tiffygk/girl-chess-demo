@@ -20,4 +20,15 @@ jobs:
       - name: engine version
         run: ./tools/engineVersion.sh
       - run: npm run doctor
+      - name: diagnostic split test run (temporary for PR 32, reverted before merge)
+        run: |
+          sysctl hw.memsize hw.ncpu
+          ( while sleep 10; do echo "MEM $(date +%T) rss_total_mb=$(ps -A -o rss= | awk '{s+=$1} END {print int(s/1024)}') stockfish_procs=$(ps -A -o comm= | grep -c stockfish) node_procs=$(ps -A -o comm= | grep -c node)"; done ) &
+          MON=$!
+          for d in tools server src; do
+            echo "=== vitest $d start $(date +%T) ==="
+            npx vitest run "$d" --reporter=dot || echo "=== vitest $d exited $? ==="
+            echo "=== vitest $d end $(date +%T) ==="
+          done
+          kill $MON
       - run: npm run gate
