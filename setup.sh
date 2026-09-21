@@ -28,6 +28,7 @@ ELOS=(1100 1200 1300 1400 1500 1600 1700 1800 1900)
 # in a way `gzip -t` cannot see -- gzip only proves the bytes decompress, not
 # that they are the right bytes.
 SHA_FILE="${GC_WEIGHTS_SHA256_FILE:-tools/weights-sha256.txt}"
+[ -s "$SHA_FILE" ] || fail "tools/weights-sha256.txt is missing, so the opponent files cannot be verified. run ./setup.sh from the girl-chess-demo folder, or restore the file from git."
 valid() { gzip -t "$1" 2>/dev/null; }
 expected_sha() { awk -v f="weights/maia-$1.pb.gz" '$2==f{print $1}' "$SHA_FILE" 2>/dev/null; }
 checksum_ok() {
@@ -52,7 +53,13 @@ else
     n=$((n+1))
     f="weights/maia-$elo.pb.gz"
     if [ -f "$f" ] && valid "$f" && checksum_ok "$f" "$elo"; then continue; fi
-    [ -f "$f" ] && say "maia-$elo is damaged (a download was interrupted); fetching it again"
+    if [ -f "$f" ]; then
+      if ! valid "$f"; then
+        say "maia-$elo is damaged (a download was interrupted); fetching it again"
+      else
+        say "maia-$elo does not match the expected file (wrong bytes, not an interrupted download); fetching it again"
+      fi
+    fi
     say "downloading maia-$elo ($n of 9)"
     ok=0
     # each curl call below retries twice on its own (--retry 2), so a person
@@ -72,7 +79,7 @@ else
         mv "$f.part" "$f"
       else
         rm -f "$f.part"
-        fail "maia-$elo downloaded but did not match its expected checksum. delete weights/maia-$elo.pb.gz and run ./setup.sh again, or check your internet connection."
+        fail "maia-$elo still does not match the expected checksum after a second download, so it was removed. the upstream file may have changed; open an issue at github.com/tiffygk/girl-chess-demo and do not run the game with unverified opponent files."
       fi
     fi
   done
