@@ -73,6 +73,7 @@ The docs are published at [tiffygk.github.io/girl-chess-demo](https://tiffygk.gi
 
 - [docs/index.md](docs/index.md) is the docs site's home page: the product spec, one increment plan-to-gate, three real review catches, and the coach-transport decision.
 - [docs/evaluation.md](docs/evaluation.md) is how the tutor is kept honest.
+- The five interactive pages on the site: [component library](https://tiffygk.github.io/girl-chess-demo/component-library.html), [architecture](https://tiffygk.github.io/girl-chess-demo/architecture.html), [coach eval v3 dashboard](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html), [coach quality dashboard](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html), [thinking arm dashboard](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html).
 - [CLAUDE.md](CLAUDE.md) is the architecture map and runbook a future Claude session reads first.
 
 Built on Stockfish, Maia through lc0, and Claude Sonnet 5. The mistakes in the committed games are mine.
