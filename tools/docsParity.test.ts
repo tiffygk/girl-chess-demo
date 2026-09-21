@@ -43,10 +43,6 @@ function indexPngRefs(): string[] {
     .map((t) => t.slice("images/".length));
 }
 
-function pngFilesOnDisk(): string[] {
-  return fs.readdirSync(path.join(DOCS, "images")).filter((f) => f.endsWith(".png"));
-}
-
 // Matches only image markdown syntax (the `!` prefix), never a plain link --
 // needed once images live in a subfolder (docs/images/diagrams/) and are
 // referenced from pages other than index.md, where a plain-link false match
