@@ -155,9 +155,16 @@ describe.skipIf(!insideGitWorkTree)("every docs/ page is linked from docs/index.
     }
   });
 
-  it("every .html file in docs/ is linked by its full Pages URL", () => {
+  // Pages published on purpose without an index link (owner ruling, dated).
+  // Reachable by direct URL only; the rule stays "every page is linked" for
+  // everything else, and a name leaves this list when its page is listed.
+  const UNLISTED_HTML: readonly string[] = [
+    "coach-correctness-dashboard.html", // owner ask 2026-09-21: "I don't really want someone to look at this yet"
+  ];
+
+  it("every .html file in docs/ is linked by its full Pages URL (except the dated unlisted set)", () => {
     const index = indexText();
-    const htmlFiles = docsTopLevelFiles().filter((f) => f.endsWith(".html"));
+    const htmlFiles = docsTopLevelFiles().filter((f) => f.endsWith(".html") && !UNLISTED_HTML.includes(f));
     for (const f of htmlFiles) {
       expect(index, `docs/index.md is missing the full Pages URL for ${f}`).toContain(`${PAGES_BASE}${f}`);
     }
