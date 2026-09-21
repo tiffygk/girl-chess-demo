@@ -37,6 +37,25 @@ function uciAnswers(cmd: string, args: string[] = []): boolean {
   }
 }
 
+// The eval fixtures are baselined on a named engine version; the doctor and
+// CI both assert against this constant so a Homebrew bump surfaces as one
+// named line instead of mysterious fixture failures. See
+// .claude/rules/data-and-gate.md's Engine-version rule.
+export const EXPECTED_STOCKFISH_ID = "Stockfish 19";
+
+// Parses the `id name <...>` line out of the same uci/quit exchange
+// uciAnswers uses, e.g. "Stockfish 19". Returns null if the command does not
+// run, times out, or never sends an id name line.
+export function uciIdName(cmd: string, args: string[] = []): string | null {
+  try {
+    const out = execFileSync(cmd, args, { input: "uci\nquit\n", encoding: "utf8", timeout: 8000 });
+    const m = out.match(/^id name (.+)$/m);
+    return m ? m[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 // A dev server can bind loopback on either family: vite has been observed
 // listening on ::1 only while an express server takes 127.0.0.1 only (or
 // vice versa). Binding just one family reads the other's port as free, so
@@ -77,12 +96,18 @@ export const realChecks: Check[] = [
   },
   {
     name: "stockfish",
-    run: async () =>
-      !has("stockfish")
-        ? { ok: false, line: "stockfish (the chess engine) is not installed. run ./setup.sh." }
-        : uciAnswers("stockfish")
-          ? { ok: true, line: "stockfish answers" }
-          : { ok: false, line: "stockfish is installed but does not answer. run: brew reinstall stockfish" },
+    run: async () => {
+      if (!has("stockfish")) return { ok: false, line: "stockfish (the chess engine) is not installed. run ./setup.sh." };
+      if (!uciAnswers("stockfish")) return { ok: false, line: "stockfish is installed but does not answer. run: brew reinstall stockfish" };
+      const idName = uciIdName("stockfish");
+      if (idName && idName.includes(EXPECTED_STOCKFISH_ID)) {
+        return { ok: true, line: `stockfish answers (${EXPECTED_STOCKFISH_ID}, the version the eval fixtures are baselined on)` };
+      }
+      return {
+        ok: false,
+        line: `${idName ?? "stockfish"} installed; this repo's eval fixtures are baselined on ${EXPECTED_STOCKFISH_ID}. the game works; eval tests may differ. see .claude/rules/data-and-gate.md`,
+      };
+    },
   },
   {
     name: "lc0",
