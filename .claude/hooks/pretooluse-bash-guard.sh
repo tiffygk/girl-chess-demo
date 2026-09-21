@@ -34,23 +34,74 @@ fi
 # share a boundary -- the push -- so the check belongs there, not earlier.
 # NEVER put the guarded string in this file: it is tracked and public, and a
 # literal here would be the same bug in the guard's own body.
-if printf '%s' "$cmd" | grep -qE '\bgit[[:space:]]+push\b'; then
-  toplevel="$(git rev-parse --show-toplevel 2>/dev/null)"
-  patfile="$toplevel/.claude/hooks/.push-guard-patterns"
-  if [ -s "$patfile" ]; then
-    upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"
-    if [ -z "$upstream" ] && git rev-parse --verify origin/main >/dev/null 2>&1; then upstream="origin/main"; fi
-    if [ -n "$upstream" ] && git rev-parse --verify "$upstream" >/dev/null 2>&1; then
-      payload="$(git log "$upstream..HEAD" -p --format='%B' 2>/dev/null)"
-    else
-      payload="$(git show -p --format='%B' HEAD 2>/dev/null)"
+#
+# Fixed 2026-09-20 (audience-scrub round, PR #23): resolve the repo from the
+# COMMAND, not the hook's session cwd -- a session cwd outside any repo, or a
+# fresh worktree with no `.claude/hooks/.push-guard-patterns` symlink, both
+# made this guard fall through to the ask-and-continue branch below and never
+# scan. The real pattern file lives once, at the git COMMON dir (shared by
+# every worktree); the per-worktree symlink is a convenience, not the source.
+# Matches a bare `git push` AND a `git -C <path> push` (quoted or bare path)
+# -- the plain \bgit push\b shape alone missed the -C form this fix exists to
+# resolve, since the flag and its argument sit between the two words.
+if printf '%s' "$cmd" | grep -qE '\bgit[[:space:]]+(-C[[:space:]]+("[^"]+"|'"'"'[^'"'"']+'"'"'|[^[:space:]]+)[[:space:]]+)?push\b'; then
+  # Pull a path argument out of `git -C <path>` or a `cd <path>` that precedes
+  # the push in the same command, trying a double-quoted, single-quoted, then
+  # bare token in that order (repo paths in this project contain spaces).
+  extract_path_after() {
+    kw="$1"
+    out="$(printf '%s' "$cmd" | sed -nE "s/.*${kw}[[:space:]]+\"([^\"]+)\".*/\\1/p" | head -1)"
+    if [ -z "$out" ]; then
+      out="$(printf '%s' "$cmd" | sed -nE "s/.*${kw}[[:space:]]+'([^']+)'.*/\\1/p" | head -1)"
     fi
-    if printf '%s' "$payload" | grep -qinf "$patfile" 2>/dev/null; then
-      n="$(printf '%s' "$payload" | grep -cinf "$patfile" 2>/dev/null)"
-      deny "git push BLOCKED: ${n} line(s) in the commits about to be pushed (diffed against ${upstream:-HEAD}) match a pattern in .claude/hooks/.push-guard-patterns. Find them with: git log ${upstream:-HEAD}..HEAD -p --format=%B | grep -inf .claude/hooks/.push-guard-patterns  -- and note the match may be in a COMMIT MESSAGE, not only in a diff. A follow-up commit that removes it going forward is NOT a fix: the string stays in history. The fix is a history rewrite before any push. If it is a false positive, say so and retry."
+    if [ -z "$out" ]; then
+      out="$(printf '%s' "$cmd" | sed -nE "s/.*${kw}[[:space:]]+([^[:space:]]+).*/\\1/p" | head -1)"
     fi
+    printf '%s' "$out"
+  }
+
+  resolved=""
+  if printf '%s' "$cmd" | grep -qE '\bgit[[:space:]]+-C[[:space:]]'; then
+    resolved="$(extract_path_after 'git[[:space:]]+-C')"
+  fi
+  if [ -z "$resolved" ] && printf '%s' "$cmd" | grep -qE '\bcd[[:space:]]'; then
+    resolved="$(extract_path_after 'cd')"
+  fi
+  [ -z "$resolved" ] && resolved="$(pwd)"
+
+  tried="git -C '$resolved' rev-parse --git-common-dir"
+  common="$(git -C "$resolved" rev-parse --git-common-dir 2>/dev/null)"
+  if [ -z "$common" ]; then
+    deny "git push refused: cannot find the push wordlist for this repo (resolved path '$resolved' from the command is not inside a git repo; tried: $tried); run the push from inside the repo, or restore <common-dir>/push-guard-patterns"
+  fi
+  case "$common" in
+    /*) : ;;
+    *) common="$resolved/$common" ;;
+  esac
+
+  patfile="$common/push-guard-patterns"
+  tried="$tried; $patfile"
+  if [ ! -s "$patfile" ]; then
+    toplevel="$(git -C "$resolved" rev-parse --show-toplevel 2>/dev/null)"
+    fallback="$toplevel/.claude/hooks/.push-guard-patterns"
+    tried="$tried; $fallback"
+    [ -s "$fallback" ] && patfile="$fallback"
+  fi
+
+  if [ ! -s "$patfile" ]; then
+    deny "git push refused: cannot find the push wordlist for this repo (resolved path '$resolved'; tried: $tried); run the push from inside the repo, or restore <common-dir>/push-guard-patterns"
+  fi
+
+  upstream="$(git -C "$resolved" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"
+  if [ -z "$upstream" ] && git -C "$resolved" rev-parse --verify origin/main >/dev/null 2>&1; then upstream="origin/main"; fi
+  if [ -n "$upstream" ] && git -C "$resolved" rev-parse --verify "$upstream" >/dev/null 2>&1; then
+    payload="$(git -C "$resolved" log "$upstream..HEAD" -p --format='%B' 2>/dev/null)"
   else
-    ask "git push: .claude/hooks/.push-guard-patterns is missing or empty, so the push content scan is a no-op. If any string must never reach the public remote, create that file first (one grep -E pattern per line; it is gitignored, never git add it). Confirm you want to push unscanned."
+    payload="$(git -C "$resolved" show -p --format='%B' HEAD 2>/dev/null)"
+  fi
+  if printf '%s' "$payload" | grep -qinf "$patfile" 2>/dev/null; then
+    n="$(printf '%s' "$payload" | grep -cinf "$patfile" 2>/dev/null)"
+    deny "git push BLOCKED: ${n} line(s) in the commits about to be pushed (diffed against ${upstream:-HEAD}, repo '$resolved') match a pattern in $patfile. Find them with: git -C '$resolved' log ${upstream:-HEAD}..HEAD -p --format=%B | grep -inf '$patfile'  -- and note the match may be in a COMMIT MESSAGE, not only in a diff. A follow-up commit that removes it going forward is NOT a fix: the string stays in history. The fix is a history rewrite before any push. If it is a false positive, say so and retry."
   fi
 fi
 
