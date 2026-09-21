@@ -1,4 +1,4 @@
-*Why this matters: shows the product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the metrics that would prove or kill each one. Edited from the project vault copy (`1 product/PRD-lite — Chess Tutor.md`); this page is the canonical version as of 2026-09-20.*
+*Why this matters: shows the product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the metrics that would prove or kill each one. Edited from the original project spec; this page is the canonical version as of 2026-09-20.*
 
 ---
 

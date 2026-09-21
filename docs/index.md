@@ -67,7 +67,7 @@ Two instruments live in there, and they did different jobs. Keeping them apart i
 - **The accuracy fix:** seven surfaces were each deriving the same chess fact on their own, so one wrong idea had seven routes to the screen. Routing all seven through a single verified source and adding a regression check to the merge gate fixed it. Before, six of the ten "you could have won faster" claims I audited were contradicted by the moves. Now the rule that checks those claims counts about zero across every finished game. The audit, the population, the named source and the named check are traced in [evaluation.md](evaluation.md#the-sixty-percent-and-what-zero-counts).
 - **The blinded A/B evals:** Sonnet against Opus, across thinking budgets, with the grading key sealed until after I had written every grade. Those tuned answer quality, latency and fallback rate, and settled which model to run. They did not move the accuracy number.
 
-Two limits stand today. In the committed games, one first draft in nine still trips the placement check. The 1350 rating is a hard-coded placeholder anyone who downloads this inherits; a rating judged from how you actually play is on the roadmap.
+In the committed games, one first draft in nine still trips the placement check. The 1350 rating is a hard-coded placeholder anyone who downloads this inherits; a rating judged from how you actually play is on the roadmap.
 
 ## Two ordinary questions, from the record
 

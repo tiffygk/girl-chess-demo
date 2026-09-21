@@ -85,3 +85,6 @@ backups/
 .claude/sessions/
 .claude/history/
 .claude/cache/
+
+# file-sync duplicates (iCloud/Obsidian "name 2.ext")
+* 2.*
