@@ -129,4 +129,4 @@ The review converts to five pre-build decisions and one sequencing change. All a
 - **F28's opening explainer needs the honesty carve-out from P5** (a fact source or an explicit "phrasing, not adjudicated truth" label) before it ships, or it is the one place the coach can fabricate.
 - **F46 stays deferred, and stop calling the seam "import-ready"** until P3's player-white invariant is addressed in the honesty pipeline.
 
-The net: increment 4's real risk is not the features, it is three foundations the plan under-specifies (the lesson-capture surface, the coach transport, the profile shape). Settle those three and the rest of increment 4 is execution.
+The net: increment 4's risk is not the features, it is three foundations the plan under-specifies (the lesson-capture surface, the coach transport, the profile shape). Settle those three and the rest of increment 4 is execution.

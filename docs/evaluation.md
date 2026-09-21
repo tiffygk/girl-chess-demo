@@ -1,6 +1,6 @@
 # every sentence a player reads gets checked
 
-Ten moments in my game history carried a claim that I had played inefficiently. Replaying the analysis against the moves contradicted six. Four of those six were genuinely false. Two were fair: each hid a second missed mate later in the same game, which my count never measured. Reporting six would have made my audit look better than it was.
+Ten moments in my game history carried a claim that I had played inefficiently. Replaying the analysis against the moves contradicted six. Four of those six were false. Two were fair: each hid a second missed mate later in the same game, which my count never measured. Reporting six would have made my audit look better than it was.
 
 I directed the agent that built this tutor and pointed its checks at my own games first.
 
