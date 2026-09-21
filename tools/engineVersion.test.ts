@@ -7,6 +7,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
+import { EXPECTED_STOCKFISH_ID } from "./doctor";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = path.join(REPO_ROOT, "tools", "engineVersion.sh");
@@ -31,11 +32,18 @@ function run() {
 }
 
 describe("engineVersion.sh", () => {
+  it("has exactly one EXPECTED= literal, matching doctor.ts's EXPECTED_STOCKFISH_ID", () => {
+    const text = fs.readFileSync(SCRIPT, "utf8");
+    const m = text.match(/^EXPECTED="(.+)"$/m);
+    expect(m, text).not.toBeNull();
+    expect(m![1]).toBe(EXPECTED_STOCKFISH_ID);
+  });
+
   it("passes and prints the id line when the installed version matches the baseline", () => {
-    stub(bin, "stockfish", 'echo "id name Stockfish 19"; echo uciok');
+    stub(bin, "stockfish", `echo "id name ${EXPECTED_STOCKFISH_ID}"; echo uciok`);
     const r = run();
     expect(r.status, r.stdout + r.stderr).toBe(0);
-    expect(r.stdout).toMatch(/^id name Stockfish 19$/m);
+    expect(r.stdout).toMatch(new RegExp(`^id name ${EXPECTED_STOCKFISH_ID}$`, "m"));
   });
 
   it("fails with the exact mismatch sentence when the installed version is not the baseline", () => {
@@ -44,7 +52,16 @@ describe("engineVersion.sh", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).toMatch(/^id name Stockfish 18$/m);
     expect(r.stdout).toContain(
-      "stockfish Stockfish 18 installed; this repo's eval fixtures are baselined on Stockfish 19. the game works; eval tests may differ. see .claude/rules/data-and-gate.md"
+      `stockfish Stockfish 18 installed; this repo's eval fixtures are baselined on ${EXPECTED_STOCKFISH_ID}. the game works; eval tests may differ. see .claude/rules/data-and-gate.md`
+    );
+  });
+
+  it("fails with the missing-id-name sentence when the engine answers but never sends an id name line", () => {
+    stub(bin, "stockfish", "echo uciok");
+    const r = run();
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain(
+      "stockfish answered without an id name line; this repo's eval fixtures are baselined on Stockfish 19. the game works; eval tests may differ. see .claude/rules/data-and-gate.md"
     );
   });
 });
