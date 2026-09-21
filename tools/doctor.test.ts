@@ -2,7 +2,16 @@ import { describe, it, expect } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { runChecks, realChecks, uciIdName, EXPECTED_STOCKFISH_ID, type Check, type CheckResult } from "./doctor";
+import {
+  runChecks,
+  realChecks,
+  uciIdName,
+  EXPECTED_STOCKFISH_ID,
+  parseNvmrcMajor,
+  nodeCheckResult,
+  type Check,
+  type CheckResult,
+} from "./doctor";
 
 // A tiny executable script standing in for stockfish's uci/quit exchange,
 // so uciIdName and the stockfish check can be tested without touching brew
@@ -120,6 +129,65 @@ describe("doctor", () => {
       } finally {
         restorePath();
       }
+    });
+  });
+
+  describe("the node check's .nvmrc comparison, on fake version pairs", () => {
+    it("parseNvmrcMajor parses the major version out of .nvmrc's content", () => {
+      expect(parseNvmrcMajor("22\n")).toBe(22);
+    });
+
+    it("is a plain ok line, no note, when the running major matches .nvmrc", () => {
+      expect(nodeCheckResult("22.11.0", 22)).toEqual({ ok: true, line: "Node v22.11.0" });
+    });
+
+    it("is a note, not a failure, when the running major is newer than .nvmrc", () => {
+      expect(nodeCheckResult("25.2.1", 22)).toEqual({
+        ok: true,
+        note: true,
+        line: "node v25.2.1 found; this repo is tested on node 22. the game usually works on newer versions; if something fails, switch with nvm use.",
+      });
+    });
+
+    it("stays a hard failure, not a note, when the running version is too old regardless of .nvmrc", () => {
+      expect(nodeCheckResult("18.16.0", 22)).toEqual({
+        ok: false,
+        line: "Node v18.16.0 is too old. install Node 22 from https://nodejs.org (or: brew install node@22), then reopen Terminal.",
+      });
+    });
+
+    it("a newer Node than .nvmrc is a note in a real run, not counted as an ok line, and does not fail the run", async () => {
+      const out: string[] = [];
+      const code = await runChecks(fakeChecks({ node: nodeCheckResult("25.2.1", 22) }), (l) => out.push(l));
+      expect(code).toBe(0);
+      expect(out.filter((l) => l.startsWith("ok   ")).length).toBe(7);
+      expect(out.some((l) => l.startsWith("note"))).toBe(true);
+    });
+
+    it("parseNvmrcMajor returns null when the file is missing (simulated by passing null)", () => {
+      expect(parseNvmrcMajor(null)).toBeNull();
+    });
+
+    it("parseNvmrcMajor returns null on an alias that is not a plain integer", () => {
+      expect(parseNvmrcMajor("lts/jod\n")).toBeNull();
+    });
+
+    it("no note when nvmrcMajor is unknown, even with a running major that would otherwise mismatch", () => {
+      expect(nodeCheckResult("25.2.1", null)).toEqual({ ok: true, line: "Node v25.2.1" });
+    });
+
+    it("the too-old sentence derives its version from .nvmrc when a major is known", () => {
+      expect(nodeCheckResult("18.16.0", 24)).toEqual({
+        ok: false,
+        line: "Node v18.16.0 is too old. install Node 24 from https://nodejs.org (or: brew install node@24), then reopen Terminal.",
+      });
+    });
+
+    it("the too-old sentence falls back to 22 when no .nvmrc major is known", () => {
+      expect(nodeCheckResult("18.16.0", null)).toEqual({
+        ok: false,
+        line: "Node v18.16.0 is too old. install Node 22 from https://nodejs.org (or: brew install node@22), then reopen Terminal.",
+      });
     });
   });
 });

@@ -78,15 +78,59 @@ async function portFree(port: number): Promise<boolean> {
   return bindable(port, "::1");
 }
 
+// Parses the major version number out of .nvmrc's content, e.g. "22\n" -> 22.
+// Returns null when there is nothing to compare against: a missing file
+// (the caller passes null when the read failed) or content that is not a
+// plain integer, such as an nvm alias like "lts/jod".
+export function parseNvmrcMajor(nvmrcContent: string | null): number | null {
+  if (nvmrcContent === null) return null;
+  const trimmed = nvmrcContent.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  return parseInt(trimmed, 10);
+}
+
+// Pure so the note-vs-fail decision can be tested with fake version pairs,
+// without spawning a different Node. A version too old to run the game at
+// all stays a hard failure regardless of .nvmrc (that check is unrelated to
+// which version this repo is tested on). A version that runs fine but has a
+// different major than .nvmrc is a note, not a failure: the game usually
+// works on newer Node, and a green "ok" that never looks at .nvmrc would
+// hide the one thing worth telling a stranger who hits a real mismatch.
+// nvmrcMajor is null when .nvmrc is missing or unparseable (e.g. an alias);
+// in that case there is nothing to note against, so a running-major
+// mismatch is silently skipped, and the too-old sentence falls back to 22.
+export function nodeCheckResult(runningVersion: string, nvmrcMajor: number | null): CheckResult {
+  const [major, minor] = runningVersion.split(".").map(Number);
+  const tooOld = !(major > 20 || (major === 20 && minor >= 19));
+  if (tooOld) {
+    const installMajor = nvmrcMajor ?? 22;
+    return {
+      ok: false,
+      line: `Node v${runningVersion} is too old. install Node ${installMajor} from https://nodejs.org (or: brew install node@${installMajor}), then reopen Terminal.`,
+    };
+  }
+  if (nvmrcMajor !== null && major !== nvmrcMajor) {
+    return {
+      ok: true,
+      note: true,
+      line: `node v${runningVersion} found; this repo is tested on node ${nvmrcMajor}. the game usually works on newer versions; if something fails, switch with nvm use.`,
+    };
+  }
+  return { ok: true, line: `Node v${runningVersion}` };
+}
+
 export const realChecks: Check[] = [
   {
     name: "node",
     run: async () => {
-      const [major, minor] = process.versions.node.split(".").map(Number);
-      const ok = major > 20 || (major === 20 && minor >= 19);
-      return ok
-        ? { ok: true, line: `Node v${process.versions.node}` }
-        : { ok: false, line: `Node v${process.versions.node} is too old. install Node 22 from https://nodejs.org (or: brew install node@22), then reopen Terminal.` };
+      let nvmrcContent: string | null;
+      try {
+        nvmrcContent = fs.readFileSync(path.join(REPO_ROOT, ".nvmrc"), "utf8");
+      } catch {
+        nvmrcContent = null;
+      }
+      const nvmrcMajor = parseNvmrcMajor(nvmrcContent);
+      return nodeCheckResult(process.versions.node, nvmrcMajor);
     },
   },
   {
