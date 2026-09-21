@@ -77,6 +77,16 @@ describe("poolAb: run-dir discovery", () => {
     expect(summary.byCode["ac8168e"].n).toBe(1); // only the real dir counted
   });
 
+  it("silently skips a smoke dir with raw output and no phase.json at all (not an error)", () => {
+    const smoke = path.join(tmpDir, "2026-09-20-smoke-pre");
+    fs.mkdirSync(smoke, { recursive: true });
+    writeRaw(smoke, [row({ id: "q1", fixtureId: "F1" })]); // no phase.json written -- driver never writes one for smoke dirs
+
+    expect(() => poolAb(tmpDir)).not.toThrow();
+    const summary = poolAb(tmpDir);
+    expect(summary.byCode).toEqual({});
+  });
+
   it("throws when a dir looks like a run dir (has raw json) but has no phase.json", () => {
     const bad = path.join(tmpDir, "2026-09-20-ab-pre-fork-rep1");
     fs.mkdirSync(bad, { recursive: true });
