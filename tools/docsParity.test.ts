@@ -13,6 +13,17 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DOCS = path.join(ROOT, "docs");
 const PAGES_BASE = "https://tiffygk.github.io/girl-chess-demo/";
 
+// A source ZIP download (or any tree copied without .git) has no git
+// checkout at all, so every check below that shells out to `git ls-files`
+// would throw, not fail cleanly. Decide once, at module load, whether this
+// tree is a real git checkout; the describes that depend on git skip with a
+// plain reason instead of erroring when it is not.
+const insideGitWorkTree =
+  spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: ROOT, encoding: "utf8" }).stdout.trim() === "true";
+if (!insideGitWorkTree) {
+  console.warn("docs parity needs a git checkout; skipped");
+}
+
 const readmeText = () => fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
 const indexText = () => fs.readFileSync(path.join(DOCS, "index.md"), "utf8");
 
@@ -108,7 +119,7 @@ function allImageRefsAcrossDocs(): Set<string> {
   return refs;
 }
 
-describe("docs image parity", () => {
+describe.skipIf(!insideGitWorkTree)("docs image parity", () => {
   it("every docs/images/*.png that README.md references is also referenced by docs/index.md", () => {
     const fromReadme = new Set(readmePngRefs());
     const fromIndex = new Set(indexPngRefs());
@@ -135,7 +146,7 @@ describe("docs image parity", () => {
   });
 });
 
-describe("every docs/ page is linked from docs/index.md", () => {
+describe.skipIf(!insideGitWorkTree)("every docs/ page is linked from docs/index.md", () => {
   it("every .md file in docs/ (other than index.md) is linked by its relative path", () => {
     const index = indexText();
     const mdFiles = docsMdFiles().filter((f) => f !== "index.md");
@@ -171,7 +182,7 @@ function resolvableLocalTargets(text: string): string[] {
     .filter((t) => t.length > 0 && !t.startsWith("http://") && !t.startsWith("https://"));
 }
 
-describe("every relative link and image path resolves to a real file", () => {
+describe.skipIf(!insideGitWorkTree)("every relative link and image path resolves to a real file", () => {
   it("README.md's relative links and images all resolve, relative to the repo root", () => {
     for (const target of resolvableLocalTargets(readmeText())) {
       const resolved = path.join(ROOT, target);
