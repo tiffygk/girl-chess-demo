@@ -148,6 +148,13 @@ const STEPS: Step[] = [
     check: (out) =>
       /VERDICT:\s*PASS/.test(out) ? undefined : "replay-check did not print 'VERDICT: PASS'",
   },
+  {
+    name: "publish-scan",
+    cmd: "npx",
+    args: ["tsx", "tools/publish-scan.ts"],
+    check: (out) =>
+      /VERDICT:\s*(PASS|SKIP)/.test(out) ? undefined : "publish-scan did not print 'VERDICT: PASS' or 'VERDICT: SKIP'",
+  },
 ];
 
 function main() {
@@ -155,7 +162,7 @@ function main() {
   const failures: string[] = [];
 
   console.log(
-    "[gate] seven checks: database, in-play guard, tests, types, lint, truth-check, replay-check. about 2 to 4 minutes."
+    "[gate] eight checks: database, in-play guard, tests, types, lint, truth-check, replay-check, publish-scan. about 2 to 4 minutes."
   );
 
   // Runs FIRST: if her history is damaged, nothing else matters and the run

@@ -44,6 +44,27 @@ if [ -n "$api_pid" ]; then
   fi
 fi
 
+# #8 unusable push-guard pattern file (round 2026-09-10): guard #16 in
+# pretooluse-bash-guard.sh scans .claude/hooks/.push-guard-patterns at push
+# time from THIS worktree's toplevel. A worktree created after that file was
+# wired up starts with no symlink, and a few clones (wt-gate-clone-D,
+# wt-gate-clone-voice) are independent toplevels with their own .git, not
+# worktrees at all, so they never inherit it. Either way the push scan
+# silently becomes a no-op. Advisory only, never blocks a session, and
+# stays silent whenever the file resolves normally.
+# [ -s ] stats through a symlink, so a dangling link (target missing) reads
+# as "not usable" the same as a missing or empty file -- exactly the case a
+# naive existence test ([ -f ]) would miss.
+ss_toplevel="$(git rev-parse --show-toplevel 2>/dev/null)"
+ss_origin="$(git remote get-url origin 2>/dev/null)"
+if [ -n "$ss_toplevel" ] && printf '%s' "$ss_origin" | grep -q 'girl-chess-demo'; then
+  ss_patfile="$ss_toplevel/.claude/hooks/.push-guard-patterns"
+  if [ ! -s "$ss_patfile" ]; then
+    msgs="${msgs}- .claude/hooks/.push-guard-patterns is missing, empty, or a broken link from this worktree, so guard #16's git-push content scan will be a no-op here. Fix: recreate the file or relink it to the shared pattern file before pushing.
+"
+  fi
+fi
+
 if [ -n "$msgs" ]; then
   printf '%s' "SESSION-START CHECKS (girl-chess):
 $msgs" | jq -Rs '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:.}}'
