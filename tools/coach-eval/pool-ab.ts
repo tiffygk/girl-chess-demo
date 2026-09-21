@@ -158,28 +158,24 @@ interface Discovered {
   rows: AnswerRow[];
 }
 
+// Only a dir whose NAME matches the ab-driver's own run-dir convention
+// (…-ab-<code>-<arm>-rep<K>) is a candidate the missing-phase.json check
+// applies to. This is what lets the discarded smoke dirs
+// (2026-09-20-smoke-<code>, ab-driver.sh writes no phase.json for those --
+// they're thrown away, never scored) sit in the same runs/ directory
+// without tripping the hard error below: they are skipped by name, same as
+// any other stray directory, before phase.json is ever looked for.
+const AB_RUN_DIR_RE = /-ab-.+-rep\d+$/;
+
 function discoverAbDirs(runsDir: string): Discovered[] {
   const entries = fs.readdirSync(runsDir, { withFileTypes: true }).filter((e) => e.isDirectory());
   const out: Discovered[] = [];
   for (const e of entries) {
+    if (!AB_RUN_DIR_RE.test(e.name)) continue; // not this round's naming convention at all -- ignore
     const dir = path.join(runsDir, e.name);
-    const hasPhase = fs.existsSync(path.join(dir, "phase.json"));
-    const rows = hasPhase ? undefined : (() => {
-      // Only bother checking for raw output (to decide whether a missing
-      // phase.json is an error) if there is in fact no phase.json yet.
-      const files = fs.readdirSync(dir).filter((f) => /^raw-.*\.json$/.test(f));
-      return files.length > 0 ? [] : null;
-    })();
-    if (!hasPhase) {
-      if (rows !== null) {
-        // Looks like a run dir (has raw output) but never got a phase.json.
-        readPhase(dir); // throws with the standard message
-      }
-      continue; // no phase.json and no raw output -- not a run dir at all, skip silently
-    }
-    const phase = readPhase(dir);
+    const phase = readPhase(dir); // required for anything matching the ab-driver naming convention
     const abPhase: AbPhase | null = phase.phase === "ab-before" || phase.phase === "ab-after" ? (phase.phase as AbPhase) : null;
-    if (!abPhase) continue; // smoke dirs and anything else: not pooled
+    if (!abPhase) continue; // e.g. phase:"smoke" written by hand in a test -- not pooled
     out.push({ dir, phase, rows: readRawRows(dir) });
   }
   return out;
