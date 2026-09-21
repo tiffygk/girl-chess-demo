@@ -104,7 +104,6 @@ Three evaluations, in the order they happened. Each answers the question the one
 3. [Sonnet against Opus](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html) (2026-07-23): which model to run, graded blind with the key sealed. It carries its own correction where later work moved one of its numbers.
 4. [Why the answers feel slow](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html) (2026-08-02): the latency investigation. It ends on a question it could not close, and says so.
 5. [Three thinking budgets, one pick](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html) (2026-08-03): the three-repeat run that closed it. Shipped the next day.
-6. [Before and after the one-fact-list change](https://tiffygk.github.io/girl-chess-demo/coach-correctness-dashboard.html) (2026-09-20): the same questions to the coach before and after the change, beside her own record, with what the harness could not rate stated up front.
 
 Then [technical-decisions.md](technical-decisions.md) and this doc, for anything that needs receipts.
 
