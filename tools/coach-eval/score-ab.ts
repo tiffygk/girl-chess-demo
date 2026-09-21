@@ -25,9 +25,15 @@
 //       output, and records the result in the round's own notes -- this
 //       script never fabricates a hand-audit verdict). A row's verdict is
 //       "red" iff the mechanical escape-claim detector flagged it
-//       (detectorFlags.length > 0), "pass" otherwise -- the same mechanical
-//       signal auditFhRows/detectEscapeClaims already computes, just
-//       reported per row instead of only rolled into FH-01/FH-02.
+//       (detectorFlags.length > 0), "pass" otherwise. Fix round 1
+//       (task-5b-review.md): a flagged row's `id` also distinguishes
+//       zero-tolerance from candidate, per fh.ts's own GAME_160_PROVEN_
+//       FORCED_IDS (imported, never copied) -- a flagged fixtureId in
+//       that list is `"FH-ROW"` (the zero-tolerance finding FH-01 gates
+//       on); a flagged fixtureId outside it is `"FH-ROW-CANDIDATE"`
+//       (fh.ts's own comment: such a claim "might be TRUE, not
+//       dishonest", so it needs the controller's hand audit before being
+//       treated the same). An unflagged row is always `"FH-ROW"`, pass.
 //   nm: checkNmRows(rows) with an empty hand-audit map. "pass" when the
 //       mechanical pending-awareness checker named the fixture's known best
 //       move (namedMove === true), "red" otherwise (a checker false
@@ -57,7 +63,7 @@ import path from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import type { AnswerRow } from "./score";
-import { runFhSuite, auditFhRows, type FhRowAudit } from "./suites/fh";
+import { runFhSuite, auditFhRows, GAME_160_PROVEN_FORCED_IDS, type FhRowAudit } from "./suites/fh";
 import { runNmSuite, checkNmRows, type NmRowCheck } from "./suites/nm";
 import { runLaSuite, checkLaRows, type LaRowCheck } from "./suites/la";
 import { runCeSuite } from "./suites/ce";
@@ -109,17 +115,30 @@ function assertRowsComplete(dir: string, rows: AnswerRow[]): void {
   });
 }
 
+// Fix round 1 (task-5b-review.md, Minor promoted): an escape claim on a
+// fork row whose fixtureId is in fh.ts's own GAME_160_PROVEN_FORCED_IDS
+// (imported, never copied -- see fh.ts's own comment above that const) is
+// the zero-tolerance finding FH-01 gates on. An escape claim on any OTHER
+// fork row is only a CANDIDATE -- fh.ts's own comment: "an 'escape claim'
+// on FK1 might be TRUE, not dishonest", so it needs the controller's hand
+// audit before it can be treated the same way. A clean row (no detector
+// flag) is reported the same either way (FH-ROW, pass) -- the zero-
+// tolerance/candidate split only matters once a claim IS flagged.
 function fhRowVerdicts(dir: string, rows: AnswerRow[]): RowVerdict[] {
   const forkRows = rows.filter((r) => r.arm === "fork");
   if (forkRows.length === 0) return [];
   assertRowsComplete(dir, forkRows);
   const audits: FhRowAudit[] = auditFhRows(forkRows, {});
-  return audits.map((a) => ({
-    id: "FH-ROW",
-    rowId: a.rowId,
-    fixtureId: a.fixtureId,
-    verdict: a.detectorFlags.length > 0 ? "red" : "pass",
-  }));
+  return audits.map((a) => {
+    const flagged = a.detectorFlags.length > 0;
+    const provenForced = GAME_160_PROVEN_FORCED_IDS.includes(a.fixtureId);
+    return {
+      id: flagged && !provenForced ? "FH-ROW-CANDIDATE" : "FH-ROW",
+      rowId: a.rowId,
+      fixtureId: a.fixtureId,
+      verdict: flagged ? "red" : "pass",
+    };
+  });
 }
 
 function nmRowVerdicts(dir: string, rows: AnswerRow[]): RowVerdict[] {

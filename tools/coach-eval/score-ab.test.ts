@@ -87,6 +87,30 @@ describe("scoreDir", () => {
     expect(fh.rowVerdicts[0]).toMatchObject({ rowId: "R2", fixtureId: "FK3", verdict: "red" });
   });
 
+  // Fix round 1 (task-5b-review.md, Minor promoted): FH row verdicts must
+  // distinguish the mechanically-proven-forced zero-tolerance rows
+  // (fh.ts's own GAME_160_PROVEN_FORCED_IDS, imported not copied) from
+  // every other fork row an escape claim is flagged on -- an escape claim
+  // outside that list "might be TRUE" per fh.ts's own comment, so it is a
+  // candidate for the controller's hand audit, not the same zero-tolerance
+  // finding.
+  it("splits FH row ids: proven-forced escape claim is FH-ROW, non-proven is FH-ROW-CANDIDATE, clean is FH-ROW pass", () => {
+    const forkDir = path.join(tmpDir, "2026-09-20-ab-testcode-fork-rep2");
+    fs.mkdirSync(forkDir, { recursive: true });
+    const provenForcedEscaping = row({ id: "R10", fixtureId: "FK3", arm: "fork", text: KNOWN_BAD_ESCAPE_CLAIM });
+    const nonProvenEscaping = row({ id: "R11", fixtureId: "FK1", arm: "fork", text: KNOWN_BAD_ESCAPE_CLAIM });
+    const clean = row({ id: "R12", fixtureId: "FK2", arm: "fork" });
+    writeRaw(forkDir, [provenForcedEscaping, nonProvenEscaping, clean]);
+
+    scoreDir(forkDir);
+
+    const fh = readJson(forkDir, "fh.json");
+    const byRowId = Object.fromEntries(fh.rowVerdicts.map((rv: { rowId: string }) => [rv.rowId, rv]));
+    expect(byRowId.R10).toMatchObject({ id: "FH-ROW", fixtureId: "FK3", verdict: "red" });
+    expect(byRowId.R11).toMatchObject({ id: "FH-ROW-CANDIDATE", fixtureId: "FK1", verdict: "red" });
+    expect(byRowId.R12).toMatchObject({ id: "FH-ROW", fixtureId: "FK2", verdict: "pass" });
+  });
+
   it("refuses to overwrite an existing suite json without --force", () => {
     writeRaw(runDir, [row({ id: "R1", fixtureId: "MT1", arm: "mate" })]);
     scoreDir(runDir);
