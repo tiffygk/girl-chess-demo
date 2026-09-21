@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Girl Chess — Coach Quality Dashboard (2026-08-02)</title>
+<title>Girl Chess: Coach Quality Dashboard (2026-08-02)</title>
 <style>
   :root{
     --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2430; --ink2:#54606e; --muted:#8a95a3;
@@ -131,15 +131,15 @@
 
   <header class="top">
     <div>
-      <h1>Coach Quality — Why the Answers Feel Slow</h1>
+      <h1>Coach Quality: Why the Answers Feel Slow</h1>
       <div class="sub">A read on the chess coach's answer speed and reliability, in plain terms. Each chart makes one point and nothing else. Numbers are computed from the eval runs and your real games; sample sizes are shown on every chart.</div>
     </div>
     <button class="themebtn" id="themebtn" onclick="toggleTheme()">◐ Theme</button>
   </header>
 
   <div class="thesis">
-    <div class="lead">The slow answers aren't the network or our code — the assistant is silently "thinking" before it replies.</div>
-    <div class="body">On hard questions it spends <b>20–50 seconds reasoning privately</b> before writing the first word. A <b>3-minute budget alone fixed the timeouts</b> — retries now rescue every stalled answer (10 of 10), proving retrying was never broken, just starved. Capping the thinking on top makes answers <b>~3× faster</b>, but costs correctness (<b>6.2% of first drafts failed fact-checks vs 0%</b>) — so the verified-facts work should ship before or alongside it. One subjective quality read stays sealed.</div>
+    <div class="lead">The slow answers aren't the network or our code: the assistant is silently "thinking" before it replies.</div>
+    <div class="body">On hard questions it spends <b>20-50 seconds reasoning privately</b> before writing the first word. A <b>3-minute budget alone fixed the timeouts</b>: retries now rescue every stalled answer (10 of 10), proving retrying was never broken, just starved. Capping the thinking on top makes answers <b>~3× faster</b>, but costs correctness (<b>6.2% of first drafts failed fact-checks vs 0%</b>), so the verified-facts work should ship before or alongside it. One subjective quality read stays sealed.</div>
   </div>
 
     <div style="background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:var(--radius);padding:13px 17px;margin:0 0 22px">
@@ -159,7 +159,7 @@
     <div class="chartbox" id="c1"></div>
     <button class="tbtn" onclick="tog('t1')">Show data table</button>
     <table class="dt" id="t1"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The invisible thinking is the entire tail.</b> Starting up, reading the board, and writing the reply take about 4 seconds combined; the private thinking takes 16. On the hardest questions that one block stretches to 20–50 seconds while the other three stay flat.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The invisible thinking is the entire tail.</b> Starting up, reading the board, and writing the reply take about 4 seconds combined; the private thinking takes 16. On the hardest questions that one block stretches to 20-50 seconds while the other three stay flat.</p></div>
     <div class="foot">Source: per-event timeline of one instrumented answer, corroborated by 26 controlled backend calls on your real questions (root-cause investigation, 2026-08-02).</div>
   </section>
 
@@ -172,7 +172,7 @@
     <div class="chartbox" id="c2"></div>
     <button class="tbtn" onclick="tog('t2')">Show data table</button>
     <table class="dt" id="t2"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Give-ups roughly doubled since July — and the change is failures, not slowness.</b> The share of fast answers fell and the "gave up" slice grew from ~8% to ~18% in testing and ~23% in your real play. The answers that used to arrive slowly now arrive not at all.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Give-ups roughly doubled since July, and the change is failures, not slowness.</b> The share of fast answers fell and the "gave up" slice grew from ~8% to ~18% in testing and ~23% in your real play. The answers that used to arrive slowly now arrive not at all.</p></div>
     <div class="caveat"><b>⚠ One bar carries a caveat.</b> The pre-fix test ran on a machine that became busy partway through; only its board questions (shown here) are usable, and its give-up rate is directional, not certified. July and after-wave-1 are clean.</div>
     <div class="foot">Testing bars: 65 board questions each (July = average of 3 repeats). Your real play: 91 chat questions from the wave-1 playtest save.</div>
   </section>
@@ -181,13 +181,13 @@
   <section class="panel">
     <div class="num">CHART 3</div>
     <h2>Do retries actually rescue answers?</h2>
-    <div class="q">You said <em>"I've never seen the regen work."</em> When an answer runs long, the system retries once. Here is what those retries produced — at the old 45-second limit, and at the new 3-minute budget.</div>
+    <div class="q">You said <em>"I've never seen the regen work."</em> When an answer runs long, the system retries once. Here is what those retries produced: at the old 45-second limit, and at the new 3-minute budget.</div>
     <div class="legend" id="lg3"></div>
     <div class="chartbox" id="c3"></div>
     <button class="tbtn" onclick="tog('t3')">Show data table</button>
     <table class="dt" id="t3"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Retrying was never broken — the 45-second limit starved it.</b> Give a retry room to finish and, at normal thinking, <b>every stalled answer was rescued (10 of 10)</b> — up from 9 of 21 at the old limit. The regen you never saw work now works.</p></div>
-    <div class="concl"><span class="tag">SURPRISE</span><p><b>At a 3-minute budget even normal thinking had zero give-ups.</b> Raising the budget alone erased the timeout failures — so the thinking limit is a <b>speed</b> lever, not a rescue lever. (The two bounded arms show 4 give-ups each, but those are the fact-check failures of Chart 5, not timeouts.)</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Retrying was never broken: the 45-second limit starved it.</b> Give a retry room to finish and, at normal thinking, <b>every stalled answer was rescued (10 of 10)</b>, up from 9 of 21 at the old limit. The regen you never saw work now works.</p></div>
+    <div class="concl"><span class="tag">SURPRISE</span><p><b>At a 3-minute budget even normal thinking had zero give-ups.</b> Raising the budget alone erased the timeout failures, so the thinking limit is a <b>speed</b> lever, not a rescue lever. (The two bounded arms show 4 give-ups each, but those are the fact-check failures of Chart 5, not timeouts.)</p></div>
     <div class="foot">Source: the three overnight 3-minute runs (65 questions each) vs the 45-second baseline. Retries counted as regens that fired; "rescued" = ended as a real answer, "starved" = ended as an apology.</div>
   </section>
 
@@ -200,24 +200,24 @@
     <div class="chartbox" id="c4"></div>
     <button class="tbtn" onclick="tog('t4')">Show data table</button>
     <table class="dt" id="t4"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Wave-1 changed what you see, not how fast the answer arrives.</b> Give-ups, slow answers, and typical wait were unchanged. What it added: an <b>instant "thinking" signal</b> (visible in a fraction of a second) so the screen no longer looks frozen. The real regression came earlier — a 22.5-second cut-off added on 08-01 that turned slow-but-delivered answers into guaranteed give-ups.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Wave-1 changed what you see, not how fast the answer arrives.</b> Give-ups, slow answers, and typical wait were unchanged. What it added: an <b>instant "thinking" signal</b> (visible in a fraction of a second) so the screen no longer looks frozen. The real regression came earlier, a 22.5-second cut-off added on 08-01 that turned slow-but-delivered answers into guaranteed give-ups.</p></div>
     <div class="foot">Source: the two 65-question runs before and after wave-1+caching. "Instant signal" = time to first on-screen response; "the answer" = time to the first real word.</div>
   </section>
 
   <!-- INCOMING -->
-  <div class="incoming"><span class="pill" style="background:var(--good);color:#04231a">RESULTS ARE IN</span><b>The decisive test finished overnight.</b> Three versions of the coach — normal, limited, and off thinking — each ran the full 65 questions at a 3-minute budget. Speed and fact-check failures below are now real, measured data. One piece remains sealed: the subjective blinded read of whether the faster answers still teach well.</div>
+  <div class="incoming"><span class="pill" style="background:var(--good);color:#04231a">RESULTS ARE IN</span><b>The decisive test finished overnight.</b> Three versions of the coach: normal, limited, and off thinking, each ran the full 65 questions at a 3-minute budget. Speed and fact-check failures below are now real, measured data. One piece remains sealed: the subjective blinded read of whether the faster answers still teach well.</div>
 
   <!-- G5 -->
   <section class="panel">
     <div class="num">CHART 5</div>
     <h2>What the fix costs</h2>
-    <div class="q">Capping the thinking makes answers faster — but does a faster answer become a wrong answer? Both speed and fact-check failures are now measured.</div>
+    <div class="q">Capping the thinking makes answers faster, but does a faster answer become a wrong answer? Both speed and fact-check failures are now measured.</div>
     <div class="legend" id="lg5"></div>
     <div class="chartbox" id="c5"></div>
     <button class="tbtn" onclick="tog('t5')">Show data table</button>
     <table class="dt" id="t5"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The speed win is about 3× at the median — and it tames the 64-second tail to 15 — but it has a real cost.</b> Bounding the thinking made roughly 1 in 16 first drafts (6.2%) fail the coach's fact-checks and turn into apologies, versus none at normal thinking. That argues for shipping the <b>verified-facts work before or alongside</b> the thinking limit, so the faster answers don't trade speed for being wrong.</p></div>
-    <div class="concl pend"><span class="tag">STILL SEALED</span><p>The subjective, blinded quality read — is a limited-thinking answer actually as helpful to learn from? — is built but its answer key is unopened. Until it is read, "cap the thinking" is a strong speed lead, not a shipping decision.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The speed win is about 3× at the median, and it tames the 64-second tail to 15, but it has a real cost.</b> Bounding the thinking made roughly 1 in 16 first drafts (6.2%) fail the coach's fact-checks and turn into apologies, versus none at normal thinking. That argues for shipping the <b>verified-facts work before or alongside</b> the thinking limit, so the faster answers don't trade speed for being wrong.</p></div>
+    <div class="concl pend"><span class="tag">STILL SEALED</span><p>The subjective, blinded quality read (is a limited-thinking answer actually as helpful to learn from?) is built but its answer key is unopened. Until it is read, "cap the thinking" is a strong speed lead, not a shipping decision.</p></div>
     <div class="foot">Source: the three overnight 3-minute runs, 65 questions each. Speed = wall time to the answer; fact-check failures = first drafts rejected by the coach's own validators. Subjective grade: <code>blinded worksheet built, key sealed</code>.</div>
   </section>
 
@@ -225,13 +225,13 @@
   <section class="panel">
     <div class="num">IN HER WORDS</div>
     <h2>What the failures felt like</h2>
-    <div class="q">Verbatim feedback attached to give-ups and slow answers in the wave-1 playtest — the human side of Chart 2.</div>
+    <div class="q">Verbatim feedback attached to give-ups and slow answers in the wave-1 playtest, the human side of Chart 2.</div>
     <div class="quotes" id="quotes"></div>
     <div class="foot">Source: your thumbs-down notes in the wave-1 playtest save (advice_traces).</div>
   </section>
 
   <footer class="pg">
-    Girl Chess — Coach Quality Dashboard · built 2026-08-02 · complete (speed + fact-checks measured; one subjective read still sealed).<br>
+    Girl Chess: Coach Quality Dashboard · built 2026-08-02 · complete (speed + fact-checks measured; one subjective read still sealed).<br>
     All figures computed directly from the raw test runs and playtest saves. Contaminated rows excluded and flagged per the run's conditions file.
   </footer>
 </div>

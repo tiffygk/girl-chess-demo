@@ -326,7 +326,7 @@
     <div class="sec-head"><span class="sec-num">02</span><h2>Plain language: does the coach sound like a person?</h2></div>
     <p class="sec-sub">Share of replies with zero internal engineering vocabulary. The coach should sound like a person, never the machinery behind it. (Internal metric name: jargon-clean rate.)</p>
     <div class="card">
-      <div class="chart-title">Replies free of engineering terms (0–100%)</div>
+      <div class="chart-title">Replies free of engineering terms (0-100%)</div>
       <div class="chart-holder" id="chart-jargon"></div>
       <div class="annotation">
         <span class="an-label">Why the earlier gap vanished, and the lesson it taught</span>
@@ -345,14 +345,14 @@
     <div class="sec-head"><span class="sec-num">03</span><h2>Brevity: does the coach keep answers short?</h2><span class="chip" style="background:color-mix(in srgb, var(--series-sonnet) 14%, transparent);color:var(--chip-fg)">this decided the pick</span></div>
     <p class="sec-sub">Share of replies inside the coach's length budget (45 words / 3 sentences; 20 words for quick confirmations). Short answers matter because the coach speaks in the middle of a live game.</p>
     <div class="card">
-      <div class="chart-title">Replies inside the length budget (0–100%)</div>
+      <div class="chart-title">Replies inside the length budget (0-100%)</div>
       <div class="chart-holder" id="chart-length"></div>
       <div class="annotation">
         <span class="an-label">Honest frame, and a fairness concern checked and cleared</span>
         Neither model is good at this yet: sonnet misses the budget almost half the time. But sonnet is decisively closer to the coach the spec describes, in every one of six runs. Separately, the stakeholder suspected failed replies (timeouts served as canned fallbacks) were being counted against this score. That was verified directly in the scoring code and in the raw counts: failed replies never enter this measure. The concern did not reproduce, so nothing was changed, and the rule is printed below so the check stays visible.
       </div>
       <div class="verbatim">
-        "template/timeout/error rows are pipeline failures and are excluded from this denominator — verified in harness code and in baseline denominators 55/65".
+        "template/timeout/error rows are pipeline failures and are excluded from this denominator, verified in harness code and in baseline denominators 55/65".
         <span class="vb-src">Exclusion rule, quoted verbatim from the pre-registered plan. Per-run sample sizes (57/62/60 and 64/65/65) equal 65 minus each run's failed replies, so the exclusion is visible on inspection.</span>
       </div>
       <div class="takeaway">
@@ -367,7 +367,7 @@
     <div class="sec-head"><span class="sec-num">04</span><h2>Staying on topic: does the coach address the move she is weighing?</h2></div>
     <p class="sec-sub">When the player is holding a candidate move and asks about it, the reply should engage that specific move, judged by a human-audited reading, not keyword matching. Small sample: 14 such prompts per run, so a single miss moves this score 7 points. (Internal metric name: pending-awareness.)</p>
     <div class="card">
-      <div class="chart-title">Replies that engage her held move (0–100%)</div>
+      <div class="chart-title">Replies that engage her held move (0-100%)</div>
       <div class="chart-holder" id="chart-pending"></div>
       <div class="annotation">
         <span class="an-label">This number survived a human audit</span>
@@ -387,7 +387,7 @@
     <div class="card">
       <div class="panels">
         <div class="panel">
-          <div class="chart-title">Canned-fallback rate per run (0–15%)</div>
+          <div class="chart-title">Canned-fallback rate per run (0-15%)</div>
           <div class="chart-holder" id="chart-template"></div>
           <div class="panel-sub" id="template-pooled"></div>
         </div>
@@ -418,7 +418,7 @@
     <div class="sec-head"><span class="sec-num">06</span><h2>Can the numbers be trusted? The scoring system was itself audited</h2><span class="chip pass" id="instrument-chip"></span></div>
     <p class="sec-sub">Every score on this page comes from an automated checker. Before any of them were believed, a human hand-labeled hundreds of replies and compared their judgment to the checker's, requiring 95% agreement on every measure. Bars show final human-vs-checker agreement.</p>
     <div class="card">
-      <div class="chart-title">Automated checker vs human judgment, per measure (0–100%)</div>
+      <div class="chart-title">Automated checker vs human judgment, per measure (0-100%)</div>
       <div class="chart-holder" id="chart-instrument"></div>
       <div class="annotation">
         <span class="an-label">What the audit caught</span>
