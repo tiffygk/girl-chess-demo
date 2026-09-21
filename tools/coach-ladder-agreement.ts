@@ -337,7 +337,7 @@ function movesInSentence(fen: string | null, sentence: string): string[] {
 // move found anywhere goes into `mentioned`; a move found in a sentence
 // that ALSO recommends (per sentenceRecommends above) goes into
 // `recommended`. Both deduplicated (by sanBase) but order-preserving.
-function extractMoves(fen: string | null, text: string): ExtractedMoves {
+export function extractMoves(fen: string | null, text: string): ExtractedMoves {
   const recommended: string[] = [];
   const mentioned: string[] = [];
   const seenRecommended = new Set<string>();

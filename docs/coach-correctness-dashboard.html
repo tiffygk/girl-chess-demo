@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Girl Chess: Before and After the One-Fact-List Change (2026-09-20)</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2430; --ink2:#54606e; --muted:#8a95a3;
+    --line:#e4e8ee; --line2:#eef1f5; --shadow:0 1px 3px rgba(20,30,45,.08),0 1px 2px rgba(20,30,45,.04);
+    --accent:#0f4c81;
+    /* series (Okabe-Ito, validated light mode 2026-09-20: CVD worst pair dE 11.0, normal floor 18.7;
+       orange contrast WARN mitigated by ink direct labels + data tables) */
+    --before:#e69f00;  /* arm BEFORE = ac8168e */
+    --after:#0072b2;   /* arm AFTER  = main    */
+    --up:#009e73;      /* thumbs up   */
+    --down:#d55e00;    /* thumbs down */
+    --warn:#e69f00; --bad:#d55e00; --good:#009e73;
+    --tip-bg:#1c2430; --tip-ink:#fff;
+    --radius:12px;
+  }
+  :root[data-theme="dark"]{
+    --bg:#12161c; --panel:#1a2029; --ink:#e9edf2; --ink2:#aeb9c6; --muted:#7f8b99;
+    --line:#2a323d; --line2:#232b35; --shadow:0 1px 3px rgba(0,0,0,.4);
+    --accent:#5aa0dd;
+    /* dark steps validated against #1a2029 (2026-09-20): all four inside the dark lightness band,
+       CVD worst pair dE 11.1, normal floor 15.5, contrast >= 3:1 */
+    --before:#bd8820; --after:#3f8ccc; --up:#22a480; --down:#e4602e;
+    --warn:#bd8820; --bad:#e4602e; --good:#22a480;
+    --tip-bg:#e9edf2; --tip-ink:#12161c;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#12161c; --panel:#1a2029; --ink:#e9edf2; --ink2:#aeb9c6; --muted:#7f8b99;
+      --line:#2a323d; --line2:#232b35; --shadow:0 1px 3px rgba(0,0,0,.4);
+      --accent:#5aa0dd;
+      --before:#bd8820; --after:#3f8ccc; --up:#22a480; --down:#e4602e;
+      --warn:#bd8820; --bad:#e4602e; --good:#22a480;
+      --tip-bg:#e9edf2; --tip-ink:#12161c;
+    }
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.55;font-size:15px;
+    padding:24px 18px 64px;transition:background .2s,color .2s}
+  .wrap{max-width:1120px;margin:0 auto}
+  header.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:23px;font-weight:700;letter-spacing:-.01em}
+  .sub{color:var(--ink2);font-size:14px;margin-top:4px;max-width:70ch}
+  .themebtn{border:1px solid var(--line);background:var(--panel);color:var(--ink2);
+    border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;white-space:nowrap}
+  .themebtn:hover{color:var(--ink);border-color:var(--muted)}
+  .caveat-banner{font-size:13px;color:var(--ink2);background:rgba(230,159,0,.10);border:1px solid rgba(230,159,0,.35);
+    border-radius:10px;padding:10px 14px;margin:14px 0 0}
+  .caveat-banner b{color:var(--warn)}
+  .thesis{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);
+    border-radius:var(--radius);padding:16px 20px;margin:16px 0 22px;box-shadow:var(--shadow)}
+  .thesis b{color:var(--ink)}
+  .thesis .lead{font-size:16px;font-weight:600}
+  .thesis .body{color:var(--ink2);font-size:14.5px;margin-top:6px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:24px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+  .kpi .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;
+    display:flex;align-items:center;gap:7px}
+  .kpi .chip{width:11px;height:11px;border-radius:3px;flex:none}
+  .kpi .v{font-size:27px;font-weight:750;margin:6px 0 2px;letter-spacing:-.02em}
+  .kpi .d{font-size:12.5px;color:var(--ink2)}
+  .kpi.pick{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)}
+  .kpi .picktag{display:inline-block;font-size:10px;font-weight:800;color:#fff;background:var(--accent);
+    border-radius:4px;padding:2px 6px;letter-spacing:.05em;vertical-align:middle;margin-left:6px}
+  .kpi.unaudited{border-style:dashed}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px 24px 20px;box-shadow:var(--shadow);margin-bottom:22px}
+  .panel .num{font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.05em}
+  .panel h2{font-size:18px;font-weight:700;margin:3px 0 2px;letter-spacing:-.01em}
+  .panel .why{font-size:13.5px;color:var(--ink);margin:2px 0 8px;padding-left:14px;position:relative}
+  .panel .why::before{content:"•";position:absolute;left:2px;color:var(--accent)}
+  .panel .q{font-size:13.5px;color:var(--ink2);margin-bottom:16px}
+  .panel .q em{color:var(--muted);font-style:italic}
+  .chartbox{width:100%;overflow-x:auto}
+  .two{display:grid;grid-template-columns:2fr 1fr;gap:18px;align-items:start}
+  @media (max-width:760px){.two{grid-template-columns:1fr}}
+  .side{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--line2)}
+  .side .num{font-size:11px}
+  .side h3{font-size:14px;margin:2px 0 8px}
+  svg{display:block;max-width:100%;height:auto;font-family:inherit}
+  svg text{fill:var(--ink2)}
+  .axislbl{font-size:12px;fill:var(--muted)}
+  .vallbl{font-size:12.5px;font-weight:650;fill:var(--ink)}
+  .grid{stroke:var(--line2);stroke-width:1}
+  .legend{display:flex;flex-wrap:wrap;gap:14px 18px;margin:6px 2px 4px;font-size:13px;color:var(--ink2)}
+  .legend .it{display:flex;align-items:center;gap:7px}
+  .sw{width:13px;height:13px;border-radius:3px;flex:none;box-shadow:0 0 0 2px var(--panel)}
+  .sw.round{border-radius:50%}
+  .concl{margin-top:16px;background:var(--line2);border-radius:10px;padding:13px 16px;
+    display:flex;gap:11px;align-items:flex-start}
+  .concl .tag{font-size:11px;font-weight:800;color:#fff;background:var(--accent);border-radius:5px;
+    padding:3px 7px;letter-spacing:.04em;flex:none;margin-top:1px}
+  .concl p{font-size:14px;color:var(--ink)}
+  .foot{font-size:12px;color:var(--muted);margin-top:11px}
+  .foot code,.q code,.d code{background:var(--line2);padding:1px 5px;border-radius:4px;font-size:11.5px}
+  .tbtn{margin-top:12px;border:1px solid var(--line);background:transparent;color:var(--ink2);
+    border-radius:7px;padding:5px 11px;font-size:12.5px;cursor:pointer}
+  .tbtn:hover{border-color:var(--muted);color:var(--ink)}
+  table.dt{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px;display:none}
+  table.dt.show{display:table}
+  table.dt th,table.dt td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.dt th{font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700}
+  table.dt td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  table.mech{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  table.mech th,table.mech td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.mech th{font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700}
+  table.mech code{background:var(--line2);padding:1px 5px;border-radius:4px;font-size:11.5px;white-space:nowrap}
+  .pill{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;border-radius:4px;padding:2px 6px;color:#fff}
+  .pill.fixed{background:var(--good)} .pill.open{background:var(--bad)} .pill.na{background:var(--muted)}
+  .verd{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .verd .cell{font-size:11.5px;font-weight:700;border-radius:6px;padding:4px 8px;border:1px solid var(--line);color:var(--ink)}
+  .verd .cell.pass{border-color:var(--good);box-shadow:inset 3px 0 0 var(--good)}
+  .verd .cell.red{border-color:var(--bad);box-shadow:inset 3px 0 0 var(--bad)}
+  .verd .cell.dnr{border-style:dashed;color:var(--muted)}
+  .ex{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px}
+  @media (max-width:760px){.ex{grid-template-columns:1fr}}
+  .ex .col{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--panel)}
+  .ex .col h4{font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;display:flex;align-items:center;gap:7px}
+  .ex .col p{font-size:13.5px;color:var(--ink);white-space:pre-wrap}
+  .ex .fact{grid-column:1/-1;font-size:13px;color:var(--ink2);background:var(--line2);border-radius:8px;padding:8px 12px}
+  .quote{border-left:3px solid var(--line);padding:6px 12px;margin:10px 0;font-size:13.5px;color:var(--ink)}
+  .quote .m{font-size:11.5px;color:var(--muted);margin-bottom:2px}
+  .quote .m .chip{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  #tip{position:fixed;pointer-events:none;background:var(--tip-bg);color:var(--tip-ink);
+    font-size:12.5px;padding:7px 10px;border-radius:7px;opacity:0;transition:opacity .1s;z-index:50;
+    box-shadow:0 4px 16px rgba(0,0,0,.25);max-width:260px;line-height:1.4}
+  #tip .tt{font-weight:700;margin-bottom:2px}
+  .mark{cursor:default}
+  footer.pg{color:var(--muted);font-size:12px;text-align:center;margin-top:34px;line-height:1.7}
+  @media (max-width:620px){ body{font-size:14px} .panel{padding:18px 16px} h1{font-size:20px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1 id="h1">Keep the change: speed held, checks stricter, correctness unproven</h1>
+      <div class="sub" id="sub">BEFORE (<b>ac8168e</b>) and AFTER (main) each answered the same <b>115</b> questions three times in the harness, the test rig, on the same model and thinking budget. Her real games sit beside it as a second instrument.</div>
+    </div>
+    <button class="themebtn" id="themebtn" onclick="toggleTheme()">◐ Theme</button>
+  </header>
+
+  <div class="caveat-banner" id="caveat">BEFORE is the code at <b>ac8168e</b>, just before the change reached main; AFTER is main, coach code unchanged since <b>1de3dc1</b>. Both answered the same questions on the same model and thinking budget. The harness hands AFTER a context shaped before the change, so its correctness numbers rate the code without its facts. Her real games are a second instrument and are never compared numerically with the harness. The method section lists every other limit, including the checks that could not run.</div>
+
+  <div class="thesis">
+    <div class="lead" id="thesis-lead">The change stays: speed held, the checks got stricter, and the harness could not rate AFTER's live correctness.</div>
+    <div class="body" id="thesis-body">Median wait was <b>5.5 s</b> before and <b>5.8 s</b> after. Answers passing every automatic check went from <b>304</b> of <b>345</b> to <b>294</b> of <b>345</b>. AFTER answered with fewer facts than it has live, because the harness hands it a context shaped before the change, and it said so. That gap is a limit of the instrument, not the live coach; the next eval must fix the context and re-run AFTER.</div>
+  </div>
+
+  <!-- KPI ROW -->
+  <div class="kpis" id="kpis"></div>
+
+  <!-- CHART 1 -->
+  <section class="panel">
+    <div class="num">CHART 1 · THE HEADLINE</div>
+    <h2 id="c1-title">Answers that passed every automatic check slipped slightly after the change</h2>
+    <div class="why" id="c1-why">This is the one number that pools every question, so a real drop in quality would show up here first.</div>
+    <div class="q" id="c1-q">Each row is a difficulty bucket, and the two dots give its share of answers that passed every automatic check, BEFORE and AFTER. Dot area grows with the number of questions.</div>
+    <div class="legend" id="lg1"></div>
+    <div class="chartbox" id="c1"></div>
+    <button class="tbtn" onclick="tog('t1')">Show data table</button>
+    <table class="dt" id="t1"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c1-take">Overall <b>304</b> of <b>345</b> before and <b>294</b> of <b>345</b> after, <b>88.1%</b> against <b>85.2%</b>. Direct-fact rose <b>72/87</b> to <b>74/87</b> and tactical-or-mate <b>50/69</b> to <b>52/69</b>. Needs-line carried the whole loss, <b>182/189</b> to <b>168/189</b>. The cause is stricter checking: canned fallback replies rose from <b>28</b> to <b>40</b>, and from <b>3</b> to <b>21</b> on live-board questions.</p></div>
+    <div class="foot" id="c1-foot"></div>
+  </section>
+
+  <!-- CHART 2 -->
+  <section class="panel">
+    <div class="num">CHART 2</div>
+    <h2 id="c2-title">AFTER named the engine's mate move far less often</h2>
+    <div class="why" id="c2-why">The rule forbids naming a move the fact list does not hold, so this is where the rule shows its cost.</div>
+    <div class="q" id="c2-q">The mate set is <b>7 positions</b> answered three times each. Each bar splits one version's answers by what the coach did with the engine's mate move.</div>
+    <div class="two">
+      <div>
+        <div class="legend" id="lg2"></div>
+        <div class="chartbox" id="c2"></div>
+      </div>
+      <div class="side">
+        <div class="num">THE OTHER INSTRUMENT</div>
+        <h3 id="c2s-title">Her real replies, checked against the hint ladder</h3>
+        <div class="chartbox" id="c2s"></div>
+        <div class="foot" id="c2s-foot"></div>
+      </div>
+    </div>
+    <button class="tbtn" onclick="tog('t2')">Show data table</button>
+    <table class="dt" id="t2"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c2-take">BEFORE named the engine's mate move <b>21 of 21</b>, citing stored analysis. AFTER managed <b>12 of 21</b>, refusing to name a best in <b>4</b> and naming a different move in <b>5</b>. On fork FK3, a forced trade with one escape line, BEFORE named that line in <b>5 of 6</b> answers and AFTER in <b>2 of 6</b>.</p></div>
+    <div class="foot" id="c2-foot"></div>
+  </section>
+
+  <!-- CHART 3 -->
+  <section class="panel">
+    <div class="num">CHART 3</div>
+    <h2 id="c3-title">Speed did not move, in the harness or in her games</h2>
+    <div class="why" id="c3-why">A slower coach would have been a real cost of the change, so speed had to hold on identical hardware.</div>
+    <div class="q" id="c3-q">Each dot places one version's typical wait against its share of answers passing every automatic check, the line reaching the slowest tenth. The small chart repeats the wait for her own chats.</div>
+    <div class="two">
+      <div>
+        <div class="legend" id="lg3"></div>
+        <div class="chartbox" id="c3"></div>
+      </div>
+      <div class="side">
+        <div class="num">THE OTHER INSTRUMENT</div>
+        <h3 id="c3s-title">Her live wait, before and after the cut</h3>
+        <div class="chartbox" id="c3s"></div>
+        <div class="foot" id="c3s-foot"></div>
+      </div>
+    </div>
+    <button class="tbtn" onclick="tog('t3')">Show data table</button>
+    <table class="dt" id="t3"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c3-take">Median wait was <b>5.5 s</b> before and <b>5.8 s</b> after, with p90 moving from <b>12.1 s</b> to <b>11.0 s</b>. Her live chats sat at <b>10.4 s</b> median before the cut and <b>8.1 s</b> after, p90 falling from <b>31.7 s</b> to <b>18.2 s</b>. Different questions, so the two are never compared.</p></div>
+    <div class="foot" id="c3-foot"></div>
+  </section>
+
+  <!-- CHART 4 -->
+  <section class="panel">
+    <div class="num">CHART 4 · HER RECORD</div>
+    <h2 id="c4-title">Her thumbs improved after the cut, on thin evidence</h2>
+    <div class="why" id="c4-why">Her thumbs are the signal from real play on the live build, the thing the harness cannot rate.</div>
+    <div class="q" id="c4-q">One dot per game at its start date. Its height is the share of that game's chat replies she marked down, its area the number of chats. Dashed lines mark the dates code reached main.</div>
+    <div class="legend" id="lg4"></div>
+    <div class="chartbox" id="c4"></div>
+    <button class="tbtn" onclick="tog('t4')">Show data table</button>
+    <table class="dt" id="t4"></table>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c4-take">Before the cut she left <b>150</b> chat replies across <b>37 games</b>, <b>50</b> down and <b>37</b> up. After the cut, <b>35</b> replies across <b>4 games</b>, <b>7</b> down and <b>14</b> up. The direction is better, but <b>4 games</b> is too little to call a change in quality.</p></div>
+    <div class="foot" id="c4-foot"></div>
+  </section>
+
+  <!-- CHART 5 -->
+  <section class="panel">
+    <div class="num">CHART 5 · WHY IT HELPED</div>
+    <h2 id="c5-title">Five failure classes now have guards on main</h2>
+    <div class="why" id="c5-why">Each guard turns one of her past complaints into a test that fails if the behaviour ever comes back.</div>
+    <div class="q" id="c5-q">The table gives each failure class its mechanism, the commit that fixed it, the guard test and its status. Worked examples below show one test position answered by both versions.</div>
+    <div class="chartbox" id="c5"></div>
+    <div id="c5-ex"></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c5-take">Five failure classes now have a guard on main; the table names each commit and test. Guarded now: surface disagreements, flips on one position, quick looks sold as the pick, unpicked moves with no line, and hollow voice. Two classes stay open, and one, the board a few plies ahead, produced <b>5</b> of her <b>7</b> thumbs-down replies after the cut.</p></div>
+    <div class="foot" id="c5-foot"></div>
+  </section>
+
+  <!-- CHART 6 -->
+  <section class="panel">
+    <div class="num">CHART 6 · HER WORDS</div>
+    <h2 id="c6-title">Her notes point at the class that is still open</h2>
+    <div class="why" id="c6-why">Five of her seven thumbs-down notes after the cut describe the open class above, the board a few plies ahead.</div>
+    <div class="q" id="c6-q">Every note is verbatim from her feedback and dated, with nothing edited. Notes after the cut are shown first, and the button opens every earlier note.</div>
+    <div id="c6-pasted"></div>
+    <div id="c6"></div>
+    <button class="tbtn" onclick="tog('c6more')">Show every feedback note</button>
+    <div id="c6more" class="dt" style="display:none"></div>
+    <div class="foot" id="c6-foot"></div>
+  </section>
+
+  <!-- CHART 7 + 8 -->
+  <section class="panel">
+    <div class="num">CHART 7 · VOICE</div>
+    <h2 id="c7-title">Voice tells held flat across the cut</h2>
+    <div class="why" id="c7-why">Hollow phrasing was a repeated complaint, and the count stayed flat, so there is nothing new to fix here.</div>
+    <div class="q" id="c7-q">Bars give voice tells per 100 model replies, before the cut against after: <b>22.7</b> before (<b>10 of 44</b>) and <b>21.9</b> after (<b>7 of 32</b>). Only <b>1 row</b> exists after the phrasing filter landed.</div>
+    <div class="legend" id="lg7"></div>
+    <div class="chartbox" id="c7"></div>
+    <div class="foot" id="c7-foot"></div>
+  </section>
+
+  <section class="panel">
+    <div class="num">CHART 8 · THE DETERMINISTIC SUITES</div>
+    <h2 id="c8-title">The fast checks on the coach's core path are green</h2>
+    <div class="why" id="c8-why">These suites are the cheap check that nothing on the coach's answer path broke while the change landed.</div>
+    <div class="q" id="c8-q">One row per automatic check suite, with the verdict read from its run file. The red cells are targets from an earlier plan that never merged, and none sits on the path that produces an answer.</div>
+    <div id="c8"></div>
+    <div class="foot" id="c8-foot"></div>
+  </section>
+
+  <section class="panel">
+    <div class="num">METHOD AND LIMITS</div>
+    <h2 id="m-title">How this was measured, and its limits</h2>
+    <div class="q" id="method">The harness is the test rig: it asks the coach a fixed set of <b>115</b> questions and records every answer. BEFORE is the code just before merge <b>6f1e9f4</b> reached main on <b>2026-09-02</b>, at <b>ac8168e</b>; AFTER is main today, coach code unchanged since <b>1de3dc1</b>. Each version answered the set <b>3 reps</b> each, <b>690</b> answers, on one model and one thinking budget, wait times from quiet runs only. Her record is read separately: <b>196 games</b>, <b>185 chat replies</b>, <b>46 feedback notes</b>, the serving build inferred, not recorded. The harness cannot rate AFTER's live correctness, because it hands the coach no verified hint and an old-shaped move-by-move analysis. It never runs the search the live coach runs first. A second server's copy of her history, <b>1 shadow game</b> and <b>3 chats</b>, is counted nowhere else, and only <b>1 row</b> exists after PRs 11–18 landed on 2026-09-08. Ownership on harness answers is unchecked, and the chat-versus-ladder check broke on spoken moves; both stay unaudited.</div>
+  </section>
+
+  <footer class="pg" id="pgfoot"></footer>
+</div>
+
+<div id="tip"><div class="tt"></div><div class="tb"></div></div>
+
+<script>
+/* ============================ CONSTANTS ============================ */
+const CUT="2026-09-02T07:41:00Z";           // live-record cut: the coach-truth merge reached main
+const ARM_BEFORE={id:"before",k:"BEFORE · ac8168e",sha:"ac8168e",c:"var(--before)"};
+const ARM_AFTER ={id:"after", k:"AFTER · main",     sha:"cc37958",c:"var(--after)"};
+const ARMS=[ARM_BEFORE,ARM_AFTER];
+const MARKERS=[ // change markers on the timeline (dates the code reached main)
+ {d:"2026-08-03",k:"fact shelf + router"},
+ {d:"2026-08-29",k:"fen guard da3be2d"},
+ {d:"2026-09-02",k:"one fact list (the change)"},
+ {d:"2026-09-08",k:"PRs 11–18"}
+];
+/* DATA generated 2026-09-20 by the controller from the run files named beside each block */
+const RECORD={"pre": {"games": 37, "chats": 150, "down": 50, "up": 37, "latencyMedian": 10439, "latencyP90": 31714, "latencyNull": 0}, "post": {"games": 4, "chats": 35, "down": 7, "up": 14, "latencyMedian": 8133, "latencyP90": 18175, "latencyNull": 0}}; // record/canonical.json totals (owner-record.ts e0ff59f)
+const GAMES=[{"g": 127, "d": "2026-07-19 01:30:23", "chats": 3, "model": 0, "down": 1, "up": 0}, {"g": 133, "d": "2026-07-21 18:44:00", "chats": 2, "model": 2, "down": 0, "up": 2}, {"g": 134, "d": "2026-07-22 01:52:44", "chats": 2, "model": 1, "down": 1, "up": 0}, {"g": 136, "d": "2026-07-22 07:40:25", "chats": 2, "model": 2, "down": 0, "up": 0}, {"g": 137, "d": "2026-07-22 19:24:37", "chats": 2, "model": 0, "down": 1, "up": 0}, {"g": 140, "d": "2026-07-23 00:41:55", "chats": 1, "model": 1, "down": 0, "up": 0}, {"g": 141, "d": "2026-07-23 01:47:11", "chats": 2, "model": 2, "down": 0, "up": 1}, {"g": 142, "d": "2026-07-23 05:28:48", "chats": 1, "model": 1, "down": 0, "up": 1}, {"g": 143, "d": "2026-07-23 05:38:54", "chats": 3, "model": 3, "down": 0, "up": 1}, {"g": 144, "d": "2026-07-23 06:33:52", "chats": 2, "model": 2, "down": 0, "up": 1}, {"g": 145, "d": "2026-07-24 01:09:55", "chats": 1, "model": 1, "down": 0, "up": 1}, {"g": 146, "d": "2026-07-27 20:59:56", "chats": 16, "model": 11, "down": 8, "up": 3}, {"g": 147, "d": "2026-07-28 03:54:15", "chats": 1, "model": 1, "down": 0, "up": 1}, {"g": 148, "d": "2026-07-28 16:45:55", "chats": 3, "model": 3, "down": 1, "up": 1}, {"g": 150, "d": "2026-07-28 17:56:53", "chats": 4, "model": 4, "down": 1, "up": 1}, {"g": 151, "d": "2026-07-29 04:30:32", "chats": 6, "model": 5, "down": 4, "up": 2}, {"g": 159, "d": "2026-07-29 19:49:36", "chats": 1, "model": 1, "down": 1, "up": 0}, {"g": 160, "d": "2026-07-29 22:23:44", "chats": 15, "model": 11, "down": 10, "up": 3}, {"g": 161, "d": "2026-07-30 02:03:52", "chats": 1, "model": 1, "down": 0, "up": 1}, {"g": 164, "d": "2026-07-31 21:44:09", "chats": 15, "model": 13, "down": 3, "up": 5}, {"g": 165, "d": "2026-08-01 02:56:10", "chats": 3, "model": 2, "down": 1, "up": 0}, {"g": 167, "d": "2026-08-02 10:55:31", "chats": 10, "model": 6, "down": 5, "up": 0}, {"g": 169, "d": "2026-08-03 18:06:13", "chats": 6, "model": 3, "down": 2, "up": 2}, {"g": 171, "d": "2026-08-03 18:42:26", "chats": 1, "model": 1, "down": 0, "up": 1}, {"g": 172, "d": "2026-08-04 22:42:08", "chats": 4, "model": 4, "down": 0, "up": 4}, {"g": 174, "d": "2026-08-07 04:57:35", "chats": 1, "model": 0, "down": 0, "up": 0}, {"g": 176, "d": "2026-08-14 08:31:41", "chats": 2, "model": 2, "down": 0, "up": 0}, {"g": 178, "d": "2026-08-14 10:46:00", "chats": 3, "model": 3, "down": 0, "up": 2}, {"g": 182, "d": "2026-08-17 19:13:32", "chats": 2, "model": 2, "down": 0, "up": 0}, {"g": 183, "d": "2026-08-18 14:55:42", "chats": 3, "model": 3, "down": 1, "up": 0}, {"g": 184, "d": "2026-08-21 18:59:57", "chats": 3, "model": 3, "down": 1, "up": 1}, {"g": 185, "d": "2026-08-23 20:29:14", "chats": 2, "model": 2, "down": 0, "up": 0}, {"g": 188, "d": "2026-08-24 20:07:15", "chats": 3, "model": 3, "down": 0, "up": 0}, {"g": 189, "d": "2026-08-25 21:12:54", "chats": 8, "model": 8, "down": 0, "up": 2}, {"g": 190, "d": "2026-08-25 21:32:25", "chats": 2, "model": 2, "down": 1, "up": 0}, {"g": 191, "d": "2026-08-27 01:09:45", "chats": 2, "model": 0, "down": 2, "up": 0}, {"g": 192, "d": "2026-08-29 04:17:48", "chats": 12, "model": 12, "down": 6, "up": 1}, {"g": 193, "d": "2026-09-03 20:33:03", "chats": 14, "model": 11, "down": 5, "up": 6}, {"g": 195, "d": "2026-09-05 02:15:48", "chats": 2, "model": 2, "down": 0, "up": 1}, {"g": 196, "d": "2026-09-05 03:45:14", "chats": 11, "model": 11, "down": 2, "up": 5}, {"g": 197, "d": "2026-09-08 22:57:28", "chats": 8, "model": 8, "down": 0, "up": 2}]; // record/canonical.json games[] (games with >=1 chat)
+const FEEDBACK=[{"t": 329, "g": 196, "d": "2026-09-05 03:57:42", "r": -1, "x": "This is incorrect. Currently, my knight is on F5. I have the knight positioned on G7 as a possible move, but I didn't confirm it. The coach is clearly very confused about where my knight actually is and keeps saying there is no discovered check. I'm not on the diagonal. This is incorrect because you can actually see that, at the same time, the hint ladder says that moving my knight to G7 lets her push her pawn from F6 to F5, boxing in my knight and then also forking my queen. The real reason this move isn't as good is because it means it's a queen trade instead of a free queen, but the coach chat can't understand this."}, {"t": 327, "g": 196, "d": "2026-09-05 03:55:59", "r": -1, "x": "It keeps confusing its different diagonals. It might technically be correct, but it's misunderstanding what I'm saying. It says the knight itself doesn't hit the queen from e7, only taking the king from that diagonal. Yes, it doesn't hit the queen on e7. I'm talking about putting the knight to g7, so it's getting confused. G7 does target the queen who's on e8. Also, the knight, if I put him on e7, is not attacking the king on that diagonal, so it doesn't make any sense. It's very confused about the actual state of the board and is incorrect."}, {"t": 319, "g": 193, "d": "2026-09-03 21:03:01", "r": -1, "x": "I don't understand how both this is true and the coach hint that showed in the hint tree, saying this move that you're about to do (rook from b1 to b7) would result in a mate in three. There's a faster mate in three available, so that's unclear language."}, {"t": 318, "g": 193, "d": "2026-09-03 20:59:44", "r": -1, "x": "Doesn't understand what I'm saying for two messages. Continually just wants to read me the Stockfish chart and is arguing with me that the king didn't step into a line of sight my bishop had access to, when that's exactly what happened. On move before move 23, when the king was on the h8 square and moved to g8 which allowed my bishop to eye him. i want coach to understand when i am talking to it and agreeing"}, {"t": 309, "g": 193, "d": "2026-09-03 20:46:15", "r": -1, "x": "I asked the question more simply to try to get it to tell me something. I think it really just doesn't know what the board looks like two plies ahead, which is concerning. Maybe Stockfish is giving it this information, but when I ask this type of question, it doesn't know how to fetch the right information from Stockfish."}, {"t": 308, "g": 193, "d": "2026-09-03 20:44:50", "r": -1, "x": "Still can't pass the regression check. I'm wondering if giving it more time to regenerate would be helpful or if it's just wrong."}, {"t": 307, "g": 193, "d": "2026-09-03 20:44:37", "r": -1, "x": "Describes a play in the future that, to me, sounds like it's getting the board positioning incorrect. When I ask it to explain, it can't, probably due to adding in something that's wrong and doesn't pass the regression test."}, {"t": 299, "g": 192, "d": "2026-08-29 05:07:51", "r": -1, "x": "Reading the wrong ply off of moves that I highlight is clearly confusing it when I am highlighting a square or a move and not selecting it."}, {"t": 298, "g": 192, "d": "2026-08-29 05:06:39", "r": -1, "x": "I don't understand what's going on here. I have not made either of my moves, so no, I have not advanced a move based on before. I've just highlighted a different piece, and I'm considering a different move, but I have never submitted my moves since your last messages about taking the king to H1."}, {"t": 295, "g": 192, "d": "2026-08-29 05:02:56", "r": -1, "x": "We should check if there's some advanced chess logic going on here, because Sonnet 5 literally can't tell why Stockfish recommended this move of the king from g1 to h1. It is clearly just trying to make stuff up to paper over it. That is why we should also check what text we keep losing in the regenerations, because clearly it tried to say some fake things that were then caught, which is great. It then regenerated, but it regenerated to basically give no reasoning. This is less helpful to me as a chess player who wants to understand why this unorthodox move was recommended over moving my knight to c5, where it can then better defend my queen."}, {"t": 293, "g": 192, "d": "2026-08-29 04:58:32", "r": -1, "x": "See my next message."}, {"t": 292, "g": 192, "d": "2026-08-29 04:57:44", "r": -1, "x": "Incorrectly told me that my king and mallow's bishop are on the same color of square and gave a completely false reason for why my king moving to h1 is a good idea, which makes me actually think that the hint itself was false. That was displayed in the hint tree, where it says, \"Your queen to g7 just walks into her king, taking for free, no string attached, the whole story, blah blah blah.\" This is really disquieting because everything in the hints is supposed to be from Stockfish."}, {"t": 285, "g": 190, "d": "2026-08-25 21:47:54", "r": -1, "x": "Confused sequence of moves and told me a piece was on a square it wasn't on."}, {"t": 262, "g": 184, "d": "2026-08-21 19:21:23", "r": -1, "x": "It's only reading the stockfish engine of the better move, but it should take into account what actually happened when it both writes the review card and in chat. It doesn't give me a wrong answer about the reality of the sequence of moves. It's true that in the next message only one faster than the force mate in four because Malo's defense was worse. However, it should not say that I couldn't win as fast, but that there's a better move available, even if my move was still good."}, {"t": 199, "g": 169, "d": "2026-08-03 18:19:13", "r": -1, "x": "Even with it phrased as a general question, it still can't answer."}, {"t": 198, "g": 169, "d": "2026-08-03 18:18:36", "r": -1, "x": "Can't answer basic question about strategy"}, {"t": 193, "g": 167, "d": "2026-08-02 11:30:28", "r": -1, "x": "There is an issue where a lot of the time it will say there is a better move, and really the move is not distinguishably better. The chest brain only has access to it if the move is a bit better, but they both are labeled as a bit better. I don't know if the coach should maybe be able to access what the actual sent-upon delta difference is, because there are several times where, now that I'm getting better, it says I could have made a better move without it being obviously better in some way other than just style preference."}, {"t": 190, "g": 167, "d": "2026-08-02 11:22:30", "r": -1, "x": "There's something going on where the stockfish hints are not being readily accessed by Claude. The hint said that there's a forced mate that's available if I move my knight to G5. When I tried to ask the coach about it, the coach couldn't figure it out and gave a timed-out answer. Now, even after feeding it to the coach and telling it to check the chest facts from stockfish, the coach is claiming that the chest brain has not found a forced mate, but I know that it has.  We need to do something where we connect in our fishbone diagram how the hints are populated and where they look for any of those different priority-level conditions for forks, trades, mates, etc. That also needs to be passed to the coach as it does on its own shortlist, so it doesn't need to go through every move on the chest facts."}, {"t": 185, "g": 167, "d": "2026-08-02 11:09:03", "r": -1, "x": "Can't understand the basic strategy for why the move was recommended. Stockfish clearly understood what was going on and recommended that move, with the King going to d2, which is very unusual and not castling. It wasn't because the e-file was clear. It was because then it opened up my Queen to protect my Rook, so I could push my pawn up and get their Queen without putting my King at risk. Now we're trying to explain that to the model, and the model just can't understand anything and answer."}, {"t": 161, "g": 164, "d": "2026-07-31 22:17:25", "r": -1, "x": "Lost state and then talked about the end game, where I gave a check when really I was asking about move five, and then the answer contradicted the end-of-play analysis on move five."}, {"t": 144, "g": 160, "d": "2026-07-29 23:32:48", "r": -1, "x": "This took so long. I had already found it myself and did it."}, {"t": 140, "g": 160, "d": "2026-07-29 23:28:07", "r": -1, "x": "For some reason, it keeps telling me it can't say the next best move, but if I just ask the next move in the next message, it is correct."}, {"t": 137, "g": 160, "d": "2026-07-29 23:05:39", "r": -1, "x": "Incorrectly talking about the current move I've highlighted on the board, with the knight moving rather than the rook, which is what we're talking about now"}, {"t": 135, "g": 160, "d": "2026-07-29 23:03:26", "r": -1, "x": "Thinking traces were correct, but it appears that it timed out. What does it mean that it has this garbled icon on it when it appears that it was a timeout?"}, {"t": 134, "g": 160, "d": "2026-07-29 23:01:31", "r": -1, "x": "Incorrect. We had just established in the last message that the bishop would not be safe, and so both pieces are not safe with this move, and the coach keeps forgetting this."}, {"t": 132, "g": 160, "d": "2026-07-29 22:58:04", "r": -1, "x": "Incorrectly told me that I don't have to trade when I explicitly asked it that question beforehand, and didn't identify that if I do just retreat my bishop, then it would take my knight. This gave me very bad advice. It said specifically if I want to skip the trade, which is inaccurate. This makes me mistrust all of what it's saying. It needs to look at all of the fact list and not just focus on one specific piece when I ask it these questions."}, {"t": 130, "g": 160, "d": "2026-07-29 22:56:00", "r": -1, "x": "I asked again, and it automatically failed."}, {"t": 129, "g": 160, "d": "2026-07-29 22:55:09", "r": -1, "x": "Realized that it made a mistake while streaming, and then tried to redo it, but I think it hit the timeout. I just saw a bunch of text crammed together, so it confused itself with its streaming."}, {"t": 128, "g": 160, "d": "2026-07-29 22:53:52", "r": -1, "x": "Incorrectly said that because the cake is in check, he has to move and can't take the bishop when he can't take the bishop because it's a safe spot."}, {"t": 126, "g": 159, "d": "2026-07-29 21:08:57", "r": -1, "x": "it is saying move 85 when it means ply 85. it needs to correctly matching the move tracker at the bottom of the screen. good advice though"}, {"t": 122, "g": 151, "d": "2026-07-29 04:40:52", "r": -1, "x": "This is an AI-ism: why is it saying the knight's shape? That doesn't make any sense. Why did it miscount it three times in a row? It says no deeper reason. That also doesn't make any sense. I don't think this is using Stockfish under it as the chess engine."}, {"t": 120, "g": 151, "d": "2026-07-29 04:39:03", "r": -1, "x": "timeout after asking the same question again"}, {"t": 119, "g": 151, "d": "2026-07-29 04:37:39", "r": -1, "x": "incorrect, the knight to e5 does defend my queen"}, {"t": 118, "g": 151, "d": "2026-07-29 04:37:18", "r": -1, "x": "incorrect, the knight does guard the d3 square"}, {"t": 116, "g": 150, "d": "2026-07-28 18:19:46", "r": -1, "x": "it said i did not make the best move on move 27 and 28, yet it cant tell me the best move i should have done"}, {"t": 108, "g": 148, "d": "2026-07-28 17:04:03", "r": -1, "x": "this logic for the arrows makes no sense, but the answer is good here"}, {"t": 97, "g": 146, "d": "2026-07-27 21:42:23", "r": -1, "x": "timed out"}, {"t": 96, "g": 146, "d": "2026-07-27 21:40:35", "r": -1, "x": "tells me to do something i actually did"}, {"t": 95, "g": 146, "d": "2026-07-27 21:39:44", "r": -1, "x": "acts like i messed up when i did not"}, {"t": 93, "g": 146, "d": "2026-07-27 21:32:49", "r": -1, "x": "will only answer about moves i already did, not general chess questions for strategy next game"}, {"t": 90, "g": 146, "d": "2026-07-27 21:25:02", "r": -1, "x": "I did ask about the board"}, {"t": 88, "g": 146, "d": "2026-07-27 21:23:33", "r": -1, "x": "timed out"}, {"t": 84, "g": 146, "d": "2026-07-27 21:10:07", "r": -1, "x": "timed out"}, {"t": 57, "g": 137, "d": "2026-07-22 19:31:36", "r": -1, "x": "Incorrectly tells me I am not asking about the game and gave a reply that took about 20 seconds"}, {"t": 46, "g": 134, "d": "2026-07-22 02:02:29", "r": -1, "x": "The coach appears to somehow be offline and acts like I just said something off topic."}, {"t": 4, "g": 127, "d": "2026-07-20 08:22:25", "r": -1, "x": "gate test: reply was generic"}]; // record/canonical.json feedback[], verbatim, newest first
+const AGREE={"all": {"n": 151, "agree": 34, "mixed": 5, "motif-denied": 3, "disagree-best": 0, "two-bests-in-prompt": 0, "no-ladder-fact": 32, "no-claim": 77}, "preguard": {"n": 119, "agree": 28, "mixed": 4, "motif-denied": 1, "disagree-best": 0, "two-bests-in-prompt": 0, "no-ladder-fact": 25, "no-claim": 61}, "postguard": {"n": 32, "agree": 6, "mixed": 1, "motif-denied": 2, "disagree-best": 0, "two-bests-in-prompt": 0, "no-ladder-fact": 7, "no-claim": 16}, "postcut": {"n": 32, "agree": 6, "mixed": 1, "motif-denied": 2, "disagree-best": 0, "two-bests-in-prompt": 0, "no-ladder-fact": 7, "no-claim": 16}, "post1617": {"n": 1, "agree": 1, "mixed": 0, "motif-denied": 0, "disagree-best": 0, "two-bests-in-prompt": 0, "no-ladder-fact": 0, "no-claim": 0}}; // fable-rerun-t3/agreement-*.json, class counts
+const VOICE={pre:{tell:10,n:44},post:{tell:7,n:32}}; // deterministic/voice-0804.txt (17/76 overall) minus voice-0902.txt (7/32)
+const SUITES={"ct": [{"id": "CT-01", "v": "pass"}, {"id": "CT-02", "v": "pass"}, {"id": "CT-03", "v": "pass"}, {"id": "CT-04", "v": "pass"}, {"id": "CT-05", "v": "pass"}, {"id": "CT-06", "v": "pass"}, {"id": "CT-07", "v": "pass"}], "db": [{"id": "DB-01", "v": "pass"}, {"id": "DB-02", "v": "pass"}, {"id": "DB-03", "v": "red"}, {"id": "DB-04", "v": "red"}, {"id": "DB-05", "v": "red"}, {"id": "DB-06", "v": "pass"}, {"id": "DB-07", "v": "pass"}], "fm": [{"id": "FM-01", "v": "red"}, {"id": "FM-02", "v": "red"}, {"id": "FM-03", "v": "did-not-run"}, {"id": "FM-04", "v": "red"}, {"id": "FM-05", "v": "red"}], "pc": [{"id": "PC-01", "v": "red"}, {"id": "PC-02", "v": "did-not-run"}, {"id": "PC-03", "v": "pass"}, {"id": "PC-04", "v": "did-not-run"}], "st": [{"id": "ST-01", "v": "pass"}, {"id": "ST-02", "v": "did-not-run"}, {"id": "ST-03", "v": "pass"}, {"id": "ST-04", "v": "pass"}]}; // deterministic/2026-09-21-{db,fm,ct,pc,st}.json verdict fields
+
+/* A/B harness summary: filled from tools/coach-eval/runs/2026-09-20-ab-summary.json by the controller.
+   null until the run file exists; every tile then reads its verdict/quiet/n fields from that file. */
+const AB={
+ "file": "ab/2026-09-20-ab-summary.json",
+ "codes": {
+  "before": {
+   "n": 345,
+   "correct": 304,
+   "templateFailures": 28,
+   "completenessFails": 0,
+   "pendingFails": 13,
+   "latency": {
+    "p50": 5547,
+    "p90": 12077.600000000004,
+    "repsUsed": 3,
+    "quietRows": 345
+   },
+   "ttfpP50": 230.58299999684095,
+   "ttfwP50": 5214.614624999987,
+   "tokensP50": 165,
+   "oneFact": {
+    "named": 21,
+    "refused": 0,
+    "other": 0,
+    "n": 21
+   }
+  },
+  "after": {
+   "n": 345,
+   "correct": 294,
+   "templateFailures": 40,
+   "completenessFails": 0,
+   "pendingFails": 11,
+   "latency": {
+    "p50": 5788.5,
+    "p90": 11004,
+    "repsUsed": 3,
+    "quietRows": 326
+   },
+   "ttfpP50": 285.875000001397,
+   "ttfwP50": 5530.328333999962,
+   "tokensP50": 151,
+   "oneFact": {
+    "named": 12,
+    "refused": 4,
+    "other": 5,
+    "n": 21
+   }
+  }
+ },
+ "buckets": [
+  {
+   "id": "direct-fact",
+   "k": "direct-fact",
+   "sub": "simple lookups",
+   "n": 87,
+   "cells": {
+    "before": {
+     "c": 72,
+     "n": 87,
+     "t": 2,
+     "p": 13
+    },
+    "after": {
+     "c": 74,
+     "n": 87,
+     "t": 2,
+     "p": 11
+    }
+   }
+  },
+  {
+   "id": "needs-line",
+   "k": "needs-line",
+   "sub": "needs a concrete line",
+   "n": 189,
+   "cells": {
+    "before": {
+     "c": 182,
+     "n": 189,
+     "t": 7,
+     "p": 0
+    },
+    "after": {
+     "c": 168,
+     "n": 189,
+     "t": 21,
+     "p": 0
+    }
+   }
+  },
+  {
+   "id": "tactical-or-mate",
+   "k": "tactical-or-mate",
+   "sub": "the trust bucket",
+   "n": 69,
+   "cells": {
+    "before": {
+     "c": 50,
+     "n": 69,
+     "t": 19,
+     "p": 0
+    },
+    "after": {
+     "c": 52,
+     "n": 69,
+     "t": 17,
+     "p": 0
+    }
+   }
+  }
+ ],
+ "la": [],
+ "laExcluded": {
+  "fork": "the fork fixtures carry a material-outcome fact (forced trade or loss), not a best move",
+  "board-live": "UNAUDITED: the move extractor flagged plan squares, past moves and even the best move itself; the controller read all 50 flagged rows"
+ },
+ "arms": [
+  {
+   "arm": "board-live",
+   "before": {
+    "n": 195,
+    "p50": 5396,
+    "p90": 12652.599999999995,
+    "repsUsed": 3,
+    "tokensP50": 194
+   },
+   "after": {
+    "n": 195,
+    "p50": 5406,
+    "p90": 10452.8,
+    "repsUsed": 3,
+    "tokensP50": 125
+   }
+  },
+  {
+   "arm": "general",
+   "before": {
+    "n": 45,
+    "p50": 4928,
+    "p90": 9072.2,
+    "repsUsed": 3,
+    "tokensP50": 183
+   },
+   "after": {
+    "n": 45,
+    "p50": 5590,
+    "p90": 8135.400000000001,
+    "repsUsed": 3,
+    "tokensP50": 211
+   }
+  },
+  {
+   "arm": "board-review",
+   "before": {
+    "n": 48,
+    "p50": 6422,
+    "p90": 10096.1,
+    "repsUsed": 3,
+    "tokensP50": 111
+   },
+   "after": {
+    "n": 48,
+    "p50": 6415,
+    "p90": 9155.400000000003,
+    "repsUsed": 3,
+    "tokensP50": 110
+   }
+  },
+  {
+   "arm": "fork",
+   "before": {
+    "n": 36,
+    "p50": 7725.5,
+    "p90": 23643.5,
+    "repsUsed": 3,
+    "tokensP50": 458.5
+   },
+   "after": {
+    "n": 36,
+    "p50": 7014,
+    "p90": 18357.899999999998,
+    "repsUsed": 2,
+    "tokensP50": 472.5
+   }
+  },
+  {
+   "arm": "mate",
+   "before": {
+    "n": 21,
+    "p50": 3207,
+    "p90": 4385,
+    "repsUsed": 3,
+    "tokensP50": 56
+   },
+   "after": {
+    "n": 21,
+    "p50": 10380.5,
+    "p90": 13358.5,
+    "repsUsed": 2,
+    "tokensP50": 613
+   }
+  }
+ ],
+ "hand": {
+  "fh": {
+   "fixture": "FK3, game 160: a forced trade with one escape line, knight to d7 with check (Nd7+), per the fixture's 2026-07-31 ruling",
+   "before": {
+    "escape": 5,
+    "n": 6
+   },
+   "after": {
+    "escape": 2,
+    "n": 6
+   },
+   "note": "'escape' = the answer gives knight to d7 with check as the line to play. The mechanical detector flagged none of the 12; the controller read each in full, and the gate's fact panelist re-counted them."
+  },
+  "nm": {
+   "before": {
+    "namedBest": 21,
+    "refused": 0,
+    "other": 0,
+    "n": 21
+   },
+   "after": {
+    "namedBest": 12,
+    "refused": 4,
+    "other": 5,
+    "n": 21
+   }
+  }
+ },
+ "limits": {
+  "harnessContext": "the harness calls chat() directly with a context shape from before the change: per-ply analysis without the recorded side and no verified hint; the AFTER coach therefore answered with an emptier fact list than it has in live play, where the ladder's verified search runs first (PR 16)",
+  "notQuiet": [
+   "post-fork-rep2",
+   "post-mate-rep2"
+  ]
+ },
+ "laSuite": {
+  "before": {
+   "n": 21,
+   "la01": 1,
+   "la02": 0
+  },
+  "after": {
+   "n": 21,
+   "la01": 3,
+   "la02": 0
+  },
+  "verdict": "UNAUDITED",
+  "reason": "the la suite's move extractor read 0 of 21 spoken mate answers as a move claim in each arm (20 and 18 'no claim'), while the nm suite read the same answers as naming a move; on board-live it flagged plan squares, past moves and the best move itself. The controller read every flagged row; the suite is instrument-broken on spoken moves and is not used."
+ }
+};
+/* cause-and-guard map rows: from "Girl Chess — Coach correctness, cause and guard map (2026-09-20).md" */
+const MECH=[
+ {
+  "cls": "(a) whose move it was, miscounted",
+  "mech": "party was recomputed from ply parity at a dozen sites; now moves.side is written from the move object and every reader uses it (manager.ts:274, :1214, :1254)",
+  "commit": "6f1e9f4",
+  "date": "2026-09-02",
+  "guards": [
+   "manager.test.ts:144",
+   "missedWins.test.ts:66",
+   "turningPoints.test.ts:931",
+   "manager.test.ts:2241, :2842",
+   "chat.opponentFocus.test.ts:119, :175",
+   "chat.sideLabel.test.ts:109"
+  ],
+  "guardMissing": "engine-line (pv) side stamping, Phase C never merged",
+  "axis": "correct (ladder agreement); none for pv lines",
+  "traces": "318 (conversational, open)",
+  "status": "open"
+ },
+ {
+  "cls": "(b) advice differs between the ladder and the chat",
+  "mech": "chat on an unsearched live position ran a 500 ms unverified look while the ladder ran its own 1.5 s verified search; now chat calls the ladder's searchAndCacheVerifiedHint (manager.ts:1405, call site :1799)",
+  "commit": "e43a905",
+  "date": "2026-09-08",
+  "guards": [
+   "manager.test.ts:641, :863, :947, :974"
+  ],
+  "guardMissing": "",
+  "axis": "correct (ladder agreement)",
+  "traces": "296–298; 319 (by her account, not re-derivable)",
+  "status": "fixed"
+ },
+ {
+  "cls": "(c) advice flips on the same position",
+  "mech": "the deep search was wall-clock bounded with no position guard, so two searches could pick near-equal moves; now a verified hint for an unchanged fen is reused (manager.ts:1411)",
+  "commit": "da3be2d",
+  "date": "2026-08-28",
+  "guards": [
+   "manager.test.ts:723, :747, :839"
+  ],
+  "guardMissing": "",
+  "axis": "correct (pre/post split at the guard)",
+  "traces": "295, 296, 298 (game 192; the 2026-09-08 checkpoint cites 296–298)",
+  "status": "fixed"
+ },
+ {
+  "cls": "(d) the board a few plies ahead read wrong",
+  "mech": "a question naming a later ply or a considered move gets no stored board for that moment; Phase D (moment board, stale-focus drop, after-board for a pending move) was planned 2026-09-01 and never merged",
+  "commit": "",
+  "date": "",
+  "guards": [],
+  "guardMissing": "no chat.momentBoard.test.ts, no namesAnotherMoment, no afterBoard",
+  "axis": "none",
+  "traces": "307, 308, 309; 327, 329",
+  "status": "open"
+ },
+ {
+  "cls": "(e) an unverified quick look stated as the recommendation",
+  "mech": "same root as (b): the fast look could be worded as the recommended move; now a chat recommendation comes from the verified search by construction, the fast look only when that returns nothing",
+  "commit": "e43a905",
+  "date": "2026-09-08",
+  "guards": [
+   "manager.test.ts:641, :863, :947, :974",
+   "chat.perPly.test.ts:661 (verified wording)"
+  ],
+  "guardMissing": "no test pins that the fast-path prompt carries no 'verified' wording",
+  "axis": "correct + latency",
+  "traces": "330, 333",
+  "status": "fixed"
+ },
+ {
+  "cls": "(f) a move she names but has not picked up gets no line",
+  "mech": "parseCandidateMove resolves the named move; resolveCandidateLine runs one verified search on the position after it, cached per fen and move (manager.ts:1433)",
+  "commit": "cd488df",
+  "date": "2026-09-08",
+  "guards": [
+   "candidateMove.test.ts:40 (18 cases)",
+   "manager.test.ts:1125, :1171, :1199, :1233, :1270, :1355",
+   "candidateLine.test.ts:37, :54, :59, :75"
+  ],
+  "guardMissing": "",
+  "axis": "latency + one fact",
+  "traces": "184, 269, README image 01",
+  "status": "fixed"
+ },
+ {
+  "cls": "(g) hollow voice",
+  "mech": "normalizeVoice folds dashes and swaps an adjudicated list of tells on both the chat and the band; fifteen static templates rewritten; persona bans added",
+  "commit": "d38cf61, 974fe80",
+  "date": "2026-09-08",
+  "guards": [
+   "textNormalize.test.ts:34–123 (19 cases)",
+   "templateVoice.test.ts:194, :211"
+  ],
+  "guardMissing": "",
+  "axis": "none (voice-tells.ts is a report, not a gate)",
+  "traces": "recurrence counts, not single traces",
+  "status": "fixed"
+ }
+];
+/* worked examples: chosen by the controller from rows the suites flagged in one arm and not the other */
+const EXAMPLES=[
+ {
+  "fixtureId": "MT3 (mate arm, rep 1)",
+  "question": "what should i play here?",
+  "fact": "queen to a4 with check (Qa4+) is mate in two; the harness passed no verified hint",
+  "flaggedBy": "nm (names the known best)",
+  "flaggedArm": "AFTER",
+  "before": "queen to a4, check. king has to go to b1, then your rook to b4 is mate.",
+  "after": "our chess brain hasn't worked this exact position out yet, so i won't hand you a \"best\" move here.\n\nwhat i can see plainly: mallow's king is pinned to the c2 corner with your king, rook, and knight all nearby. that's the kind of spot where you tighten the net rather than rush, bring the queen closer to cut off escape squares before checking. try something like queen to c6, it checks and takes away the c-file from the king, then see where mallow runs.",
+  "beforeMs": 2538,
+  "afterMs": 12242
+ },
+ {
+  "fixtureId": "FK3 (fork arm, rep 1)",
+  "question": "can i avoid losing a piece here?",
+  "fact": "a forced trade, not a loss: knight to d7 with check (Nd7+) is the engine's escape, the fixture's own ruling of 2026-07-31",
+  "flaggedBy": "the controller's hand audit (the mechanical detector flagged neither)",
+  "flaggedArm": "AFTER",
+  "before": "yes. your knight on e5 and bishop on e6 are both attacked by mallow's king on f6, and neither is defended right now.\n\nplay your knight to d7, check. if mallow takes your bishop with the king, your knight takes the bishop on f8 with check too, then grabs the pawn on h7. you come out ahead in the trade instead of just losing a piece for nothing.",
+  "after": "your bishop on e6 is attacked by mallow's king, and nothing defends it. your knight on e5 is also attacked by that same king, undefended too. you can't save both with one move.\n\nmove your bishop, say to f5 or c8, and keep it. the knight on e5 can then be taken by the king, but you get to choose which piece you'd rather keep working, don't try to save both at once.",
+  "beforeMs": 4950,
+  "afterMs": 4136
+ }
+];
+/* quotes she pastes later, verbatim with their date */
+const PASTED=[];
+
+/* ============================ helpers (copied from docs/thinking-arm-dashboard.html) ============================ */
+const $=id=>document.getElementById(id);
+const SVGNS="http://www.w3.org/2000/svg";
+function el(tag,attrs,txt){const e=document.createElementNS(SVGNS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(txt!=null)e.textContent=txt;return e;}
+function svg(w,h){return el("svg",{viewBox:`0 0 ${w} ${h}`,width:w,height:h,role:"img"});}
+const tip=$("tip");
+function showTip(e,title,body){tip.querySelector(".tt").textContent=title;tip.querySelector(".tb").innerHTML=body;tip.style.opacity=1;moveTip(e);}
+function moveTip(e){const p=12;let x=e.clientX+p,y=e.clientY+p;if(x>innerWidth-270)x=e.clientX-270;tip.style.left=x+"px";tip.style.top=y+"px";}
+function hideTip(){tip.style.opacity=0;}
+function hov(node,title,body){node.addEventListener("mousemove",e=>showTip(e,title,body));node.addEventListener("mouseleave",hideTip);}
+function legend(container,items){container.innerHTML="";items.forEach(it=>{const d=document.createElement("div");d.className="it";const sw=document.createElement("span");sw.className="sw"+(it.round?" round":"");sw.style.background=it.c;d.appendChild(sw);d.appendChild(document.createTextNode(it.k));container.appendChild(d);});}
+function tog(id){const n=$(id);if(n.classList.contains("dt"))n.classList.toggle("show");else n.style.display=n.style.display==="none"?"block":"none";}
+function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>${x}</th>`).join("")+"</tr></thead><tbody>";rows.forEach(r=>{h+="<tr>"+r.map((c,i)=>`<td class="${i>0?'n':''}">${c}</td>`).join("")+"</tr>";});t.innerHTML=h+"</tbody>";}
+const s1=v=>v.toFixed(1);
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const sec=ms=>s1(ms/1000)+"s";
+function pct(a,b){return b?100*a/b:0;}
+
+/* ============================ KPIs ============================ */
+(function(){
+  if(!AB){ $("kpis").innerHTML=`<div class="kpi unaudited"><div class="l">A/B harness</div><div class="v" style="font-size:19px">NOT YET RUN</div><div class="d">no <code>2026-09-20-ab-summary.json</code> on disk</div></div>`; return; }
+  $("kpis").innerHTML=ARMS.map(a=>{
+    const s=AB.codes[a.id]; const pick=a.id==="after";
+    const fails=s.templateFailures+s.completenessFails+s.pendingFails;
+    return `<div class="kpi${pick?' pick':''}">
+      <div class="l"><span class="chip" style="background:${a.c}"></span>${a.k}${pick?'<span class="picktag">SHIPPED</span>':''}</div>
+      <div class="v">${s1(pct(s.correct,s.n))}%</div>
+      <div class="d">answers with no failure (${s.correct} of ${s.n})<br>
+      names the engine's mate move: <b>${s1(pct(s.oneFact.named,s.oneFact.n))}%</b> (${s.oneFact.named} of ${s.oneFact.n}; ${s.oneFact.refused} refused, ${s.oneFact.other} named another)<br>
+      failed answers: <b>${fails}</b> (${s.templateFailures} template · ${s.completenessFails} incomplete · ${s.pendingFails} pending-blind)<br>
+      wait: <b>${s.latency.repsUsed?sec(s.latency.p50)+"</b> typical · <b>"+sec(s.latency.p90)+"</b> p90 ("+s.latency.repsUsed+" quiet reps)":"UNAUDITED (no quiet rep)</b>"}<br>
+      output: <b>${s.tokensP50}</b> tokens typical</div>
+    </div>`;
+  }).join("")+`
+    <div class="kpi">
+      <div class="l">Decision</div>
+      <div class="v" style="font-size:19px;line-height:1.35;margin-top:8px" id="kpi-decision">Keep the change, re-run AFTER next</div>
+      <div class="d" id="kpi-decision-d">Update the harness context to the post-change fact list, then re-run AFTER before any correctness claim.</div>
+    </div>`;
+})();
+
+/* ============================ CHART 1 — correctness by difficulty × arm (dot chart, dot area = questions in bucket) ============================ */
+(function(){
+  if(!AB){ $("c1").innerHTML='<div class="foot">NOT YET RUN: the harness summary file is not on disk.</div>'; return; }
+  const DIFF=AB.buckets; // [{id,k,sub,n,cells:{before:{c,n},after:{c,n}}}]
+  const W=960,L=195,R=48,plotW=W-L-R,top=26,rowH=88;
+  const H=top+DIFF.length*rowH+40;
+  const minR=Math.max(0,Math.floor(Math.min(...DIFF.flatMap(d=>ARMS.map(a=>pct(d.cells[a.id].c,d.cells[a.id].n))))/10)*10-10);
+  const x=v=>L+plotW*(v-minR)/(100-minR);
+  const s=svg(W,H);
+  for(let t=minR;t<=100;t+=10){const gx=x(t);
+    s.appendChild(el("line",{x1:gx,y1:top-8,x2:gx,y2:top+DIFF.length*rowH,class:"grid"}));
+    s.appendChild(el("text",{x:gx,y:top+DIFF.length*rowH+20,"text-anchor":"middle",class:"axislbl"},t+"%"));}
+  if(minR>0) s.appendChild(el("text",{x:L,y:top+DIFF.length*rowH+36,class:"axislbl","font-size":"11"},"axis starts at "+minR+"% (nothing scored below it); full 0–100% in the table"));
+  s.appendChild(el("text",{x:W-R,y:top+DIFF.length*rowH+36,"text-anchor":"end",class:"axislbl","font-size":"11.5"},"share of that bucket's answers with no failure →"));
+  DIFF.forEach((d,i)=>{
+    const cy=top+i*rowH+rowH/2-6;
+    const hard=d.id==="tactical-or-mate";
+    if(hard) s.appendChild(el("rect",{x:L-4,y:top+i*rowH+4,width:plotW+8,height:rowH-8,rx:8,fill:"var(--line2)"}));
+    s.appendChild(el("text",{x:L-14,y:cy-4,"text-anchor":"end",class:"vallbl","font-size":"13"},d.k));
+    s.appendChild(el("text",{x:L-14,y:cy+13,"text-anchor":"end",class:"axislbl","font-size":"11"},d.sub+" · n="+d.n+" per arm"));
+    const rates=ARMS.map(a=>pct(d.cells[a.id].c,d.cells[a.id].n));
+    s.appendChild(el("line",{x1:x(Math.min(...rates)),y1:cy,x2:x(Math.max(...rates)),y2:cy,stroke:"var(--line)","stroke-width":2}));
+    const rad=4.5+0.5*Math.sqrt(d.n);
+    const order=[...ARMS].sort((a,b)=>pct(d.cells[b.id].c,d.cells[b.id].n)-pct(d.cells[a.id].c,d.cells[a.id].n));
+    order.forEach(a=>{
+      const cell=d.cells[a.id], cx=x(pct(cell.c,cell.n));
+      const dot=el("circle",{cx:cx,cy:cy,r:rad,fill:a.c,stroke:"var(--panel)","stroke-width":2,class:"mark"});
+      hov(dot,a.k+" · "+d.k,`<b>${cell.c}</b> of ${cell.n} answers with no failure · <b>${s1(pct(cell.c,cell.n))}%</b>`);
+      s.appendChild(dot);
+    });
+    ARMS.forEach((a,j)=>{
+      const cell=d.cells[a.id], cx=x(pct(cell.c,cell.n));
+      const close=Math.abs(rates[0]-rates[1])<3;
+      const ly=(close&&j===1)?cy+rad+16:cy-rad-8;
+      s.appendChild(el("text",{x:cx,y:ly,"text-anchor":"middle",class:"vallbl","font-size":"12"},s1(pct(cell.c,cell.n))+"%"));
+      if(hard&&!close) s.appendChild(el("text",{x:cx,y:cy+rad+16,"text-anchor":"middle",class:"axislbl","font-size":"11"},a.id));
+    });
+  });
+  $("c1").appendChild(s);
+  legend($("lg1"),ARMS.map(a=>({k:a.k,c:a.c,round:true})).concat([{k:"shaded row = the tactics-and-mate bucket",c:"var(--line2)"}]));
+  table("t1",["Bucket","n / arm","BEFORE","AFTER"],
+    DIFF.map(d=>[d.k,d.n,`${d.cells.before.c} (${s1(pct(d.cells.before.c,d.cells.before.n))}%)`,`${d.cells.after.c} (${s1(pct(d.cells.after.c,d.cells.after.n))}%)`])
+    .concat([["<b>overall</b>",AB.codes.before.n,`${AB.codes.before.correct} (${s1(pct(AB.codes.before.correct,AB.codes.before.n))}%)`,`${AB.codes.after.correct} (${s1(pct(AB.codes.after.correct,AB.codes.after.n))}%)`]]));
+  $("c1-foot").innerHTML=`"No failure" = not a template fallback, complete, and pending-aware (<code>score.ts</code>), and passing the forced-loss (<code>fh</code>) and best-move (<code>nm</code>) suites where those apply. 3 reps per arm pooled. Source: <code>${AB.file}</code>.`;
+})();
+
+/* ============================ CHART 2 — follows the one fact: paired bars per question arm; side: live agreement classes ============================ */
+(function(){
+  if(AB){
+    const cats=[["named","named the engine's mate move","var(--good)"],["refused","refused to name a best","var(--muted)"],["other","named a different move","var(--bad)"]];
+    const W=620,H=200,L=150,R=30,top=30,plotW=W-L-R;
+    const x=v=>L+plotW*v/100;
+    const s=svg(W,H);
+    for(let t=0;t<=100;t+=25){s.appendChild(el("line",{x1:x(t),y1:top-6,x2:x(t),y2:H-30,class:"grid"}));s.appendChild(el("text",{x:x(t),y:H-14,"text-anchor":"middle",class:"axislbl"},t+"%"));}
+    s.appendChild(el("text",{x:L,y:14,class:"axislbl","font-size":"12"},"mate arm, 7 positions × 3 reps: share of answers →"));
+    ARMS.forEach((a,j)=>{
+      const o=AB.codes[a.id].oneFact; const y0=top+j*70;
+      s.appendChild(el("text",{x:L-12,y:y0+22,"text-anchor":"end",class:"vallbl","font-size":"13"},a.id.toUpperCase()));
+      s.appendChild(el("text",{x:L-12,y:y0+38,"text-anchor":"end",class:"axislbl","font-size":"11"},"n="+o.n));
+      let acc=0;
+      cats.forEach(([k,lab,c])=>{const v=pct(o[k],o.n); if(!v)return; const r=el("rect",{x:x(acc)+(acc?1:0),y:y0+8,width:Math.max(x(acc+v)-x(acc)-2,1),height:36,rx:3,fill:c,class:"mark"}); hov(r,a.k+" · "+lab,`<b>${o[k]}</b> of ${o.n} (${s1(v)}%)`); s.appendChild(r);
+        if(v>=12) s.appendChild(el("text",{x:x(acc)+ (x(acc+v)-x(acc))/2,y:y0+31,"text-anchor":"middle","font-size":"12",fill:"#fff","font-weight":"650"},o[k])); acc+=v;});
+    });
+    $("c2").appendChild(s);
+    legend($("lg2"),cats.map(([k,lab,c])=>({k:lab,c:c})));
+    table("t2",["Axis","BEFORE","AFTER","Instrument"],[
+      ["mate arm: named the engine's mate move",`${AB.codes.before.oneFact.named} of ${AB.codes.before.oneFact.n}`,`${AB.codes.after.oneFact.named} of ${AB.codes.after.oneFact.n}`,"nm row flags, each read by the controller"],
+      ["mate arm: refused to name a best",AB.codes.before.oneFact.refused,AB.codes.after.oneFact.refused,"controller classification"],
+      ["mate arm: named a different move",AB.codes.before.oneFact.other,AB.codes.after.oneFact.other,"controller classification"],
+      ["fork FK3 (a forced trade): named the engine's escape, knight to d7 with check",`${AB.hand.fh.before.escape} of ${AB.hand.fh.before.n}`,`${AB.hand.fh.after.escape} of ${AB.hand.fh.after.n}`,"controller hand audit against the fixture's 2026-07-31 ruling; the detector flagged 0 of 12"],
+      ["la suite (ladder agreement over harness rows)",`${AB.laSuite.verdict}`,`${AB.laSuite.verdict}`,AB.laSuite.reason],
+      ["fork arm: known-best move","UNAUDITED","UNAUDITED",AB.laExcluded.fork],
+      ["board-live arm: known-best move","UNAUDITED","UNAUDITED",AB.laExcluded["board-live"]]]);
+    $("c2-foot").innerHTML=`The harness passes no verified hint and a pre-change per-ply shape, so AFTER answered with fewer facts than it has live (see the banner). Source: <code>${AB.file}</code>, <code>ab/*/nm.json</code>, <code>ab/*/la.json</code>, hand audits in the results note.`;
+  } else { $("c2").innerHTML='<div class="foot">NOT YET RUN: the harness summary file is not on disk.</div>'; }
+  // side panel: live agreement classes, before vs after the cut
+  const A=AGREE; const keys=[["agree","agrees with the ladder"],["mixed","mixed"],["motif-denied","denies a motif"],["disagree-best","names a different best"],["two-bests-in-prompt","two bests in prompt"],["no-ladder-fact","no ladder fact to check"],["no-claim","makes no claim"]];
+  const pre={n:A.all.n-A.postcut.n}; keys.forEach(([k])=>pre[k]=A.all[k]-A.postcut[k]);
+  const W=330,rowH=26,L=150,top=24,H=top+keys.length*rowH+30,plotW=W-L-20;
+  const s=svg(W,H); const mx=100; const x=v=>L+plotW*v/mx;
+  s.appendChild(el("text",{x:L,y:12,class:"axislbl","font-size":"11"},"share of model replies, before the cut (n="+pre.n+") vs after (n="+A.postcut.n+")"));
+  keys.forEach(([k,lab],i)=>{
+    const y=top+i*rowH;
+    s.appendChild(el("text",{x:L-8,y:y+15,"text-anchor":"end",class:"axislbl","font-size":"11"},lab));
+    const vb=pct(pre[k],pre.n), va=pct(A.postcut[k],A.postcut.n);
+    const r1=el("rect",{x:L,y:y+2,width:Math.max(x(vb)-L,1),height:9,rx:2,fill:"var(--before)",class:"mark"}); hov(r1,"before the cut · "+lab,`<b>${pre[k]}</b> of ${pre.n} (${s1(vb)}%)`); s.appendChild(r1);
+    const r2=el("rect",{x:L,y:y+13,width:Math.max(x(va)-L,1),height:9,rx:2,fill:"var(--after)",class:"mark"}); hov(r2,"after the cut · "+lab,`<b>${A.postcut[k]}</b> of ${A.postcut.n} (${s1(va)}%)`); s.appendChild(r2);
+    s.appendChild(el("text",{x:Math.max(x(vb),x(va))+5,y:y+15,class:"axislbl","font-size":"10.5"},pre[k]+" · "+A.postcut[k]));
+  });
+  $("c2s").appendChild(s);
+  $("c2s-foot").innerHTML=`Her real chats, model replies only, scored by <code>coach-ladder-agreement.ts</code>: ${A.all.n} rows over the whole record, ${A.postcut.n} after the cut, ${A.post1617.n} after PRs 11–18 landed on 2026-09-08 (too few to claim). "Names a different best" is ${A.all["disagree-best"]} of ${A.all.n} across the record. Source: <code>fable-rerun-t3/agreement-*.json</code>.`;
+})();
+
+/* ============================ CHART 3 — speed vs correctness scatter; side: live latency ============================ */
+(function(){
+  if(AB){
+    const W=620,H=340,L=64,R=60,top=30,bottom=58,plotW=W-L-R,plotH=H-top-bottom;
+    const maxX=Math.ceil(Math.max(...ARMS.map(a=>AB.codes[a.id].latency.p90||0))/5000)*5||10;
+    const x=v=>L+plotW*(v/1000)/maxX, y=v=>top+plotH*(1-v/100);
+    const s=svg(W,H);
+    for(let t=0;t<=maxX;t+=5){s.appendChild(el("line",{x1:x(t*1000),y1:top,x2:x(t*1000),y2:top+plotH,class:"grid"}));s.appendChild(el("text",{x:x(t*1000),y:top+plotH+20,"text-anchor":"middle",class:"axislbl"},t+"s"));}
+    for(let t=0;t<=100;t+=25){s.appendChild(el("line",{x1:L,y1:y(t),x2:W-R,y2:y(t),class:"grid"}));s.appendChild(el("text",{x:L-10,y:y(t)+4,"text-anchor":"end",class:"axislbl"},t+"%"));}
+    s.appendChild(el("text",{x:L,y:14,class:"axislbl","font-size":"12"},"↑ answers with no failure vs typical wait → · tail to p90"));
+    s.appendChild(el("text",{x:W-R,y:top+plotH+38,"text-anchor":"end",class:"axislbl","font-size":"11.5"},"typical wait, seconds (median; tail to p90) →"));
+    ARMS.forEach((a,j)=>{
+      const c=AB.codes[a.id]; if(!c.latency.repsUsed){s.appendChild(el("text",{x:L+10,y:top+20+j*16,class:"axislbl"},a.k+": latency UNAUDITED (no quiet rep)"));return;}
+      const px=x(c.latency.p50),py=y(pct(c.correct,c.n));
+      s.appendChild(el("line",{x1:px,y1:py,x2:x(c.latency.p90),y2:py,stroke:a.c,"stroke-width":2,opacity:".45"}));
+      s.appendChild(el("line",{x1:x(c.latency.p90),y1:py-5,x2:x(c.latency.p90),y2:py+5,stroke:a.c,"stroke-width":2,opacity:".7"}));
+      s.appendChild(el("text",{x:x(c.latency.p90)+7,y:py+4,class:"axislbl","font-size":"10.5"},"p90 "+sec(c.latency.p90)));
+      if(a.id==="after") s.appendChild(el("circle",{cx:px,cy:py,r:17,fill:"none",stroke:"var(--accent)","stroke-width":1.6,"stroke-dasharray":"4 3"}));
+      const dot=el("circle",{cx:px,cy:py,r:10,fill:a.c,stroke:"var(--panel)","stroke-width":2,class:"mark"});
+      hov(dot,a.k,`no failure: <b>${s1(pct(c.correct,c.n))}%</b> (${c.correct}/${c.n})<br>wait: <b>${sec(c.latency.p50)}</b> median · ${sec(c.latency.p90)} p90 (${c.latency.repsUsed} quiet reps)<br>output tokens: ${c.tokensP50} typical`);
+      s.appendChild(dot);
+      const ly=(j===0)?py-34:py+30; // BEFORE labelled above, AFTER below: the two points nearly coincide
+      s.appendChild(el("text",{x:px,y:ly,"text-anchor":"middle",class:"vallbl","font-size":"13"},a.id.toUpperCase()));
+      s.appendChild(el("text",{x:px,y:ly+15,"text-anchor":"middle",class:"axislbl","font-size":"11.5"},sec(c.latency.p50)+" · "+s1(pct(c.correct,c.n))+"%"));
+    });
+    $("c3").appendChild(s);
+    legend($("lg3"),ARMS.map(a=>({k:a.k,c:a.c,round:true})));
+    table("t3",["Arm","No failure","Median wait","p90 wait","First token","First word","Output tokens p50","Quiet reps"],
+      ARMS.map(a=>{const c=AB.codes[a.id];return [a.k,`${s1(pct(c.correct,c.n))}% (${c.correct}/${c.n})`,c.latency.repsUsed?sec(c.latency.p50):"UNAUDITED",c.latency.repsUsed?sec(c.latency.p90):"UNAUDITED",c.ttfpP50?sec(c.ttfpP50):"n/a",c.ttfwP50?sec(c.ttfwP50):"n/a",c.tokensP50,c.latency.repsUsed+" of 3"];}));
+    $("c3-foot").innerHTML=`Wait is <code>measuredLatencyMs</code>, wall time to the final answer, nearest-rank percentiles over the reps whose machine was quiet. Source: <code>${AB.file}</code>.`;
+  } else { $("c3").innerHTML='<div class="foot">NOT YET RUN: the harness summary file is not on disk.</div>'; }
+  // side: live latency before/after the cut (her real chats)
+  const W=330,H=150,L=110,top=24,plotW=W-L-16;
+  const mx=Math.ceil(Math.max(RECORD.pre.latencyP90,RECORD.post.latencyP90)/10000)*10000;
+  const x=v=>L+plotW*v/mx;
+  const s=svg(W,H);
+  s.appendChild(el("text",{x:L,y:12,class:"axislbl","font-size":"11"},"her real chats: median wait, tail to p90 (seconds)"));
+  [["pre","before the cut","var(--before)"],["post","after the cut","var(--after)"]].forEach(([k,lab,c],i)=>{
+    const r=RECORD[k]; const y=top+20+i*44;
+    s.appendChild(el("text",{x:L-8,y:y+4,"text-anchor":"end",class:"axislbl","font-size":"11"},lab));
+    s.appendChild(el("text",{x:L-8,y:y+18,"text-anchor":"end",class:"axislbl","font-size":"10"},"n="+r.chats+" chats"));
+    s.appendChild(el("line",{x1:x(r.latencyMedian),y1:y,x2:x(r.latencyP90),y2:y,stroke:c,"stroke-width":2,opacity:".45"}));
+    s.appendChild(el("line",{x1:x(r.latencyP90),y1:y-5,x2:x(r.latencyP90),y2:y+5,stroke:c,"stroke-width":2,opacity:".7"}));
+    const d=el("circle",{cx:x(r.latencyMedian),cy:y,r:7,fill:c,stroke:"var(--panel)","stroke-width":2,class:"mark"}); hov(d,lab,`median <b>${sec(r.latencyMedian)}</b> · p90 ${sec(r.latencyP90)} · ${r.chats} chats in ${r.games} games`); s.appendChild(d);
+    s.appendChild(el("text",{x:x(r.latencyMedian),y:y-11,"text-anchor":"middle",class:"vallbl","font-size":"11.5"},sec(r.latencyMedian)));
+    s.appendChild(el("text",{x:x(r.latencyP90)+6,y:y+4,class:"axislbl","font-size":"10"},"p90 "+sec(r.latencyP90)));
+  });
+  for(let t=0;t<=mx;t+=10000){s.appendChild(el("text",{x:x(t),y:H-6,"text-anchor":"middle",class:"axislbl","font-size":"10"},(t/1000)+"s"));}
+  $("c3s").appendChild(s);
+  $("c3s-foot").innerHTML=`Her own questions on her own games (all chat replies, <code>latency_ms</code>), never compared numerically with the harness: the questions changed too. Source: <code>record/canonical.json</code>.`;
+})();
+
+/* ============================ CHART 4 — thumbs down per chat per game, date axis, markers ============================ */
+(function(){
+  const W=960,H=330,L=64,R=30,top=30,bottom=70,plotW=W-L-R,plotH=H-top-bottom;
+  const t0=Date.parse("2026-07-18T00:00:00Z"), t1=Date.parse("2026-09-12T00:00:00Z");
+  const x=d=>L+plotW*(Date.parse(d.replace(" ","T")+"Z")-t0)/(t1-t0);
+  const y=v=>top+plotH*(1-v/100);
+  const s=svg(W,H);
+  for(let t=0;t<=100;t+=25){s.appendChild(el("line",{x1:L,y1:y(t),x2:W-R,y2:y(t),class:"grid"}));s.appendChild(el("text",{x:L-10,y:y(t)+4,"text-anchor":"end",class:"axislbl"},t+"%"));}
+  s.appendChild(el("text",{x:L,y:14,class:"axislbl","font-size":"12"},"↑ share of a game's chat replies she gave a thumbs down · dot area = chats in that game"));
+  const months=[["2026-07-20","Jul 20"],["2026-08-01","Aug 1"],["2026-08-15","Aug 15"],["2026-09-01","Sep 1"]];
+  months.forEach(([d,k])=>{s.appendChild(el("line",{x1:x(d+" 00:00:00"),y1:top,x2:x(d+" 00:00:00"),y2:top+plotH,class:"grid"}));s.appendChild(el("text",{x:x(d+" 00:00:00"),y:top+plotH+18,"text-anchor":"middle",class:"axislbl"},k));});
+  MARKERS.forEach((m,i)=>{const mx=x(m.d+" 00:00:00");
+    s.appendChild(el("line",{x1:mx,y1:top,x2:mx,y2:top+plotH,stroke:"var(--accent)","stroke-width":1.4,"stroke-dasharray":"4 3",opacity:".8"}));
+    s.appendChild(el("text",{x:mx+4,y:top+plotH+36+(i%2)*14,class:"axislbl","font-size":"10.5",fill:"var(--accent)"},m.d.slice(5)+" "+m.k));});
+  GAMES.forEach(g=>{
+    const rate=pct(g.down,g.chats); const rad=3.5+0.9*Math.sqrt(g.chats);
+    const dot=el("circle",{cx:x(g.d),cy:y(rate),r:rad,fill:g.down?"var(--down)":"var(--up)",opacity:".85",stroke:"var(--panel)","stroke-width":1.5,class:"mark"});
+    hov(dot,"game "+g.g+" · "+g.d.slice(0,10),`<b>${g.down}</b> thumbs down, <b>${g.up}</b> up, on ${g.chats} chat replies (${g.model} model)<br>${s1(rate)}% down`);
+    s.appendChild(dot);
+  });
+  $("c4").appendChild(s);
+  legend($("lg4"),[{k:"game with at least one thumbs down",c:"var(--down)",round:true},{k:"game with none",c:"var(--up)",round:true},{k:"a change reached main",c:"var(--accent)"}]);
+  table("t4",["Game","Started (UTC)","Chat replies","Model replies","Thumbs down","Thumbs up","Down %"],GAMES.map(g=>[g.g,g.d,g.chats,g.model,g.down,g.up,s1(pct(g.down,g.chats))+"%"]));
+  const R_=RECORD;
+  $("c4-foot").innerHTML=`Chat replies only (thumbs on nudge and warning cards are not in this chart). Before the cut: ${R_.pre.down} down / ${R_.pre.up} up on ${R_.pre.chats} replies in ${R_.pre.games} games; after: ${R_.post.down} / ${R_.post.up} on ${R_.post.chats} in ${R_.post.games}. Every game with a chat is shown: ${GAMES.length} of 196. Source: <code>record/canonical.json</code>.`;
+})();
+
+/* ============================ CHART 5 — mechanism table + worked examples ============================ */
+(function(){
+  let h='<table class="mech"><thead><tr><th>Failure class</th><th>Mechanism</th><th>Fix</th><th>Guard test</th><th>Axis</th><th>Her traces</th><th>Status</th></tr></thead><tbody>';
+  MECH.forEach(m=>{h+=`<tr><td><b>${esc(m.cls)}</b></td><td>${esc(m.mech)}</td><td>${m.commit?'<code>'+esc(m.commit)+'</code> '+esc(m.date):'none on main'}</td><td>${m.guards.map(g=>'<code>'+esc(g)+'</code>').join('<br>')}${m.guardMissing?'<br><span class="pill open">GUARD MISSING</span> '+esc(m.guardMissing):''}</td><td>${esc(m.axis)}</td><td>${esc(m.traces)}</td><td><span class="pill ${m.status==='fixed'?'fixed':(m.status==='open'?'open':'na')}">${esc(m.status.toUpperCase())}</span></td></tr>`;});
+  $("c5").innerHTML=h+'</tbody></table>';
+  if(!EXAMPLES.length){$("c5-ex").innerHTML='<div class="foot" style="margin-top:12px">Worked examples: none chosen yet (the harness run is pending).</div>';return;}
+  $("c5-ex").innerHTML=EXAMPLES.map(e=>`<div class="ex"><div class="fact"><b>${esc(e.fixtureId)}</b> · ${esc(e.question)}<br>the fact both had to follow: <b>${esc(e.fact)}</b> · flagged by <code>${esc(e.flaggedBy)}</code> in ${esc(e.flaggedArm)} only</div>
+    <div class="col"><h4><span class="chip" style="background:var(--before);width:10px;height:10px;border-radius:2px"></span>BEFORE · ${esc(ARM_BEFORE.sha)}</h4><p>${esc(e.before)}</p></div>
+    <div class="col"><h4><span class="chip" style="background:var(--after);width:10px;height:10px;border-radius:2px"></span>AFTER · main</h4><p>${esc(e.after)}</p></div></div>`).join("");
+})();
+
+/* ============================ CHART 6 — her words ============================ */
+(function(){
+  const q=f=>`<div class="quote"><div class="m"><span class="chip" style="background:${f.r===-1?'var(--down)':'var(--up)'}"></span>${f.d} UTC · game ${f.g} · trace ${f.t} · ${f.r===-1?'thumbs down':'thumbs up'}</div>${esc(f.x)}</div>`;
+  $("c6-pasted").innerHTML=PASTED.map(p=>`<div class="quote"><div class="m">${esc(p.d)} · pasted by the owner</div>${esc(p.x)}</div>`).join("");
+  const post=FEEDBACK.filter(f=>f.d.replace(" ","T")+"Z">=CUT);
+  $("c6").innerHTML=post.map(q).join("");
+  $("c6more").innerHTML=FEEDBACK.filter(f=>!(f.d.replace(" ","T")+"Z">=CUT)).map(q).join("");
+  $("c6-foot").innerHTML=`${post.length} notes after the cut shown; ${FEEDBACK.length-post.length} earlier notes under the button. Text is verbatim from <code>advice_traces.feedback_text</code>; nothing edited. Source: <code>record/canonical.json</code>.`;
+})();
+
+/* ============================ CHART 7 — voice tells per 100 model replies ============================ */
+(function(){
+  const W=520,H=120,L=150,top=24,plotW=W-L-70;
+  const s=svg(W,H); const x=v=>L+plotW*v/50;
+  for(let t=0;t<=50;t+=10){s.appendChild(el("line",{x1:x(t),y1:top-6,x2:x(t),y2:H-26,class:"grid"}));s.appendChild(el("text",{x:x(t),y:H-10,"text-anchor":"middle",class:"axislbl"},t));}
+  s.appendChild(el("text",{x:L,y:12,class:"axislbl","font-size":"11"},"model chat replies with a counted tell, per 100 →"));
+  [["pre","2026-08-04 to the cut","var(--before)"],["post","after the cut","var(--after)"]].forEach(([k,lab,c],i)=>{
+    const v=VOICE[k]; const per=pct(v.tell,v.n); const y=top+i*34;
+    s.appendChild(el("text",{x:L-8,y:y+16,"text-anchor":"end",class:"axislbl","font-size":"11"},lab));
+    const r=el("rect",{x:L,y:y+3,width:Math.max(x(per)-L,2),height:22,rx:4,fill:c,class:"mark"}); hov(r,lab,`<b>${v.tell}</b> of ${v.n} replies carry a tell (${s1(per)} per 100)`); s.appendChild(r);
+    s.appendChild(el("text",{x:x(per)+8,y:y+18,class:"vallbl","font-size":"12"},s1(per)+" per 100 ("+v.tell+" of "+v.n+")"));
+  });
+  $("c7").appendChild(s);
+  legend($("lg7"),[{k:"before the cut",c:"var(--before)"},{k:"after the cut",c:"var(--after)"}]);
+  $("c7-foot").innerHTML=`<code>voice-tells.ts</code> is a report, never a gate. Only ${AGREE.post1617.n} model reply exists after PRs 11–18 landed on 2026-09-08 (the normalizer and template rewrite among them), so no claim is made about them. "Before the cut" here runs from 2026-08-04, the report's own start. Source: <code>deterministic/voice-0804.txt</code>, <code>voice-0902.txt</code>.`;
+})();
+
+/* ============================ CHART 8 — deterministic suite verdict strip ============================ */
+(function(){
+  const NOTE={db:"K5 targets of the 2026-07-29 RCA plan, never merged",fm:"K4 targets, never merged",ct:"",pc:"K3 targets, never merged",st:"ST-02 needs a model"};
+  let h="";
+  Object.entries(SUITES).forEach(([sname,evals])=>{
+    h+=`<div style="margin-top:10px"><b style="font-size:13px">${sname.toUpperCase()}</b> <span class="foot" style="margin:0 0 0 8px">${esc(NOTE[sname]||"")}</span><div class="verd">`+evals.map(e=>{const v=(e.v||"").toLowerCase();const cls=v==="pass"?"pass":(v==="red"?"red":"dnr");const lab=v==="did-not-run"?"DID-NOT-RUN":v.toUpperCase();return `<span class="cell ${cls}">${esc(e.id)} · ${esc(lab)}</span>`;}).join("")+"</div></div>";
+  });
+  $("c8").innerHTML=h;
+  $("c8-foot").innerHTML=`Verdicts are read from each run file's <code>verdict</code> field; nothing here is typed in. Run on main <code>1de3dc1</code>, quiet machine, about 02:00 UTC on 2026-09-21; <code>npm run gate</code> exit 0 the same night. The RED cells are acceptance targets from an earlier plan that never merged; none of them is on the coach's answer path under test. Source: <code>deterministic/2026-09-21-{db,fm,ct,pc,st}.json</code>.`;
+})();
+
+/* ============================ footer ============================ */
+$("pgfoot").innerHTML=`Girl Chess: before and after the one-fact-list change · built 2026-09-20 · every number re-derived by the controller from the run files, not copied from a summary.<br>
+Run files: <b>${AB?AB.file:"A/B harness: not yet run"}</b> · <b>record/canonical.json</b> · <b>fable-rerun-t3/agreement-*.json</b> · <b>deterministic/2026-09-21-*.json</b> · <b>deterministic/voice-*.txt</b> · map: "Girl Chess — Coach correctness, cause and guard map (2026-09-20)".`;
+
+/* ============================ theme toggle ============================ */
+function toggleTheme(){
+  const cur=document.documentElement.getAttribute("data-theme");
+  const sysDark=matchMedia("(prefers-color-scheme:dark)").matches;
+  let next;
+  if(cur==="dark")next="light"; else if(cur==="light")next="dark"; else next=sysDark?"light":"dark";
+  document.documentElement.setAttribute("data-theme",next);
+}
+</script>
+</body>
+</html>
