@@ -41,31 +41,87 @@ fi
 # made this guard fall through to the ask-and-continue branch below and never
 # scan. The real pattern file lives once, at the git COMMON dir (shared by
 # every worktree); the per-worktree symlink is a convenience, not the source.
-# Matches a bare `git push` AND a `git -C <path> push` (quoted or bare path)
-# -- the plain \bgit push\b shape alone missed the -C form this fix exists to
-# resolve, since the flag and its argument sit between the two words.
-if printf '%s' "$cmd" | grep -qE '\bgit[[:space:]]+(-C[[:space:]]+("[^"]+"|'"'"'[^'"'"']+'"'"'|[^[:space:]]+)[[:space:]]+)?push\b'; then
-  # Pull a path argument out of `git -C <path>` or a `cd <path>` that precedes
-  # the push in the same command, trying a double-quoted, single-quoted, then
-  # bare token in that order (repo paths in this project contain spaces).
+#
+# Fixed again 2026-09-20 (docs round, review-1 brief 1.fix), three findings:
+# (F1) the `cd` extraction used to search the WHOLE command with a greedy
+# `.*cd`, so a `cd` typed AFTER the push (`git push && cd <clean repo>`) won
+# and the guard scanned the wrong repo and emitted nothing. It must only look
+# at the part of the command BEFORE the push token. (F2) the trigger only
+# recognised a bare `git push` or `git -C <path> push`; `git -c
+# protocol.version=2 push` (or --git-dir=/--work-tree=/any other flag) fell
+# through with no output at all. (F3) the trigger fired on the substring
+# `git push` anywhere, including inside a quoted string (`grep -rn 'git
+# push' .`), which is a fresh clone's/CI's normal state and hard-denied it.
+#
+# GIT_OPT_TRIGGER matches "git", then zero or more option tokens (-C <path>,
+# -c <val>, --git-dir=<path>, --work-tree=<path>, any other -x/--long flag),
+# then "push" -- so any option shape between the two words still counts.
+GIT_OPT_TRIGGER="-C[[:space:]]+(\"[^\"]+\"|'[^']+'|[^[:space:]]+)|-c[[:space:]]+[^[:space:]]+|--git-dir=[^[:space:]]+|--work-tree=[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|-[a-zA-Z]+"
+GIT_PUSH_TRIGGER="\\bgit[[:space:]]+((${GIT_OPT_TRIGGER})[[:space:]]+)*push\\b"
+
+# Command-position check: the git-push shape only counts when it is the
+# command actually being run, not text sitting inside a quoted argument.
+# Split on shell control operators (&&, ||, ;, |, `(`) and, for each
+# resulting segment trimmed of leading whitespace and a leading `env ...`
+# prefix (flags -- including a flag that takes its own bare-word argument
+# like `-u NAME` -- or VAR=val pairs; keeps the repo's own `env -u GH_TOKEN
+# git push` form triggering), check the trigger anchored at the START of
+# that segment. A `git push` phrase that isn't at the front of any segment
+# (e.g. quoted inside a grep pattern) never matches this. Also remember
+# every segment seen BEFORE the matching one -- that (not a naive cut on the
+# literal string "push", which can also occur inside a tmp-dir path like
+# .../push-guard-test-XXXX/repo and truncate the wrong place, F1) is where a
+# preceding `cd` is allowed to come from.
+push_in_command_position=0
+prior_segments=""
+segments="$(printf '%s' "$cmd" | sed -E 's/(&&|\|\||[|;]|\()/\n/g')"
+while IFS= read -r seg; do
+  trimmed="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//')"
+  stripped="$(printf '%s' "$trimmed" | sed -E 's/^env([[:space:]]+(-u[[:space:]]+[A-Za-z_][A-Za-z0-9_]*|-[a-zA-Z]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*))*[[:space:]]+//')"
+  if printf '%s' "$stripped" | grep -qE "^${GIT_PUSH_TRIGGER}"; then
+    push_in_command_position=1
+    break
+  fi
+  prior_segments="${prior_segments}${seg}
+"
+done <<EOF
+$segments
+EOF
+
+if [ "$push_in_command_position" = "1" ]; then
+  # Pull a path argument out of `git -C <path>` (from the full command --
+  # -C always sits inside the same git invocation as push, never split
+  # across a cd-after-push landmine) or a `cd <path>` that precedes the
+  # matched push's segment (from prior_segments only, per F1 above), trying
+  # a double-quoted, single-quoted, then bare token in that order (repo
+  # paths in this project contain spaces). `tail -1` picks the match
+  # CLOSEST to the push when the haystack has more than one line/segment.
   extract_path_after() {
-    kw="$1"
-    out="$(printf '%s' "$cmd" | sed -nE "s/.*${kw}[[:space:]]+\"([^\"]+)\".*/\\1/p" | head -1)"
+    haystack="$1"
+    kw="$2"
+    out="$(printf '%s' "$haystack" | sed -nE "s/.*${kw}[[:space:]]+\"([^\"]+)\".*/\\1/p" | tail -1)"
     if [ -z "$out" ]; then
-      out="$(printf '%s' "$cmd" | sed -nE "s/.*${kw}[[:space:]]+'([^']+)'.*/\\1/p" | head -1)"
+      out="$(printf '%s' "$haystack" | sed -nE "s/.*${kw}[[:space:]]+'([^']+)'.*/\\1/p" | tail -1)"
     fi
     if [ -z "$out" ]; then
-      out="$(printf '%s' "$cmd" | sed -nE "s/.*${kw}[[:space:]]+([^[:space:]]+).*/\\1/p" | head -1)"
+      out="$(printf '%s' "$haystack" | sed -nE "s/.*${kw}[[:space:]]+([^[:space:]]+).*/\\1/p" | tail -1)"
     fi
     printf '%s' "$out"
   }
 
   resolved=""
   if printf '%s' "$cmd" | grep -qE '\bgit[[:space:]]+-C[[:space:]]'; then
-    resolved="$(extract_path_after 'git[[:space:]]+-C')"
+    resolved="$(extract_path_after "$cmd" 'git[[:space:]]+-C')"
+  elif printf '%s' "$cmd" | grep -qE -- '--git-dir='; then
+    gd="$(printf '%s' "$cmd" | sed -nE 's/.*--git-dir=("[^"]+"|'"'"'[^'"'"']+'"'"'|[^[:space:]]+).*/\1/p' | tail -1)"
+    gd="$(printf '%s' "$gd" | sed -E 's/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/')"
+    if [ -n "$gd" ]; then
+      resolved="$(git --git-dir="$gd" rev-parse --show-toplevel 2>/dev/null)"
+      [ -z "$resolved" ] && resolved="$gd"
+    fi
   fi
-  if [ -z "$resolved" ] && printf '%s' "$cmd" | grep -qE '\bcd[[:space:]]'; then
-    resolved="$(extract_path_after 'cd')"
+  if [ -z "$resolved" ] && printf '%s' "$prior_segments" | grep -qE '\bcd[[:space:]]'; then
+    resolved="$(extract_path_after "$prior_segments" 'cd')"
   fi
   [ -z "$resolved" ] && resolved="$(pwd)"
 

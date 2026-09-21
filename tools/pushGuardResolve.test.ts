@@ -84,8 +84,9 @@ describe("pretooluse-bash-guard #16 push resolution", { timeout: 30_000 }, () =>
     // Removing the -C/cd command-based resolution (reverting to the old
     // `toplevel="$(git rev-parse --show-toplevel)"` from cwd) makes this go
     // RED: run from a cwd that is not a repo at all, `--show-toplevel` there
-    // is empty, so the old code falls into the "pattern file missing" ask
-    // branch instead of ever scanning -- never a deny with BLOCKED.
+    // is empty, and the old \bgit push\b trigger never matches `git -C <path>
+    // push` in the first place (the -C clause sits between the two words), so
+    // the guard emits nothing at all -- never a deny with BLOCKED.
     const result = runGuard(`git -C ${repo} push`, outsideRepo);
     const d = decision(result.stdout);
     expect(d.permissionDecision).toBe("deny");
@@ -123,5 +124,58 @@ describe("pretooluse-bash-guard #16 push resolution", { timeout: 30_000 }, () =>
     fs.writeFileSync(path.join(commonDir(repo), "push-guard-patterns"), "some-other-word-entirely\n");
     const result = runGuard(`git -C ${repo} push`, outsideRepo);
     expect(result.stdout.trim()).toBe("");
+  });
+
+  it("takes the LAST cd that PRECEDES the push, never one that follows it", () => {
+    // The cwd repo (`repo`) has the fixture word in its HEAD commit. A
+    // second, clean repo sits elsewhere and is `cd`'d into AFTER the push
+    // token -- the guard must still resolve and scan the repo the push is
+    // actually running from (cwd), not the clean repo that follows it.
+    //
+    // Before this fix (the extraction takes the LAST `cd` anywhere in the
+    // string, regardless of position, because the sed pattern is greedy),
+    // this goes RED: the guard resolves the clean repo instead, scans it,
+    // finds nothing, and emits no output at all -- the push is silently
+    // allowed.
+    const otherRepo = path.join(work, "other-clean-repo");
+    fs.mkdirSync(otherRepo);
+    git(["init", "-q"], otherRepo);
+    git(["config", "user.email", "test@example.com"], otherRepo);
+    git(["config", "user.name", "Test"], otherRepo);
+    fs.writeFileSync(path.join(otherRepo, "b.txt"), "hi\n");
+    git(["add", "b.txt"], otherRepo);
+    git(["commit", "-q", "-m", "clean commit, no fixture word"], otherRepo);
+
+    const result = runGuard(`git push && cd "${otherRepo}"`, repo);
+    const d = decision(result.stdout);
+    expect(d.permissionDecision).toBe("deny");
+    expect(d.permissionDecisionReason).toContain("BLOCKED");
+  });
+
+  it("triggers on git <options> push, not just a bare push or git -C push", () => {
+    // Before widening the trigger regex to allow a run of option tokens
+    // between `git` and `push`, this goes RED: `git -c protocol.version=2
+    // push` produces no output at all (the old regex only allows an
+    // optional -C clause there).
+    const result = runGuard("git -c protocol.version=2 push", repo);
+    const d = decision(result.stdout);
+    expect(d.permissionDecision).toBe("deny");
+    expect(d.permissionDecisionReason).toContain("BLOCKED");
+  });
+
+  it("does not trigger on a git push phrase inside a quoted string", () => {
+    // Before narrowing the hard stop to command-position matches, this goes
+    // RED: `grep -rn 'git push' .` in a repo with no wordlist anywhere
+    // currently hard-denies even though no push is happening.
+    const result = runGuard("grep -rn 'git push' .", repo);
+    const d = decision(result.stdout);
+    expect(d.permissionDecision).toBeUndefined();
+  });
+
+  it("still triggers on the repo's own env -u GH_TOKEN git push prefix form", () => {
+    const result = runGuard("env -u GH_TOKEN git push", repo);
+    const d = decision(result.stdout);
+    expect(d.permissionDecision).toBe("deny");
+    expect(d.permissionDecisionReason).toContain("BLOCKED");
   });
 });
