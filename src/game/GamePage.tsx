@@ -89,8 +89,9 @@ import {
 } from "./explore";
 import {
   COACH_BACKEND_KEY,
-  COACH_BACKEND_OPTIONS,
   readCoachBackendPref,
+  readDevFlag,
+  visibleCoachBackendOptions,
   type CoachBackendPref,
 } from "./coachBackendPref";
 
@@ -2630,7 +2631,7 @@ export function GamePage() {
               <div className="settings-divider" aria-hidden="true"></div>
               <span className="settings-section-head">coach voice</span>
               <div className="settings-radio-group" role="radiogroup" aria-label="coach voice">
-                {COACH_BACKEND_OPTIONS.map((opt) => (
+                {visibleCoachBackendOptions(readDevFlag()).map((opt) => (
                   <label key={opt.value} className="settings-switch">
                     <input
                       type="radio"
