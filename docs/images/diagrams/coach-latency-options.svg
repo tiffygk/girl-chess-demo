@@ -42,6 +42,6 @@
 <rect class="bar-before" x="20" y="262" width="180" height="14"/>
 <text class="t" x="212" y="273">about 9 seconds before</text>
 
-<rect class="bar-after" x="20" y="292" width="80" height="14"/>
-<text class="t" x="212" y="303">2 to 4 seconds after</text>
+<rect class="bar-after" x="20" y="292" width="140" height="14"/>
+<text class="t" x="212" y="303">about 7 seconds after</text>
 </svg>

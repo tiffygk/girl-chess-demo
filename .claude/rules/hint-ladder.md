@@ -4,7 +4,7 @@ paths: ["src/game/hintFlow.ts", "src/game/GamePage.tsx", "src/game/chatFocus.ts"
 
 # Hint ladder and the coach
 
-read `docs/hint-ladder-and-coach.md` before changing any of these files.
+read `docs/hint-ladder-and-coach.md` for the shape, then `server/annotator/hint.ts` (the timing and loss constants at its top) and `server/game/manager.ts` (`searchAndCacheVerifiedHint`, `resolveCandidateLine`) for the facts, since the page no longer carries path:line citations.
 
 the band under the ladder is ground truth for the chat: the chat may never name a
 different best move or deny a threat the band already asserted.

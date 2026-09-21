@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { spawnSync } from "child_process";
 
 // Parity checks between README.md, docs/index.md, and the docs/ folder's
 // actual contents. No markdown parser: same string-assertion style as
@@ -59,8 +60,29 @@ function imageTargets(text: string): string[] {
   return out;
 }
 
+// Files docs/ parity checks must see the same way git and GitHub Pages see
+// them: tracked-by-git, never a directory listing. readdirSync would also
+// pick up untracked file-sync duplicates ("index 2.md") and ignored cruft
+// (.DS_Store), neither of which is part of the published site, and fail the
+// checks below over files that were never really there.
+function gitTrackedUnder(subdir: string): string[] {
+  const result = spawnSync("git", ["ls-files", subdir], { cwd: ROOT, encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`git ls-files ${subdir} failed: ${result.stderr || String(result.error)}`);
+  }
+  return result.stdout.split("\n").filter((l) => l.length > 0);
+}
+
+// Direct children of docs/ only (not docs/images/**), as basenames -- the
+// same set readdirSync(DOCS) used to return, sourced from git instead.
+function docsTopLevelFiles(): string[] {
+  return gitTrackedUnder("docs")
+    .filter((p) => path.posix.dirname(p) === "docs")
+    .map((p) => path.posix.basename(p));
+}
+
 function docsMdFiles(): string[] {
-  return fs.readdirSync(DOCS).filter((f) => f.endsWith(".md"));
+  return docsTopLevelFiles().filter((f) => f.endsWith(".md"));
 }
 
 function docsMdText(f: string): string {
@@ -69,17 +91,8 @@ function docsMdText(f: string): string {
 
 // Every image file under docs/images/, recursively, as a path relative to
 // docs/images/ (posix separators, so "diagrams/hint-ladder-rungs.svg").
-function imageFilesRecursive(dir = path.join(DOCS, "images"), prefix = ""): string[] {
-  const out: string[] = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) {
-      out.push(...imageFilesRecursive(path.join(dir, entry.name), rel));
-    } else {
-      out.push(rel);
-    }
-  }
-  return out;
+function imageFilesRecursive(): string[] {
+  return gitTrackedUnder("docs/images").map((p) => p.slice("docs/images/".length));
 }
 
 // Every image reference from every docs/*.md page, resolved to a path
@@ -125,7 +138,7 @@ describe("docs image parity", () => {
 describe("every docs/ page is linked from docs/index.md", () => {
   it("every .md file in docs/ (other than index.md) is linked by its relative path", () => {
     const index = indexText();
-    const mdFiles = fs.readdirSync(DOCS).filter((f) => f.endsWith(".md") && f !== "index.md");
+    const mdFiles = docsMdFiles().filter((f) => f !== "index.md");
     for (const f of mdFiles) {
       expect(index, `docs/index.md is missing a relative link to ${f}`).toContain(`(${f})`);
     }
@@ -133,14 +146,14 @@ describe("every docs/ page is linked from docs/index.md", () => {
 
   it("every .html file in docs/ is linked by its full Pages URL", () => {
     const index = indexText();
-    const htmlFiles = fs.readdirSync(DOCS).filter((f) => f.endsWith(".html"));
+    const htmlFiles = docsTopLevelFiles().filter((f) => f.endsWith(".html"));
     for (const f of htmlFiles) {
       expect(index, `docs/index.md is missing the full Pages URL for ${f}`).toContain(`${PAGES_BASE}${f}`);
     }
   });
 
   it("every entry in docs/ other than index.md and images/ is one of the .md or .html files just checked", () => {
-    const entries = fs.readdirSync(DOCS).filter((f) => f !== "index.md" && f !== "images");
+    const entries = docsTopLevelFiles().filter((f) => f !== "index.md");
     for (const f of entries) {
       expect(f.endsWith(".md") || f.endsWith(".html"), `unexpected docs/ entry not covered by parity checks: ${f}`).toBe(true);
     }
@@ -166,10 +179,12 @@ describe("every relative link and image path resolves to a real file", () => {
     }
   });
 
-  it("docs/index.md's relative links and images all resolve, relative to docs/", () => {
-    for (const target of resolvableLocalTargets(indexText())) {
-      const resolved = path.join(DOCS, target);
-      expect(fs.existsSync(resolved), `docs/index.md links to a missing path: ${target} (resolved ${resolved})`).toBe(true);
+  it("every docs/*.md page's relative links and images all resolve, relative to docs/", () => {
+    for (const f of docsMdFiles()) {
+      for (const target of resolvableLocalTargets(docsMdText(f))) {
+        const resolved = path.join(DOCS, target);
+        expect(fs.existsSync(resolved), `docs/${f} links to a missing path: ${target} (resolved ${resolved})`).toBe(true);
+      }
     }
   });
 });
