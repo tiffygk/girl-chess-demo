@@ -18,6 +18,10 @@ actually cited at the time.
 
 Each subsection is the full paragraph that stood in CLAUDE.md under that rule's name, moved here unchanged on 2026-09-06 so the root file can carry the rule as one line and cite the history by anchor.
 
+### Engine-version rule (2026-09-20)
+
+The machine and CI moved from Stockfish 18 to Stockfish 19 on 2026-09-20, because Homebrew moved its stockfish formula to 19 with no stockfish@19 pin available. Two eval fixtures were re-derived under Stockfish 19, each with a written chess reason in its test comments, in the sibling task of this same round. The doctor (npm run doctor) and the CI gate now assert the engine's id name by name, so the next Homebrew bump surfaces as one named line instead of two mysterious fixture failures. Past debriefs may name a different turning point if re-analysed under Stockfish 19; nothing stored is lost, the analysis is just recomputed against a slightly different engine.
+
 ### Play rule (2026-07-29)
 
 **Play rule (2026-07-29): never run `npm run gate` while she is playing.** Three back-to-back gate runs starved her live server and interrupted a game she was winning at +492 — the suite spawns Stockfish processes on the same machine her opponent runs on. The third of those runs existed only to satisfy the unpiped-exit-code rule after a pass had already been observed, which was avoidable. Ask her, or wait for a stopping point. **Broken a second time on 2026-07-30**, five runs across one review round, because the ACTIVE WORK section carrying this rule was UNCOMMITTED and so never appeared in the CLAUDE.md that auto-loads at session start; a controller should `git diff -- CLAUDE.md` early rather than trusting the auto-loaded copy. `tools/gate.ts`'s `checkInPlay` now enforces it mechanically (readonly query for an unfinished game with a move inside `IN_PLAY_WINDOW` 30min, failing BEFORE the Stockfish-spawning step), and `--allow-live` overrides it — but the guard is a backstop, not permission to stop asking. When gating against her real games is unavoidable, drive a COPY of the db triple: opening a finished game triggers the on-read heal, which WRITES.

@@ -1,5 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { runChecks, type Check, type CheckResult } from "./doctor";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { runChecks, realChecks, uciIdName, EXPECTED_STOCKFISH_ID, type Check, type CheckResult } from "./doctor";
+
+// A tiny executable script standing in for stockfish's uci/quit exchange,
+// so uciIdName and the stockfish check can be tested without touching brew
+// or the real binary.
+function stubEngine(idLine: string | null): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gc-doctor-"));
+  const p = path.join(dir, "stockfish");
+  const body = idLine === null ? "" : `echo "id name ${idLine}"\n`;
+  fs.writeFileSync(p, `#!/bin/bash\n${body}echo uciok\n`);
+  fs.chmodSync(p, 0o755);
+  return p;
+}
 
 // runChecks takes injected probes so the tests never touch brew, ports, or
 // the keychain. Each probe returns ok:true or a plain sentence.
@@ -49,5 +64,62 @@ describe("doctor", () => {
     );
     expect(code).toBe(0);
     expect(out.some((l) => l.startsWith("note"))).toBe(true);
+  });
+
+  it("uciIdName parses the id name line out of a uci/quit exchange", () => {
+    const bin = stubEngine(EXPECTED_STOCKFISH_ID);
+    expect(uciIdName(bin)).toBe(EXPECTED_STOCKFISH_ID);
+  });
+
+  it("uciIdName returns the installed name even when it is not the baseline", () => {
+    const bin = stubEngine("Stockfish 18");
+    expect(uciIdName(bin)).toBe("Stockfish 18");
+  });
+
+  it("uciIdName returns null when the exchange never sends an id name line", () => {
+    const bin = stubEngine(null);
+    expect(uciIdName(bin)).toBeNull();
+  });
+
+  describe("the stockfish check, run against a stub binary on PATH", () => {
+    let oldPath: string | undefined;
+    let dir: string;
+
+    function withStub(idLine: string) {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "gc-doctor-path-"));
+      fs.writeFileSync(path.join(dir, "stockfish"), `#!/bin/bash\necho "id name ${idLine}"\necho uciok\n`);
+      fs.chmodSync(path.join(dir, "stockfish"), 0o755);
+      oldPath = process.env.PATH;
+      process.env.PATH = `${dir}:${oldPath}`;
+    }
+    function restorePath() {
+      process.env.PATH = oldPath;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    it("passes and names the baseline version when it matches", async () => {
+      withStub(EXPECTED_STOCKFISH_ID);
+      try {
+        const check = realChecks.find((c) => c.name === "stockfish")!;
+        const result = await check.run();
+        expect(result).toEqual({ ok: true, line: `stockfish answers (${EXPECTED_STOCKFISH_ID}, the version the eval fixtures are baselined on)` });
+      } finally {
+        restorePath();
+      }
+    });
+
+    it("fails and names the installed version when it does not match the baseline", async () => {
+      withStub("Stockfish 18");
+      try {
+        const check = realChecks.find((c) => c.name === "stockfish")!;
+        const result = await check.run();
+        expect(result).toEqual({
+          ok: false,
+          line: `Stockfish 18 installed; this repo's eval fixtures are baselined on ${EXPECTED_STOCKFISH_ID}. the game works; eval tests may differ. see .claude/rules/data-and-gate.md`,
+        });
+      } finally {
+        restorePath();
+      }
+    });
   });
 });
