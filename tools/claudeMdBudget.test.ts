@@ -22,7 +22,7 @@ describe("the rules' incident narratives live in the changelog", () => {
 });
 
 describe("path-scoped rule files", () => {
-  const rules = ["ports-and-servers", "data-and-gate", "checkers", "ui-design", "rounds-and-merges", "calibratable-constants"];
+  const rules = ["ports-and-servers", "data-and-gate", "checkers", "ui-design", "rounds-and-merges", "calibratable-constants", "hint-ladder"];
   it("exist, stay short, and carry no em-dash in a rewritten line", () => {
     for (const r of rules) {
       const p = path.join(ROOT, ".claude", "rules", `${r}.md`);
