@@ -24,4 +24,7 @@ See the visual gate rule in `.claude/skills/build-round/SKILL.md` (run the gate 
 **Directory rule:** no agent moves, renames, or deletes any directory, ever: file edits only, inside your own worktree. If the repo is ever found off its canonical path, that is an INCIDENT to report, not something to fix silently.
 See docs/changelog.md#directory-rule-2026-07-29
 
+**Engine-version rule:** the eval fixtures are baselined on a named engine version (Stockfish 19 since 2026-09-20); the doctor and the CI gate assert it by name. Moving to a new version is a deliberate PR that re-derives every engine-sensitive expected value with a written chess reason per fixture. Never re-baseline a fixture to make a merge pass.
+See docs/changelog.md#engine-version-rule-2026-09-20
+
 History: docs/changelog.md#incidents-that-made-the-rules-moved-from-claudemd-2026-09-06

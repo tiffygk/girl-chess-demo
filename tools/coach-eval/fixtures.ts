@@ -345,7 +345,9 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
       "800ms reads gave impliedLossCp 148/159/145/164/145 (mean 152.2), flipping the true/false boolean run to " +
       "run on the IDENTICAL fen and movetime -- squarely the noise band the 150cp threshold exists to stay clear " +
       "of, not a position search depth resolves one way with confidence. Relabeled honestly, same treatment as " +
-      "FK5; no engine-confirmed replacement exists in the corpus (see the block comment above).",
+      "FK5; no engine-confirmed replacement exists in the corpus (see the block comment above). Under Stockfish " +
+      "19 (2026-09-20) the same position reads comfortably negative (-61 at 800ms), so the \"noise band\" " +
+      "description above is history, not the current read; verdict unchanged.",
     midGameOfFinished: true,
   },
 
