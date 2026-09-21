@@ -11,3 +11,8 @@ different best move or deny a threat the band already asserted.
 
 no change to a coach reply path may add a model call or a regen. the owner's ceiling
 for any change is +1 to 2 s.
+
+a regen is never a style fix.
+
+the persona ban list in the prompt is a request to the model, not an enforced
+guarantee; do not cite it as one.
