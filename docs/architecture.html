@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Girl Chess — Architecture</title>
+<title>Girl Chess: Architecture</title>
 <style>
   :root{
     --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2430; --ink2:#54606e; --muted:#8a95a3;
@@ -108,7 +108,7 @@
 
 <header class="top">
   <div>
-    <h1>Girl Chess — architecture</h1>
+    <h1>Girl Chess: architecture</h1>
     <div class="sub">A personal chess tutor I built for myself. I play an engine opponent called mallow; a coach called cookie explains my games afterwards. One nondeterministic component in the whole system; everything else is arithmetic over stored facts.</div>
   </div>
   <button class="themebtn" id="tbtn">Dark</button>
@@ -332,6 +332,8 @@
   <p>The cause? The hint computed the mate, used the score to pick which piece to point at, then <strong>threw it away at the return</strong>. The mate distance was never carried. The coach's facts had ten categories and zero mentions of mate. The mate checker's set of true mate distances was empty, so nothing even blocked a mate claim. The model correctly refused to invent one.</p>
 
   <div class="concl"><span class="tag">SO</span><p>The coach and the hint did not share a brain. Two searches, two answers, one of them thrown away. The fix publishes the hint's verified findings to a keyed shelf, folded into the coach's facts only on an exact position match. What I actually asked for: <em>"pass it to the coach as its own shortlist, so it doesn't need to go through every move on the chess facts."</em></p></div>
+
+  <p>Two later changes closed what that left open. When I ask the coach about a position the hint has not searched yet, the coach now runs the hint's own verified search first and keeps the result for that position, so the chat and the hint never answer from two different searches. And when I name a move in chat that I have not picked up on the board, the coach works out that move's line the same verified way instead of guessing at it.</p>
 </div>
 
 <!-- ============ 5 ============ -->

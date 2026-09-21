@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Girl Chess — OD-3b Thinking-Arm Dashboard (2026-08-03)</title>
+<title>Girl Chess: OD-3b Thinking-Arm Dashboard (2026-08-03)</title>
 <style>
   :root{
     --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2430; --ink2:#54606e; --muted:#8a95a3;
@@ -112,17 +112,17 @@
 
   <header class="top">
     <div>
-      <h1>OD-3b — Three Thinking Budgets, One Pick</h1>
-      <div class="sub">The decisive 3-arm run: the coach answered the same 119 questions three times each with normal thinking (<b>default</b>), a small bounded budget (<b>low</b>), and thinking turned off (<b>disabled</b>) — 357 answers per arm, 1,071 total. "Failed" means the answer ended as a canned apology (a template) even after its one automatic retry.</div>
+      <h1>OD-3b: Three Thinking Budgets, One Pick</h1>
+      <div class="sub">The decisive 3-arm run: the coach answered the same 119 questions three times each with normal thinking (<b>default</b>), a small bounded budget (<b>low</b>), and thinking turned off (<b>disabled</b>): 357 answers per arm, 1,071 total. "Failed" means the answer ended as a canned apology (a template) even after its one automatic retry.</div>
     </div>
     <button class="themebtn" id="themebtn" onclick="toggleTheme()">◐ Theme</button>
   </header>
 
-  <div class="caveat-banner"><b>⚠ Two limits on these numbers:</b> the fact-shelf coverage flag is <b>true for all 1,071 rows</b> (that axis is degenerate here — question difficulty is the axis that discriminates), and <b>nothing here is comparable to the July board-live baseline</b> — different question population, so no before/after claim is made.</div>
+  <div class="caveat-banner"><b>⚠ Two limits on these numbers:</b> the fact-shelf coverage flag is <b>true for all 1,071 rows</b> (that axis is degenerate here: question difficulty is the axis that discriminates), and <b>nothing here is comparable to the July board-live baseline</b>: different question population, so no before/after claim is made.</div>
 
   <div class="thesis">
     <div class="lead">A small thinking budget wins the first attempt: near-top speed, and the fewest failures on the questions that matter most.</div>
-    <div class="body"><b>low</b> beats <b>disabled</b> on quality in every difficulty bucket at essentially the same speed (6.2s vs 5.6s typical), and beats <b>default</b> on tactics-and-mate questions (13.3% vs 18.7% failed) while answering <b>2.3× faster</b> on a fifth of the output tokens. Decision: <b>attempt-0 = low, retry = default</b> — live chat only; the postgame review keeps its own budget.</div>
+    <div class="body"><b>low</b> beats <b>disabled</b> on quality in every difficulty bucket at essentially the same speed (6.2s vs 5.6s typical), and beats <b>default</b> on tactics-and-mate questions (13.3% vs 18.7% failed) while answering <b>2.3× faster</b> on a fifth of the output tokens. Decision: <b>attempt-0 = low, retry = default</b>: live chat only; the postgame review keeps its own budget.</div>
   </div>
 
   <div style="background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:var(--radius);padding:13px 17px;margin:0 0 22px">
@@ -142,7 +142,7 @@
     <div class="chartbox" id="c1"></div>
     <button class="tbtn" onclick="tog('t1')">Show data table</button>
     <table class="dt" id="t1"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Failures concentrate on tactics-and-mate in every arm</b> (18.7% / 13.3% / 22.7%), well above each arm's own easier buckets. <b>disabled fails most everywhere</b> — it is the only arm that fails simple fact questions at a real rate (9.5%). And <b>low is best exactly on the hard row</b>: 13.3%, beating even default's unbounded thinking there.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Failures concentrate on tactics-and-mate in every arm</b> (18.7% / 13.3% / 22.7%), well above each arm's own easier buckets. <b>disabled fails most everywhere</b>: it is the only arm that fails simple fact questions at a real rate (9.5%). And <b>low is best exactly on the hard row</b>: 13.3%, beating even default's unbounded thinking there.</p></div>
     <div class="foot">Rates are final outcomes: every failed row got exactly one retry first. n per bucket: direct-fact 42, needs-line 240, tactical-or-mate 75 (per arm). Source: <code>2026-08-03-od3b-all-summary.json</code>.</div>
   </section>
 
@@ -150,30 +150,30 @@
   <section class="panel">
     <div class="num">CHART 2</div>
     <h2>Which difficulty buckets drive the failures (Pareto)</h2>
-    <div class="q">All 90 failed answers across the three arms, sorted by which difficulty bucket produced them. Bars are share of all failures, split by arm; the line is the running total on the same 0–100% axis.</div>
+    <div class="q">All 90 failed answers across the three arms, sorted by which difficulty bucket produced them. Bars are share of all failures, split by arm; the line is the running total on the same 0-100% axis.</div>
     <div class="legend" id="lg2"></div>
     <div class="chartbox" id="c2"></div>
     <button class="tbtn" onclick="tog('t2')">Show data table</button>
     <table class="dt" id="t2"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Two buckets carry 94% of all failures.</b> needs-line contributes the most by count (44) because it is two-thirds of the question set; tactical-or-mate contributes nearly as many (41) from a bucket a third that size — it fails at 3× the rate. Chart 1 carries the rate story; this chart says where the repair effort would land.</p></div>
-    <div class="foot">Counts are pooled across arms (23 + 28 + 39 = 90 failed answers of 1,071). Bucket sizes differ — the bar heights reflect volume × rate, not rate alone.</div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Two buckets carry 94% of all failures.</b> needs-line contributes the most by count (44) because it is two-thirds of the question set; tactical-or-mate contributes nearly as many (41) from a bucket a third that size: it fails at 3× the rate. Chart 1 carries the rate story; this chart says where the repair effort would land.</p></div>
+    <div class="foot">Counts are pooled across arms (23 + 28 + 39 = 90 failed answers of 1,071). Bucket sizes differ: the bar heights reflect volume × rate, not rate alone.</div>
   </section>
 
   <!-- CHART 3 -->
   <section class="panel">
     <div class="num">CHART 3</div>
     <h2>Speed vs. failures: the trade each arm offers</h2>
-    <div class="q">One point per arm. Left is faster, lower is fewer failed answers — the bottom-left corner wins. The thin tail on each point stretches to its 90th-percentile wait.</div>
+    <div class="q">One point per arm. Left is faster, lower is fewer failed answers: the bottom-left corner wins. The thin tail on each point stretches to its 90th-percentile wait.</div>
     <div class="legend" id="lg3"></div>
     <div class="chartbox" id="c3"></div>
     <button class="tbtn" onclick="tog('t3')">Show data table</button>
     <table class="dt" id="t3"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>low sits in the sweet spot</b>: 0.6s slower than disabled at the median but 3.1 points fewer failures — and its tail stays under 12s. <b>default buys nothing you'd wait for</b>: 2.3× slower typical, a 47-second p90 tail, and it still isn't the best arm on the hardest questions. It keeps one job: the escalated retry, where its extra thinking room rescues about two-thirds of failed first drafts.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>low sits in the sweet spot</b>: 0.6s slower than disabled at the median but 3.1 points fewer failures, and its tail stays under 12s. <b>default buys nothing you'd wait for</b>: 2.3× slower typical, a 47-second p90 tail, and it still isn't the best arm on the hardest questions. It keeps one job: the escalated retry, where its extra thinking room rescues about two-thirds of failed first drafts.</p></div>
     <div class="foot">Latency is wall time to the final answer (nearest-rank percentiles). Failure rate is the arm's overall post-retry template rate, n=357 each.</div>
   </section>
 
   <footer class="pg">
-    Girl Chess — OD-3b Thinking-Arm Dashboard · built 2026-08-03 · numbers re-derived from the 9 raw run files, not copied from summaries.<br>
+    Girl Chess: OD-3b Thinking-Arm Dashboard · built 2026-08-03 · numbers re-derived from the 9 raw run files, not copied from summaries.<br>
     Source: <b>tools/coach-eval/runs/2026-08-03-od3b-all-summary.json</b> · narrative: "OD-3b Post-Shelf Eval Results (2026-08-03)".
   </footer>
 </div>

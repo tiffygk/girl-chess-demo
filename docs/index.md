@@ -12,9 +12,17 @@ Move 2 of game 195: the knight is selected and ghosted on h3, not yet played. Be
 
 ![Move 2 of game 195: a knight ghosted on h3 awaiting confirmation, the judge's hint with "ask about this" and "more?", the coach's note under the board, and the coach chat with the hint pinned and a follow-up answered](images/01-hint-and-chat-agree-knight-h3.png)
 
+Move 29 of another game, 21 points up: the judge nudges a winning move because a faster checkmate was there.
+
+![Move 29, 21 points up: the pending move judged "hm, you sure? still winning, but there was a faster mate. mate in 1 was there, now it's mate in 3."](images/03-nudge-faster-mate-endgame-conversion.png)
+
 Game 191 in the demo database, a win over the opponent mallow at 1600: the debrief. Three card groups (done well, could be better, watch next time), badged turning points, the move list. "replay" puts any moment back on the board with arrows; "try the line" drops you into play from the mistake.
 
 ![The full debrief: three card groups, the moves I highlighted during play, badged turning points, and the move list](images/04-full-debrief-cards-turning-points.png)
+
+The move-4 turning point replayed: solid arrows for what happened, dashed for what did not. Clearer for a beginner than algebraic notation.
+
+![The move-4 turning point replayed: solid arrows for pawn to f3 and bishop to b4, dashed arrows for the lines not played](images/05-replay-arrows-try-the-line.png)
 
 ## How it was built, and what shipped
 
@@ -59,6 +67,8 @@ Two instruments live in there, and they did different jobs. Keeping them apart i
 - **The accuracy fix:** seven surfaces were each deriving the same chess fact on their own, so one wrong idea had seven routes to the screen. Routing all seven through a single verified source and adding a regression check to the merge gate fixed it. Before, six of the ten "you could have won faster" claims I audited were contradicted by the moves. Now the rule that checks those claims counts about zero across every finished game. The audit, the population, the named source and the named check are traced in [evaluation.md](evaluation.md#the-sixty-percent-and-what-zero-counts).
 - **The blinded A/B evals:** Sonnet against Opus, across thinking budgets, with the grading key sealed until after I had written every grade. Those tuned answer quality, latency and fallback rate, and settled which model to run. They did not move the accuracy number.
 
+In the committed games, one first draft in nine still trips the placement check. The 1350 rating is a hard-coded placeholder anyone who downloads this inherits; a rating judged from how you actually play is on the roadmap.
+
 ## Two ordinary questions, from the record
 
 The game-195 screenshot above is the showpiece. Most coaching is smaller. Two exchanges from `data/girlchess-demo.db`, both against mallow at 1300, both games I won.
@@ -100,3 +110,19 @@ Then [technical-decisions.md](technical-decisions.md) and this doc, for anything
 ## Code
 
 The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). Every merge is gated against the 51 committed games (`npm run gate`). A fresh clone runs `setup.sh` once for the engines and the nine opponent files, then `npm run doctor` to say what is missing; the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) has the steps. [The hint ladder and the coach](hint-ladder-and-coach.md) walks the three coach text surfaces (ladder, band, chat) cited straight to the code. The [changelog](changelog.md) is the full work log, newest first.
+
+## Every page on this site
+
+- [The product spec](prd-lite.md): who the tutor is for, what it promises, and how success is measured.
+- [The hint ladder and the coach](hint-ladder-and-coach.md): how a hint is checked before it is shown, and how the chat stays on the same facts.
+- [Technical decisions](technical-decisions.md): three decisions, the evidence behind each, and what each cost.
+- [How the tutor is kept honest](evaluation.md): the checks every merge runs against the committed games.
+- [Increment 3.95](increment-3.95.md): one increment followed from plan to gate.
+- [The build plan's red team](build-plan-red-team.md): the plan reviewed against itself before the build.
+- [Where the review earned its keep](where-the-review-earned-its-keep.md): three real catches by the review process.
+- [Changelog](changelog.md): the full work log, newest first.
+- [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): every piece of the interface, shown as it was reviewed before it went into the game.
+- [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence, and where the deterministic code ends and the model begins.
+- [The coach eval v3 dashboard](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html): Sonnet graded against Opus with the key sealed until after every grade, and which model it recommended.
+- [The coach quality dashboard](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html): why the coach's answers felt slow, and where a slow answer's time actually goes.
+- [The thinking arm dashboard](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html): three thinking budgets tested against each other, and the one pick that shipped.
