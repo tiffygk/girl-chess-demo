@@ -855,7 +855,7 @@ function pct(a,b){return b?100*a/b:0;}
     $("c3").appendChild(s);
     legend($("lg3"),ARMS.map(a=>({k:a.k,c:a.c,round:true})));
     table("t3",["Arm","No failure","Median wait","p90 wait","First token","First word","Output tokens p50","Quiet reps"],
-      ARMS.map(a=>{const c=AB.codes[a.id];return [a.k,`${s1(pct(c.correct,c.n))}% (${c.correct}/${c.n})`,c.latency.repsUsed?sec(c.latency.p50):"UNAUDITED",c.latency.repsUsed?sec(c.latency.p90):"UNAUDITED",c.ttfpP50?sec(c.ttfpP50):"—",c.ttfwP50?sec(c.ttfwP50):"—",c.tokensP50,c.latency.repsUsed+" of 3"];}));
+      ARMS.map(a=>{const c=AB.codes[a.id];return [a.k,`${s1(pct(c.correct,c.n))}% (${c.correct}/${c.n})`,c.latency.repsUsed?sec(c.latency.p50):"UNAUDITED",c.latency.repsUsed?sec(c.latency.p90):"UNAUDITED",c.ttfpP50?sec(c.ttfpP50):"n/a",c.ttfwP50?sec(c.ttfwP50):"n/a",c.tokensP50,c.latency.repsUsed+" of 3"];}));
     $("c3-foot").innerHTML=`Wait is <code>measuredLatencyMs</code>, wall time to the final answer, nearest-rank percentiles over the reps whose machine was quiet. Source: <code>${AB.file}</code>.`;
   } else { $("c3").innerHTML='<div class="foot">NOT YET RUN: the harness summary file is not on disk.</div>'; }
   // side: live latency before/after the cut (her real chats)
@@ -956,7 +956,7 @@ function pct(a,b){return b?100*a/b:0;}
 })();
 
 /* ============================ footer ============================ */
-$("pgfoot").innerHTML=`Girl Chess — Before and after the one-fact-list change · built 2026-09-20 · every number re-derived by the controller from the run files, not copied from a summary.<br>
+$("pgfoot").innerHTML=`Girl Chess: before and after the one-fact-list change · built 2026-09-20 · every number re-derived by the controller from the run files, not copied from a summary.<br>
 Run files: <b>${AB?AB.file:"A/B harness: not yet run"}</b> · <b>record/canonical.json</b> · <b>fable-rerun-t3/agreement-*.json</b> · <b>deterministic/2026-09-21-*.json</b> · <b>deterministic/voice-*.txt</b> · map: "Girl Chess — Coach correctness, cause and guard map (2026-09-20)".`;
 
 /* ============================ theme toggle ============================ */
