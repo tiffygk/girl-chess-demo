@@ -30,7 +30,7 @@ beforeEach(() => {
   fs.mkdirSync(bin);
   stub(bin, "uname", 'echo Darwin');
   stub(bin, "brew", 'exit 0'); // "already installed" for every `brew list`
-  stub(bin, "stockfish", 'echo uciok');
+  stub(bin, "stockfish", 'echo "id name Stockfish 19"; echo uciok');
   stub(bin, "lc0", 'echo uciok');
 });
 afterEach(() => fs.rmSync(work, { recursive: true, force: true }));
@@ -71,6 +71,13 @@ describe("setup.sh", { timeout: 30_000 }, () => {
     expect(r.stdout).toMatch(/downloading maia-1100 \(1 of 9\)/);
     expect(r.stdout).toMatch(/downloading maia-1900 \(9 of 9\)/);
     expect(r.stdout).toMatch(/this takes about 2 to 10 minutes/);
+  });
+
+  it("echoes the engine's own id name in the OK line", () => {
+    stub(bin, "curl", 'out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done; printf "" | gzip -c > "$out"');
+    const r = run();
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/stockfish OK \(Stockfish 19\)/);
   });
 
   it("refuses on a non-mac with one sentence", () => {

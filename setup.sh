@@ -52,8 +52,9 @@ fi
 
 say "--- checking the engines answer"
 sf_out="$(printf "uci\nquit\n" | stockfish 2>/dev/null || true)"
+sf_id="$(printf '%s\n' "$sf_out" | sed -n 's/^id name //p' | head -n1)"
 case "$sf_out" in
-  *uciok*) say "stockfish OK" ;;
+  *uciok*) say "stockfish OK (${sf_id:-unknown version})" ;;
   *) fail "stockfish is installed but does not answer. try: brew reinstall stockfish, then ./setup.sh again." ;;
 esac
 lc0_out="$(printf "uci\nquit\n" | lc0 --weights=weights/maia-1100.pb.gz 2>/dev/null || true)"
