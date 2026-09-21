@@ -16,7 +16,7 @@ actually cited at the time.
 
 ## Incidents that made the rules (moved from CLAUDE.md 2026-09-06)
 
-Each subsection is the full paragraph that stood in CLAUDE.md under that rule's name, moved here unchanged on 2026-09-06 so the root file can carry the rule as one line and cite the history by anchor.
+Each subsection is the full paragraph that stood in CLAUDE.md under that rule's name, moved here unchanged on 2026-09-06 (punctuation tidied on 2026-09-20, wording intact) so the root file can carry the rule as one line and cite the history by anchor.
 
 ### Engine-version rule (2026-09-20)
 
