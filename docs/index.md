@@ -97,8 +97,6 @@ Three evaluations, in the order they happened. Each answers the question the one
 
 Then [technical-decisions.md](technical-decisions.md) and this doc, for anything that needs receipts.
 
-One artifact stays out of the repo: a quiz I built to drill myself on defending these decisions out loud.
-
 ## Code
 
 The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). Every merge is gated against the 51 committed games (`npm run gate`). A fresh clone runs `setup.sh` once for the engines and the nine opponent files, then `npm run doctor` to say what is missing; the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) has the steps. [The hint ladder and the coach](hint-ladder-and-coach.md) walks the three coach text surfaces (ladder, band, chat) cited straight to the code. The [changelog](changelog.md) is the full work log, newest first.
