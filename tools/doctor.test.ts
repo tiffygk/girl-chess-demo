@@ -163,5 +163,31 @@ describe("doctor", () => {
       expect(out.filter((l) => l.startsWith("ok   ")).length).toBe(7);
       expect(out.some((l) => l.startsWith("note"))).toBe(true);
     });
+
+    it("parseNvmrcMajor returns null when the file is missing (simulated by passing null)", () => {
+      expect(parseNvmrcMajor(null)).toBeNull();
+    });
+
+    it("parseNvmrcMajor returns null on an alias that is not a plain integer", () => {
+      expect(parseNvmrcMajor("lts/jod\n")).toBeNull();
+    });
+
+    it("no note when nvmrcMajor is unknown, even with a running major that would otherwise mismatch", () => {
+      expect(nodeCheckResult("25.2.1", null)).toEqual({ ok: true, line: "Node v25.2.1" });
+    });
+
+    it("the too-old sentence derives its version from .nvmrc when a major is known", () => {
+      expect(nodeCheckResult("18.16.0", 24)).toEqual({
+        ok: false,
+        line: "Node v18.16.0 is too old. install Node 24 from https://nodejs.org (or: brew install node@24), then reopen Terminal.",
+      });
+    });
+
+    it("the too-old sentence falls back to 22 when no .nvmrc major is known", () => {
+      expect(nodeCheckResult("18.16.0", null)).toEqual({
+        ok: false,
+        line: "Node v18.16.0 is too old. install Node 22 from https://nodejs.org (or: brew install node@22), then reopen Terminal.",
+      });
+    });
   });
 });

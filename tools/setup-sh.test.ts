@@ -135,13 +135,36 @@ describe("setup.sh", { timeout: 30_000 }, () => {
     const r = run();
     const out = r.stdout + r.stderr;
     expect(r.status, out).toBe(1);
-    expect(out).toMatch(/maia-1100 downloaded but did not match its expected checksum/);
-    expect(out).toMatch(/delete weights\/maia-1100\.pb\.gz and run \.\/setup\.sh again, or check your internet connection/);
+    expect(out).toMatch(/maia-1100 still does not match the expected checksum after a second download, so it was removed\./);
+    expect(out).toMatch(
+      /the upstream file may have changed; open an issue at github\.com\/tiffygk\/girl-chess-demo and do not run the game with unverified opponent files\./
+    );
     // one normal attempt (gzip-valid, so the 3-try loop stops there) plus
     // one retry after the checksum mismatch -- never three, never zero.
     const log = fs.readFileSync(path.join(work, "curl.log"), "utf8");
     expect(log.split("\n").filter((l) => l.includes("maia-1100.pb.gz")).length).toBe(2);
     expect(fs.existsSync(path.join(work, "weights", "maia-1100.pb.gz"))).toBe(false);
+  });
+
+  it("fails with one sentence when the checksum table is missing or empty", () => {
+    const r = run({ GC_WEIGHTS_SHA256_FILE: path.join(work, "nonexistent-sha256.txt") });
+    const out = r.stdout + r.stderr;
+    expect(r.status, out).toBe(1);
+    expect(out).toMatch(
+      /tools\/weights-sha256\.txt is missing, so the opponent files cannot be verified\. run \.\/setup\.sh from the girl-chess-demo folder, or restore the file from git\./
+    );
+  });
+
+  it("says a checksum mismatch on an existing file is not an interrupted download", () => {
+    fs.mkdirSync(path.join(work, "weights"));
+    const wrongExisting = writeFixedGz(work, "wrong-existing.gz", "existing-file-wrong-payload");
+    fs.writeFileSync(path.join(work, "weights", "maia-1500.pb.gz"), fs.readFileSync(wrongExisting.path));
+    stub(bin, "curl", curlCopyingFixedGz());
+    const r = run();
+    const out = r.stdout + r.stderr;
+    expect(r.status, out).toBe(0);
+    expect(out).toMatch(/maia-1500 does not match the expected file \(wrong bytes, not an interrupted download\); fetching it again/);
+    expect(out).not.toMatch(/maia-1500 is damaged \(a download was interrupted\)/);
   });
 
   it("refuses on a non-mac with one sentence", () => {
