@@ -142,17 +142,17 @@
 
   <header class="top">
     <div>
-      <h1 id="h1">[COPY: title]</h1>
-      <div class="sub" id="sub">[COPY: subtitle]</div>
+      <h1 id="h1">Keep the change: speed held, checks stricter, correctness unproven</h1>
+      <div class="sub" id="sub">BEFORE (<b>ac8168e</b>) and AFTER (main) each answered the same <b>115</b> questions three times in the harness, the test rig, on the same model and thinking budget. Her real games sit beside it as a second instrument.</div>
     </div>
     <button class="themebtn" id="themebtn" onclick="toggleTheme()">◐ Theme</button>
   </header>
 
-  <div class="caveat-banner" id="caveat">[COPY: caveat banner]</div>
+  <div class="caveat-banner" id="caveat">BEFORE is the code at <b>ac8168e</b>, just before the change reached main; AFTER is main, coach code unchanged since <b>1de3dc1</b>. Both answered the same questions on the same model and thinking budget. The harness hands AFTER a context shaped before the change, so its correctness numbers rate the code without its facts. Her real games are a second instrument and are never compared numerically with the harness. The method section lists every other limit, including the checks that could not run.</div>
 
   <div class="thesis">
-    <div class="lead" id="thesis-lead">[COPY: thesis lead]</div>
-    <div class="body" id="thesis-body">[COPY: thesis body]</div>
+    <div class="lead" id="thesis-lead">The change stays: speed held, the checks got stricter, and the harness could not rate AFTER's live correctness.</div>
+    <div class="body" id="thesis-body">Median wait was <b>5.5 s</b> before and <b>5.8 s</b> after. Answers passing every automatic check went from <b>304</b> of <b>345</b> to <b>294</b> of <b>345</b>. AFTER answered with fewer facts than it has live, because the harness hands it a context shaped before the change, and it said so. That gap is a limit of the instrument, not the live coach; the next eval must fix the context and re-run AFTER.</div>
   </div>
 
   <!-- KPI ROW -->
@@ -161,23 +161,23 @@
   <!-- CHART 1 -->
   <section class="panel">
     <div class="num">CHART 1 · THE HEADLINE</div>
-    <h2 id="c1-title">[COPY: chart 1 title]</h2>
-    <div class="why" id="c1-why">[COPY: chart 1 why it matters]</div>
-    <div class="q" id="c1-q">[COPY: chart 1 explainer]</div>
+    <h2 id="c1-title">Answers that passed every automatic check slipped slightly after the change</h2>
+    <div class="why" id="c1-why">This is the one number that pools every question, so a real drop in quality would show up here first.</div>
+    <div class="q" id="c1-q">Each row is a difficulty bucket, and the two dots give its share of answers that passed every automatic check, BEFORE and AFTER. Dot area grows with the number of questions.</div>
     <div class="legend" id="lg1"></div>
     <div class="chartbox" id="c1"></div>
     <button class="tbtn" onclick="tog('t1')">Show data table</button>
     <table class="dt" id="t1"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c1-take">[COPY: chart 1 takeaway]</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c1-take">Overall <b>304</b> of <b>345</b> before and <b>294</b> of <b>345</b> after, <b>88.1%</b> against <b>85.2%</b>. Direct-fact rose <b>72/87</b> to <b>74/87</b> and tactical-or-mate <b>50/69</b> to <b>52/69</b>. Needs-line carried the whole loss, <b>182/189</b> to <b>168/189</b>. The cause is stricter checking: canned fallback replies rose from <b>28</b> to <b>40</b>, and from <b>3</b> to <b>21</b> on live-board questions.</p></div>
     <div class="foot" id="c1-foot"></div>
   </section>
 
   <!-- CHART 2 -->
   <section class="panel">
     <div class="num">CHART 2</div>
-    <h2 id="c2-title">[COPY: chart 2 title]</h2>
-    <div class="why" id="c2-why">[COPY: chart 2 why it matters]</div>
-    <div class="q" id="c2-q">[COPY: chart 2 explainer]</div>
+    <h2 id="c2-title">AFTER named the engine's mate move far less often</h2>
+    <div class="why" id="c2-why">The rule forbids naming a move the fact list does not hold, so this is where the rule shows its cost.</div>
+    <div class="q" id="c2-q">The mate set is <b>7 positions</b> answered three times each. Each bar splits one version's answers by what the coach did with the engine's mate move.</div>
     <div class="two">
       <div>
         <div class="legend" id="lg2"></div>
@@ -185,23 +185,23 @@
       </div>
       <div class="side">
         <div class="num">THE OTHER INSTRUMENT</div>
-        <h3 id="c2s-title">[COPY: chart 2 side title]</h3>
+        <h3 id="c2s-title">Her real replies, checked against the hint ladder</h3>
         <div class="chartbox" id="c2s"></div>
         <div class="foot" id="c2s-foot"></div>
       </div>
     </div>
     <button class="tbtn" onclick="tog('t2')">Show data table</button>
     <table class="dt" id="t2"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c2-take">[COPY: chart 2 takeaway]</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c2-take">BEFORE named the engine's mate move <b>21 of 21</b>, citing stored analysis. AFTER managed <b>12 of 21</b>, refusing to name a best in <b>4</b> and naming a different move in <b>5</b>. On fork FK3, a proven forced loss, BEFORE told her she could escape in <b>5 of 6</b> answers and AFTER in <b>4 of 6</b>.</p></div>
     <div class="foot" id="c2-foot"></div>
   </section>
 
   <!-- CHART 3 -->
   <section class="panel">
     <div class="num">CHART 3</div>
-    <h2 id="c3-title">[COPY: chart 3 title]</h2>
-    <div class="why" id="c3-why">[COPY: chart 3 why it matters]</div>
-    <div class="q" id="c3-q">[COPY: chart 3 explainer]</div>
+    <h2 id="c3-title">Speed did not move, in the harness or in her games</h2>
+    <div class="why" id="c3-why">A slower coach would have been a real cost of the change, so speed had to hold on identical hardware.</div>
+    <div class="q" id="c3-q">Each dot places one version's typical wait against its share of answers passing every automatic check, the line reaching the slowest tenth. The small chart repeats the wait for her own chats.</div>
     <div class="two">
       <div>
         <div class="legend" id="lg3"></div>
@@ -209,49 +209,49 @@
       </div>
       <div class="side">
         <div class="num">THE OTHER INSTRUMENT</div>
-        <h3 id="c3s-title">[COPY: chart 3 side title]</h3>
+        <h3 id="c3s-title">Her live wait, before and after the cut</h3>
         <div class="chartbox" id="c3s"></div>
         <div class="foot" id="c3s-foot"></div>
       </div>
     </div>
     <button class="tbtn" onclick="tog('t3')">Show data table</button>
     <table class="dt" id="t3"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c3-take">[COPY: chart 3 takeaway]</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c3-take">Median wait was <b>5.5 s</b> before and <b>5.8 s</b> after, with p90 moving from <b>12.1 s</b> to <b>11.0 s</b>. Her live chats sat at <b>10.4 s</b> median before the cut and <b>8.1 s</b> after, p90 falling from <b>31.7 s</b> to <b>18.2 s</b>. Different questions, so the two are never compared.</p></div>
     <div class="foot" id="c3-foot"></div>
   </section>
 
   <!-- CHART 4 -->
   <section class="panel">
     <div class="num">CHART 4 · HER RECORD</div>
-    <h2 id="c4-title">[COPY: chart 4 title]</h2>
-    <div class="why" id="c4-why">[COPY: chart 4 why it matters]</div>
-    <div class="q" id="c4-q">[COPY: chart 4 explainer]</div>
+    <h2 id="c4-title">Her thumbs improved after the cut, on thin evidence</h2>
+    <div class="why" id="c4-why">Her thumbs are the signal from real play on the live build, the thing the harness cannot rate.</div>
+    <div class="q" id="c4-q">One dot per game at its start date. Its height is the share of that game's chat replies she marked down, its area the number of chats. Dashed lines mark the dates code reached main.</div>
     <div class="legend" id="lg4"></div>
     <div class="chartbox" id="c4"></div>
     <button class="tbtn" onclick="tog('t4')">Show data table</button>
     <table class="dt" id="t4"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c4-take">[COPY: chart 4 takeaway]</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c4-take">Before the cut she left <b>150</b> chat replies across <b>37 games</b>, <b>50</b> down and <b>37</b> up. After the cut, <b>35</b> replies across <b>4 games</b>, <b>7</b> down and <b>14</b> up. The direction is better, but <b>4 games</b> is too little to call a change in quality.</p></div>
     <div class="foot" id="c4-foot"></div>
   </section>
 
   <!-- CHART 5 -->
   <section class="panel">
     <div class="num">CHART 5 · WHY IT HELPED</div>
-    <h2 id="c5-title">[COPY: chart 5 title]</h2>
-    <div class="why" id="c5-why">[COPY: chart 5 why it matters]</div>
-    <div class="q" id="c5-q">[COPY: chart 5 explainer]</div>
+    <h2 id="c5-title">Five failure classes now have guards on main</h2>
+    <div class="why" id="c5-why">Each guard turns one of her past complaints into a test that fails if the behaviour ever comes back.</div>
+    <div class="q" id="c5-q">The table gives each failure class its mechanism, the commit that fixed it, the guard test and its status. Worked examples below show one test position answered by both versions.</div>
     <div class="chartbox" id="c5"></div>
     <div id="c5-ex"></div>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c5-take">[COPY: chart 5 takeaway]</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c5-take">Five failure classes now have a guard on main; the table names each commit and test. Guarded now: surface disagreements, flips on one position, quick looks sold as the pick, unpicked moves with no line, and hollow voice. Two classes stay open, and one, the board a few plies ahead, produced <b>5</b> of her <b>7</b> thumbs-down replies after the cut.</p></div>
     <div class="foot" id="c5-foot"></div>
   </section>
 
   <!-- CHART 6 -->
   <section class="panel">
     <div class="num">CHART 6 · HER WORDS</div>
-    <h2 id="c6-title">[COPY: chart 6 title]</h2>
-    <div class="why" id="c6-why">[COPY: chart 6 why it matters]</div>
-    <div class="q" id="c6-q">[COPY: chart 6 explainer]</div>
+    <h2 id="c6-title">Her notes point at the class that is still open</h2>
+    <div class="why" id="c6-why">Five of her seven thumbs-down notes after the cut describe the open class above, the board a few plies ahead.</div>
+    <div class="q" id="c6-q">Every note is verbatim from her feedback and dated, with nothing edited. Notes after the cut are shown first, and the button opens every earlier note.</div>
     <div id="c6-pasted"></div>
     <div id="c6"></div>
     <button class="tbtn" onclick="tog('c6more')">Show every feedback note</button>
@@ -262,9 +262,9 @@
   <!-- CHART 7 + 8 -->
   <section class="panel">
     <div class="num">CHART 7 · VOICE</div>
-    <h2 id="c7-title">[COPY: chart 7 title]</h2>
-    <div class="why" id="c7-why">[COPY: chart 7 why it matters]</div>
-    <div class="q" id="c7-q">[COPY: chart 7 explainer]</div>
+    <h2 id="c7-title">Voice tells held flat across the cut</h2>
+    <div class="why" id="c7-why">Hollow phrasing was a repeated complaint, and the count stayed flat, so there is nothing new to fix here.</div>
+    <div class="q" id="c7-q">Bars give voice tells per 100 model replies, before the cut against after: <b>22.7</b> before (<b>10 of 44</b>) and <b>21.9</b> after (<b>7 of 32</b>). Only <b>1 row</b> exists after the phrasing filter landed.</div>
     <div class="legend" id="lg7"></div>
     <div class="chartbox" id="c7"></div>
     <div class="foot" id="c7-foot"></div>
@@ -272,17 +272,17 @@
 
   <section class="panel">
     <div class="num">CHART 8 · THE DETERMINISTIC SUITES</div>
-    <h2 id="c8-title">[COPY: chart 8 title]</h2>
-    <div class="why" id="c8-why">[COPY: chart 8 why it matters]</div>
-    <div class="q" id="c8-q">[COPY: chart 8 explainer]</div>
+    <h2 id="c8-title">The fast checks on the coach's core path are green</h2>
+    <div class="why" id="c8-why">These suites are the cheap check that nothing on the coach's answer path broke while the change landed.</div>
+    <div class="q" id="c8-q">One row per automatic check suite, with the verdict read from its run file. The red cells are targets from an earlier plan that never merged, and none sits on the path that produces an answer.</div>
     <div id="c8"></div>
     <div class="foot" id="c8-foot"></div>
   </section>
 
   <section class="panel">
     <div class="num">METHOD AND LIMITS</div>
-    <h2 id="m-title">[COPY: method title]</h2>
-    <div class="q" id="method">[COPY: method and limits]</div>
+    <h2 id="m-title">How this was measured, and its limits</h2>
+    <div class="q" id="method">The harness is the test rig: it asks the coach a fixed set of <b>115</b> questions and records every answer. BEFORE is the code just before merge <b>6f1e9f4</b> reached main on <b>2026-09-02</b>, at <b>ac8168e</b>; AFTER is main today, coach code unchanged since <b>1de3dc1</b>. Each version answered the set <b>3 reps</b> each, <b>690</b> answers, on one model and one thinking budget, wait times from quiet runs only. Her record is read separately: <b>196 games</b>, <b>185 chat replies</b>, <b>46 feedback notes</b>, the serving build inferred, not recorded. The harness cannot rate AFTER's live correctness, because it hands the coach no verified hint and an old-shaped move-by-move analysis. It never runs the search the live coach runs first. A second server's copy of her history, <b>1 shadow game</b> and <b>3 chats</b>, is counted nowhere else, and only <b>1 row</b> exists after PRs 16/17. Ownership on harness answers is unchecked, and the chat-versus-ladder check broke on spoken moves; both stay unaudited.</div>
   </section>
 
   <footer class="pg" id="pgfoot"></footer>
@@ -638,8 +638,8 @@ function pct(a,b){return b?100*a/b:0;}
   }).join("")+`
     <div class="kpi">
       <div class="l">Decision</div>
-      <div class="v" style="font-size:19px;line-height:1.35;margin-top:8px" id="kpi-decision">[COPY: decision tile]</div>
-      <div class="d" id="kpi-decision-d">[COPY: decision tile detail]</div>
+      <div class="v" style="font-size:19px;line-height:1.35;margin-top:8px" id="kpi-decision">Keep the change, re-run AFTER next</div>
+      <div class="d" id="kpi-decision-d">Update the harness context to the post-change fact list, then re-run AFTER before any correctness claim.</div>
     </div>`;
 })();
 
