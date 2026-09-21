@@ -102,31 +102,43 @@ describe("engineLabelForFen against the real app Stockfish (FK1 safe; FK3 -- see
   // counter-threat/deflection SEE cannot see because it only ever looks at
   // ONE square), just manifesting on FK3 itself rather than only on FK5.
   //
-  // Under Stockfish 19, re-measured 2026-09-20 (three independent 800ms
-  // runs plus one 5000ms run, all four agreeing on the move): the engine no
-  // longer needs the deflection tactic at all. Its best move is Bc8 -- the
-  // attacked bishop on e6 simply retreats along the e6-d7-c8 diagonal to
-  // the back rank before Black's king on f6 can trap it, sidestepping the
-  // whole Nd7+/.../Kxe6/Nxf8+ complications tree 18 relied on. The PV shows
-  // White can still force some tactics a few moves later (Nd7+, Nxf8,
-  // Nxg6+, Nd5+, with Black's Nd6, Ke7, Nxc8, hxg6, Kd8 in reply -- the
-  // position stays sharp), but the line 16 plies deep still leaves White
-  // strictly ahead of what the board's raw material count implies: cp 869
-  // at 800ms, 884 at 5000ms, against a
-  // material baseline of 700 -- impliedLossCp comes out NEGATIVE, not
-  // merely non-forced, a cleaner escape than 18 found. Reported prominently
-  // in dispatch 4's findings -- NOT acted on here (changing FH-01's
-  // GAME_160_PROVEN_FORCED_IDS is outside this dispatch's explicit remit,
-  // and is the controller's call).
+  // Under Stockfish 19, re-measured 2026-09-20: the engine no longer needs
+  // the deflection tactic at all. Both moves this test accepts retreat the
+  // attacked e6 bishop out of the black king's (f6) and knight's (e8)
+  // reach before Black can trap it -- Bc8 along the e6-d7-c8 diagonal all
+  // the way to the back rank, or the shorter Bd7 (chess.js-confirmed
+  // legal, and d7 is attacked by neither the f6 king nor the e8 knight).
+  // The engine also leaves the e5 knight as bait: 24...Kxe5 runs into
+  // 25.Rd5+, covered by the e3 knight, so the king cannot actually win the
+  // piece. On a quiet machine (three 800ms runs, this file) Stockfish 19
+  // prefers Bc8 every time (cp 869-875); on a slower or shared runner it
+  // can prefer Bd7 instead at 800ms (observed on the GitHub macOS runner,
+  // Actions run 35560974955, and once locally under CPU contention the
+  // same afternoon) -- both are the attacked bishop retreating beyond the
+  // king's reach, and the real claim this test makes is that the position
+  // is NOT an engine-confirmed forced loss, not which retreat square wins
+  // the search race.
+  //
+  // Evaluated at 2000ms with Black to move after each retreat (this file,
+  // 2026-09-20, quiet machine): after Bc8, bestMove f8g7, cp -875 (White
+  // ahead 875cp); after Bd7, bestMove f8c5, cp -861 (White ahead 861cp).
+  // Both read strongly in White's favor, well clear of the 700cp material
+  // baseline in either direction, so impliedLossCp comes out NEGATIVE
+  // (engineLabelForFen(FK3_FEN, sf, 800) measured impliedLossCp -169 here)
+  // -- a cleaner escape than Stockfish 18 found, not merely non-forced.
+  // Reported prominently in dispatch 4's findings -- NOT acted on here
+  // (changing FH-01's GAME_160_PROVEN_FORCED_IDS is outside this
+  // dispatch's explicit remit, and is the controller's call).
   //
   // under Stockfish 18: bestMove e5d7 (Nd7+), forcedLossConfirmed false.
   // baselined under Stockfish 19, 2026-09-20 -- game 160 ply 58.
   it(
-    "FK3 (game 160 ply 58): the engine finds a full escape via Bc8, a quiet retreat that sidesteps the deflection tactic entirely -- NOT engine-confirmed forced",
+    "FK3 (game 160 ply 58): the engine finds a full escape by retreating the attacked bishop (Bc8 or Bd7), beyond the black king's reach -- NOT engine-confirmed forced",
     async () => {
       const label = await engineLabelForFen(FK3_FEN, sf, ENGINE_MOVETIME_MS);
       expect(label.forcedLossConfirmed).toBe(false);
-      expect(label.bestMove).toBe("e6c8"); // Bc8
+      expect(["e6c8", "e6d7"]).toContain(label.bestMove); // Bc8 or Bd7
+      expect(label.impliedLossCp).toBeLessThan(0);
     },
     15000
   );
