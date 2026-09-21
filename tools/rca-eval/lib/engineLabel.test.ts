@@ -89,29 +89,44 @@ describe("engineLabelForFen against the real app Stockfish (FK1 safe; FK3 -- see
   }, 20000);
   afterAll(() => sf.quit());
 
-  // DISPATCH 4 FINDING, not an assumption: the dispatch's problem statement
-  // asked for FK3 to be re-checked as "plausibly right" only for FK5's h3
-  // class, and dispatch 3's report called FK3 "never in question." Running
-  // the real engine against FK3 (this exact fen, cross-checked at movetimes
-  // 800/1200/3000/5000/6000ms, all agreeing) shows it is NOT engine-
-  // confirmed forced: white has Nd7+ (a check!), and after the only legal
-  // reply (...Kxe6, capturing the bishop -- forcedLoss.ts's own SEE search
-  // stops here, since it only resolves recaptures on square e6, the ONE
-  // square the last capture landed on), white plays Nxf8+ -- a capture on a
-  // DIFFERENT square recovering the bishop just lost, an even trade with
-  // tempo, confirmed fully legal via chess.js's own move generator (not
-  // just the engine's PV text). This is the exact class of blind spot the
-  // dispatch names (a counter-threat/deflection SEE cannot see because it
-  // only ever looks at ONE square), just manifesting on FK3 itself rather
-  // than only on FK5. Reported prominently in dispatch 4's findings -- NOT
-  // acted on here (changing FH-01's GAME_160_PROVEN_FORCED_IDS is outside
-  // this dispatch's explicit remit, and is the controller's call).
+  // DISPATCH 4 FINDING (Stockfish 18), superseded by direct Stockfish 19
+  // measurement, 2026-09-20: under 18, cross-checked at movetimes
+  // 800/1200/3000/5000/6000ms (all agreeing), the engine's best move was
+  // Nd7+ (a check!), and after the only legal reply (...Kxe6, capturing the
+  // bishop -- forcedLoss.ts's own SEE search stops here, since it only
+  // resolves recaptures on square e6, the ONE square the last capture
+  // landed on), white played Nxf8+ -- a capture on a DIFFERENT square
+  // recovering the bishop just lost, an even trade with tempo, confirmed
+  // fully legal via chess.js's own move generator (not just the engine's
+  // PV text). This was the exact class of blind spot the dispatch names (a
+  // counter-threat/deflection SEE cannot see because it only ever looks at
+  // ONE square), just manifesting on FK3 itself rather than only on FK5.
+  //
+  // Under Stockfish 19, re-measured 2026-09-20 (three independent 800ms
+  // runs plus one 5000ms run, all four agreeing on the move): the engine no
+  // longer needs the deflection tactic at all. Its best move is Bc8 -- the
+  // attacked bishop on e6 simply retreats along the e6-d7-c8 diagonal to
+  // the back rank before Black's king on f6 can trap it, sidestepping the
+  // whole Nd7+/.../Kxe6/Nxf8+ complications tree 18 relied on. The PV shows
+  // White can still force some tactics a few moves later (Nd7+, Nxf8,
+  // Nxg6+, Nd5+, with Black's Nd6, Ke7, Nxc8, hxg6, Kd8 in reply -- the
+  // position stays sharp), but the line 16 plies deep still leaves White
+  // strictly ahead of what the board's raw material count implies: cp 869
+  // at 800ms, 884 at 5000ms, against a
+  // material baseline of 700 -- impliedLossCp comes out NEGATIVE, not
+  // merely non-forced, a cleaner escape than 18 found. Reported prominently
+  // in dispatch 4's findings -- NOT acted on here (changing FH-01's
+  // GAME_160_PROVEN_FORCED_IDS is outside this dispatch's explicit remit,
+  // and is the controller's call).
+  //
+  // under Stockfish 18: bestMove e5d7 (Nd7+), forcedLossConfirmed false.
+  // baselined under Stockfish 19, 2026-09-20 -- game 160 ply 58.
   it(
-    "FK3 (game 160 ply 58): the engine finds a full escape via Nd7+ .../Kxe6 Nxf8+ (deflection SEE cannot see) -- NOT engine-confirmed forced",
+    "FK3 (game 160 ply 58): the engine finds a full escape via Bc8, a quiet retreat that sidesteps the deflection tactic entirely -- NOT engine-confirmed forced",
     async () => {
       const label = await engineLabelForFen(FK3_FEN, sf, ENGINE_MOVETIME_MS);
       expect(label.forcedLossConfirmed).toBe(false);
-      expect(label.bestMove).toBe("e5d7"); // Nd7+
+      expect(label.bestMove).toBe("e6c8"); // Bc8
     },
     15000
   );
@@ -170,23 +185,42 @@ describe("engineLabelForFen re-adjudicating FK4/FK5/FK6 (dispatch 4 task 2, mine
     15000
   );
 
-  // FK6 (game 134, ply 42) -- white's f5 pawn hangs to the queen. Repeated
-  // clean-machine 800ms reads land RIGHT ON the threshold and flip the
-  // boolean run to run with the SAME fen and movetime (5 independent runs:
-  // 148/159/145/164/145 -- mean 152.2, three below 150 and two above): this
-  // is exactly the noise band ENGINE_FORCED_LOSS_THRESHOLD_CP exists to
-  // stay clear of, not a position search depth resolves cleanly one way.
-  // NOT reliably engine-confirmed at the app's own operating movetime --
-  // relabeled honestly in fixtures.ts, same treatment as FK5. This
-  // assertion checks the position sits IN the noise band (not a comfortable
-  // pass OR a comfortable fail) rather than asserting a single boolean that
-  // this exact position is known to flip on reruns.
+  // FK6 (game 134, ply 42) -- white's f5 pawn is attacked by the queen on
+  // f4. Under Stockfish 18, repeated clean-machine 800ms reads landed RIGHT
+  // ON the threshold and flipped the boolean run to run with the SAME fen
+  // and movetime (5 independent runs: 148/159/145/164/145 -- mean 152.2,
+  // three below 150 and two above): this was exactly the noise band
+  // ENGINE_FORCED_LOSS_THRESHOLD_CP exists to stay clear of.
+  //
+  // Under Stockfish 19, re-measured 2026-09-20 (three independent 800ms
+  // runs plus one 5000ms run): the read is no longer a coin flip near the
+  // threshold -- it has flipped SIGN. 19's own best move is 22.Nf3, which
+  // offers the f5 pawn; after 22...Qxf5 the queen no longer guards d4 (it
+  // was d4's only defender from f4), so 23.Nxd4 wins the pawn back, pawn
+  // for pawn. No queen was ever on d4. A further queen trade (23...Qg4
+  // 24.Qxg4 hxg4) simplifies the position but changes no material.
+  // impliedLossCp came out NEGATIVE in every run measured this round: -61
+  // in this task's three runs at 800ms, -54 and -42 in two earlier gate
+  // runs the same day, -41 at 5s -- the engine's own best line runs
+  // slightly AHEAD of what the board's raw material implies, the opposite
+  // of "close to the forced-loss threshold." Still NOT engine-confirmed
+  // forced, same conclusion as 18, but the old "sits in the noise band
+  // around the threshold" sentence is no longer true -- relabeled honestly,
+  // same treatment as FK5. The band below (-130, 20) covers all four
+  // measured values while staying comfortably clear of both zero and the
+  // +150 forced boundary, rather than asserting a single value the
+  // position is not known to hold exactly.
+  //
+  // under Stockfish 18: 5 runs at 800ms gave impliedLossCp
+  // 148/159/145/164/145 (noise band straddling the +150 threshold).
+  // baselined under Stockfish 19, 2026-09-20 -- game 134 ply 42.
   it(
-    "FK6 (game 134 ply 42): sits in the noise band around the threshold at 800ms -- NOT reliably engine-confirmed",
+    "FK6 (game 134 ply 42): impliedLossCp has flipped negative under 19 (Nxd4 recovers the f5 pawn) -- comfortably NOT engine-confirmed, no longer near the threshold",
     async () => {
       const label = await engineLabelForFen("r4nk1/pp3pp1/2p5/2P2P1p/2Pp1q2/P2P4/1B1NQPPP/R4RK1 w - - 0 22", sf, ENGINE_MOVETIME_MS);
-      expect(label.impliedLossCp).toBeGreaterThan(100);
-      expect(label.impliedLossCp).toBeLessThan(200);
+      expect(label.forcedLossConfirmed).toBe(false);
+      expect(label.impliedLossCp).toBeGreaterThan(-130);
+      expect(label.impliedLossCp).toBeLessThan(20);
     },
     15000
   );
