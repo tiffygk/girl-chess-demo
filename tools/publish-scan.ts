@@ -10,7 +10,12 @@
 // every TRACKED file in the repo except anything under data/ (the owner's
 // db and its scratch copies, never source text worth scanning), the same
 // way, against the same pattern file, and is wired into `npm run gate`
-// (tools/gate.ts) so a bad merge cannot go green.
+// (tools/gate.ts). It is one of three layers on the owner's machine (guard
+// #16, this scan, and manual review before a push), not a single point of
+// truth: this scan SKIPs -- exit 0, no PASS printed -- wherever the pattern
+// file is absent or empty, CI included (CI has no gitignored pattern file
+// at all), so a green run here proves only that the wordlist it had was
+// clean, never that nothing leaked.
 //
 // The pattern file itself is never read here except at runtime, never
 // copied, never printed in full, and never committed. See CLAUDE.md for
@@ -174,7 +179,12 @@ function main() {
   }
 
   if (hits.length > 0) {
-    for (const h of hits) console.log(`${h.file}:${h.lineNo}: ${h.line}`);
+    // Name the file and line only -- never the matched text. The matched
+    // line is exactly the string this scan exists to keep out of any
+    // terminal, log, or CI output; printing it here would be the leak this
+    // whole script exists to prevent. The developer opens the file.
+    for (const h of hits) console.log(`${h.file}:${h.lineNo}`);
+    console.log(`${hits.length} match${hits.length === 1 ? "" : "es"} found; open each file:line above.`);
     console.log(`VERDICT: FAIL`);
     process.exit(1);
   }
