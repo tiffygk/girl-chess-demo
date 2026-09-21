@@ -192,7 +192,7 @@
     </div>
     <button class="tbtn" onclick="tog('t2')">Show data table</button>
     <table class="dt" id="t2"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c2-take">BEFORE named the engine's mate move <b>21 of 21</b>, citing stored analysis. AFTER managed <b>12 of 21</b>, refusing to name a best in <b>4</b> and naming a different move in <b>5</b>. On fork FK3, a proven forced loss, BEFORE told her she could escape in <b>5 of 6</b> answers and AFTER in <b>4 of 6</b>.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p id="c2-take">BEFORE named the engine's mate move <b>21 of 21</b>, citing stored analysis. AFTER managed <b>12 of 21</b>, refusing to name a best in <b>4</b> and naming a different move in <b>5</b>. On fork FK3, a forced trade with one escape line, BEFORE named that line in <b>5 of 6</b> answers and AFTER in <b>2 of 6</b>.</p></div>
     <div class="foot" id="c2-foot"></div>
   </section>
 
@@ -516,16 +516,18 @@ const AB={
  ],
  "hand": {
   "fh": {
-   "fixture": "FK3, game 160, a proven forced loss of a piece",
+   "fixture": "FK3, game 160: a forced trade with one escape line, knight to d7 with check (Nd7+), per the fixture's 2026-07-31 ruling",
    "before": {
     "escape": 5,
-    "n": 6
+    "n": 6,
+    "overclaim": 3
    },
    "after": {
-    "escape": 4,
-    "n": 6
+    "escape": 2,
+    "n": 6,
+    "overclaim": 1
    },
-   "note": "the mechanical escape detector flagged none of these 12 rows; the controller read each in full"
+   "note": "'escape' = the answer names the Nd7+ line; 'overclaim' = it says she keeps both pieces or comes out ahead. The mechanical detector flagged none of the 12; the controller read each in full."
   },
   "nm": {
    "before": {
@@ -566,13 +568,104 @@ const AB={
 };
 /* cause-and-guard map rows: from "Girl Chess — Coach correctness, cause and guard map (2026-09-20).md" */
 const MECH=[
- {"cls":"(a) whose move it was, miscounted","mech":"party was recomputed from ply parity at a dozen sites; now moves.side is written from the move object and every reader uses it (manager.ts:274, :1214, :1254)","commit":"6f1e9f4","date":"2026-09-02","guards":["manager.test.ts:144","missedWins.test.ts:66","turningPoints.test.ts:931","manager.test.ts:2241, :2842","chat.opponentFocus.test.ts:119, :175","chat.sideLabel.test.ts:109"],"guardMissing":"engine-line (pv) side stamping, Phase C never merged","axis":"correct (ladder agreement); none for pv lines","traces":"318 (conversational, open)","status":"open"},
- {"cls":"(b) advice differs between the ladder and the chat","mech":"chat on an unsearched live position ran a 500 ms unverified look while the ladder ran its own 1.5 s verified search; now chat calls the ladder's searchAndCacheVerifiedHint (manager.ts:1405, call site :1799)","commit":"e43a905","date":"2026-09-08","guards":["manager.test.ts:641, :863, :947, :974"],"guardMissing":"","axis":"correct (ladder agreement)","traces":"296–298; 319 (by her account, not re-derivable)","status":"fixed"},
- {"cls":"(c) advice flips on the same position","mech":"the deep search was wall-clock bounded with no position guard, so two searches could pick near-equal moves; now a verified hint for an unchanged fen is reused (manager.ts:1411)","commit":"da3be2d","date":"2026-08-28","guards":["manager.test.ts:723, :747, :839"],"guardMissing":"","axis":"correct (pre/post split at the guard)","traces":"295, 296, 298 (game 192)","status":"fixed"},
- {"cls":"(d) the board a few plies ahead read wrong","mech":"a question naming a later ply or a considered move gets no stored board for that moment; Phase D (moment board, stale-focus drop, after-board for a pending move) was planned 2026-09-01 and never merged","commit":"","date":"","guards":[],"guardMissing":"no chat.momentBoard.test.ts, no namesAnotherMoment, no afterBoard","axis":"none","traces":"307, 308, 309; 327, 329","status":"open"},
- {"cls":"(e) an unverified quick look stated as the recommendation","mech":"same root as (b): the fast look could be worded as the recommended move; now a chat recommendation comes from the verified search by construction, the fast look only when that returns nothing","commit":"e43a905","date":"2026-09-08","guards":["manager.test.ts:641, :863, :947, :974","chat.perPly.test.ts:661 (verified wording)"],"guardMissing":"no test pins that the fast-path prompt carries no 'verified' wording","axis":"correct + latency","traces":"330, 333","status":"fixed"},
- {"cls":"(f) a move she names but has not picked up gets no line","mech":"parseCandidateMove resolves the named move; resolveCandidateLine runs one verified search on the position after it, cached per fen and move (manager.ts:1433)","commit":"cd488df","date":"2026-09-08","guards":["candidateMove.test.ts:40 (18 cases)","manager.test.ts:1125, :1171, :1199, :1233, :1270, :1355","candidateLine.test.ts:37, :54, :59, :75"],"guardMissing":"","axis":"latency + one fact","traces":"184, 269, README image 01","status":"fixed"},
- {"cls":"(g) hollow voice","mech":"normalizeVoice folds dashes and swaps an adjudicated list of tells on both the chat and the band; fifteen static templates rewritten; persona bans added","commit":"d38cf61, 974fe80","date":"2026-09-08","guards":["textNormalize.test.ts:34–123 (13 cases)","templateVoice.test.ts:194, :211"],"guardMissing":"","axis":"none (voice-tells.ts is a report, not a gate)","traces":"recurrence counts, not single traces","status":"fixed"}
+ {
+  "cls": "(a) whose move it was, miscounted",
+  "mech": "party was recomputed from ply parity at a dozen sites; now moves.side is written from the move object and every reader uses it (manager.ts:274, :1214, :1254)",
+  "commit": "6f1e9f4",
+  "date": "2026-09-02",
+  "guards": [
+   "manager.test.ts:144",
+   "missedWins.test.ts:66",
+   "turningPoints.test.ts:931",
+   "manager.test.ts:2241, :2842",
+   "chat.opponentFocus.test.ts:119, :175",
+   "chat.sideLabel.test.ts:109"
+  ],
+  "guardMissing": "engine-line (pv) side stamping, Phase C never merged",
+  "axis": "correct (ladder agreement); none for pv lines",
+  "traces": "318 (conversational, open)",
+  "status": "open"
+ },
+ {
+  "cls": "(b) advice differs between the ladder and the chat",
+  "mech": "chat on an unsearched live position ran a 500 ms unverified look while the ladder ran its own 1.5 s verified search; now chat calls the ladder's searchAndCacheVerifiedHint (manager.ts:1405, call site :1799)",
+  "commit": "e43a905",
+  "date": "2026-09-08",
+  "guards": [
+   "manager.test.ts:641, :863, :947, :974"
+  ],
+  "guardMissing": "",
+  "axis": "correct (ladder agreement)",
+  "traces": "296–298; 319 (by her account, not re-derivable)",
+  "status": "fixed"
+ },
+ {
+  "cls": "(c) advice flips on the same position",
+  "mech": "the deep search was wall-clock bounded with no position guard, so two searches could pick near-equal moves; now a verified hint for an unchanged fen is reused (manager.ts:1411)",
+  "commit": "da3be2d",
+  "date": "2026-08-28",
+  "guards": [
+   "manager.test.ts:723, :747, :839"
+  ],
+  "guardMissing": "",
+  "axis": "correct (pre/post split at the guard)",
+  "traces": "295, 296, 298 (game 192; the 2026-09-08 checkpoint cites 296–298)",
+  "status": "fixed"
+ },
+ {
+  "cls": "(d) the board a few plies ahead read wrong",
+  "mech": "a question naming a later ply or a considered move gets no stored board for that moment; Phase D (moment board, stale-focus drop, after-board for a pending move) was planned 2026-09-01 and never merged",
+  "commit": "",
+  "date": "",
+  "guards": [],
+  "guardMissing": "no chat.momentBoard.test.ts, no namesAnotherMoment, no afterBoard",
+  "axis": "none",
+  "traces": "307, 308, 309; 327, 329",
+  "status": "open"
+ },
+ {
+  "cls": "(e) an unverified quick look stated as the recommendation",
+  "mech": "same root as (b): the fast look could be worded as the recommended move; now a chat recommendation comes from the verified search by construction, the fast look only when that returns nothing",
+  "commit": "e43a905",
+  "date": "2026-09-08",
+  "guards": [
+   "manager.test.ts:641, :863, :947, :974",
+   "chat.perPly.test.ts:661 (verified wording)"
+  ],
+  "guardMissing": "no test pins that the fast-path prompt carries no 'verified' wording",
+  "axis": "correct + latency",
+  "traces": "330, 333",
+  "status": "fixed"
+ },
+ {
+  "cls": "(f) a move she names but has not picked up gets no line",
+  "mech": "parseCandidateMove resolves the named move; resolveCandidateLine runs one verified search on the position after it, cached per fen and move (manager.ts:1433)",
+  "commit": "cd488df",
+  "date": "2026-09-08",
+  "guards": [
+   "candidateMove.test.ts:40 (18 cases)",
+   "manager.test.ts:1125, :1171, :1199, :1233, :1270, :1355",
+   "candidateLine.test.ts:37, :54, :59, :75"
+  ],
+  "guardMissing": "",
+  "axis": "latency + one fact",
+  "traces": "184, 269, README image 01",
+  "status": "fixed"
+ },
+ {
+  "cls": "(g) hollow voice",
+  "mech": "normalizeVoice folds dashes and swaps an adjudicated list of tells on both the chat and the band; fifteen static templates rewritten; persona bans added",
+  "commit": "d38cf61, 974fe80",
+  "date": "2026-09-08",
+  "guards": [
+   "textNormalize.test.ts:34–123 (19 cases)",
+   "templateVoice.test.ts:194, :211"
+  ],
+  "guardMissing": "",
+  "axis": "none (voice-tells.ts is a report, not a gate)",
+  "traces": "recurrence counts, not single traces",
+  "status": "fixed"
+ }
 ];
 /* worked examples: chosen by the controller from rows the suites flagged in one arm and not the other */
 const EXAMPLES=[
@@ -590,9 +683,9 @@ const EXAMPLES=[
  {
   "fixtureId": "FK3 (fork arm, rep 1)",
   "question": "can i avoid losing a piece here?",
-  "fact": "no: game 160's proven forced loss, one of the two attacked pieces falls whatever she plays",
-  "flaggedBy": "the controller's hand audit (the mechanical escape detector flagged neither)",
-  "flaggedArm": "BEFORE",
+  "fact": "a forced trade, not a loss: knight to d7 with check (Nd7+) is the engine's escape, the fixture's own ruling of 2026-07-31",
+  "flaggedBy": "the controller's hand audit (the mechanical detector flagged neither)",
+  "flaggedArm": "AFTER",
   "before": "yes. your knight on e5 and bishop on e6 are both attacked by mallow's king on f6, and neither is defended right now.\n\nplay your knight to d7, check. if mallow takes your bishop with the king, your knight takes the bishop on f8 with check too, then grabs the pawn on h7. you come out ahead in the trade instead of just losing a piece for nothing.",
   "after": "your bishop on e6 is attacked by mallow's king, and nothing defends it. your knight on e5 is also attacked by that same king, undefended too. you can't save both with one move.\n\nmove your bishop, say to f5 or c8, and keep it. the knight on e5 can then be taken by the king, but you get to choose which piece you'd rather keep working, don't try to save both at once.",
   "beforeMs": 4950,
@@ -712,7 +805,8 @@ function pct(a,b){return b?100*a/b:0;}
       ["mate arm: named the engine's mate move",`${AB.codes.before.oneFact.named} of ${AB.codes.before.oneFact.n}`,`${AB.codes.after.oneFact.named} of ${AB.codes.after.oneFact.n}`,"nm row flags, each read by the controller"],
       ["mate arm: refused to name a best",AB.codes.before.oneFact.refused,AB.codes.after.oneFact.refused,"controller classification"],
       ["mate arm: named a different move",AB.codes.before.oneFact.other,AB.codes.after.oneFact.other,"controller classification"],
-      ["fork FK3: claimed she can escape a proven forced loss",`${AB.hand.fh.before.escape} of ${AB.hand.fh.before.n}`,`${AB.hand.fh.after.escape} of ${AB.hand.fh.after.n}`,"controller hand audit; the detector flagged 0 of 12"],
+      ["fork FK3 (a forced trade): named the engine's escape, knight to d7 with check",`${AB.hand.fh.before.escape} of ${AB.hand.fh.before.n}`,`${AB.hand.fh.after.escape} of ${AB.hand.fh.after.n}`,"controller hand audit against the fixture's 2026-07-31 ruling; the detector flagged 0 of 12"],
+      ["fork FK3: overclaimed (keeps both pieces, or comes out ahead)",AB.hand.fh.before.overclaim,AB.hand.fh.after.overclaim,"controller hand audit"],
       ["la suite (ladder agreement over harness rows)",`${AB.laSuite.verdict}`,`${AB.laSuite.verdict}`,AB.laSuite.reason],
       ["fork arm: known-best move","UNAUDITED","UNAUDITED",AB.laExcluded.fork],
       ["board-live arm: known-best move","UNAUDITED","UNAUDITED",AB.laExcluded["board-live"]]]);
@@ -850,7 +944,7 @@ function pct(a,b){return b?100*a/b:0;}
   });
   $("c7").appendChild(s);
   legend($("lg7"),[{k:"before the cut",c:"var(--before)"},{k:"after the cut",c:"var(--after)"}]);
-  $("c7-foot").innerHTML=`<code>voice-tells.ts</code> is a report, never a gate. Only ${AGREE.post1617.n} model reply exists after PRs 11 and 12 (the normalizer and template rewrite), so no claim is made about them. Source: <code>deterministic/voice-0804.txt</code>, <code>voice-0902.txt</code>.`;
+  $("c7-foot").innerHTML=`<code>voice-tells.ts</code> is a report, never a gate. Only ${AGREE.post1617.n} model reply exists after PRs 11–18 landed on 2026-09-08 (the normalizer and template rewrite among them), so no claim is made about them. "Before the cut" here runs from 2026-08-04, the report's own start. Source: <code>deterministic/voice-0804.txt</code>, <code>voice-0902.txt</code>.`;
 })();
 
 /* ============================ CHART 8 — deterministic suite verdict strip ============================ */
@@ -861,7 +955,7 @@ function pct(a,b){return b?100*a/b:0;}
     h+=`<div style="margin-top:10px"><b style="font-size:13px">${sname.toUpperCase()}</b> <span class="foot" style="margin:0 0 0 8px">${esc(NOTE[sname]||"")}</span><div class="verd">`+evals.map(e=>{const v=(e.v||"").toLowerCase();const cls=v==="pass"?"pass":(v==="red"?"red":"dnr");const lab=v==="did-not-run"?"DID-NOT-RUN":v.toUpperCase();return `<span class="cell ${cls}">${esc(e.id)} · ${esc(lab)}</span>`;}).join("")+"</div></div>";
   });
   $("c8").innerHTML=h;
-  $("c8-foot").innerHTML=`Verdicts are read from each run file's <code>verdict</code> field; nothing here is typed in. Run on main <code>1de3dc1</code>, quiet machine, 2026-09-21 02:00 UTC; <code>npm run gate</code> exit 0 the same night. The RED cells are acceptance targets from an earlier plan that never merged; none of them is on the coach's answer path under test. Source: <code>deterministic/2026-09-21-{db,fm,ct,pc,st}.json</code>.`;
+  $("c8-foot").innerHTML=`Verdicts are read from each run file's <code>verdict</code> field; nothing here is typed in. Run on main <code>1de3dc1</code>, quiet machine, about 02:00 UTC on 2026-09-21; <code>npm run gate</code> exit 0 the same night. The RED cells are acceptance targets from an earlier plan that never merged; none of them is on the coach's answer path under test. Source: <code>deterministic/2026-09-21-{db,fm,ct,pc,st}.json</code>.`;
 })();
 
 /* ============================ footer ============================ */
