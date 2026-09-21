@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { COACH_BACKEND_KEY, COACH_BACKEND_OPTIONS, readCoachBackendPref } from "./coachBackendPref";
+import {
+  COACH_BACKEND_KEY,
+  COACH_BACKEND_OPTIONS,
+  readCoachBackendPref,
+  DEV_FLAG_KEY,
+  readDevFlag,
+  visibleCoachBackendOptions,
+} from "./coachBackendPref";
 
 // Task 4 (warm-coach-backend round): pulled the coach-voice picker's wire
 // tokens/default out of GamePage.tsx into their own module so this has a
@@ -26,7 +33,8 @@ describe("coachBackendPref", () => {
   });
 
   it("honors an explicitly stored pref", () => {
-    expect(readCoachBackendPref(fakeStorage({ [COACH_BACKEND_KEY]: "claude" }))).toBe("claude");
+    // The "claude" case moved to its own dev-flag-aware test below
+    // (owner ruling 2026-09-21: claude reads as agent-sdk unless gc-dev is "1").
     expect(readCoachBackendPref(fakeStorage({ [COACH_BACKEND_KEY]: "ollama" }))).toBe("ollama");
     expect(readCoachBackendPref(fakeStorage({ [COACH_BACKEND_KEY]: "template" }))).toBe("template");
     expect(readCoachBackendPref(fakeStorage({ [COACH_BACKEND_KEY]: "agent-sdk" }))).toBe(
@@ -38,5 +46,31 @@ describe("coachBackendPref", () => {
     const values = COACH_BACKEND_OPTIONS.map((o) => o.value);
     expect(values).toEqual(expect.arrayContaining(["claude", "ollama", "template", "agent-sdk"]));
     expect(COACH_BACKEND_OPTIONS).toHaveLength(4);
+  });
+
+  it("labels the warm backend as the recommended Claude and ollama as local", () => {
+    // Red when: either label is reverted to its pre-2026-09-21 text.
+    const byValue = Object.fromEntries(COACH_BACKEND_OPTIONS.map((o) => [o.value, o.label]));
+    expect(byValue["agent-sdk"]).toBe("Claude (Recommended)");
+    expect(byValue.ollama).toBe("Local Ollama");
+    expect(byValue.template).toBe("templates only");
+  });
+
+  it("hides the claude cli option unless the dev flag is on", () => {
+    // Red when: the dev filter is removed (claude shows with the flag off).
+    expect(visibleCoachBackendOptions(false).map((o) => o.value)).toEqual(["agent-sdk", "ollama", "template"]);
+    expect(visibleCoachBackendOptions(true).map((o) => o.value)).toContain("claude");
+  });
+
+  it("reads a stored claude pref as agent-sdk when the dev flag is off", () => {
+    // Red when: readCoachBackendPref returns the stored value without the dev check.
+    expect(readCoachBackendPref(fakeStorage({ [COACH_BACKEND_KEY]: "claude" }))).toBe("agent-sdk");
+    expect(readCoachBackendPref(fakeStorage({ [COACH_BACKEND_KEY]: "claude", [DEV_FLAG_KEY]: "1" }))).toBe("claude");
+  });
+
+  it("reads the dev flag as off when storage throws", () => {
+    // Red when: readDevFlag lets the getItem throw escape instead of returning false.
+    const throwing: Pick<Storage, "getItem"> = { getItem: () => { throw new Error("blocked"); } };
+    expect(readDevFlag(throwing)).toBe(false);
   });
 });
