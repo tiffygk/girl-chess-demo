@@ -19,6 +19,8 @@ See docs/changelog.md#push-freshness-rule-2026-08-26
 
 Publishing: the vault's publishing rules (not in this repo, internal policy, never committed) are the authority on what may go to GitHub. The repo is public. A push needs her word every time; re-scan for identifiers if the demo db changes. The publishing doc lives in the owner's vault under the `GitHub/` folder. No commit message, doc, or PR body may name why this repo exists or who it is for: commit, push, and a local `npm run gate` enforce it. CI checks out a fresh clone that cannot see the gitignored wordlist by design, so there the merge-time scan is a no-op, not real coverage.
 
+Note (2026-09-20, audience-scrub round, PR #23): the local `.git/hooks/commit-msg` that enforces the commit-message half of this is untracked (git hooks never are) and has no tracked source anywhere in this repo to keep in sync by hand -- it was edited in place to add the same git-common-dir fallback as guard #16 (`.claude/hooks/pretooluse-bash-guard.sh`) so a worktree with no `.claude/hooks/.push-guard-patterns` symlink still gets scanned. If this hook is ever regenerated or reinstalled, carry that fallback forward.
+
 Durability rule: conversation state is not real until the bytes are verified on disk. Every owner ask lands in the ledger in the same turn it is made.
 See docs/changelog.md#durability-rule-2026-08-01
 
