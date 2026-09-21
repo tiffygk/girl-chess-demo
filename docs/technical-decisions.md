@@ -1,101 +1,71 @@
-# The coach's advice was sometimes wrong, and it wasn't the model.
+# Technical decisions
 
-*Why this matters: the coach was giving confidently wrong chess answers. The obvious read is "the model isn't smart enough, try a bigger one." I measured before I believed that story. The real problem was a fact gap, not a model-quality gap: the coach was doing chess reasoning it should never have been doing, from facts it was never given. Feeding it the facts the app had already computed fixed accuracy and latency at the same time, for a smaller model and a larger one, which turned model choice into a downstream decision instead of the fix.*
+Three decisions from building this chess coach. In each one the obvious fix was the wrong one. I measured before I believed it. All three shipped on 2026-07-22.
 
-*Status: shipped 2026-07-22, merged to main. Placement-claim errors: 7.5% -> 0. Explanation-question latency: 13-15s -> ~4s. Both numbers held for Sonnet and Opus.*
+## The coach gave wrong answers, and a bigger model was not the fix
 
-## What was wrong
+The coach answers questions about your game while you play. It used to work out where your pieces were by reading back through the move list, and it got that wrong often enough to matter. Now it reads the position the app has already computed. A check catches any claim that contradicts the board before the answer reaches you.
 
-The coach answers questions about your game in chat. That meant handing the model a game history and letting it reason out where pieces were and what a position meant. It got that wrong often enough to matter: 1 in 13 piece-placement statements were false, and nothing checked them before they reached the screen. Explanation questions ("why is this move good") were also the slowest surface, 13-15 seconds, because the model was doing chess reasoning live instead of reading an answer that already existed.
+For the player: wrong statements about where pieces stand went from 7.5% to 0. The wait on an explanation question went from 13 to 15 seconds down to about 4 seconds.
 
-## The fix I didn't reach for
+### The evidence
 
-The tempting fix is a bigger model: Opus over Sonnet, reasoning its way to a better answer. I didn't do that first, on purpose. A model asked to reconstruct a chess position from a move list is redoing work the app already did, more slowly and less reliably, no matter its size.
+Before the change, 1 in 13 piece-placement statements were false, and nothing checked them. The same questions were also the slowest on the whole product, because the model was working out the position live instead of reading an answer the app already held.
 
-## The fix I did
+Both numbers held for Sonnet and Opus. The two models were tied on these two measures. A bigger model does not fill a gap in the facts. It reasons more fluently from the same missing information.
 
-The engine had already analyzed every ply, and the hint system had already computed its own facts, both sitting in the database, unused by chat. I threaded that persisted analysis into the coach's fact list instead of asking the model to re-derive it, and added a deterministic placement-claim check that catches a contradiction before it renders. The coach went from reasoning about the position to reading it.
+Getting an honest measurement took two attempts. The first one leaned on a language model as the judge. Its "wrong" pile and its "accurate" pile disagreed with ground truth at almost the same rate, 13% versus 5%. No discriminating power, so I retired it. One of the mechanical checks was flattering itself too. It asked whether the coach knew about the move being considered, and its raw pass rate read about 70%, because it counted a square as known whenever a piece happened to be there already. A hand audit put the genuine rate near 4 in 14, and that is the number I reported.
 
-## One question the model never gets the board for
+The rebuilt measurement, baseline v2, runs the same fixed questions against both models: completeness 100% for both, length within budget 25% for Sonnet and 3% for Opus, jargon-free 53% and 15%, latency medians about 9.7 seconds for both.
 
-A rule, not the model, decides whether a question is about the position or about chess in general. Pointing at a hint, a card or a pending move forces the board route; ambiguity goes to the board route too, because a general answer to a board question can be false about a position the model never saw. The general route gets no FEN and no engine lines, only the game's status, outcome, move list and turning points, and its validator drops the move allowlist and the mate check.
+### What it cost
 
-Source: `classifyIntent` in `server/coach/intent.ts`; `generalFactsForModel` and `validateChatGeneral` in `server/coach/chat.ts`.
+The coach gave up room to reason. Every placement claim now has to survive a check against the board, and a claim that fails never reaches you, interesting or not.
 
-## Both numbers moved together, for both models
+![Placement errors fell to zero and explanation answers got faster](images/diagrams/placement-errors-before-after.svg)
 
-Placement errors: 7.5% to 0. Explanation latency: 13-15s to about 4s. Neither fix was aimed at the other; both came from the same change, because the same missing facts were causing both problems. After the fix, Sonnet and Opus were tied on both axes.
+Where this lives: question routing in `server/coach/intent.ts`, the facts and the validator in `server/coach/chat.ts`, the harness in `tools/coach-eval/`, and the full results in [the eval dashboard](coach-eval-v3-dashboard.html).
 
-**The consequence:** model tier is a downstream decision. A bigger model cannot fix a missing-fact, structural problem; it only reasons more eloquently wrong. Fix the structure first, then measure whether the model even matters.
+## The coach was too slow, and I did not pay to fix it
 
-## Measuring it instead of trusting it
+The coach talks to you during the game, not only when you ask it something. Those live comments run on a fifteen second budget. They missed it so often that most of what I saw was a canned template rather than a real answer. Keeping one assistant process warm instead of starting a new one per message fixed it without adding a bill.
 
-The first version of this measurement had its own bugs: a display that truncated long answers and made complete replies look cut off, an LLM judge whose "wrong" and "accurate" piles disagreed with ground truth at almost the same rate (13% vs 5%, no discriminating power, retired), and two models answering from different, uncontrolled positions. I rebuilt the eval as a committed, re-runnable harness (`tools/coach-eval/`): 65 questions per model, pinned to five fixed real-game positions, both models answering the identical position, blinded columns, six deterministic mechanical checks, no LLM judge.
+For the player: live narration now lands in about 3.6 seconds and chat in about 7.
 
-Then I audited the checks themselves before reporting them. The jargon checker held up under an independent recount. The "does the coach know about your pending move" checker did not: its raw ~70% counted coincidental square matches (the pending square is often just where a piece already was), and a hand audit found the genuine rate closer to 4 in 14. I reported the audited number, not the flattering one. Baseline v2 results: completeness 100%/100%; length-within-budget 25%/3% (Sonnet/Opus); jargon-free 53%/15%; latency medians ~9.7s both, roughly comparable and not rankable. Full results and the instrument audit: [the eval dashboard](coach-eval-v3-dashboard.html), committed here.
+### The evidence
 
-# The coach was too slow. I didn't pay to fix it.
+Every coach reply writes a row saying which path served it, whether it was a real answer or a fallback template, and how long it took. I read the rows rather than guessing.
 
-*Why this matters: the obvious fix was the wrong one. The coach's live narration was timing out and quietly serving canned templates instead of real answers. The fast fix was a metered API, a monthly bill for a tool only I use. I diagnosed it from my own telemetry and kept it free.*
+Chat was acceptable, about 9 seconds a reply. The live comments were not. 13 of 14 nudges and 16 of 23 warnings had blown the budget and dropped to a template. From the outside, a template looks like a real answer. Most of those 9 seconds was the process starting up, not the model thinking.
 
-*Status: shipped 2026-07-22. The warm agent-sdk backend is the default coach transport on main. Live narration lands in about 3.6 seconds and chat in about 7: real model replies instead of the template fallback the traces caught.*
+That gave three options. A metered interface would answer in about 1 to 2 seconds for about $10 to $15 a month, billed outside my personal plan. Starting one assistant once and keeping it warm would answer in 2 to 4 seconds at $0, still on the plan. Leaving it alone kept the 9 seconds and the templates.
 
-## The problem, from the traces, not a hunch
+### What it cost
 
-Every coach reply writes a trace row: which backend served it, whether it was a real model answer or a fallback template, and how long it took. I read the rows instead of guessing.
+I turned down the fastest option. Only I use this tool. A recurring bill to save a second or two on it buys nothing. The metered interface stays documented as the route for a hosted version, where a personal account could not be the login anyway.
 
-Chat was fine, about 9 seconds a reply. The live narration was not. In-game nudges and warnings run on a 15-second budget, and 13 of 14 nudges and 16 of 23 warnings had blown it and dropped to a canned template. On those surfaces I mostly wasn't getting the coach at all, and from the outside the fallback looked identical.
+The other half of the fix cost me a layout. The chat used to open as a window over the board, so even a quick reply made me stop and wait for it. It now sits in the coach's corner, beside the board on a wide screen and under it on a laptop. I can keep playing while a reply arrives. The warm process fixes how long a reply takes. The corner fixes how long it feels. Both were needed.
 
-The cause: the coach spawns a fresh `claude` process for every message. Most of those 9 seconds is the process booting, not the model thinking. Same brain, cold start, every time.
+![The three options weighed, and what the chosen one did to reply time](images/diagrams/coach-latency-options.svg)
 
-## Three options, weighed
+Where this lives: the warm path drops in as a third coach backend behind a swap seam designed three increments earlier, and every reply it serves writes a trace row.
 
-| Option | Speed / reply | Marginal cost | Verdict |
-| --- | --- | --- | --- |
-| Metered API (Sonnet) | ~1-2s | ~$10-15/mo, off my plan | Rejected |
-| Warm the CLI (Agent SDK) | boot once, then ~2-4s | $0, stays on my plan | Chosen |
-| Leave it | ~9s, timing out to templates | $0 | Not viable |
+## The coach could not tell which pieces were protected
 
-The API was the fast, easy answer. I turned it down. This is a personal, single-user tool; a recurring bill to shave seconds off a coach only I talk to is money for nothing. The API stays documented as the path for a future hosted version, where my personal account can't be the auth anyway.
+Mid game I asked whether my pawn on e4 protected my bishop on f5. The coach said no, and called the bishop undefended. It was defended. A separate warning told me I was about to lose that same bishop, and I was not. Two surfaces, one blind spot.
 
-The warm fix keeps one process alive instead of rebuilding it per message. The boot cost gets paid once at startup. It stays on my Claude plan, so it's still $0, and a warm reply lands well inside the 15-second budget, which is what actually kills the template fallback.
+For the player: the app works out which pieces protect which directly from the board. That map goes to the coach as a fact, and any claim that contradicts it never sends. The warning calls a capture you can take back a trade rather than a loss.
 
-## The part that made it cheap to build
+### The evidence
 
-The warm path drops in as a third `CoachBackend`: a name, an availability check, generate, behind the swap-seam interface I designed three increments earlier. The narrator, the chat, and the validator already take a backend without caring which one. The switch that picks a backend gains one branch. When the requirement showed up, the architecture had already made room for it.
+The game settled it a few moves later. mallow, the computer opponent, took my bishop on f5 with hers, and my e4 pawn took back: the recapture the coach had said was not there. The warning had made the same mistake from the other direction, so the model was not the only thing getting it wrong.
 
-## The other half: it felt fast because I stopped blocking myself
+### What I did not do
 
-The chat popped up as a window in the middle of the screen, over the board. Even a fast reply made me stop and wait. The fix moves the chat into the coach's corner, beside the board on a wide screen and under it on a laptop, and makes it non-blocking. I can keep playing while a reply generates.
+The tempting fix was to run every answer past the chess engine first. I rejected it. The engine returns a move and a score. It never says that one square protects another, because that is geometry rather than a search. It would also have cost an engine call on every chat message, on the one surface I had just made fast. It breaks a rule I set early on: the chat never touches the engine's queue.
 
-That split is the point. The warm backend fixes how long the reply takes; the corner fixes how long it feels. A fast reply behind a blocking modal still stops you. A slow reply you can play through mostly doesn't. I needed both, and the fixes are independent.
+What I built instead closes one specific hole, false claims about what protects what. It does not make the coach right about everything else, and it should not be read that way.
 
-One detail I insisted on: when I ask about a specific hint, the chat records that hint as a coach message, tagged with the move number, before my question. Without it the thread is a list of my questions with no context. The coach's answer only reads as an answer if the thing it's answering is in the thread.
+![A claim is checked against the board instead of the engine](images/diagrams/defender-check-flow.svg)
 
----
-
-# The coach gave me bad advice. I didn't reach for a bigger model.
-
-*Why this matters: the coach told me something false about my own position, confidently. The reflex is to throw a stronger model or an engine check at it. Both are the wrong tool. The bug was that the coach couldn't see defenders, and whether one piece guards another is not something an engine tells you. I fixed it by computing the fact and checking the answer against it: cheaper and more certain than either.*
-
-*Status: shipped 2026-07-22, merged to main. The coach checks its own defender claims against the position before sending, and the deterministic warning calls a recapturable trade a trade instead of a loss.*
-
-## What it got wrong
-
-Mid-game I asked the coach whether my pawn on e4 protected my bishop on f5. It said no: e4 did not guard f5, my bishop was hanging. That is wrong. A pawn on e4 covers f5. I know, because a few moves later that exact trade happened: her bishop took mine on f5, my e4 pawn took back. The coach had told me a defended piece was in danger.
-
-The judge made the same mistake from the other side. When I lined up a move it warned me I was losing the f5 bishop. I was not; the pawn still guarded it. Two surfaces, one blind spot: neither could see that a piece was defended.
-
-## The fix I didn't build
-
-The tempting fix is to run every coach answer past Stockfish before it sends. I didn't. Stockfish hands back a move and an evaluation; it never says "e4 guards f5." Whether one square defends another is geometry, and geometry is a lookup, not a search. It would also cost me an engine call on every chat message, on the one surface I had just made fast, and it breaks a rule I set early: the chat never touches the engine's queue.
-
-## The fix I did
-
-Compute the defenders directly. chess.js already knows, in a fraction of a millisecond, which pieces attack and defend any square. So I hand the coach that map as a fact before it answers, and I check its answer against the same map before it sends. If it claims a defended piece is hanging, that is a contradiction, and it retries or falls back on the path that was already there. No engine, no new latency.
-
-The deterministic warning got the same fix, and there it is a guarantee, no model in the loop. A capture on a square you can recapture on is a trade, and the copy now says so.
-
-## What it doesn't fix
-
-It is still a language model. The defender facts close the specific hole, the false claims about what guards what. They do not make the coach right about everything. And notice what a bigger model would have bought me here: nothing on the deterministic half, which was half the bug. The answer was not a smarter brain. It was giving the one I had the facts, and refusing to let it contradict them.
+Where this lives: the defender map is read off the board by the chess library the app already carries, and the claim check runs in the coach's validator before an answer sends.
