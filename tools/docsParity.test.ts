@@ -47,6 +47,58 @@ function pngFilesOnDisk(): string[] {
   return fs.readdirSync(path.join(DOCS, "images")).filter((f) => f.endsWith(".png"));
 }
 
+// Matches only image markdown syntax (the `!` prefix), never a plain link --
+// needed once images live in a subfolder (docs/images/diagrams/) and are
+// referenced from pages other than index.md, where a plain-link false match
+// would let an orphan or a missing image slip past silently.
+const IMAGE_TARGET_RE = /!\[[^\]]*\]\(([^)]+)\)/g;
+
+function imageTargets(text: string): string[] {
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  const re = new RegExp(IMAGE_TARGET_RE);
+  while ((m = re.exec(text)) !== null) {
+    out.push(m[1]);
+  }
+  return out;
+}
+
+function docsMdFiles(): string[] {
+  return fs.readdirSync(DOCS).filter((f) => f.endsWith(".md"));
+}
+
+function docsMdText(f: string): string {
+  return fs.readFileSync(path.join(DOCS, f), "utf8");
+}
+
+// Every image file under docs/images/, recursively, as a path relative to
+// docs/images/ (posix separators, so "diagrams/hint-ladder-rungs.svg").
+function imageFilesRecursive(dir = path.join(DOCS, "images"), prefix = ""): string[] {
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      out.push(...imageFilesRecursive(path.join(dir, entry.name), rel));
+    } else {
+      out.push(rel);
+    }
+  }
+  return out;
+}
+
+// Every image reference from every docs/*.md page, resolved to a path
+// relative to docs/images/ (the "images/" prefix stripped), collected across
+// the whole docs/ folder rather than just index.md.
+function allImageRefsAcrossDocs(): Set<string> {
+  const refs = new Set<string>();
+  for (const f of docsMdFiles()) {
+    for (const t of imageTargets(docsMdText(f))) {
+      if (t.startsWith("images/")) refs.add(t.slice("images/".length));
+    }
+  }
+  return refs;
+}
+
 describe("docs image parity", () => {
   it("every docs/images/*.png that README.md references is also referenced by docs/index.md", () => {
     const fromReadme = new Set(readmePngRefs());
@@ -56,13 +108,21 @@ describe("docs image parity", () => {
     }
   });
 
-  it("the set of files in docs/images/ equals the set referenced by docs/index.md (no orphans, no missing)", () => {
-    const onDisk = new Set(pngFilesOnDisk());
-    const fromIndex = new Set(indexPngRefs());
-    const orphans = [...onDisk].filter((f) => !fromIndex.has(f));
-    const missing = [...fromIndex].filter((f) => !onDisk.has(f));
-    expect(orphans, "png files on disk but not referenced by docs/index.md").toEqual([]);
-    expect(missing, "docs/index.md references a png that does not exist on disk").toEqual([]);
+  it("every image file under docs/images/ (recursively) is referenced by at least one docs/*.md page", () => {
+    const onDisk = new Set(imageFilesRecursive());
+    const referenced = allImageRefsAcrossDocs();
+    const orphans = [...onDisk].filter((f) => !referenced.has(f));
+    expect(orphans, "image files on disk but not referenced by any docs/*.md page").toEqual([]);
+  });
+
+  it("every image reference in any docs/*.md resolves to a real file under docs/images/", () => {
+    for (const f of docsMdFiles()) {
+      for (const t of imageTargets(docsMdText(f))) {
+        if (!t.startsWith("images/")) continue;
+        const resolved = path.join(DOCS, t);
+        expect(fs.existsSync(resolved), `${f} references an image that does not exist: ${t} (resolved ${resolved})`).toBe(true);
+      }
+    }
   });
 });
 
