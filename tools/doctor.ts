@@ -78,15 +78,43 @@ async function portFree(port: number): Promise<boolean> {
   return bindable(port, "::1");
 }
 
+// Parses the major version number out of .nvmrc's content, e.g. "22\n" -> 22.
+export function parseNvmrcMajor(nvmrcContent: string): number {
+  return parseInt(nvmrcContent.trim(), 10);
+}
+
+// Pure so the note-vs-fail decision can be tested with fake version pairs,
+// without spawning a different Node. A version too old to run the game at
+// all stays a hard failure regardless of .nvmrc (that check is unrelated to
+// which version this repo is tested on). A version that runs fine but has a
+// different major than .nvmrc is a note, not a failure: the game usually
+// works on newer Node, and a green "ok" that never looks at .nvmrc would
+// hide the one thing worth telling a stranger who hits a real mismatch.
+export function nodeCheckResult(runningVersion: string, nvmrcMajor: number): CheckResult {
+  const [major, minor] = runningVersion.split(".").map(Number);
+  const tooOld = !(major > 20 || (major === 20 && minor >= 19));
+  if (tooOld) {
+    return {
+      ok: false,
+      line: `Node v${runningVersion} is too old. install Node 22 from https://nodejs.org (or: brew install node@22), then reopen Terminal.`,
+    };
+  }
+  if (major !== nvmrcMajor) {
+    return {
+      ok: true,
+      note: true,
+      line: `node v${runningVersion} found; this repo is tested on node ${nvmrcMajor}. the game usually works on newer versions; if something fails, switch with nvm use.`,
+    };
+  }
+  return { ok: true, line: `Node v${runningVersion}` };
+}
+
 export const realChecks: Check[] = [
   {
     name: "node",
     run: async () => {
-      const [major, minor] = process.versions.node.split(".").map(Number);
-      const ok = major > 20 || (major === 20 && minor >= 19);
-      return ok
-        ? { ok: true, line: `Node v${process.versions.node}` }
-        : { ok: false, line: `Node v${process.versions.node} is too old. install Node 22 from https://nodejs.org (or: brew install node@22), then reopen Terminal.` };
+      const nvmrcMajor = parseNvmrcMajor(fs.readFileSync(path.join(REPO_ROOT, ".nvmrc"), "utf8"));
+      return nodeCheckResult(process.versions.node, nvmrcMajor);
     },
   },
   {
