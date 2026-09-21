@@ -12,9 +12,11 @@ I am a woman who learned chess 3 months ago in my 30s. Most chess apps felt cold
 
 ## Gameplay: the opponent, the judge, and the coach
 
-Three layers do the thinking. Stockfish does the chess math. Maia is the human-feeling opponent, run through the open source lc0 engine, named mallow. Claude Sonnet 5, through the Agent SDK, writes the coach's chat answers and per-move notes.
+Three layers do the thinking. Stockfish does the chess math. Mallow is the human-feeling opponent ensconced in sugary marshmallow by the game's "Sugar Glitch" theming. Maia is an open source neural network from researchers at the University of Toronto, Cornell, and Microsoft Research that uses Lc0 (Leela Chess Zero) as its execution engine. While standard Lc0 plays to win at all costs using self-play calculation, Maia is trained on human games to predict human moves. It plugs directly into Lc0's framework but overrides its superhuman logic with human-like behavior. Claude Sonnet 5 writes the coach's chat answers and per-move notes, called through the Agent SDK, Anthropic's library for running Claude from code.
 
 By default, selecting a move is not playing it. Click a piece, click a square, and the judge evaluates that move while your piece sits ghosted on the target. A second click or "play it" confirms; "take it back" retracts.
+
+While a move is pending, the coach has two lines under the board. The hint ladder ("help?", then "more?") is written by code from the engine's search, so it can only say what the engine verified. The band beneath it is where the coach actually speaks: on a move the judge doesn't like, the second press opens it with "cookie is looking…" and Claude Sonnet 5 writes a deeper read of the position from those same engine facts, checked against them before it appears. The Coach Corner chat in the sidebar is held to the same rule. The post-game analysis uses no model at all. Every sentence in it is a hand-written template, chosen by rules from the game's turning points and filled in from a replay of the moves, which is why it can be checked line by line before a change ships.
 
 Girl Chess is meant to be played on a computer, not on a phone or a small screen.
 
@@ -42,9 +44,9 @@ The move-4 turning point replayed: solid arrows for what happened, dashed for wh
 
 ![The move-4 turning point replayed: solid arrows for pawn to f3 and bishop to b4, dashed arrows for the lines not played](docs/images/05-replay-arrows-try-the-line.png)
 
-## Coach guardrails
+## Coach guardrails: hallucinations, voice drift, and overclaiming
 
-The coach kept giving confidently wrong advice, and the easy story was "try a bigger model" or "shrink the system prompt." I measured our baseline first. The cause was a fact gap: the coach reasoned about chess from facts it never had. Feeding it the facts and forcing it to stick to them deterministically, not a bigger model, fixed it. Since 2026-09-08 those facts come from the hint ladder's own verified search, for the position and any move you name but have not picked up (PRs #16 and #17). Placement errors in that measurement went from 7.5% to 0; explanation answers from 13-15 seconds to about 4. In the committed games, one first draft in nine still trips the placement check.
+The coach kept stating things about the board that weren't true, and the easy story was "try a bigger model" or "shrink the system prompt." I measured the baseline first. The cause was a fact gap: the coach reasoned from facts it never had. Feeding it the facts and holding it to them fixed it, not a bigger model. Those facts now come from the hint ladder's own verified search, for the position and any move you name but have not picked up (code improvements in September 2026). Placement errors went from 7.5% to 0 and explanation answers from 13 to 15 seconds to about 4. In the committed games, one first draft in nine still trips the placement check.
 
 Two guardrails: every coach reply is checked before it reaches you, and the debrief code is checked before it ships. On questions about the board, a claim about a move, placement, defence or checkmate that the facts don't support gets one retry, then a written fallback answer. The check overcorrects: ten of the 113 committed chat replies ended in a fallback answer. That is the trade I chose, so nothing the checks can disprove reaches the player. The post-game analysis is written by code, not the model, from a replay of the game's own moves. Nineteen deterministic rules check it against that replay over every finished game in my history before any change can merge. That took the debrief's "you could have won faster" claims from 60% contradicted to about zero. [docs/evaluation.md](docs/evaluation.md) explains the checks, thinking budget iterations, and model comparisons; [docs/technical-decisions.md](docs/technical-decisions.md) has the fact-gap diagnosis.
 
