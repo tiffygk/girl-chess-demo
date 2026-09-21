@@ -49,7 +49,8 @@ afterEach(() => {
   fs.rmSync(tmpRepo, { recursive: true, force: true });
 });
 
-describe("publish-scan", () => {
+// each case spawns git plus `npx tsx tools/publish-scan.ts`; 5 s is not enough on a loaded machine or a shared CI runner.
+describe("publish-scan", { timeout: 30_000 }, () => {
   it("FAILs and names the file and line when a tracked file contains a fixture word", () => {
     const patternsPath = writePatternFile(tmpRepo, FIXTURE_WORDS);
     const trackedFile = path.join(tmpRepo, "leaked.md");
