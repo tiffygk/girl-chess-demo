@@ -8,7 +8,12 @@ set -euo pipefail
 
 EXPECTED="Stockfish 19"
 
-id_line="$(printf "uci\nquit\n" | stockfish | grep "^id name ")"
+out="$(printf "uci\nquit\n" | stockfish)"
+id_line="$(printf '%s\n' "$out" | grep "^id name " || true)"
+if [ -z "$id_line" ]; then
+  echo "stockfish answered without an id name line; this repo's eval fixtures are baselined on $EXPECTED. the game works; eval tests may differ. see .claude/rules/data-and-gate.md"
+  exit 1
+fi
 echo "$id_line"
 name="${id_line#id name }"
 

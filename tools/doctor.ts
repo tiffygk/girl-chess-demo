@@ -28,13 +28,20 @@ function has(cmd: string): boolean {
   return spawnSync("/usr/bin/which", [cmd]).status === 0;
 }
 
-function uciAnswers(cmd: string, args: string[] = []): boolean {
+// Runs the uci/quit exchange once and returns the raw output, or null if the
+// command does not run or times out. Shared by uciIdName and the stockfish
+// check below so a doctor run never spawns the engine twice for one check.
+function runUciExchange(cmd: string, args: string[] = []): string | null {
   try {
-    const out = execFileSync(cmd, args, { input: "uci\nquit\n", encoding: "utf8", timeout: 8000 });
-    return /uciok/.test(out);
+    return execFileSync(cmd, args, { input: "uci\nquit\n", encoding: "utf8", timeout: 8000 });
   } catch {
-    return false;
+    return null;
   }
+}
+
+function parseIdName(out: string): string | null {
+  const m = out.match(/^id name (.+)$/m);
+  return m ? m[1].trim() : null;
 }
 
 // The eval fixtures are baselined on a named engine version; the doctor and
@@ -43,17 +50,12 @@ function uciAnswers(cmd: string, args: string[] = []): boolean {
 // .claude/rules/data-and-gate.md's Engine-version rule.
 export const EXPECTED_STOCKFISH_ID = "Stockfish 19";
 
-// Parses the `id name <...>` line out of the same uci/quit exchange
-// uciAnswers uses, e.g. "Stockfish 19". Returns null if the command does not
-// run, times out, or never sends an id name line.
+// Parses the `id name <...>` line out of a uci/quit exchange, e.g.
+// "Stockfish 19". Returns null if the command does not run, times out, or
+// never sends an id name line.
 export function uciIdName(cmd: string, args: string[] = []): string | null {
-  try {
-    const out = execFileSync(cmd, args, { input: "uci\nquit\n", encoding: "utf8", timeout: 8000 });
-    const m = out.match(/^id name (.+)$/m);
-    return m ? m[1].trim() : null;
-  } catch {
-    return null;
-  }
+  const out = runUciExchange(cmd, args);
+  return out === null ? null : parseIdName(out);
 }
 
 // A dev server can bind loopback on either family: vite has been observed
@@ -98,8 +100,9 @@ export const realChecks: Check[] = [
     name: "stockfish",
     run: async () => {
       if (!has("stockfish")) return { ok: false, line: "stockfish (the chess engine) is not installed. run ./setup.sh." };
-      if (!uciAnswers("stockfish")) return { ok: false, line: "stockfish is installed but does not answer. run: brew reinstall stockfish" };
-      const idName = uciIdName("stockfish");
+      const out = runUciExchange("stockfish");
+      if (out === null || !/uciok/.test(out)) return { ok: false, line: "stockfish is installed but does not answer. run: brew reinstall stockfish" };
+      const idName = parseIdName(out);
       if (idName && idName.includes(EXPECTED_STOCKFISH_ID)) {
         return { ok: true, line: `stockfish answers (${EXPECTED_STOCKFISH_ID}, the version the eval fixtures are baselined on)` };
       }

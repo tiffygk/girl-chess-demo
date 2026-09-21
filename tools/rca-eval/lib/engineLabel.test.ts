@@ -105,13 +105,14 @@ describe("engineLabelForFen against the real app Stockfish (FK1 safe; FK3 -- see
   // Under Stockfish 19, re-measured 2026-09-20 (three independent 800ms
   // runs plus one 5000ms run, all four agreeing on the move): the engine no
   // longer needs the deflection tactic at all. Its best move is Bc8 -- the
-  // attacked bishop on e6 simply retreats down the back rank to c8 before
-  // Black's king on f6 can trap it, sidestepping the whole
-  // Nd7+/.../Kxe6/Nxf8+ complications tree 18 relied on. The PV shows Black
-  // can still force some tactics a few moves later (...Nd6, Nd7+, Nxf8
-  // Nxc8, Nxg6+ hxg6, and so on -- the position stays sharp), but the line
-  // 16 plies deep still leaves White strictly ahead of what the board's raw
-  // material count implies: cp 869 at 800ms, 884 at 5000ms, against a
+  // attacked bishop on e6 simply retreats along the e6-d7-c8 diagonal to
+  // the back rank before Black's king on f6 can trap it, sidestepping the
+  // whole Nd7+/.../Kxe6/Nxf8+ complications tree 18 relied on. The PV shows
+  // White can still force some tactics a few moves later (Nd7+, Nxf8,
+  // Nxg6+, Nd5+, with Black's Nd6, Ke7, Nxc8, hxg6, Kd8 in reply -- the
+  // position stays sharp), but the line 16 plies deep still leaves White
+  // strictly ahead of what the board's raw material count implies: cp 869
+  // at 800ms, 884 at 5000ms, against a
   // material baseline of 700 -- impliedLossCp comes out NEGATIVE, not
   // merely non-forced, a cleaner escape than 18 found. Reported prominently
   // in dispatch 4's findings -- NOT acted on here (changing FH-01's
@@ -193,22 +194,22 @@ describe("engineLabelForFen re-adjudicating FK4/FK5/FK6 (dispatch 4 task 2, mine
   //
   // Under Stockfish 19, re-measured 2026-09-20 (three independent 800ms
   // runs plus one 5000ms run): the read is no longer a coin flip near the
-  // threshold -- it has flipped SIGN. 19's own best move is 22.Nf3,
-  // offering the f5 pawn rather than defending it; Black takes it
-  // (22...Qxf5), but White immediately recaptures the pawn Black's queen
-  // vacated on d4 (23.Nxd4), so the exchange nets pawn-for-pawn rather than
-  // a straight loss of f5 -- a further queen trade (23...Qg4 24.Qxg4
-  // hxg4) simplifies the position but changes no material. impliedLossCp
-  // came out NEGATIVE across all four runs (-61 three times at 800ms, -41
-  // at 5000ms): the engine's own best line runs slightly AHEAD of what the
-  // board's raw material implies, the opposite of "close to the forced-
-  // loss threshold." Still NOT engine-confirmed forced, same conclusion as
-  // 18, but the old "sits in the noise band around the threshold" sentence
-  // is no longer true -- relabeled honestly, same treatment as FK5. The
-  // band below allows for search-depth variance (measured spread -61..-41)
-  // while staying comfortably clear of both zero and the +150 forced
-  // boundary, rather than asserting a single value the position is not
-  // known to hold exactly.
+  // threshold -- it has flipped SIGN. 19's own best move is 22.Nf3, which
+  // offers the f5 pawn; after 22...Qxf5 the queen no longer guards d4 (it
+  // was d4's only defender from f4), so 23.Nxd4 wins the pawn back, pawn
+  // for pawn. No queen was ever on d4. A further queen trade (23...Qg4
+  // 24.Qxg4 hxg4) simplifies the position but changes no material.
+  // impliedLossCp came out NEGATIVE in every run measured this round: -61
+  // in this task's three runs at 800ms, -54 and -42 in two earlier gate
+  // runs the same day, -41 at 5s -- the engine's own best line runs
+  // slightly AHEAD of what the board's raw material implies, the opposite
+  // of "close to the forced-loss threshold." Still NOT engine-confirmed
+  // forced, same conclusion as 18, but the old "sits in the noise band
+  // around the threshold" sentence is no longer true -- relabeled honestly,
+  // same treatment as FK5. The band below (-130, 20) covers all four
+  // measured values while staying comfortably clear of both zero and the
+  // +150 forced boundary, rather than asserting a single value the
+  // position is not known to hold exactly.
   //
   // under Stockfish 18: 5 runs at 800ms gave impliedLossCp
   // 148/159/145/164/145 (noise band straddling the +150 threshold).
