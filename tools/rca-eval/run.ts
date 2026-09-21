@@ -1,16 +1,21 @@
 // tools/rca-eval/run.ts
 //
 // Entry point: `npm run rca-eval -- <suite>` where suite is one of
-//   db | fm | ct | pc | st | ce | fh | nm | rollup | all-deterministic
-// (spec section 6). `st`/`ce`/`fh`/`nm` are never inside all-deterministic
-// -- they are scripted-live (ST starts its own in-process server; CE/FH/NM
-// run THROUGH tools/coach-eval, spec section 1) and this dispatch calls no
-// model, so their model-dependent evals report did-not-run/UNAUDITED
-// honestly (spec section 4) rather than a fabricated pass. `ce`/`fh`/`nm`
-// are thin wrappers around tools/coach-eval/suites/{ce,fh,nm}.ts's own
-// scorers -- reading whatever coach-eval run directory exists (or reporting
-// did-not-run if none does) and writing the SAME SuiteResult json/md shape
-// every other suite here does, so rollup.ts's loader needs no special case.
+//   db | fm | ct | pc | st | ce | fh | nm | la | rollup | all-deterministic
+// (spec section 6). `st`/`ce`/`fh`/`nm`/`la` are never inside
+// all-deterministic -- they are scripted-live (ST starts its own in-process
+// server; CE/FH/NM/LA run THROUGH tools/coach-eval, spec section 1) and this
+// dispatch calls no model, so their model-dependent evals report
+// did-not-run/UNAUDITED honestly (spec section 4) rather than a fabricated
+// pass. `ce`/`fh`/`nm`/`la` are thin wrappers around
+// tools/coach-eval/suites/{ce,fh,nm,la}.ts's own scorers -- reading whatever
+// coach-eval run directory exists (or reporting did-not-run if none does)
+// and writing the SAME SuiteResult json/md shape every other suite here
+// does, so rollup.ts's loader needs no special case. LA (ladder agreement,
+// coach-eval round 2026-09-20) is the "follows one fact" axis: does an
+// answer recommend the fixture's own known best move and never another one
+// -- scored over the mate and board-live (C2-C5) arms; fork is excluded
+// (no best-move field in fixtures.ts, see la.ts's own header).
 //
 // Writes <date>-<suite>.json (raw SuiteResult) and <date>-<suite>.md (a
 // small human report) into runs/ (gitignored) for every suite except
@@ -40,8 +45,8 @@ const RUNS_DIR = path.join(THIS_DIR, "runs");
 // <K>].json per arm).
 const COACH_EVAL_RUNS_DIR = path.join(THIS_DIR, "..", "coach-eval", "runs");
 
-type SuiteName = "db" | "fm" | "ct" | "pc" | "st" | "ce" | "fh" | "nm" | "rollup" | "all-deterministic";
-const KNOWN_SUITES: SuiteName[] = ["db", "fm", "ct", "pc", "st", "ce", "fh", "nm", "rollup", "all-deterministic"];
+type SuiteName = "db" | "fm" | "ct" | "pc" | "st" | "ce" | "fh" | "nm" | "la" | "rollup" | "all-deterministic";
+const KNOWN_SUITES: SuiteName[] = ["db", "fm", "ct", "pc", "st", "ce", "fh", "nm", "la", "rollup", "all-deterministic"];
 
 function dateStamp(): string {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -122,8 +127,8 @@ async function main() {
     process.exit(0);
   }
 
-  if (suite === "ce" || suite === "fh" || suite === "nm") {
-    // Thin wrappers around tools/coach-eval/suites/{ce,fh,nm}.ts's own
+  if (suite === "ce" || suite === "fh" || suite === "nm" || suite === "la") {
+    // Thin wrappers around tools/coach-eval/suites/{ce,fh,nm,la}.ts's own
     // scorers (spec section 1: these run THROUGH coach-eval, never a second
     // implementation here). Each reads whatever coach-eval run directory
     // exists under COACH_EVAL_RUNS_DIR and reports did-not-run/UNAUDITED
@@ -140,12 +145,15 @@ async function main() {
     const { runCeSuite } = await import("../coach-eval/suites/ce");
     const { runFhSuite } = await import("../coach-eval/suites/fh");
     const { runNmSuite } = await import("../coach-eval/suites/nm");
+    const { runLaSuite } = await import("../coach-eval/suites/la");
     const result =
       suite === "ce"
         ? await runCeSuite(COACH_EVAL_RUNS_DIR, runDirOverride)
         : suite === "fh"
           ? await runFhSuite(COACH_EVAL_RUNS_DIR, runDirOverride)
-          : await runNmSuite(COACH_EVAL_RUNS_DIR, runDirOverride);
+          : suite === "nm"
+            ? await runNmSuite(COACH_EVAL_RUNS_DIR, runDirOverride)
+            : runLaSuite(COACH_EVAL_RUNS_DIR, runDirOverride);
     writeSuiteResult(suite, result);
     printSummary(result);
     process.exit(0);
