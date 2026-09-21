@@ -51,7 +51,7 @@ afterEach(() => {
 
 // each case spawns git plus `npx tsx tools/publish-scan.ts`; 5 s is not enough on a loaded machine or a shared CI runner.
 describe("publish-scan", { timeout: 30_000 }, () => {
-  it("FAILs and names the file and line when a tracked file contains a fixture word", () => {
+  it("FAILs and names the file and line -- never the matched text -- when a tracked file contains a fixture word", () => {
     const patternsPath = writePatternFile(tmpRepo, FIXTURE_WORDS);
     const trackedFile = path.join(tmpRepo, "leaked.md");
     fs.writeFileSync(trackedFile, "line one is fine\nthis line has a banana in it\nline three is fine\n");
@@ -61,9 +61,8 @@ describe("publish-scan", { timeout: 30_000 }, () => {
 
     expect(result.stdout).toContain("VERDICT: FAIL");
     expect(result.status).not.toBe(0);
-    expect(result.stdout).toContain("leaked.md");
-    expect(result.stdout).toContain("2:");
-    expect(result.stdout).toContain("banana");
+    expect(result.stdout).toContain("leaked.md:2");
+    expect(result.stdout).not.toContain("banana");
   });
 
   it("PASSes on a clean tracked tree", () => {
