@@ -14,6 +14,7 @@ Purpose: the owner-calibratable starting values across the annotator, coach, and
 | DECIDED_BAND_CP | 300 | server/annotator/classify.ts | eval magnitude at/above which a position counts as decided |
 | ADJUDICATE_WIN_CP / ADJUDICATE_RESIGN_CP | 300 / -300 | server/annotator/adjudicate.ts | end-game adjudication bands |
 | JUDGE_MIN_MS | 900 | src/game/GamePage.tsx | minimum per-move judge cadence, so timing never tells |
+| CONFIRM_MS | 6000 | src/game/GamePage.tsx | end-game button arm-then-confirm window (was 3000 until 2026-09-21) |
 | HINT_MOVETIME_MS | 1500 | server/annotator/hint.ts | hint search think time |
 | HINT_VERIFY_MOVETIME_MS | 500 | server/annotator/hint.ts | hint verification pass think time |
 | HINT_MAX_LOSS_CP | 50 | server/annotator/hint.ts | max cp loss a hint may concede |
