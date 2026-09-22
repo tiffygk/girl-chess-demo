@@ -81,11 +81,10 @@ the 2026-09-20 dashboard) is labelled as the validator's classes passing, never 
 cannot move when the coach fails the way she reports.
 
 **11. The live validator's classes, as of 2026-09-21** (`VIOLATION_KIND_GUIDANCE` in
-`server/coach/chat.ts`; re-check there before citing): placement-claim, side-claim, defense-claim,
-mate-claim, voice-notation, voice-word, voice-number. Nothing checks capture legality or line of
-sight. The Game 198 fixes plan adds relation-claim (Wave C) and a test that enumerates the classes
-(Task C2b, `server/coach/violationClasses.test.ts`); once it lands, that test is the source and this
-list changes with it.
+`server/coach/chat.ts`): placement-claim, side-claim, defense-claim, mate-claim, relation-claim,
+voice-notation, voice-word, voice-number. relation-claim (Wave C, `server/coach/relationClaims.ts`)
+checks capture legality and line of sight (attacks/lines-up-with/eyes/sees), the gap this list used
+to name as unchecked. Source: `server/coach/violationClasses.test.ts`; change both together.
 
 ## Quick reference
 
