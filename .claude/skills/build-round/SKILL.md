@@ -114,7 +114,7 @@ Run the review under **`superpowers:test-driven-development`**: a finding is pro
 
 ## Ledger
 
-`.superpowers/sdd/rounds/<date>-<slug>/` holds feedback.md, brief-*.md, report-*.md, review.md. The ledger is the memory between the two windows and every subagent — the controller reads briefs and verdicts from files, never from conversation history.
+`.superpowers/sdd/rounds/<date>-<slug>/` holds feedback.md, brief-*.md, report-*.md, review.md. The ledger is the memory between the two windows and every subagent — the controller reads briefs and verdicts from files, never from conversation history. Every timestamp in a ledger, handoff, or status block is read from `date` on this machine in the same command that writes it, never estimated from an earlier read: on 2026-09-21 two stamps written from memory were each five to seven minutes off the clock and had to be corrected.
 
 Two facts from the 2026-09-06 resume round: (1) subagents cannot write `report-*.md` (six of seven returned "Write refused by policy"; the cause is unverified). Every brief says "return the full report as reply text", and the controller transcribes it to `report-<wave>.md` the same turn, marked "controller-transcribed". Do not brief a report Write as if it will land. (2) The owner copy in the vault (`2 build/<round> SDD ledger/`) is refreshed with the round folder's `mirror.sh` (absolute source and destination, refuses any destination outside `2 build/`); a relative `rsync ../..` put two mirrors inside the repo checkout. Create `mirror.sh` with the round folder, next to `quiet-check.sh`.
 
