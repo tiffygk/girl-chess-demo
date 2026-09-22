@@ -28,6 +28,7 @@ import { computeTurningPoints, TP_ALGO_VERSION, type TurningPoint } from "../ann
 // module -- see buildHighlightLines's own header for the seedPly contract.
 import { buildHighlightLines, type HighlightLine, type HighlightMoveRow } from "../annotator/highlightLines";
 import { classifyMoves } from "../annotator/classifications";
+import { keepsMateSchedule } from "../annotator/mateTie";
 // Increment 3a Wave 2: the coach's async narrate surface. Deliberately kept
 // out of judgeMove above — see that method's own comment and
 // classify.test.ts's scoped gate test, which pins this: judgeMove's own
@@ -155,6 +156,11 @@ export interface TurningLine {
   bestSan?: string;
   bestFromTo?: { from: string; to: string };
   moverBestFromTo?: { from: string; to: string };
+  // Game 198 fixes (2026-09-21), cause 4: true when the played move at
+  // seedPly+1 differs from the engine's stored best move but keeps the
+  // same mate schedule (a second mating move) -- see
+  // server/annotator/mateTie.ts's keepsMateSchedule comment.
+  equalMate?: boolean;
   pvSans: string[];
   threat?: { from: string; to: string };
 }
@@ -935,6 +941,21 @@ export class GameManager {
         if (bestFromTo) line.bestFromTo = bestFromTo;
         if (moverBestFromTo) line.moverBestFromTo = moverBestFromTo;
         if (threat) line.threat = threat;
+        // Game 198 fixes (2026-09-21), cause 4: a mate tie is not a
+        // deviation. seedRow is the position the mover chose from
+        // (fenAfter(seedPly)); playedRow is fenAfter(seedPly + 1), the
+        // result of the move actually played. If that move differs from
+        // the engine's bestSan but keeps the same mate schedule, the
+        // debrief must read it as "you found the best move," not a miss.
+        if (seedPly >= 1) {
+          const seedRow = rowByPly.get(seedPly);
+          const playedRow = rowByPly.get(seedPly + 1);
+          if (
+            seedRow && playedRow &&
+            keepsMateSchedule({ evalMate: seedRow.eval_mate ?? null }, { evalMate: playedRow.eval_mate ?? null }) &&
+            bestSan !== undefined && sans[seedPly] !== undefined && sans[seedPly] !== bestSan
+          ) line.equalMate = true;
+        }
         return line;
       });
 

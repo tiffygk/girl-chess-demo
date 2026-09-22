@@ -128,6 +128,14 @@ verdicts only. Pooling 30 run dirs needs per-row verdicts beside each dir: call 
 exported row functions (`auditFhRows`, `checkNmRows`, `checkLaRows`) from a scorer that writes
 `<dir>/<suite>.json`, as `tools/coach-eval/score-ab.ts` does (2026-09-20).
 
+**14. Her rejected first attempts are an axis; read them.** `advice_traces.attempts_json` stores
+every validator-rejected attempt with its violations beside the shipped `output`; `regen_count` counts
+the retries. The 2026-09-20 round never read it. Score, per arm or period: first-attempt failure by
+violation class, retry rate (whole record 28 of 166 model chats; since the cut 16 of 45), retry wait
+against first-try wait (14.5 s vs 7.1 s since the cut), and her rating on retried rows against first-try
+rows (about equal, 5 of 13 down vs 8 of 18). Twelve pre-column rows have no stored attempt: report
+them as missing, never as clean.
+
 ## Quick reference
 
 | Harness defect it prevents | The guard |

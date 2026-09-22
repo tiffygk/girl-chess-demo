@@ -87,6 +87,18 @@ describe("followedBest", () => {
     expect(fb!.bestSan).toBe("Nf3");
   });
 
+  // Game 198 fixes (2026-09-21), cause 4: a mate tie is not a deviation.
+  // The server flags equalMate when the played move differs from the
+  // engine's pv but keeps the same mate schedule; the debrief must read
+  // that as "you found the best move," not "you missed it."
+  it("an equal mate flagged by the server counts as followed even though the san differs", () => {
+    const l = line({ ply: 3, pvSans: ["Bc4"], equalMate: true });
+    const fb = followedBest(l, SCHOLARS_MATE_SANS);
+    expect(fb!.playedSan).toBe("Qh5");
+    expect(fb!.bestSan).toBe("Bc4");
+    expect(fb!.followed).toBe(true);
+  });
+
   it("falls back to bestSan when pvSans is empty", () => {
     const l = line({ ply: 3, pvSans: [], bestSan: "Qh5" });
     const fb = followedBest(l, SCHOLARS_MATE_SANS);

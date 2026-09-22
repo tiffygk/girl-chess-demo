@@ -27,6 +27,7 @@ import { checkMateClaims } from "./mateClaims";
 import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
 import { isOffTopic, mentionedPlies, thinkingForIntent, type ChatIntent } from "./intent";
 import { normalizeVoice } from "./textNormalize";
+import { keepsMateSchedule } from "../annotator/mateTie";
 
 // Round 3 (Q4, trace-180): the recapture-viability exemption checkDefenseClaims
 // takes -- shared by both validateChat's board route and validateChatGeneral,
@@ -364,6 +365,11 @@ export interface ChatFactList {
     // entries (see gapWordForPly); undefined when either side of the pair has
     // no eval captured, same "no data, no claim" contract as `then`.
     gap?: string;
+    // Game 198 fixes (2026-09-21), cause 4: true when the played move
+    // differs from bestSan but keeps the same mate schedule (a second
+    // mating move) -- see keepsMateSchedule's own comment. Never both this
+    // and gap on the same entry.
+    equalMate?: true;
   }[];
   // NOTE: no allowedSquares -- chat validation treats square names as free
   // geography (see validateChat below). Declared cut #2, not an oversight:
@@ -684,9 +690,16 @@ export function assembleChatFactList(
     // side of the pair -- inventing a decisive miss on a move she played
     // BEST. p.bestSan === null means "no best move ever computed for this
     // ply" (never a deviation, nothing to compare against either).
-    gap: i > 0 && p.bestSan !== null && p.bestSan !== p.san
+    gap: i > 0 && p.bestSan !== null && p.bestSan !== p.san && !keepsMateSchedule(perPly[i - 1], p)
       ? gapWordForPly(perPly[i - 1], p)
       : undefined,
+    // Game 198 fixes (2026-09-21), cause 4: a second mating move is not a
+    // deviation. True only when the schedule is kept AND the move differs
+    // from bestSan, so the model can say "both moves mate" instead of
+    // preferring the engine's string.
+    ...(i > 0 && p.bestSan !== null && p.bestSan !== p.san && keepsMateSchedule(perPly[i - 1], p)
+      ? { equalMate: true as const }
+      : {}),
   }));
 
   const { fen: currentFen, toMove, occupancy, legalSans, contested } = derivePositionFacts(chess);
@@ -1492,8 +1505,8 @@ function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
       // (the union-review side-marker fix), and this additive field must not
       // disturb that pin.
       return deviated && p.then
-        ? { ply: p.ply, san: p.san, side, bestSan: p.bestSan, move, read, ...(p.gap ? { gap: p.gap } : {}), then: p.then }
-        : { ply: p.ply, san: p.san, side, bestSan: p.bestSan, move, read, ...(p.gap ? { gap: p.gap } : {}) };
+        ? { ply: p.ply, san: p.san, side, bestSan: p.bestSan, move, read, ...(p.gap ? { gap: p.gap } : {}), ...(p.equalMate ? { equalMate: p.equalMate } : {}), then: p.then }
+        : { ply: p.ply, san: p.san, side, bestSan: p.bestSan, move, read, ...(p.gap ? { gap: p.gap } : {}), ...(p.equalMate ? { equalMate: p.equalMate } : {}) };
     }
     return {
       ply: p.ply,
@@ -1511,6 +1524,7 @@ function perPlyForModel(facts: ChatFactList, mentioned: number[] = []) {
       pvSans: p.pvSans.slice(0, PER_PLY_PV_MODEL_LIMIT),
       read,
       ...(p.gap ? { gap: p.gap } : {}),
+      ...(p.equalMate ? { equalMate: p.equalMate } : {}),
       ...(p.then ? { then: p.then } : {}),
     };
   });
