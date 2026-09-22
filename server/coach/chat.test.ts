@@ -293,6 +293,58 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
 
       expect(capturedPrompt).toContain('"gap":"decisively better"');
     });
+
+    // Game 198 fixes (2026-09-21), cause 4: a mate tie is not a deviation.
+    // Ply 49 played Ng7#, the engine's stored best was Ng3# -- both mate on
+    // the spot, so the old bestSan-string-equality gate wrongly tagged the
+    // ply "decisively better" even though nothing was missed.
+    it("a second mating move is not a deviation: gap undefined, equalMate true (game 198 ply 49)", () => {
+      const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
+      // prior: mover mates in 1 by the engine's move; current: mate delivered by a different move.
+      const perPly = [
+        { ply: 1, san: "e4", evalCp: null, evalMate: 1, bestSan: null, pvSans: [] },
+        { ply: 2, san: "e5", evalCp: null, evalMate: 0, bestSan: "c5", pvSans: ["c5"] },
+      ];
+      const facts = assembleChatFactList(gameMoves, {}, [], perPly);
+      expect(facts.perPlyAnalysis?.[1].gap).toBeUndefined();
+      expect(facts.perPlyAnalysis?.[1].equalMate).toBe(true);
+    });
+
+    it("a slower mate than the engine's is still a deviation", () => {
+      const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
+      const perPly = [
+        { ply: 1, san: "e4", evalCp: null, evalMate: 1, bestSan: null, pvSans: [] },
+        { ply: 2, san: "e5", evalCp: null, evalMate: -2, bestSan: "c5", pvSans: ["c5"] },
+      ];
+      const facts = assembleChatFactList(gameMoves, {}, [], perPly);
+      expect(facts.perPlyAnalysis?.[1].gap).toBe("decisively better");
+      expect(facts.perPlyAnalysis?.[1].equalMate).toBeUndefined();
+    });
+
+    // Wiring proof (invariant rule): a field defined and unit-tested but
+    // never carried into the model-facing projection is a dead branch that
+    // still leaves the model as blind as before. Assert the string reaches
+    // the actual serialized prompt chat() sends, not just the fact object.
+    it("equalMate reaches the serialized fact JSON the model prompt is built from", async () => {
+      const gameMoves = [{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }];
+      const perPly = [
+        { ply: 1, san: "e4", evalCp: null, evalMate: 1, bestSan: null, pvSans: [], side: "her" as const },
+        { ply: 2, san: "e5", evalCp: null, evalMate: 0, bestSan: "c5", pvSans: ["c5"], side: "mallow" as const },
+      ];
+      const facts = assembleChatFactList(gameMoves, { mode: "review" }, [], perPly);
+
+      let capturedPrompt = "";
+      const backend = fakeBackend(async (prompt) => {
+        capturedPrompt = prompt;
+        return "both moves mate on the spot -- e5 delivered it just as fast.";
+      });
+      const sessionId = createSession();
+      const gameId = createGame(sessionId, "maia-1100");
+
+      await chat("how did move 1 go?", [], facts, backend, { gameId, ply: 2, kind: "chat" });
+
+      expect(capturedPrompt).toContain('"equalMate":true');
+    });
   });
 
   // (c2) Task 2 (defender grounding): contested squares -- the coach chat
