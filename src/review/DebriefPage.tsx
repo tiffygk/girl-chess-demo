@@ -113,6 +113,8 @@ import { MallowHighlightedSection } from "./MallowHighlightedSection";
 // re-derives its own rule (the legend-gated-on-the-real-producer rule).
 import { badgesForPoint } from "./cardBadges";
 import type { CardBadge } from "./cardBadges";
+// B2.2 (live-telemetry round, 2026-09-22): see src/agent/dataGc.ts's header.
+import { DATA_GC } from "../agent/dataGc";
 
 // Her own negative move labels — same set debriefLesson.ts uses to find her
 // worst point, reused here to decide which cards get the magenta tint.
@@ -867,7 +869,7 @@ export function DebriefPage({
         />
       )}
       {turningPoints.length > 0 && (
-        <div className="debrief-cards">
+        <div className="debrief-cards" {...{ [DATA_GC.turningCount]: orderedPoints.length }}>
           {/* Header + "?" chip render ONLY when some card actually carries
               a badge -- the same anyBadges gate the old rail used, computed
               from badgesByRank (the real producer), never re-derived. The
