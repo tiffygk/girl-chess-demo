@@ -18,7 +18,7 @@ import { toMoverCp } from "../annotator/classify";
 // stop: phaseParity.test.ts will fail.
 import { phasesForGame, type GamePhase } from "../../src/review/gamePhases";
 import type { ThreatFacts, RecommendationFacts, ThreatMotif } from "../annotator/motifs";
-import type { CoachBackend, CoachUsage } from "./backends/types";
+import type { CoachBackend, CoachUsage, ThinkingPref } from "./backends/types";
 import { getPersona, isTimeoutError, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
@@ -2182,6 +2182,16 @@ export async function chat(
     onUsage?: (usage: CoachUsage) => void;
     standingNotes?: string[];
     onBackendFailure?: (backendName: string) => void;
+    // Game 198 fixes (2026-09-21), Task D2: MEASUREMENT ONLY -- overrides
+    // attempt 0's thinkingPref for the replay tool (Task D3), which needs
+    // to ask "what would this row have looked like at a different thinking
+    // level" without touching thinkingForIntent(intent)'s live/review
+    // derivation. Additive/optional, every existing call site (chat.test.ts
+    // and its siblings, manager.ts) omits it and gets exactly today's
+    // behavior. A regen (attempt 1) is unaffected -- it always escalates to
+    // "default" regardless of this override, same as every other attempt-1
+    // branch in this loop.
+    thinkingOverride?: ThinkingPref;
   }
 ): Promise<{
   text: string;
@@ -2350,7 +2360,8 @@ export async function chat(
     // it out. CHAT_REVIEW_BUDGET_MS's 180s is a timeout ceiling, not a
     // think-harder directive -- there is no mode gate here; review chat
     // uses the exact same thinkingForIntent(intent) attempt-0 pref as live.
-    const thinkingPref = attempt === 0 ? thinkingForIntent(intent) : "default";
+    const thinkingPref =
+      attempt === 0 ? (opts?.thinkingOverride ?? thinkingForIntent(intent)) : "default";
     lastThinkingPref = thinkingPref;
     // Task 1c: fires right before the backend is actually called -- a REAL
     // pipeline event, not a guess. Attempt 0 fires this once; a regen
