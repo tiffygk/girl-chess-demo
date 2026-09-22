@@ -34,7 +34,10 @@
 //   buildDeltaSeries header), and the "after" reading is row N's own stored
 //   eval directly. Verified by direct execution against the fixture before
 //   writing this suite (see report): plies 95/123/125 -> nudge with the
-//   expected conversionCopy text; ply 185 -> silent.
+//   expected conversionCopy text; ply 185 -> silent. Owner ruling (game 200
+//   move 27, 2026-09-22) narrowed the live judge's own nudge to
+//   JUDGE_MATE_NUDGE_DEPTH (8): ply 125's mateBefore is 10, so it now goes
+//   silent too -- see expectedByPly below and its own comment.
 // - CT-04: runs the SAME invariant functions tools/replay-check.ts exports
 //   (unconvertedInvariant, unconvertedAnchorInvariant,
 //   noPlyCollisionInvariant, missedMateInvariant, isKnownDebriefViolation)
@@ -362,7 +365,16 @@ async function ct05(dbPath: string): Promise<EvalResult> {
     db.close();
   }
 
-  const expectedByPly: Record<number, string> = { 95: "nudge", 123: "nudge", 125: "nudge", 185: "silent" };
+  // Owner ruling (game 200 move 27, 2026-09-22): the live judge's own
+  // mate-nudge now fires only when the mate held before the move was
+  // within JUDGE_MATE_NUDGE_DEPTH (8) moves -- see classify.ts. Ply 125 is
+  // the RCA's own "worst" example (mate-in-10 became mate-in-16,
+  // mateBefore 10 > 8), so it now correctly goes silent under the new
+  // gate; it stays a genuine mate-distance slip in the per-game
+  // debrief/turning-point path (detectMateEvents, untouched -- see CT-03's
+  // own ply-185 non-event and the game-160 RCA fixture), only the LIVE
+  // JUDGE'S nudge for this one move is narrower now.
+  const expectedByPly: Record<number, string> = { 95: "nudge", 123: "nudge", 125: "silent", 185: "silent" };
   const results: { ply: number; expected: string; got: string; conversionCopy?: string }[] = [];
   for (const ply of Object.keys(expectedByPly).map(Number)) {
     const v = await classifyPersistedPly(moveRows, ply);
