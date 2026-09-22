@@ -108,20 +108,23 @@ export function routeOf(kind: string): Route | null {
 }
 
 export interface RouteAgg {
+  totalRows: number;
   modelReplies: number;
   templateFallbacks: number;
-  regens: number;
+  regens: number; // sum of regen_count -- regeneration CALLS, not rows that regenerated (reviewer finding 1)
   attempt0RejectionsByClass: Record<string, number>;
   thumbsUp: number;
   thumbsDown: number;
   thumbsDownNotesByClass: { cls: string; text: string }[];
-  thinkingPrefCounts: Record<string, number>; // "not recorded" bucketed separately
-  thinkingPrefRecorded: boolean;
-  unchecked: number | null; // null = not recorded on any row in this route
+  thinkingPrefCounts: Record<string, number>;
+  thinkingPrefRecordedRows: number; // rows with a non-null thinking_pref -- may be < totalRows (reviewer finding 2)
+  unchecked: number | null; // null = no row in this route has coverage_json
+  coverageRecordedRows: number; // rows with a parseable coverage_json -- may be < totalRows (reviewer finding 2)
 }
 
 function emptyRouteAgg(): RouteAgg {
   return {
+    totalRows: 0,
     modelReplies: 0,
     templateFallbacks: 0,
     regens: 0,
@@ -130,18 +133,26 @@ function emptyRouteAgg(): RouteAgg {
     thumbsDown: 0,
     thumbsDownNotesByClass: [],
     thinkingPrefCounts: {},
-    thinkingPrefRecorded: false,
+    thinkingPrefRecordedRows: 0,
     unchecked: null,
+    coverageRecordedRows: 0,
   };
 }
 
 export function aggregateRoute(rows: AdviceTraceRow[]): RouteAgg {
   const agg = emptyRouteAgg();
   for (const row of rows) {
+    agg.totalRows++;
+
     if (row.source === "model") agg.modelReplies++;
     else if (row.source === "template") agg.templateFallbacks++;
 
-    if (row.regen_count > 0) agg.regens++;
+    // Reviewer finding 1 (2026-09-22): "regens" is the count of
+    // regeneration CALLS (sum of regen_count), not the count of rows that
+    // regenerated at least once -- a row with regen_count = 2 made two
+    // regen calls, and the old `if (regen_count > 0) agg.regens++` counted
+    // that as one.
+    agg.regens += row.regen_count;
 
     const attempts = safeParse<AttemptEntry[]>(row.attempts_json);
     const attempt0 = attempts?.[0];
@@ -167,12 +178,13 @@ export function aggregateRoute(rows: AdviceTraceRow[]): RouteAgg {
     }
 
     if (row.thinking_pref != null) {
-      agg.thinkingPrefRecorded = true;
+      agg.thinkingPrefRecordedRows++;
       agg.thinkingPrefCounts[row.thinking_pref] = (agg.thinkingPrefCounts[row.thinking_pref] ?? 0) + 1;
     }
 
     const coverage = safeParse<ClaimCoverageShape>(row.coverage_json);
     if (coverage) {
+      agg.coverageRecordedRows++;
       agg.unchecked = (agg.unchecked ?? 0) + coverage.unchecked.length;
     }
   }
@@ -198,6 +210,7 @@ export function splitByRoute(rows: AdviceTraceRow[]): { chat: RouteAgg; band: Ro
 // ---------------------------------------------------------------------
 export interface ScoreboardRowMeta {
   label: string; // "game 200" or "baseline (games 190-198)"
+  notesMode: NotesMode;
 }
 
 function fmtClassCounts(counts: Record<string, number>): string {
@@ -206,25 +219,64 @@ function fmtClassCounts(counts: Record<string, number>): string {
   return entries.map(([k, v]) => `${k}=${v}`).join(", ");
 }
 
-function fmtNotes(notes: { cls: string; text: string }[]): string {
+// Reviewer finding 3 (2026-09-22): the baseline row's thumbs-down notes
+// are thousands of characters of raw text if printed verbatim (92 traces'
+// worth). Two render modes: "baseline" prints class counts only, "game"
+// prints each raw note but truncated to 80 characters.
+const NOTE_TRUNCATE_LEN = 80;
+
+function truncateNote(text: string): string {
+  return text.length <= NOTE_TRUNCATE_LEN ? text : text.slice(0, NOTE_TRUNCATE_LEN);
+}
+
+export type NotesMode = "baseline" | "game";
+
+export function formatNotesCell(notes: { cls: string; text: string }[], mode: NotesMode): string {
   if (notes.length === 0) return "none";
-  return notes.map((n) => `${n.cls}: "${n.text}"`).join(" | ");
+  if (mode === "baseline") {
+    const counts: Record<string, number> = {};
+    for (const n of notes) counts[n.cls] = (counts[n.cls] ?? 0) + 1;
+    return fmtClassCounts(counts);
+  }
+  return notes.map((n) => `${n.cls}: "${truncateNote(n.text)}"`).join(" | ");
 }
 
-function fmtUnchecked(agg: RouteAgg): string {
-  return agg.unchecked === null ? "not recorded" : String(agg.unchecked);
+// Reviewer finding 2 (2026-09-22): a route can have SOME rows with
+// coverage_json/thinking_pref recorded and some without (this will happen
+// as soon as wave 4 wires coverage into narrate -- older band rows stay
+// null). Printing a bare sum/count in that case reads as a total when it
+// is really a partial one. Three states per cell: none of the route's
+// rows carry the field ("not recorded"); all of them do (a plain
+// number/class-count list); some do (the number/list plus how many of how
+// many rows it came from).
+export function formatUncheckedCell(agg: RouteAgg): string {
+  if (agg.totalRows === 0 || agg.coverageRecordedRows === 0) return "not recorded";
+  const n = agg.unchecked ?? 0;
+  if (agg.coverageRecordedRows === agg.totalRows) return String(n);
+  return `${n} (recorded on ${agg.coverageRecordedRows} of ${agg.totalRows} rows)`;
 }
 
-function fmtThinking(agg: RouteAgg): string {
-  return agg.thinkingPrefRecorded ? fmtClassCounts(agg.thinkingPrefCounts) : "not recorded";
+export function formatThinkingCell(agg: RouteAgg): string {
+  if (agg.totalRows === 0 || agg.thinkingPrefRecordedRows === 0) return "not recorded";
+  const counts = fmtClassCounts(agg.thinkingPrefCounts);
+  if (agg.thinkingPrefRecordedRows === agg.totalRows) return counts;
+  return `${counts} (recorded on ${agg.thinkingPrefRecordedRows} of ${agg.totalRows} rows)`;
 }
 
-function renderRouteLine(route: Route, agg: RouteAgg): string {
-  return (
+// Reviewer finding 3, "no line over 200 characters": a single line per
+// route ran to 242 characters on the live baseline row (13+ attempt-0
+// rejection classes). Split into two lines per route rather than
+// abbreviate the labels -- an abbreviated label ("rej=", "tmpl=") is a
+// second thing to learn to read a table that already carries enough
+// vocabulary (violation classes, feedback classes, thinking prefs).
+function renderRouteLines(route: Route, agg: RouteAgg, notesMode: NotesMode): string[] {
+  return [
     `    ${route}: model=${agg.modelReplies} template=${agg.templateFallbacks} regens=${agg.regens} ` +
-    `attempt0-rejections=[${fmtClassCounts(agg.attempt0RejectionsByClass)}] thumbsup=${agg.thumbsUp} thumbsdown=${agg.thumbsDown} ` +
-    `[${fmtNotes(agg.thumbsDownNotesByClass)}] thinking=[${fmtThinking(agg)}] unchecked=${fmtUnchecked(agg)}`
-  );
+      `thumbsup=${agg.thumbsUp} thumbsdown=${agg.thumbsDown}`,
+    `        attempt0-rejections=[${fmtClassCounts(agg.attempt0RejectionsByClass)}] ` +
+      `notes=[${formatNotesCell(agg.thumbsDownNotesByClass, notesMode)}] ` +
+      `thinking=[${formatThinkingCell(agg)}] unchecked=${formatUncheckedCell(agg)}`,
+  ];
 }
 
 export function renderScoreboard(
@@ -239,8 +291,8 @@ export function renderScoreboard(
   );
   for (const row of rows) {
     lines.push(`- ${row.meta.label}`);
-    lines.push(renderRouteLine("chat", row.chat));
-    lines.push(renderRouteLine("band", row.band));
+    lines.push(...renderRouteLines("chat", row.chat, row.meta.notesMode));
+    lines.push(...renderRouteLines("band", row.band, row.meta.notesMode));
   }
   return lines.join("\n");
 }
@@ -309,13 +361,17 @@ async function main() {
     // Baseline row: games 190-198.
     const baselineRows = loadTraceRowsInRange(db, 190, 198);
     const baselineSplit = splitByRoute(baselineRows);
-    rows.push({ meta: { label: "baseline (games 190-198)" }, chat: baselineSplit.chat, band: baselineSplit.band });
+    rows.push({
+      meta: { label: "baseline (games 190-198)", notesMode: "baseline" },
+      chat: baselineSplit.chat,
+      band: baselineSplit.band,
+    });
 
     // One row per game with id > 198.
     for (const gameId of loadGameIdsAfter(db, 198)) {
       const gameRows = loadTraceRows(db, gameId);
       const split = splitByRoute(gameRows);
-      rows.push({ meta: { label: `game ${gameId}` }, chat: split.chat, band: split.band });
+      rows.push({ meta: { label: `game ${gameId}`, notesMode: "game" }, chat: split.chat, band: split.band });
     }
 
     const table = renderScoreboard(rows, runAt, sha);
