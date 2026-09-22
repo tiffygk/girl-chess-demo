@@ -2356,11 +2356,13 @@ export async function chat(
       // seam every downstream use (validateChat, trimmed/modelText, and the
       // advice_traces `output` field this function persists at the end)
       // reads from, so a model reply can never carry an em-dash or a
-      // swap-list phrase into the db or the caller. This is also the value
-      // that ends up persisted on a REJECTED draft (a template-fallback
-      // row's `output` is this raw last attempt, not the apology copy the
-      // user sees) -- normalizing here is what covers that path too, per
-      // the brief's "do not patch only the model branch".
+      // swap-list phrase into the db or the caller. This value also feeds a
+      // REJECTED draft's entry in attempts_json (since wave B, a
+      // template-fallback row's `output` is the apology copy she saw, not
+      // this raw last attempt -- the raw attempt(s), including any
+      // "[backend error]" text, live in attempts_json instead) --
+      // normalizing here is what covers that path too, per the brief's
+      // "do not patch only the model branch".
       attemptOutput = normalizeVoice(
         backend.generateStream && opts?.onDelta
           ? await backend.generateStream(
