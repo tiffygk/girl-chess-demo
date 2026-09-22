@@ -6,6 +6,7 @@ import type { RecommendationFacts } from "../annotator/motifs";
 import type { CoachBackend } from "./backends/types";
 import { validateNarration } from "./validate";
 import { recordAdviceTrace } from "./traces";
+import { computeClaimCoverage } from "./claimCoverage";
 import { normalizeVoice } from "./textNormalize";
 import { coachThinkingMode } from "./backends/agent-sdk";
 
@@ -538,6 +539,17 @@ export async function narrate(
   const resolvedThinking = coachThinkingMode();
   const thinkingPref = resolvedThinking ?? "default";
 
+  // Game 198 follow-up round (2026-09-22, brief-4.md, B3/step 4):
+  // validateNarration above (the band's only validator) runs
+  // checkDefenseClaims plus the allowed-square/allowed-SAN lists -- it has
+  // no placement, relation, or mate check. So narrate() passes only
+  // ["defense-claim"], the band's real checker set, never
+  // ALL_CHECKER_CLASSES -- otherwise a band relation/placement/mate claim
+  // would be recorded "checked" when nothing looked at it, exactly the
+  // defect B3 in the plan gate review named. Measurement only: this does
+  // not change what the band says, and adds no fallback or regen.
+  const coverageJson = JSON.stringify(computeClaimCoverage(text, facts, ["defense-claim"]));
+
   const traceId = recordAdviceTrace({
     gameId: trace.gameId,
     ply: trace.ply,
@@ -555,6 +567,7 @@ export async function narrate(
     // that attempt.
     attemptsJson: attempts.length > 1 ? JSON.stringify(attempts) : null,
     thinkingPref,
+    coverageJson,
   });
 
   return {
