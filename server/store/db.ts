@@ -458,17 +458,23 @@ export const getGameMoves = (gameId: number) =>
 // wants this for a game's small turning-point set. A ply with no attached
 // eval yet simply has no row in the result (best_move/pv NULL if a row
 // exists but eval hasn't landed) — callers must handle both gracefully.
+//
+// evalMate added (game 198 follow-up, 2026-09-22, cause 4 mirror fix):
+// tools/replay-check.ts's buildTurningLines and tools/truth-check.ts's main
+// loop both need eval_mate to compute TurningLine.equalMate the same way
+// manager.ts's getTurningLines does (via keepsMateSchedule) -- additive
+// field, existing callers that only read bestMove/pv are unaffected.
 export const getMoveEvalsByPlies = (
   gameId: number,
   plies: number[]
-): { ply: number; bestMove: string | null; pv: string | null }[] => {
+): { ply: number; bestMove: string | null; pv: string | null; evalMate: number | null }[] => {
   if (plies.length === 0) return [];
   const placeholders = plies.map(() => "?").join(",");
   return (
     db
-      .prepare(`SELECT ply, best_move, pv FROM moves WHERE game_id = ? AND ply IN (${placeholders})`)
+      .prepare(`SELECT ply, best_move, pv, eval_mate FROM moves WHERE game_id = ? AND ply IN (${placeholders})`)
       .all(gameId, ...plies) as any[]
-  ).map((r) => ({ ply: r.ply, bestMove: r.best_move ?? null, pv: r.pv ?? null }));
+  ).map((r) => ({ ply: r.ply, bestMove: r.best_move ?? null, pv: r.pv ?? null, evalMate: r.eval_mate ?? null }));
 };
 export const logGameEvent = (gameId: number, type: string, detail?: string) =>
   db.prepare("INSERT INTO game_events(game_id, type, detail) VALUES(?,?,?)").run(gameId, type, detail ?? null);

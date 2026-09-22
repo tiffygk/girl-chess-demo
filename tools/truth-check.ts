@@ -86,6 +86,7 @@ import {
 export { resolveRealDbPath };
 export type { DbResolution };
 import { moveEndpoints } from "../server/annotator/moveEndpoints";
+import { keepsMateSchedule } from "../server/annotator/mateTie";
 import { followedBest } from "../src/review/followedBest";
 import { buildTurningPointNote } from "../src/review/turningPointNote";
 import type { TurningLine, TurningPoint, MoveClassification, SummaryMove } from "../src/game/api";
@@ -296,7 +297,13 @@ async function main() {
     // Same seed-ply set + batched eval read as getTurningLines: the player-
     // to-move seed for turning point t.ply is t.ply - (t.ply % 2).
     const seedPlies = Array.from(new Set(tpRows.map((t) => t.ply - (t.ply % 2)).filter((p) => p >= 1)));
-    const evals = getMoveEvalsByPlies(gameId, seedPlies);
+    // Game 198 follow-up (2026-09-22), cause 4 mirror fix: also fetch each
+    // seed ply's following row so equalMate below can read both eval_mate
+    // values, exactly the (seedRow, playedRow) pair manager.ts's
+    // getTurningLines compares. See replay-check.ts's buildTurningLines,
+    // which this loop mirrors.
+    const matePlies = Array.from(new Set([...seedPlies, ...seedPlies.map((p) => p + 1)]));
+    const evals = getMoveEvalsByPlies(gameId, matePlies);
     const evalByPly = new Map(evals.map((e) => [e.ply, e]));
 
     for (const row of tpRows) {
@@ -325,6 +332,20 @@ async function main() {
       if (playedFromTo) line.playedFromTo = playedFromTo;
       if (bestSan) line.bestSan = bestSan;
       if (bestFromTo) line.bestFromTo = bestFromTo;
+      // Game 198 follow-up (2026-09-22), cause 4 mirror fix: same rule as
+      // manager.ts's getTurningLines (reuses keepsMateSchedule, never
+      // re-derives it) -- a played move that differs from bestSan but
+      // keeps the mate schedule is a second mating move, not a miss.
+      if (seedPly >= 1) {
+        const seedRow = evalByPly.get(seedPly);
+        const playedRow = evalByPly.get(seedPly + 1);
+        const playedSan = gameSans[seedPly]?.san;
+        if (
+          seedRow && playedRow &&
+          keepsMateSchedule({ evalMate: seedRow.evalMate }, { evalMate: playedRow.evalMate }) &&
+          bestSan !== undefined && playedSan !== undefined && playedSan !== bestSan
+        ) line.equalMate = true;
+      }
 
       const fb = followedBest(line, gameSans);
       const cls = classifications.find((c) => c.ply === tp.ply);
