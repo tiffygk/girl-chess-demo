@@ -23,6 +23,7 @@ import { getPersona, isTimeoutError, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims, type OccupancyEntry } from "./placementClaims";
+import { checkRelationClaims } from "./relationClaims";
 import { checkMateClaims } from "./mateClaims";
 import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
 import { isOffTopic, mentionedPlies, thinkingForIntent, type ChatIntent } from "./intent";
@@ -392,6 +393,18 @@ export interface ChatFactList {
   // plies only. Absent when there is no matching hint, so ordinary chat is
   // untouched.
   hintFindings?: HintFindings;
+  // Game 198 fixes (2026-09-21), Task C2, cause 2: the fact list had no
+  // after-move relations at all -- contested (above) describes the LIVE
+  // position only. This is the same contested shape, but for the position
+  // one ply after the verified best move (hintFindings.bestSan), so the
+  // model can answer "is it still hanging after the best move" from a fact
+  // instead of reasoning about a position it was never shown. Present only
+  // when hintFindings exists and its bestSan is legal from hintFindings.fen
+  // (the same board hintFindings itself is keyed to).
+  contestedAfterBest?: {
+    san: string; // hintFindings.bestSan, restated so the two facts are legible independently
+    contested: ChatFactList["contested"];
+  };
   // Task 3 (RC2, game 192): every deep hint actually shown THIS game, oldest
   // first, cap 8 -- ground truth for "why did the hint change" (real game
   // 192: the model had no record of what she'd been shown and fabricated a
@@ -499,6 +512,23 @@ export function occupanciesAlongLine(fen: string, sans: string[], maxPlies = 4):
   return out;
 }
 
+// Game 198 fixes (2026-09-21), Task C2: the fen-returning twin of
+// occupanciesAlongLine above, for checkRelationClaims (which judges a
+// standing claim against a whole board via chess.js's attackers(), not just
+// an occupancy list). Same replay, same stop-at-first-illegal-move
+// discipline, same maxPlies default -- deliberately not derived FROM
+// occupanciesAlongLine's output, since occupancy alone can't rebuild a fen
+// (side to move, castling rights) well enough for attackers() to trust.
+export function fensAlongLine(fen: string, sans: string[], maxPlies = 4): string[] {
+  const out: string[] = [];
+  const c = new Chess(fen);
+  for (const san of sans.slice(0, maxPlies)) {
+    try { c.move(san); } catch { break; }
+    out.push(c.fen());
+  }
+  return out;
+}
+
 // Game 198 fixes (2026-09-21), cause 1: every board a placement claim might
 // legitimately be describing beyond the current and focused positions --
 // the hint ladder's verified PV, a focused turning point's PV, and the
@@ -521,6 +551,38 @@ function lineOccupancies(facts: ChatFactList): OccupancyEntry[][] {
   const pending = facts.context?.pendingMove?.san;
   if (pending) boards.push(...occupanciesAlongLine(live, [pending], 1));
   return boards;
+}
+
+// Game 198 fixes (2026-09-21), Task C2: the fen-returning twin of
+// lineOccupancies above, reusing the exact same source list (hint pv,
+// turning-point pv from the focus fen, candidate line, pending move) so
+// checkRelationClaims sees exactly the boards checkPlacementClaims already
+// sees -- no separate gap for this checker to reintroduce.
+//
+// Horizon is 2 plies here (not lineOccupancies' 4), fixed 2026-09-22 for
+// trace 361: a relation claim ("the pawn on c7 can't reach d6") is about the
+// board her sentence is actually standing on -- the live position or the
+// first move or two of a line -- not a board four plies deep. Trace 361's
+// denial was false on the live board (cxd6 was a legal capture) but the
+// hint pv's 4th-ply board had long since moved that pawn, so the denial
+// came true there by coincidence and the checker cleared a false claim.
+// lineOccupancies (placement) keeps its 4-ply horizon on purpose: "the
+// bishop is on e5" stays checkable arbitrarily deep into a line, since
+// placement doesn't drift false the way a denial can drift true.
+function lineFens(facts: ChatFactList): string[] {
+  const fens: string[] = [];
+  const live = facts.currentFen;
+  const hint = facts.hintFindings?.pvSans ?? facts.context?.hintFocus?.pvSans;
+  if (hint?.length) fens.push(...fensAlongLine(live, hint, 2));
+  const tp = facts.context?.turningPointFocus?.pvSans;
+  if (tp?.length && facts.focusPosition) fens.push(...fensAlongLine(facts.focusPosition.fen, tp, 2));
+  if (facts.candidateLine) {
+    const sans = [facts.candidateLine.san, ...(facts.candidateLine.replySan ? [facts.candidateLine.replySan] : [])];
+    fens.push(...fensAlongLine(live, sans, 2));
+  }
+  const pending = facts.context?.pendingMove?.san;
+  if (pending) fens.push(...fensAlongLine(live, [pending], 1));
+  return fens;
 }
 
 // Task 3 (R1a) input shape: one game's already-persisted per-ply analysis,
@@ -872,6 +934,7 @@ export function assembleChatFactList(
   // the matched fen, same discipline perPlyAnalysis's bestSan/pvSans
   // already follow -- stop at the first illegal move rather than throw.
   let hintFindings: ChatFactList["hintFindings"];
+  let contestedAfterBest: ChatFactList["contestedAfterBest"];
   if (hintCandidate) {
     const matchFen =
       hintCandidate.fen === currentFen
@@ -888,6 +951,15 @@ export function assembleChatFactList(
         promotion: (hc.facts.bestUci.slice(4, 5) || undefined) as "q" | "r" | "b" | "n" | undefined,
       });
       const bestSan = bestMove?.san ?? hc.facts.bestUci;
+      // Game 198 fixes (2026-09-21), Task C2: `board` has already had
+      // bestMove played on it above (chess.js .move() mutates in place) --
+      // reuse that mutation rather than replaying the move a second time.
+      // Absent when bestMove itself is illegal from matchFen (bestSan then
+      // falls back to the raw uci, and there's no legal after-move board to
+      // derive contested from).
+      if (bestMove) {
+        contestedAfterBest = { san: bestSan, contested: derivePositionFacts(board).contested };
+      }
       const pvBoard = new Chess(matchFen);
       const pvSans: string[] = [];
       for (const u of hc.facts.pv) {
@@ -952,6 +1024,7 @@ export function assembleChatFactList(
     perPlyAnalysis,
     highlightedPlies,
     hintFindings,
+    contestedAfterBest,
     // Task 3 (RC2, game 192): drop fen at the fold -- ChatFactList.recentHints
     // is a historical record (moveNumber + bestSan only), never a position to
     // re-derive facts from. Undefined (not an empty array) when the caller
@@ -1253,6 +1326,14 @@ export function validateChat(
   // unlike checkDefenseClaims above, there's no separate current/focus call
   // + filter needed here.
   violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy, ...lineOccupancies(facts)));
+  // Game 198 fixes (2026-09-21), Task C2, cause 2: nothing previously
+  // checked a RELATION claim (can take, attacks, lines up with) against the
+  // board -- checked on the current, focused, and after-move boards, same
+  // "every board a claim might legitimately describe" set lineOccupancies
+  // above already assembles for checkPlacementClaims.
+  violations.push(
+    ...checkRelationClaims(text, facts.currentFen, [facts.focusPosition?.fen, ...lineFens(facts)].filter((f): f is string => !!f))
+  );
   // Task 3a (R2, voice-enforcement round): no facts needed -- this checker
   // is about the SHAPE of the prose (notation/banned words/numbers), not
   // whether a claim matches the position. Round 3 Task 13: opts threads
@@ -1354,6 +1435,11 @@ export function validateChatGeneral(
     }
     violations.push(...checkSideAttributionClaims(text, facts));
     violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy, ...lineOccupancies(facts)));
+    // Game 198 fixes (2026-09-21), Task C2, cause 2: same relation-claim
+    // check as validateChat above.
+    violations.push(
+      ...checkRelationClaims(text, facts.currentFen, [facts.focusPosition?.fen, ...lineFens(facts)].filter((f): f is string => !!f))
+    );
   }
 
   violations.push(...checkVoice(text, opts));
@@ -2040,7 +2126,7 @@ export function buildChatPromptParts(
 // SAN token carries no prefix at all (chess notation never contains ":"),
 // so it's keyed under "" below and is the only kind that still gets the
 // original "isn't a move from this game" wording.
-const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
+export const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
   "": "isn't a move from this game.",
   // Game 198 fixes (2026-09-21), Task B2, cause 1: the old wording
   // ("restate only what the fact list proves") turned a true after-move
@@ -2055,6 +2141,12 @@ const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
   "side-claim": "names the wrong side -- that move belongs to the other side.",
   "defense-claim": "isn't a defense the position supports -- drop the defense claim.",
   "mate-claim": "doesn't match the analysis -- drop the mate claim.",
+  // Game 198 fixes (2026-09-21), Task C2, cause 2: same "say only what the
+  // fact list proves" discipline as the defense/placement guidance above,
+  // pointed at the fact list's own attackers/defenders fields (contested,
+  // contestedAfterBest) rather than at reasoning about the board.
+  "relation-claim":
+    "claims a piece can take, attack or see a square it cannot, or denies one it can -- say only what the fact list's attackers and defenders show.",
   "voice-notation": "say the piece and where it goes in plain words, not notation.",
   "voice-word":
     "is a banned word -- for engine say \"our chess brain\"; for a move, say what it does: developing, regrouping, a retreat, a waiting move, a preventing move.",
