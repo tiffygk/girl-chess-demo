@@ -76,4 +76,30 @@ describe("checkRelationClaims", () => {
       )
     ).toEqual([]);
   });
+
+  // review-C Minor: relationHolds() uses chess.js attackers(), which is
+  // geometric and ignores pins -- a TRUE denial like "the knight on e5
+  // can't take g4" was flagged as a false denial because the knight
+  // geometrically attacks g4 even though it is pinned to its own king by
+  // the rook on e1 and cannot legally move there. Black to move.
+  const PINNED_KNIGHT_E5 = "4k3/8/8/4n3/8/8/8/4RK2 b - - 0 1";
+  it("does not flag a true denial from a pinned piece (knight on e5 can't take g4)", () => {
+    expect(checkRelationClaims("the knight on e5 can't take g4.", PINNED_KNIGHT_E5)).toEqual([]);
+  });
+  it("still flags the trace-361 false denial (cxd6 is a legal capture)", () => {
+    expect(
+      checkRelationClaims("the pawn on c7 can't reach d6.", AFTER_QXD6)
+    ).toEqual(["relation-claim: c7 does not attack d6 -- it does"]);
+  });
+  // Same trace-361 board, but with WHITE to move instead of black: the
+  // source piece (black's pawn on c7) no longer belongs to the side to
+  // move, so legality on THIS board can't adjudicate the denial -- it must
+  // be skipped here (not flagged, not confirmed), not evaluated against a
+  // side that isn't moving.
+  const TRACE_361_WHITE_TO_MOVE = "rnbq1k1r/pppp1ppp/3Q4/B2P4/2P5/8/PP3PPP/RN2KBNR w KQ - 0 9";
+  it("skips a denial whose source piece isn't the side to move on that board", () => {
+    expect(
+      checkRelationClaims("the pawn on c7 can't reach d6.", TRACE_361_WHITE_TO_MOVE)
+    ).toEqual([]);
+  });
 });
