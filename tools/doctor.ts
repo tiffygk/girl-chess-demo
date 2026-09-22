@@ -20,7 +20,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 
 export type CheckResult = { ok: boolean; line: string; note?: boolean };
 export type Check = {
-  name: "node" | "homebrew" | "stockfish" | "lc0" | "weights" | "ports" | "coach" | "data";
+  name: "node" | "homebrew" | "stockfish" | "lc0" | "weights" | "ports" | "coach" | "data" | "manifest";
   run: () => Promise<CheckResult>;
 };
 
@@ -163,6 +163,41 @@ export function makeStockfishCheck(resolvePath: () => string = resolveStockfishP
   };
 }
 
+// B1.3 (live-telemetry round, 2026-09-22): confirms GET /api/agent/manifest
+// responds and lists the endpoints this round adds. A note (not a hard
+// failure) when the server isn't running at all -- doctor runs on a fresh
+// clone before anyone has started `npm run dev`, same reasoning as the
+// "coach" check above -- so this only ever fixes-fails when the server IS
+// up but the route is missing or the manifest dropped an endpoint.
+// `fetchJson` is injected so doctor.test.ts never needs a real server.
+export function makeManifestCheck(
+  fetchJson: (url: string) => Promise<any> = async (url) => {
+    const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    return res.json();
+  }
+): Check {
+  return {
+    name: "manifest",
+    run: async () => {
+      const port = Number(process.env.PORT) || 3001;
+      let body: any;
+      try {
+        body = await fetchJson(`http://localhost:${port}/api/agent/manifest`);
+      } catch {
+        return { ok: true, note: true, line: "agent manifest: server not running; start npm run dev, then re-run doctor to verify GET /api/agent/manifest." };
+      }
+      const paths: string[] = Array.isArray(body?.endpoints) ? body.endpoints.map((e: any) => e?.path) : [];
+      const required = ["/api/health", "/api/game/:id/state", "/api/agent/manifest"];
+      const missing = required.filter((p) => !paths.includes(p));
+      if (missing.length > 0) {
+        return { ok: false, line: `agent manifest is missing ${missing.join(", ")}. check server/agentManifest.ts.` };
+      }
+      return { ok: true, line: `agent manifest lists all ${required.length} telemetry endpoints` };
+    },
+  };
+}
+
 export const realChecks: Check[] = [
   {
     name: "node",
@@ -234,6 +269,7 @@ export const realChecks: Check[] = [
       }
     },
   },
+  makeManifestCheck(),
 ];
 
 export async function runChecks(checks: Check[], print: (line: string) => void): Promise<number> {
