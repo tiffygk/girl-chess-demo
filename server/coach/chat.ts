@@ -1164,20 +1164,28 @@ const VOICE_CP_NUMBER_RE = /\b\d+(?:\.\d+)?\s*(?:cp|centipawns?)\b/gi;
 // tells, both mechanical (precision over recall, same discipline as the
 // three checks above).
 //
-// Self-correction: "wait," or "actually," at a CLAUSE start (sentence
-// start, or right after a comma, semicolon, or dash), never mid-clause --
-// "that is actually a strong reply" must pass; "she plays Nf3, actually,
-// that's forcing" or a sentence opening "wait, ..." must not. The
-// alternation's non-capturing branch is either "^" (true start of the
-// returned text) or one of the clause-boundary characters followed by
-// optional whitespace -- a preceding sentence's closing "." plus the "\n\n"
-// paragraph break chat.ts's own checkOpponentQualityClaims appends before
-// its correction (see that function, and the comment on validateChat's
-// call site below) is exactly this second branch, which is why that
-// correction is applied strictly AFTER validateChat runs, never fed back
-// through it (chat.ts's chat(), the `if (modelText !== null)` block after
-// the model/regen loop).
-const VOICE_SELF_CORRECTION_RE = /(?:^|[.!?,;–—-]\s*)(wait,|actually,)/gi;
+// Self-correction: "wait," at a CLAUSE start (sentence start, or right
+// after a comma, semicolon, or dash), never mid-clause -- "she plays Nf3,
+// actually, that's forcing" or a sentence opening "wait, ..." must not
+// pass. The alternation's non-capturing branch is either "^" (true start
+// of the returned text) or one of the clause-boundary characters followed
+// by optional whitespace.
+//
+// Fix round (2026-09-22, reviewer MAJOR): "actually," was dropped from
+// this pattern. It flagged ordinary honest emphasis -- "actually, the
+// knight is fine", "she plays Nf3. Actually, that is the strongest
+// reply." -- neither of which second-guesses anything; each would have
+// cost her a regen or a template fallback for a clean sentence. Rerunning
+// the corpus (all 377 advice_traces rows, not just the 168 chat/model
+// scope) confirmed the controller's data point: every real self-correction
+// found (trace 249, 251, 362) uses "wait,"; "actually," never caught a
+// real one, and the code-appended correction (checkOpponentQualityClaims,
+// below) itself says "actually," honestly and would have been the very
+// thing this check exists to distinguish FROM. "wait," alone still covers
+// the "\n\n" paragraph-break case that append uses as its own clause
+// boundary, so the ordering proof (checkOpponentQualityClaims runs after
+// validateChat, never fed back through it) is unaffected by this narrowing.
+const VOICE_SELF_CORRECTION_RE = /(?:^|[.!?,;–—-]\s*)(wait,)/gi;
 
 // Label leak: an internal fact-list KEY NAME reaching prose, rather than
 // the plain-English fact it names. Two shapes, found by running this
@@ -2199,9 +2207,10 @@ export const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
   "voice-word":
     "is a banned word -- for engine say \"our chess brain\"; for a move, say what it does: developing, regrouping, a retreat, a waiting move, a preventing move.",
   "voice-number": "never state a number for the position.",
-  // Game 198 follow-up round (2026-09-22), brief-6b.
+  // Game 198 follow-up round (2026-09-22), brief-6b (fix round: "actually,"
+  // dropped, see VOICE_SELF_CORRECTION_RE's comment).
   "voice-self-correction":
-    "second-guesses itself mid-reply (\"wait,\"/\"actually,\"). state the corrected fact plainly and drop the aside.",
+    "second-guesses itself mid-reply (\"wait,\"). state the corrected fact plainly and drop the aside.",
   "voice-label-leak":
     "names an internal fact-list field instead of the plain fact. say it in plain words (\"the knight defends it\", not \"defendedBy\").",
 };

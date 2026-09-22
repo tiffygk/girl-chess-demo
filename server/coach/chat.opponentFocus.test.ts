@@ -233,16 +233,19 @@ describe("checkOpponentQualityClaims (opponent-move-analysis plan, Wave C, hones
       expect(result.text.toLowerCase()).toContain("computer");
     });
 
-    // Brief 6b (game 198 follow-up round, 2026-09-22): the code-appended
-    // "actually, that move matched ..." sentence (checkOpponentQualityClaims
-    // above) starts with the exact clause-start "actually," the new
-    // voice-self-correction check bans. If that append were re-validated,
-    // it would trip a regen every single time this correction fires --
-    // this test proves it is not: chat.ts's chat() applies the correction
-    // strictly AFTER the model/regen loop (the `if (modelText !== null)`
-    // block, well past every validateChat call), so it is never fed back
-    // through validation on the production path.
-    it("the code-appended correction is never re-validated -- zero regen, even though the append text would itself trip voice-self-correction if re-checked", async () => {
+    // Brief 6b (game 198 follow-up round, 2026-09-22), fix round: the
+    // code-appended "actually, that move matched ..." sentence
+    // (checkOpponentQualityClaims above) is honest -- it corrects the
+    // MODEL's prior claim, not itself mid-sentence -- which is exactly why
+    // "actually," was dropped from VOICE_SELF_CORRECTION_RE (see that
+    // constant's comment: this append is the concrete example of the
+    // false-positive class the reviewer found). This test proves two
+    // things at once: (1) zero regen -- chat.ts's chat() applies the
+    // correction strictly AFTER the model/regen loop, so it is never fed
+    // back through validation on the production path; (2) even if it WERE
+    // re-validated, it no longer trips voice-self-correction, because
+    // "actually," alone is no longer banned.
+    it("the code-appended correction is never re-validated, and no longer would trip voice-self-correction even if it were", async () => {
       const facts = assembleChatFactList(
         moves(GAME),
         { turningPointFocus: { ply: 2, san: "e5", label: "mallow's move", bestSan: "e5", matchedBest: true, quality: "best" } },
@@ -259,12 +262,12 @@ describe("checkOpponentQualityClaims (opponent-move-analysis plan, Wave C, hones
       expect(calls).toBe(1); // one backend call total -- the append never triggers a regen
       expect(result.text).toContain("actually, that move matched the computer's own top choice");
 
-      // Prove the pattern is real, not just narrow enough to miss this
-      // text by accident: fed back through validateChat directly, the
-      // final (already-appended) text DOES trip voice-self-correction.
+      // Fed back through validateChat directly, the appended text no
+      // longer flags voice-self-correction (the fix-round narrowing).
       const requoted = validateChat(result.text, facts);
-      expect(requoted.ok).toBe(false);
-      if (!requoted.ok) expect(requoted.violations.some((v) => v.startsWith("voice-self-correction"))).toBe(true);
+      if (!requoted.ok) {
+        expect(requoted.violations.some((v) => v.startsWith("voice-self-correction"))).toBe(false);
+      }
     });
 
     it("leaves an honest reply about the same matched-best move untouched", async () => {
