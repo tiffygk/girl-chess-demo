@@ -39,8 +39,20 @@ export function findRepoRoot(startDir: string = path.dirname(fileURLToPath(impor
 
 const REPO_ROOT = findRepoRoot();
 
+// setup.sh installs a pinned Stockfish 19 binary, verified by checksum, at
+// <repoRoot>/engines/stockfish (see .claude/rules/data-and-gate.md's
+// Engine-version rule). Prefer that pinned binary when present; fall back
+// to the bare command name, resolved off PATH, for a machine that has not
+// run setup.sh yet or is deliberately using a different install. Exported
+// with an optional repoRoot so tests can point it at a synthesized temp
+// tree instead of this real checkout's engines/ directory.
+export function resolveStockfishPath(repoRoot: string = REPO_ROOT): string {
+  const pinned = path.join(repoRoot, "engines", "stockfish");
+  return fs.existsSync(pinned) ? pinned : "stockfish";
+}
+
 export const ENGINE_PATHS = {
-  stockfish: "stockfish",
+  stockfish: resolveStockfishPath(),
   lc0: "lc0",
   weightsDir: path.resolve(REPO_ROOT, "weights"),
   maiaWeights: (elo: number) =>

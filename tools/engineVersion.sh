@@ -8,7 +8,15 @@ set -euo pipefail
 
 EXPECTED="Stockfish 19"
 
-out="$(printf "uci\nquit\n" | stockfish)"
+# Prefer the pinned engines/stockfish setup.sh installs by checksum (see
+# server/engines/paths.ts's resolveStockfishPath), same preference order the
+# server and doctor use; GC_STOCKFISH_BIN overrides for tests.
+SF="${GC_STOCKFISH_BIN:-}"
+if [ -z "$SF" ]; then
+  if [ -x engines/stockfish ]; then SF=engines/stockfish; else SF=stockfish; fi
+fi
+
+out="$(printf "uci\nquit\n" | "$SF")"
 id_line="$(printf '%s\n' "$out" | grep "^id name " || true)"
 if [ -z "$id_line" ]; then
   echo "stockfish answered without an id name line; this repo's eval fixtures are baselined on $EXPECTED. the game works; eval tests may differ. see .claude/rules/data-and-gate.md"
