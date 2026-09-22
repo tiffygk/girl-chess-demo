@@ -41,7 +41,7 @@ const FORBIDDEN_PATTERNS: Pattern[] = [
   { name: "em-dash", re: /—/ },
   { name: "en-dash", re: /–/ },
   { name: "spaced double-hyphen", re: / -- / },
-  { name: "quietly", re: /\bquietly\b/i },
+  { name: "quiet", re: /\bquiet(ly|er|est)?\b/i },
   {
     name: "real-as-booster",
     re: /\breal (slip|gift|ground|pressure|issue|reason|plan|mistake)\b/i,

@@ -85,6 +85,8 @@ export const AI_ISM_WORDS: string[] = [
   // (coach.md). checkVoice here is eval-only (see the file header):
   // nothing under server/coach/chat.ts or index.ts imports it at runtime.
   "quietly",
+  "quiet",
+  "quieter",
   "genuinely",
 ];
 

@@ -64,6 +64,14 @@ A harness that lives and dies inside one session leaves nothing to re-run. Commi
 **8. WAL-safe db copies.**
 When measuring against a copy of the live SQLite db, a plain `cp` of the `.db` misses rows still in the `-wal` file (recent games vanish). Copy the `.db`, `-wal`, and `-shm` together, or accept that the newest games are absent and say so. Never checkpoint the owner's real db to work around it.
 
+**9. Hand audits: read the fixture's ruling first, and every count ships with its rows.** On
+2026-09-20 twelve FK3 answers were hand-scored against fh.ts's "proven forced loss" label;
+`fixtures.ts`'s FK3 entry carried a 2026-07-31 ruling that it is a forced trade with an
+engine-found escape (Nd7+), and the audit was backwards until the gate's fact panelist read
+the fixture. Open the fixture entry before scoring a row. A hand-audit count goes on a page
+only with a per-row table in the results note (row, quote, verdict); a secondary tally
+without one ("overclaimed 3 of 6") failed the gate's reconciliation and was dropped.
+
 ## Quick reference
 
 | Axis | How | Never |
