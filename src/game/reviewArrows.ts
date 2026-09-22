@@ -247,7 +247,11 @@ export function reviewArrowsForMove(
   const madeColor: ArrowColor = isOpponentPly ? "mallow" : "played";
   const subjectBestColor: ArrowColor = isOpponentPly ? "mallow-best" : "best";
   const madeIsBest =
-    !!made && !!moverBest && made.from === moverBest.from && made.to === moverBest.to;
+    (!!made && !!moverBest && made.from === moverBest.from && made.to === moverBest.to) ||
+    // Game 198 fixes (2026-09-22), wave A2: a second mating move is the best
+    // move too (server-side keepsMateSchedule sets equalMate; followedBest
+    // reads it). Her ply only: "found" is her voice.
+    (!!made && !isOpponentPly && line.equalMate === true);
 
   if (made && madeIsBest) {
     // Coincident made/best: one honest solid arrow, never a duplicate.
