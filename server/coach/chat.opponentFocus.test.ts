@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { openDb, createSession, createGame } from "../store/db";
-import { assembleChatFactList, chat, checkOpponentQualityClaims } from "./chat";
+import { assembleChatFactList, chat, checkOpponentQualityClaims, validateChat } from "./chat";
 import type { ChatPerPlyInput } from "./chat";
 import type { CoachBackend } from "./backends/types";
 
@@ -231,6 +231,40 @@ describe("checkOpponentQualityClaims (opponent-move-analysis plan, Wave C, hones
       expect(calls).toBe(1); // never regen-first -- one backend call total
       expect(result.text).toContain("mallow completely blundered that move.");
       expect(result.text.toLowerCase()).toContain("computer");
+    });
+
+    // Brief 6b (game 198 follow-up round, 2026-09-22): the code-appended
+    // "actually, that move matched ..." sentence (checkOpponentQualityClaims
+    // above) starts with the exact clause-start "actually," the new
+    // voice-self-correction check bans. If that append were re-validated,
+    // it would trip a regen every single time this correction fires --
+    // this test proves it is not: chat.ts's chat() applies the correction
+    // strictly AFTER the model/regen loop (the `if (modelText !== null)`
+    // block, well past every validateChat call), so it is never fed back
+    // through validation on the production path.
+    it("the code-appended correction is never re-validated -- zero regen, even though the append text would itself trip voice-self-correction if re-checked", async () => {
+      const facts = assembleChatFactList(
+        moves(GAME),
+        { turningPointFocus: { ply: 2, san: "e5", label: "mallow's move", bestSan: "e5", matchedBest: true, quality: "best" } },
+        undefined,
+        [perPlyFor(1, "e4", "her"), perPlyFor(2, "e5", "mallow")]
+      );
+      let calls = 0;
+      const backend = fakeBackend(async () => {
+        calls += 1;
+        return "mallow completely blundered that move.";
+      });
+      const result = await chat("was that a mistake?", [], facts, backend, { gameId, ply: 4, kind: "chat" });
+
+      expect(calls).toBe(1); // one backend call total -- the append never triggers a regen
+      expect(result.text).toContain("actually, that move matched the computer's own top choice");
+
+      // Prove the pattern is real, not just narrow enough to miss this
+      // text by accident: fed back through validateChat directly, the
+      // final (already-appended) text DOES trip voice-self-correction.
+      const requoted = validateChat(result.text, facts);
+      expect(requoted.ok).toBe(false);
+      if (!requoted.ok) expect(requoted.violations.some((v) => v.startsWith("voice-self-correction"))).toBe(true);
     });
 
     it("leaves an honest reply about the same matched-best move untouched", async () => {
