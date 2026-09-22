@@ -1353,7 +1353,7 @@ describe("missed-win bullets", () => {
     expect(texts).not.toContain("no repeat pattern showed up");
     const wn = bullets.find((b) => b.section === "watch next time")!;
     expect(wn.text).toBe(
-      "you had checkmate on the board 5 times and played past it. when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move."
+      "you had checkmate on the board 5 times and played past it. when you are winning big, look at every check you have and count her king's escape squares before you pick a slower move."
     );
     expect(wn.category).toBe("endgame technique");
   });

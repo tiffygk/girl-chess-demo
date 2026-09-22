@@ -146,6 +146,11 @@ describe("checkVoice -- ai-ism axis", () => {
     expect(violations.some((v) => v.axis === "ai-ism" && v.id === "quietly")).toBe(true);
   });
 
+  it("fails on 'quiet move'", () => {
+    const violations = checkVoice("that was a quiet move.");
+    expect(violations.some((v) => v.axis === "ai-ism" && v.id === "quiet")).toBe(true);
+  });
+
   it("fails on 'genuinely'", () => {
     const violations = checkVoice("that's a genuinely good move.");
     expect(violations.some((v) => v.axis === "ai-ism" && v.id === "genuinely")).toBe(true);

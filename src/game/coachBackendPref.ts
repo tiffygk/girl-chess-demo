@@ -13,10 +13,17 @@
 // that only needs to prove a localStorage default.
 export const COACH_BACKEND_KEY = "gc-coach-backend";
 export type CoachBackendPref = "claude" | "ollama" | "template" | "agent-sdk";
-export const COACH_BACKEND_OPTIONS: { value: CoachBackendPref; label: string }[] = [
-  { value: "claude", label: "claude" },
-  { value: "agent-sdk", label: "agent sdk (warm)" },
-  { value: "ollama", label: "local (ollama)" },
+
+// Owner ruling 2026-09-21: the claude-cli option (per-call process spawn,
+// superseded by agent-sdk since the 2026-07-21 warm-backend round) goes
+// behind a dev flag rather than being removed, since it stays useful for
+// debugging the backend itself. agent-sdk relabels to "Claude
+// (Recommended)" and ollama to "Local Ollama"; template is unchanged.
+export type CoachBackendOption = { value: CoachBackendPref; label: string; dev?: true };
+export const COACH_BACKEND_OPTIONS: readonly CoachBackendOption[] = [
+  { value: "claude", label: "claude", dev: true },
+  { value: "agent-sdk", label: "Claude (Recommended)" },
+  { value: "ollama", label: "Local Ollama" },
   { value: "template", label: "templates only" },
 ];
 
@@ -26,11 +33,37 @@ export const COACH_BACKEND_OPTIONS: { value: CoachBackendPref; label: string }[]
 // undefined without an explicit --localstorage-file flag this project
 // doesn't set, so a real seam (not the flaky global) is what actually
 // makes this testable without jsdom/RTL scaffolding.
+
+// Owner ruling 2026-09-21: dev-only options (currently just "claude") are
+// hidden from the picker unless localStorage gc-dev is "1", read through
+// the same injectable storage seam as the coach-backend pref itself so
+// tests never depend on the real global.
+export const DEV_FLAG_KEY = "gc-dev";
+
+export function readDevFlag(storage: Pick<Storage, "getItem"> = localStorage): boolean {
+  try {
+    return storage.getItem(DEV_FLAG_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function visibleCoachBackendOptions(dev: boolean): CoachBackendOption[] {
+  return dev ? [...COACH_BACKEND_OPTIONS] : COACH_BACKEND_OPTIONS.filter((o) => !o.dev);
+}
+
 export function readCoachBackendPref(
   storage: Pick<Storage, "getItem"> = localStorage
 ): CoachBackendPref {
   const raw = storage.getItem(COACH_BACKEND_KEY);
-  return raw === "claude" || raw === "ollama" || raw === "template" || raw === "agent-sdk"
-    ? raw
-    : "agent-sdk";
+  const pref =
+    raw === "claude" || raw === "ollama" || raw === "template" || raw === "agent-sdk"
+      ? raw
+      : "agent-sdk";
+  // A stored dev-only pref (currently just "claude") reads as agent-sdk
+  // when the dev flag is off, so the radiogroup never shows nothing
+  // checked (the hidden option couldn't have been selected through the UI
+  // in that state).
+  if (pref === "claude" && !readDevFlag(storage)) return "agent-sdk";
+  return pref;
 }

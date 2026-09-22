@@ -691,7 +691,7 @@ function unconvertedCouldBeBetterText(tp: TurningPoint): string {
       : tp.endKind === "stalemate"
         ? "the stalemate"
         : tp.endKind === "fifty moves"
-          ? "fifty quiet moves"
+          ? "fifty moves with no capture or pawn move"
           : "the early call";
   if (tp.endKind === "repetition" && tp.anchorKind === "repetition-entry") {
     const n = moveNumberForPly(tp.ply);
@@ -910,7 +910,7 @@ function buildWatchNextTime(
           : `you had checkmate on the board and played past it.`;
       bullets.push({
         section: "watch next time",
-        text: `${opener} when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move.`,
+        text: `${opener} when you are winning big, look at every check you have and count her king's escape squares before you pick a slower move.`,
         phase: missedWinPhase,
         category: endgameOrConversion(missedWinPhase),
         ply: missedWin.ply,
