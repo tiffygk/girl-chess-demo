@@ -80,11 +80,19 @@ prints it UNMEASURED beside the headline. A validator pass rate ("no mechanical 
 the 2026-09-20 dashboard) is labelled as the validator's classes passing, never as correctness: it
 cannot move when the coach fails the way she reports.
 
-**11. The live validator's classes, as of 2026-09-21** (`VIOLATION_KIND_GUIDANCE` in
+**11. The live validator's classes, as of 2026-09-22** (`VIOLATION_KIND_GUIDANCE` in
 `server/coach/chat.ts`): placement-claim, side-claim, defense-claim, mate-claim, relation-claim,
-voice-notation, voice-word, voice-number. relation-claim (Wave C, `server/coach/relationClaims.ts`)
-checks capture legality and line of sight (attacks/lines-up-with/eyes/sees), the gap this list used
-to name as unchecked. Source: `server/coach/violationClasses.test.ts`; change both together.
+voice-notation, voice-word, voice-number, voice-self-correction, voice-label-leak. relation-claim
+(Wave C, `server/coach/relationClaims.ts`) checks capture legality and line of sight
+(attacks/lines-up-with/eyes/sees), the gap this list used to name as unchecked.
+voice-self-correction and voice-label-leak (brief-6b, game 198 follow-up round, 2026-09-22) are
+the two newest: a self-correcting aside ("wait," at a clause start -- "actually," was dropped in
+the fix round, 2026-09-22: it flagged honest emphasis, not a correction) and an internal
+fact-list key name reaching prose (`attackedBy`, `defendedBy`, `perPly`, or "contested" used as
+the key rather than the ordinary word -- "the contested list" flags, "a contested square" does
+not). Neither is a `claimCoverage.ts` `SPAN_PRODUCERS` entry (that list stays the four board-fact
+checkers only), so `ALL_CHECKER_CLASSES` is unaffected. Source: `server/coach/violationClasses.test.ts`;
+change both together.
 
 ## Quick reference
 
