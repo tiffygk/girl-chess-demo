@@ -210,3 +210,24 @@ describe("detectConversion — parity/guard fixtures", () => {
     }
   });
 });
+
+// Owner ruling (game 200 move 27, 2026-09-22): the live judge's own
+// mate-nudge gate narrowed to JUDGE_MATE_NUDGE_DEPTH (see classify.ts and
+// conversionForMove's header comment) -- via a new required parameter on
+// conversionForMove, never by touching MISSED_MATE_DEPTH/MATE_SLIP_MIN or
+// detectMateEvents itself. This guards the split: a mate-slip at depth 20
+// (mateBefore 20, slip 2), which the live judge must now stay silent on,
+// still fires here in the per-game debrief/turning-point path exactly as
+// before -- MATE_SLIP_MIN alone, at any depth, untouched.
+describe("detectConversion — live-judge depth-8 split leaves the per-game path untouched (2026-09-22)", () => {
+  it("mate-slip at mateBefore 20 (slip 2) still fires via detectConversion, unaffected by JUDGE_MATE_NUDGE_DEPTH", () => {
+    const rows: MoveEvalRow[] = [
+      { ply: 1, side: "mallow", san: "Kg8", evalCp: null, evalMate: 20 },
+      { ply: 2, side: "her", san: "Rd1", evalCp: null, evalMate: -21 },
+    ];
+    const { events } = detectConversion(rows);
+    expect(events).toContainEqual(
+      expect.objectContaining({ ply: 2, kind: "mate-slip", mateBefore: 20, mateAfter: 21, slip: 2 })
+    );
+  });
+});

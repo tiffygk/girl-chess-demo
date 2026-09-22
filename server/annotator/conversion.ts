@@ -300,38 +300,49 @@ export function detectConversion(
   return { events, episode };
 }
 
-// Task K2: the SAME mate-distance math as detectMateEvents above (sign
-// convention, slip formula, MISSED_MATE_DEPTH/MATE_SLIP_MIN gates -- all
-// identical, deliberately not re-derived), generalized from "one row in an
-// array with a byPly neighbor lookup" to "the single move classify.ts's
-// live judge is judging right now." `before`/`after` are classify.ts's own
-// beforeEval/afterEval (already-computed for the eval-delta math it already
-// does -- zero new engine calls). `boardBefore`/`playedSan` let this verify
-// the move the same defensive way deriveFacts/deriveThreatFacts do (replay
-// with chess.js, try/catch, never trust an unchecked string) rather than
+// Task K2: the same mate-distance SLIP MATH as detectMateEvents above (sign
+// convention, slip formula -- identical, deliberately not re-derived),
+// generalized from "one row in an array with a byPly neighbor lookup" to
+// "the single move classify.ts's live judge is judging right now."
+// `before`/`after` are classify.ts's own beforeEval/afterEval
+// (already-computed for the eval-delta math it already does -- zero new
+// engine calls). `boardBefore`/`playedSan` let this verify the move the
+// same defensive way deriveFacts/deriveThreatFacts do (replay with
+// chess.js, try/catch, never trust an unchecked string) rather than
 // pattern-matching "#" in playedSan the way detectMateEvents does when it
 // already has a whole verified game's SANs to work from.
+//
+// Split from detectMateEvents's own gate (owner ruling, game 200 move 27,
+// 2026-09-22): detectMateEvents (the per-game debrief/turning-point path)
+// fires missed-mate on `before <= MISSED_MATE_DEPTH && slip >= 1` and
+// mate-slip on `slip >= MATE_SLIP_MIN` AT ANY DEPTH -- untouched here,
+// still exactly as calibrated in the game-160 RCA. The live judge's own
+// firing rule is different by owner ruling: "as long as I am within 8
+// moves to forced mate ... should get them. If it's 20 moves versus 21 ...
+// that doesn't make sense" -- ANY slip >= 1 nudges while the held mate is
+// within `nudgeDepth` moves, and NOTHING nudges beyond it, including a
+// slip that would clear MATE_SLIP_MIN at any depth under the old shared
+// gate. `nudgeDepth` is passed in by the only caller (classify.ts's
+// JUDGE_MATE_NUDGE_DEPTH) rather than hardcoded here, so this module stays
+// free of a classify.ts import (classify.ts already imports from this
+// module; importing back would cycle). MATE_SLIP_MIN still decides the
+// KIND label (mate-slip vs missed-mate) for callers/tools that read
+// `.kind` -- conversionCopyFor (classify.ts) no longer branches on it, but
+// nothing here should silently drop the distinction for the field itself.
 //
 // Returns null whenever there is nothing to report: no mate was held
 // before the move (before.mate is null or <= 0 -- this is the mate-side
 // check only, not the free-material one, which classify.ts derives
 // separately from its own already-computed threat facts), the move is
 // unreplayable, the move itself delivered the mate (nothing missed -- she
-// just won), or the mate distance stayed on schedule (slip < MATE_SLIP_MIN
-// and not a missed shallow mate).
-//
-// When both a mate-slip and a missed-mate condition fire at once (a
-// shallow mate, i.e. before.mate <= MISSED_MATE_DEPTH, that also slipped by
-// >= MATE_SLIP_MIN -- the two gates overlap by construction, see
-// MISSED_MATE_DEPTH's header comment), mate-slip wins: it is the strictly
-// more general condition (it also catches slips on mates deeper than
-// MISSED_MATE_DEPTH, where missed-mate can never fire at all), so returning
-// it here never hides a real slip behind the narrower label.
+// just won), the mate distance stayed on schedule (slip < 1), or the held
+// mate was deeper than `nudgeDepth`.
 export function conversionForMove(
   before: EvalSnapshot,
   after: EvalSnapshot,
   boardBefore: string,
-  playedSan: string
+  playedSan: string,
+  nudgeDepth: number
 ): MoveConversionEvent | null {
   if (before.mate == null || before.mate <= 0) return null; // no mate held before her move
 
@@ -350,18 +361,17 @@ export function conversionForMove(
   if (afterMate == null) {
     // The mate reading vanished with the game continuing -- she let the
     // forced mate go entirely, not just slower. Same "lost-mate" contract
-    // as detectMateEvents above.
+    // as detectMateEvents above. Unaffected by nudgeDepth -- losing the
+    // mate outright always reports, at any depth (owner ruling).
     return { kind: "lost-mate", mateBefore: beforeMate, mateAfter: null, slip: 0 };
   }
 
   const afterAbs = Math.abs(afterMate);
   const slip = afterAbs - (beforeMate - 1);
 
-  if (slip >= MATE_SLIP_MIN) {
-    return { kind: "mate-slip", mateBefore: beforeMate, mateAfter: afterAbs, slip };
-  }
-  if (beforeMate <= MISSED_MATE_DEPTH && slip >= 1) {
-    return { kind: "missed-mate", mateBefore: beforeMate, mateAfter: afterAbs, slip };
+  if (beforeMate <= nudgeDepth && slip >= 1) {
+    const kind: ConversionEventKind = slip >= MATE_SLIP_MIN ? "mate-slip" : "missed-mate";
+    return { kind, mateBefore: beforeMate, mateAfter: afterAbs, slip };
   }
   return null;
 }
