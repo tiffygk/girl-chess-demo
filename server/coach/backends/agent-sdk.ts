@@ -165,7 +165,7 @@ fs.mkdirSync(AGENT_SDK_CWD, { recursive: true });
 // contract. Read per-call (not hoisted to module load like AGENT_SDK_MODEL)
 // so tests can toggle it within one process. An unrecognized value is
 // treated as unset rather than guessed at.
-function coachThinkingMode(): "disabled" | "low" | undefined {
+export function coachThinkingMode(): "disabled" | "low" | undefined {
   const raw = process.env.GC_COACH_THINKING;
   return raw === "disabled" || raw === "low" ? raw : undefined;
 }
