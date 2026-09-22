@@ -161,6 +161,13 @@ if [ "$push_in_command_position" = "1" ]; then
   fi
 fi
 
+# #18 `git add -A` / `git add .` / `git add --all` (2026-09-21): a gate log written at
+# a worktree root was swept into main by a fixup commit's `git add -A` and cost a
+# cleanup PR (#34). Stage named paths, so every file in a commit was chosen.
+if printf '%s' "$cmd" | grep -qE '(^|[;&|[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+add[[:space:]]+(-A|--all|\.)([[:space:]]|$)'; then
+  deny "git add -A / git add . refused in this repo: stage named paths (git add <file> ...) so nothing untracked rides into the commit by accident. A gate log at a worktree root reached main this way on 2026-09-21 (PR #34 removed it). Check 'git status --short' first if you are not sure what is untracked."
+fi
+
 # #17 grep -c / -q feeding a && chain (2026-08-26, at least three times in one
 # session). grep exits 1 on ZERO matches, so `grep -c foo file && git add ...`
 # silently skips everything after the &&, and the transcript reads as if it ran.

@@ -61,7 +61,7 @@ Every wave reaches `main` through a pull request, never a local merge or a direc
 3. Post the reviewer's full verdict as a PR review comment: `env -u GH_TOKEN gh pr review <n> --comment --body-file <review.md>`. A single-maintainer repo cannot approve its own PR, so the comment is the review record; do not fake an approval.
 4. Wait for the `gate` check on the PR (`env -u GH_TOKEN gh pr checks <n> --watch`). A red check is repo-reason or environment-reason: read the log; a timing flake is rerun (`gh run rerun --failed`), wrong code is a fix commit on the same branch.
 5. Before merging anything that changes `server/**`, run the mid-game check (no move in her live db in the last 15 minutes and no open game with recent moves); her live server restarts on merge.
-6. `env -u GH_TOKEN gh pr merge <n> --merge --delete-branch` (a merge commit, never squash or rebase, so `git revert -m 1 <merge sha>` stays the rollback). Record the PR number, merge SHA, and Actions run id in the ledger.
+6. `env -u GH_TOKEN gh pr merge <n> --merge --delete-branch` (a merge commit, never squash or rebase, so `git revert -m 1 <merge sha>` stays the rollback). Remove the wave's worktree first (`git worktree remove <dir>`); with it still checked out the remote branch deletes but the local delete errors (twice on 2026-09-21). Record the PR number, merge SHA, and Actions run id in the ledger.
 7. Branch protection on `main` requires the `gate` check and a pull request; a direct push is refused. A round still cuts its rollback tag before its first PR.
 
 Several small PRs beat one large one: one wave, one PR, so a reader can follow the change and a revert stays small.

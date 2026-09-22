@@ -1214,6 +1214,26 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(result.ok).toBe(true);
     });
 
+    it("flags the standalone word 'quiet'", () => {
+      const facts = voiceFacts();
+      const result = validateChat("knight to a6, a quiet regrouping move.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v === "voice-word: quiet")).toBe(true);
+    });
+
+    it("flags the standalone word 'quietly'", () => {
+      const facts = voiceFacts();
+      const result = validateChat("this quietly gives ground.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v === "voice-word: quietly")).toBe(true);
+    });
+
+    it("does not flag 'waits' as a voice-word violation", () => {
+      const facts = voiceFacts();
+      const result = validateChat("the queen sits on d6 and waits.", facts);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-word"))).toBe(false);
+    });
+
     it("flags a signed positive number for the position", () => {
       const facts = voiceFacts();
       const result = validateChat("you're at +50 here.", facts);
