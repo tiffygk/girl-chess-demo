@@ -1496,7 +1496,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     it("a placement violation does NOT get the bad-SAN catch-all, and gets its own guidance instead", () => {
       const suffix = correctiveSuffix(["placement-claim: your knight on b3 -- b3 is empty"]);
       expect(suffix).not.toContain("isn't a move from this game");
-      expect(suffix.toLowerCase()).toContain("restate only what the fact list proves");
+      expect(suffix.toLowerCase()).toContain("say the move first");
     });
 
     it("a side-claim violation gets its own guidance, not the SAN catch-all", () => {
@@ -1523,7 +1523,20 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
         "Qxh7",
       ]);
       expect(suffix).toContain("mentioned Qxh7, which isn't a move from this game.");
-      expect(suffix.toLowerCase()).toContain("restate only what the fact list proves");
+      expect(suffix.toLowerCase()).toContain("say the move first");
+    });
+
+    // Game 198 fixes (2026-09-21), Task B2: the old wording ("restate only
+    // what the fact list proves") turned a true after-move claim into a
+    // false one on retry -- the model had named a piece on a square that IS
+    // where it will be after a move it already stated, and the old hint
+    // told it to erase that instead of naming the move. Trace 361 denied a
+    // legal capture on retry; trace 363 fell to the template fallback
+    // twice. The new guidance asks for the move, not for silence.
+    it("the placement retry hint tells the model to name the move a claim follows", () => {
+      const s = correctiveSuffix(["placement-claim: your queen on d6 -- not there"]);
+      expect(s).toContain("say the move first");
+      expect(s).not.toContain("restate only what the fact list proves");
     });
   });
 

@@ -2037,7 +2037,16 @@ export function buildChatPromptParts(
 // original "isn't a move from this game" wording.
 const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
   "": "isn't a move from this game.",
-  "placement-claim": "misstates where a piece is -- restate only what the fact list proves.",
+  // Game 198 fixes (2026-09-21), Task B2, cause 1: the old wording
+  // ("restate only what the fact list proves") turned a true after-move
+  // claim into a false one on retry -- the reply had named a piece on a
+  // square that IS where it will be after a move it already stated, and
+  // this told it to erase that instead of naming the move (trace 361
+  // denied a legal capture on retry; trace 363 fell to the template
+  // fallback twice). The retry hint now asks for the move, not for
+  // silence.
+  "placement-claim":
+    "names a piece on a square it is not on right now. if you mean a position after a move, say the move first (\"after queen takes on d6, ...\"); otherwise keep to where the pieces stand on the fact list.",
   "side-claim": "names the wrong side -- that move belongs to the other side.",
   "defense-claim": "isn't a defense the position supports -- drop the defense claim.",
   "mate-claim": "doesn't match the analysis -- drop the mate claim.",
