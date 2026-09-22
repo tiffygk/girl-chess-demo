@@ -127,17 +127,21 @@ export interface ReplayResult {
 
 // ---------------------------------------------------------------------
 // Scoring (plan step 1 / step 23's arm table, no LLM judge -- coach-eval
-// rule 2). A violation counts toward attempt0ViolationRate when it is a
-// placement/relation PROSE claim (checkPlacementClaims' and (when wired)
-// checkRelationClaims' messages are full sentences, e.g. "the queen on d7
-// is hanging.") rather than a bare SAN-token violation (a plain move like
-// "Qxh7", the shape validateChat's SAN-allowlist check emits) -- the
-// cheapest reliable discriminator between the two violation families
-// without re-implementing either checker's matching logic here.
+// rule 2). A violation counts toward attempt0ViolationRate only when it
+// carries checkPlacementClaims' or checkRelationClaims' own prefix --
+// "placement-claim:" or "relation-claim:" -- an explicit match on the
+// exact strings those two checkers emit. Nothing else counts, including
+// "defense-claim:" (checkDefenseClaims), "voice-word:", "mate-claim:", or
+// a bare SAN-token violation (a plain move like "Qxh7", the shape
+// validateChat's SAN-allowlist check emits). A whitespace heuristic
+// (the prior implementation) miscounted "defense-claim: ..." because it
+// too is a full prose sentence with spaces -- proven by
+// replay-trace.test.ts's "counts only placement-claim/relation-claim
+// violations, not defense-claim" case.
 // ---------------------------------------------------------------------
 
 function isPlacementOrRelationViolation(v: string): boolean {
-  return /\s/.test(v);
+  return v.startsWith("placement-claim:") || v.startsWith("relation-claim:");
 }
 
 function median(values: number[]): number | null {

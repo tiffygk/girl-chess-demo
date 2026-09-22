@@ -9,7 +9,7 @@
 // chosen thinking level) is a SEPARATE session's job per the brief -- it
 // is never exercised here, and nothing in this file opens
 // data/girlchess.db or calls a real backend.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -49,6 +49,29 @@ describe("preflightKnownBad", () => {
   });
 });
 
+describe("preflightKnownBad abort branch", () => {
+  it("throws when validateChat is broken and reads the known-bad text as ok:true", async () => {
+    // Forces the exact instrument-broken condition preflightKnownBad exists
+    // to catch: validateChat wrongly passing the committed known-bad text.
+    // Mocking (rather than relying on the real validator, which already
+    // correctly rejects it) is what proves this test can actually fail --
+    // see replay-trace.ts's own abort branch for what it does on ok:true.
+    vi.resetModules();
+    vi.doMock("../server/coach/chat", async () => {
+      const actual = await vi.importActual<typeof import("../server/coach/chat")>(
+        "../server/coach/chat"
+      );
+      return { ...actual, validateChat: () => ({ ok: true }) };
+    });
+    const { preflightKnownBad: mockedPreflightKnownBad } = await import("./replay-trace");
+
+    expect(() => mockedPreflightKnownBad()).toThrow(/validator broken/);
+
+    vi.doUnmock("../server/coach/chat");
+    vi.resetModules();
+  });
+});
+
 describe("scoreResults", () => {
   it("computes the arm table from three hand-written result files", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gc-replay-score-"));
@@ -61,7 +84,7 @@ describe("scoreResults", () => {
         latencyMs: 4000,
         outputTokens: 120,
         attempts: [
-          { output: "the queen on d7 is hanging.", violations: ["the queen on d7 is hanging."], validated: false, thinking: "low" },
+          { output: "the queen on d7 is hanging.", violations: ["placement-claim: your queen on d7 -- not there"], validated: false, thinking: "low" },
           { output: "the knight on f6 is hanging.", violations: [], validated: true, thinking: "default" },
         ],
       },
@@ -95,21 +118,78 @@ describe("scoreResults", () => {
     const table = scoreResults(dir);
 
     expect(table.low.n).toBe(2);
-    // Only rep 1's attempt 0 has a placement/relation-shaped violation (a
-    // prose message, distinguished from a bare SAN token like "Qxh7" by
-    // containing whitespace) -- rep 2's single attempt validated clean.
+    // Only rep 1's attempt 0 has a violation carrying the "placement-claim:"
+    // prefix -- rep 2's single attempt validated clean.
     expect(table.low.attempt0ViolationRate).toBeCloseTo(0.5);
     expect(table.low.templateFallbackRate).toBe(0);
     expect(table.low.medianLatencyMs).toBe(5000);
     expect(table.low.medianOutputTokens).toBe(130);
 
     expect(table.default.n).toBe(1);
-    // "Qxh7" has no whitespace -- a bare SAN-token violation, not a
-    // placement/relation prose claim, so it does NOT count toward
-    // attempt0ViolationRate even though the row is a template fallback.
+    // "Qxh7" carries no "placement-claim:"/"relation-claim:" prefix -- a
+    // bare SAN-token violation, not a placement/relation prose claim, so
+    // it does NOT count toward attempt0ViolationRate even though the row
+    // is a template fallback.
     expect(table.default.attempt0ViolationRate).toBe(0);
     expect(table.default.templateFallbackRate).toBe(1);
     expect(table.default.medianOutputTokens).toBeNull();
+
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("counts only placement-claim/relation-claim violations, not defense-claim", () => {
+    // A whitespace heuristic (the old implementation) would count BOTH of
+    // these -- both messages are full prose sentences with spaces. Only
+    // checkPlacementClaims' and checkRelationClaims' own "placement-claim:"
+    // / "relation-claim:" prefixes should count; "defense-claim:" (from
+    // checkDefenseClaims) must not, even though it reads exactly like a
+    // placement/relation sentence.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gc-replay-score-prefix-"));
+    const results: ReplayResult[] = [
+      {
+        id: 400,
+        arm: "low",
+        rep: 1,
+        source: "model",
+        latencyMs: 1000,
+        outputTokens: 50,
+        attempts: [
+          {
+            output: "e4 does guard d5.",
+            violations: ["defense-claim: e4 does guard d5"],
+            validated: false,
+            thinking: "low",
+          },
+        ],
+      },
+      {
+        id: 401,
+        arm: "low",
+        rep: 2,
+        source: "model",
+        latencyMs: 1000,
+        outputTokens: 50,
+        attempts: [
+          {
+            output: "c7 does not attack d6 -- it does.",
+            violations: ["relation-claim: c7 does not attack d6 -- it does"],
+            validated: false,
+            thinking: "low",
+          },
+        ],
+      },
+    ];
+    for (const r of results) {
+      fs.writeFileSync(path.join(dir, `${r.id}-${r.arm}-${r.rep}.json`), JSON.stringify(r));
+    }
+
+    const table = scoreResults(dir);
+
+    // The defense-claim row must NOT be counted.
+    // The relation-claim row MUST be counted.
+    // n=2, so a rate of 0.5 proves exactly one of the two counted.
+    expect(table.low.n).toBe(2);
+    expect(table.low.attempt0ViolationRate).toBe(0.5);
 
     fs.rmSync(dir, { recursive: true, force: true });
   });
