@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { chatWithCoach, streamChatWithCoach, rateTrace, type ChatContext, type ChatHistoryMessage, type ChatResponse, type CoachProbe } from "./api";
 import { anchorForFocus, focusKey, historyToThread, shouldInjectAnchor, type ThreadEntry } from "./chatThread";
 import type { ChatStatusPhase } from "./chatStream";
+// B2.2 (live-telemetry round, 2026-09-22): see src/agent/dataGc.ts's header.
+import { DATA_GC } from "../agent/dataGc";
 
 // Task 1c (coach-truth-speed latency round, 2026-08-02): the staged
 // perceived-progress copy, driven by REAL pipeline events only (server/
@@ -507,6 +509,7 @@ export function CoachChat({
               <div
                 key={i}
                 className={m.role === "user" ? "chat-bubble chat-bubble-user" : "chat-bubble chat-bubble-coach pop-in"}
+                {...{ [DATA_GC.traceId]: m.traceId ?? "" }}
               >
                 <p className="chat-bubble-text">
                   {m.cause === "backend-down" && coachNeedsSetup && coachStatus ? coachStatus.detail : m.text}

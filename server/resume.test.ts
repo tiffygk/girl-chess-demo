@@ -120,3 +120,38 @@ describe("GET /api/game/:id/status", () => {
     expect(res.body).toEqual({ ok: false, reason: "not_found" });
   });
 });
+
+// B1.2 (live-telemetry round, 2026-09-22): the fen/ply/side surface
+// GameListEntry (the /status route above) never carried. RED if the route
+// is missing or reads GameListEntry instead of the live chess object
+// (verified by removing the route and watching the 404-vs-shape assertions
+// fail, then reverting).
+describe("GET /api/game/:id/state", () => {
+  afterAll(() => gm.shutdown());
+
+  // Built with the raw store functions (makeGameWithMoves), same as the
+  // "GET /api/games" block above -- no live engine needed (this game is
+  // NOT resident in gm's in-memory map), so this exercises gameState's
+  // not-resident/replay branch through the real route without depending on
+  // a real stockfish process's lifecycle across this file's earlier
+  // afterAll(gm.shutdown()) calls.
+  it("reports fen/ply/side reconstructed from a non-resident game's moves", async () => {
+    await ready;
+    const id = makeGameWithMoves("maia-1100", 3); // e4 e5 Nf3 -- 3 plies, white to move
+    const res = await request(app).get(`/api/game/${id}/state`).expect(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.gameId).toBe(id);
+    expect(res.body.fen).toContain(" b "); // after 3 plies (e4 e5 Nf3) black is to move
+    expect(res.body.ply).toBe(3);
+    expect(res.body.sideToMove).toBe("b");
+    expect(res.body.result).toBeNull();
+    expect(res.body.lastVerdict).toBeNull();
+    expect(res.body.coachBreaker).toEqual({ unhealthyUntil: null });
+  });
+
+  it("an unknown id returns 404 with ok:false, reason:not_found", async () => {
+    await ready;
+    const res = await request(app).get("/api/game/999999/state").expect(404);
+    expect(res.body).toEqual({ ok: false, reason: "not_found" });
+  });
+});

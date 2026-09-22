@@ -23,6 +23,10 @@ import { shouldBurst, shouldClearBurst } from "./coordGlitchBurst";
 // Deliberately kept OUT of src/skin/sugar-glitch.css (the owner's
 // narrow-window-fold-protected file) -- see coordGlitch.css's own header.
 import "./coordGlitch.css";
+// B2.2 (live-telemetry round, 2026-09-22): data-gc-* attribute names, read
+// from the SAME fen/turn/pending/arrows values this component already
+// renders with -- never recomputed. See src/agent/dataGc.ts's header.
+import { DATA_GC } from "../agent/dataGc";
 
 interface PieceEntry {
   id: string;
@@ -911,7 +915,15 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
       >
         <div className="board-mat">
         <div className="board-tray">
-        <div className="board-inner" ref={innerRef}>
+        <div
+          className="board-inner"
+          ref={innerRef}
+          {...{
+            [DATA_GC.fen]: fen,
+            [DATA_GC.side]: turn,
+            [DATA_GC.pending]: pending ? `${pending.from}-${pending.to}` : "",
+          }}
+        >
           <div className="squares">
             {Array.from({ length: 64 }, (_, idx) => {
               const square = idxToSquare(idx);
@@ -1055,6 +1067,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(
               viewBox="0 0 100 100"
               preserveAspectRatio="none"
               aria-hidden="true"
+              {...{ [DATA_GC.arrows]: arrows.map((a) => `${a.from}-${a.to}`).join(";") }}
             >
               {arrows.map((arrow, i) => {
                 // Task 6 (2026-08-05, R1/R2): a secondary found/best slims

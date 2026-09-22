@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Chess } from "chess.js";
-import { checkPlacementClaims } from "./placementClaims";
+import { checkPlacementClaims, placementClaimSentences } from "./placementClaims";
 import type { OccupancyEntry } from "./placementClaims";
 
 // Task 1 (R3, 2026-07-22 fact-gap round): checkPlacementClaims is modeled
@@ -138,5 +138,18 @@ describe("checkPlacementClaims with after-move boards", () => {
   });
   it("with no extra boards the current-board check is unchanged", () => {
     expect(checkPlacementClaims("your queen on d6 gives check.", occ(BEFORE))).toEqual(["placement-claim: your queen on d6 -- not there"]);
+  });
+});
+
+// A2 (live-telemetry round, 2026-09-22): same-set test for
+// placementClaimSentences -- hand-verified against this fixture: sentence
+// 0 has no placement-claim shape, sentence 1 is one ("your rook on a1").
+// RED condition (verify by reverting): if placementClaimSentences is
+// changed to always report every sentence index regardless of a match,
+// sentence 0 would wrongly appear and this fails.
+describe("placementClaimSentences (A2 same-set test)", () => {
+  it("reports exactly the sentences containing a placement-claim shape", () => {
+    const text = "the position looks balanced. your rook on a1 is active.";
+    expect(placementClaimSentences(text)).toEqual([{ sentence: 1 }]);
   });
 });

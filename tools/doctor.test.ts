@@ -10,6 +10,7 @@ import {
   parseNvmrcMajor,
   nodeCheckResult,
   makeStockfishCheck,
+  makeManifestCheck,
   type Check,
   type CheckResult,
 } from "./doctor";
@@ -38,6 +39,7 @@ function fakeChecks(overrides: Partial<Record<Check["name"], CheckResult>> = {})
     ports: { ok: true, line: "ports 3001 and 5173 are free" },
     coach: { ok: true, line: "coach: Claude Code is installed and signed in" },
     data: { ok: true, line: "data folder is writable" },
+    manifest: { ok: true, line: "agent manifest lists all 3 telemetry endpoints" },
   };
   const merged = { ...okAll, ...overrides };
   return (Object.keys(merged) as Check["name"][]).map((name) => ({ name, run: async () => merged[name] }));
@@ -48,7 +50,7 @@ describe("doctor", () => {
     const out: string[] = [];
     const code = await runChecks(fakeChecks(), (l) => out.push(l));
     expect(code).toBe(0);
-    expect(out.filter((l) => l.startsWith("ok   ")).length).toBe(8);
+    expect(out.filter((l) => l.startsWith("ok   ")).length).toBe(9);
     expect(out.at(-1)).toBe("doctor: everything is ready. run npm run dev");
   });
 
@@ -187,6 +189,43 @@ describe("doctor", () => {
     });
   });
 
+  // B1.3 (live-telemetry round, 2026-09-22): RED if the manifest check
+  // always reports ok regardless of what the server returns, or if it
+  // hard-fails when no server is running at all (verified by temporarily
+  // making the check ignore its fetchJson result and always return
+  // ok:true, which made the "missing endpoint" test below fail, then
+  // reverting).
+  describe("makeManifestCheck", () => {
+    it("is ok when the manifest lists all three endpoints", async () => {
+      const check = makeManifestCheck(async () => ({
+        endpoints: [{ path: "/api/health" }, { path: "/api/game/:id/state" }, { path: "/api/agent/manifest" }],
+      }));
+      const result = await check.run();
+      expect(result.ok).toBe(true);
+      expect(result.note).toBeUndefined();
+    });
+
+    it("fails when the manifest is missing an endpoint", async () => {
+      const check = makeManifestCheck(async () => ({ endpoints: [{ path: "/api/health" }] }));
+      const result = await check.run();
+      expect(result.ok).toBe(false);
+      expect(result.line).toContain("/api/game/:id/state");
+    });
+
+    it("is a note, not a failure, when the server isn't running", async () => {
+      const check = makeManifestCheck(async () => {
+        throw new Error("fetch failed");
+      });
+      const result = await check.run();
+      expect(result.ok).toBe(true);
+      expect(result.note).toBe(true);
+    });
+
+    it("realChecks includes a Check named manifest", () => {
+      expect(realChecks.find((c) => c.name === "manifest")).toBeDefined();
+    });
+  });
+
   describe("the node check's .nvmrc comparison, on fake version pairs", () => {
     it("parseNvmrcMajor parses the major version out of .nvmrc's content", () => {
       expect(parseNvmrcMajor("22\n")).toBe(22);
@@ -215,7 +254,7 @@ describe("doctor", () => {
       const out: string[] = [];
       const code = await runChecks(fakeChecks({ node: nodeCheckResult("25.2.1", 22) }), (l) => out.push(l));
       expect(code).toBe(0);
-      expect(out.filter((l) => l.startsWith("ok   ")).length).toBe(7);
+      expect(out.filter((l) => l.startsWith("ok   ")).length).toBe(8);
       expect(out.some((l) => l.startsWith("note"))).toBe(true);
     });
 

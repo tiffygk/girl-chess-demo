@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logHint, deleteGame, modeTimer, newSession, ServerUnreachableError } from "./api";
+import {
+  logHint,
+  deleteGame,
+  modeTimer,
+  newSession,
+  ServerUnreachableError,
+  narrate,
+  judgeMove,
+  fetchHintFacts,
+  chatWithCoach,
+} from "./api";
 
 // Wave 0, item 1 (F0): hint telemetry was logging the OPPONENT's refutation
 // move under the field named `bestUci` for levels 1-3 -- any log analysis
@@ -220,5 +230,75 @@ describe("api: the server is not running", () => {
     );
     await expect(newSession()).rejects.not.toBeInstanceOf(ServerUnreachableError);
     vi.unstubAllGlobals();
+  });
+});
+
+// Wave C (live-telemetry round), task C2: the coach/judge/hint fetch sites
+// call devLog so an agent driving the live app can grep the browser
+// console with /\[gc:/ and correlate a client request with the server-side
+// telemetry (tools/tail.ts). devLog itself is gated on gc-dev (tested in
+// src/agent/devLog.test.ts) -- these tests turn that flag on and assert
+// each fetch site actually calls through to console.log with its tag.
+// RED condition (verified by reverting each devLog call site independently
+// before this comment was written): remove a devLog(...) call from
+// narrate/judgeMove/fetchHintFacts/chatWithCoach in api.ts and the
+// corresponding assertion below fails (console.log spy never called).
+describe("devLog wiring on the coach/judge/hint fetch sites (C2)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    delete (globalThis as Record<string, unknown>).localStorage;
+  });
+
+  function enableDevFlag(): void {
+    (globalThis as Record<string, unknown>).localStorage = {
+      getItem: (k: string) => (k === "gc-dev" ? "1" : null),
+    };
+  }
+
+  function stubJsonFetch(json: unknown): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ status: 200, json: async () => json }) as Response)
+    );
+  }
+
+  it("narrate() logs under [gc:coach]", async () => {
+    enableDevFlag();
+    stubJsonFetch({ ok: true, text: "hi", source: "model", traceId: 7 });
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await narrate(1, { herPiece: "n", from: "b1", to: "c3", tier: "nudge", deltaCp: -40 });
+    expect(spy.mock.calls.some((c) => c[0] === "[gc:coach]")).toBe(true);
+  });
+
+  it("judgeMove() logs under [gc:board]", async () => {
+    enableDevFlag();
+    stubJsonFetch({ ok: true, verdict: { tier: "silent" } });
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await judgeMove(1, "e2", "e4");
+    expect(spy.mock.calls.some((c) => c[0] === "[gc:board]")).toBe(true);
+  });
+
+  it("fetchHintFacts() logs under [gc:hint]", async () => {
+    enableDevFlag();
+    stubJsonFetch({ ok: true });
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await fetchHintFacts(1);
+    expect(spy.mock.calls.some((c) => c[0] === "[gc:hint]")).toBe(true);
+  });
+
+  it("chatWithCoach() logs under [gc:coach]", async () => {
+    enableDevFlag();
+    stubJsonFetch({ ok: true, text: "hi", source: "model", traceId: 9 });
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await chatWithCoach(1, { message: "hi", context: { mode: "live" } });
+    expect(spy.mock.calls.some((c) => c[0] === "[gc:coach]")).toBe(true);
+  });
+
+  it("stays silent when the dev flag is off (no localStorage override)", async () => {
+    stubJsonFetch({ ok: true, verdict: { tier: "silent" } });
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await judgeMove(1, "e2", "e4");
+    expect(spy).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Chess } from "chess.js";
-import { checkRelationClaims } from "./relationClaims";
+import { checkRelationClaims, relationClaimSentences } from "./relationClaims";
 
 // game 198: after Qxd6+ (trace 366's board has the queen on d6 and mallow's king on g8)
 const AFTER_QXD6 = "rnbq1k1r/pppp1ppp/3Q4/B2P4/2P5/8/PP3PPP/RN2KBNR b KQ - 0 9";
@@ -101,5 +101,19 @@ describe("checkRelationClaims", () => {
     expect(
       checkRelationClaims("the pawn on c7 can't reach d6.", TRACE_361_WHITE_TO_MOVE)
     ).toEqual([]);
+  });
+});
+
+// A2 (live-telemetry round, 2026-09-22): same-set test for
+// relationClaimSentences -- hand-verified against this fixture: sentence 0
+// has no relation-claim shape, sentence 1 matches standingRelationRe
+// ("<piece> on <sq> attacks <sq2>").
+// RED condition (verify by reverting): if relationClaimSentences drops the
+// standingRelationRe check (keeping only the other two shapes), sentence 1
+// no longer matches and this fails.
+describe("relationClaimSentences (A2 same-set test)", () => {
+  it("reports exactly the sentences containing a relation-claim shape", () => {
+    const text = "the position is roughly equal. the pawn on c7 attacks d6.";
+    expect(relationClaimSentences(text)).toEqual([{ sentence: 1 }]);
   });
 });

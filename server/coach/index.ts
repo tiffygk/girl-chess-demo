@@ -518,6 +518,19 @@ export async function narrate(
   const text = modelText ?? normalizeVoice(buildTemplateNarration(facts, persona));
   const latencyMs = Date.now() - start;
 
+  // A1 (live-telemetry round, 2026-09-22): narrate() never passes a
+  // per-call thinkingPref to backend.generate() above -- only prompt and
+  // budgetMs. So the real thinking level that produced this row's output
+  // is whatever agent-sdk.ts's resolveThinkingMode(undefined) falls back
+  // to for an omitted pref: GC_COACH_THINKING when it's "disabled"/"low",
+  // else the unbounded default. Mirrored here rather than imported because
+  // that resolver is private to agent-sdk.ts and backend-agnostic callers
+  // (ollama.ts/claude-cli.ts ignore thinking entirely) shouldn't reach
+  // into one backend's internals; this stays a value-vocabulary mirror,
+  // not a behavior change to agent-sdk.ts's own resolution.
+  const envThinking = process.env.GC_COACH_THINKING;
+  const thinkingPref = envThinking === "disabled" || envThinking === "low" ? envThinking : "default";
+
   const traceId = recordAdviceTrace({
     gameId: trace.gameId,
     ply: trace.ply,
@@ -534,6 +547,7 @@ export async function narrate(
     // information is lost then, because the row's own `output` above IS
     // that attempt.
     attemptsJson: attempts.length > 1 ? JSON.stringify(attempts) : null,
+    thinkingPref,
   });
 
   return {
