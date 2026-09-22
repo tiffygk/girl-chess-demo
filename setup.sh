@@ -14,8 +14,85 @@ say "this takes about 2 to 10 minutes the first time (two engines, nine opponent
 # on Linux you can install stockfish and lc0 yourself and rerun with SKIP_BREW=1 to fetch the opponent files, at your own risk.
 if [ "${SKIP_BREW:-}" != "1" ]; then
   command -v brew >/dev/null || fail "Homebrew is not installed. install it from https://brew.sh (one command, about 5 minutes), then run ./setup.sh again."
-  brew list stockfish &>/dev/null || { say "installing stockfish (the chess engine)..."; brew install stockfish; }
   brew list lc0 &>/dev/null || { say "installing lc0 (runs the human-like opponent)..."; brew install lc0; }
+fi
+
+# Stockfish is a pinned release binary, not a brew install: a Homebrew bump
+# to a new major version used to turn every PR red with no code change. This
+# repo downloads the official Stockfish 19 release asset once, verifies its
+# sha256 against tools/engines-sha256.txt BEFORE extracting, and installs
+# only the verified binary at engines/stockfish. Upgrading is a deliberate
+# PR that bumps the pin (see .claude/rules/data-and-gate.md's Engine-version
+# rule), never a silent brew bump. GC_ENGINE_DIR and GC_ENGINES_SHA256_FILE
+# exist for tests; production always uses the defaults.
+say "--- installing the pinned stockfish engine"
+ENGINE_DIR="${GC_ENGINE_DIR:-engines}"
+ENGINES_SHA_FILE="${GC_ENGINES_SHA256_FILE:-tools/engines-sha256.txt}"
+SF_BIN="$ENGINE_DIR/stockfish"
+mkdir -p "$ENGINE_DIR"
+
+stockfish_answers_19() {
+  # $1 = path to a candidate stockfish binary
+  local out
+  out="$(printf "uci\nquit\n" | "$1" 2>/dev/null || true)"
+  case "$out" in
+    *"id name Stockfish 19"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if [ -x "$SF_BIN" ] && stockfish_answers_19 "$SF_BIN"; then
+  say "stockfish OK (Stockfish 19, pinned)"
+else
+  ARCH="$(uname -m)"
+  case "$ARCH" in
+    # macOS ships one universal Mach-O binary covering both architectures,
+    # so both branches name the same asset; this stays a case statement (not
+    # a bare literal) so the asset name is never taken from anything but a
+    # fixed list this script controls.
+    arm64) ASSET="stockfish-macos-universal.tar.gz" ;;
+    x86_64) ASSET="stockfish-macos-universal.tar.gz" ;;
+    *) fail "girl chess does not have a pinned Stockfish 19 build for $ARCH. build Stockfish 19 yourself (https://github.com/official-stockfish/Stockfish) and put the binary at $SF_BIN." ;;
+  esac
+
+  engine_expected_sha() { awk -v f="$1" '$2==f{print $1}' "$ENGINES_SHA_FILE" 2>/dev/null; }
+  # Unlike checksum_ok() for the weights below, a missing row here is a
+  # failure, not "nothing to check": the engine is executable code, not a
+  # data file, so an unverifiable download must never be installed.
+  exp_sha="$(engine_expected_sha "$ASSET")"
+  [ -n "$exp_sha" ] || fail "$ASSET has no entry in $ENGINES_SHA_FILE, so it cannot be verified. run ./setup.sh from the girl-chess-demo folder, or restore the file from git."
+
+  TAR="$ENGINE_DIR/.download-$ASSET"
+  rm -f "$TAR"
+  say "downloading the pinned stockfish 19 ($ASSET)"
+  curl -fL --progress-bar --retry 2 --retry-delay 2 --connect-timeout 20 -o "$TAR" \
+    "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/$ASSET" \
+    || { rm -f "$TAR"; fail "stockfish 19 did not download correctly. check your internet connection and run ./setup.sh again."; }
+
+  actual_sha="$(shasum -a 256 "$TAR" | awk '{print $1}')"
+  if [ "$actual_sha" != "$exp_sha" ]; then
+    rm -f "$TAR"
+    fail "$ASSET did not match its expected checksum in $ENGINES_SHA_FILE; refusing to install an unverified stockfish binary. the upstream file may have changed; open an issue at github.com/tiffygk/girl-chess-demo and do not run the game with an unverified engine."
+  fi
+
+  # The release tar holds the whole source tree; the one entry directly
+  # inside stockfish/ that starts with "stockfish" is the binary, whatever
+  # its exact name (e.g. stockfish-macos-universal).
+  ENTRY="$(tar tzf "$TAR" | grep -E '^stockfish/stockfish[^/]*$' | head -n1)"
+  if [ -z "$ENTRY" ]; then
+    rm -f "$TAR"
+    fail "$ASSET does not contain a stockfish binary at the expected path."
+  fi
+
+  TMPX="$(mktemp -d)"
+  tar xzf "$TAR" -C "$TMPX" "$ENTRY"
+  rm -f "$TAR"
+  mv "$TMPX/$ENTRY" "$SF_BIN"
+  rm -rf "$TMPX"
+  chmod +x "$SF_BIN"
+
+  stockfish_answers_19 "$SF_BIN" || { rm -f "$SF_BIN"; fail "the downloaded stockfish binary does not answer as Stockfish 19."; }
+  say "stockfish OK (Stockfish 19, pinned)"
 fi
 
 mkdir -p weights
@@ -85,13 +162,7 @@ else
   done
 fi
 
-say "--- checking the engines answer"
-sf_out="$(printf "uci\nquit\n" | stockfish 2>/dev/null || true)"
-sf_id="$(printf '%s\n' "$sf_out" | sed -n 's/^id name //p' | head -n1)"
-case "$sf_out" in
-  *uciok*) say "stockfish OK (${sf_id:-unknown version})" ;;
-  *) fail "stockfish is installed but does not answer. try: brew reinstall stockfish, then ./setup.sh again." ;;
-esac
+say "--- checking lc0 answers"
 lc0_out="$(printf "uci\nquit\n" | lc0 --weights=weights/maia-1100.pb.gz 2>/dev/null || true)"
 case "$lc0_out" in
   *uciok*) say "lc0 + maia OK" ;;

@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { UciEngine } from "./uci";
+import { ENGINE_PATHS } from "./paths";
 
+// These tests spawn the same engine path the app resolves (the pinned
+// engines/stockfish when installed, else a PATH stockfish), so a machine
+// with no PATH stockfish still runs them.
 describe("UciEngine", () => {
   it("completes the uci handshake with stockfish", async () => {
-    const e = new UciEngine("stockfish");
+    const e = new UciEngine(ENGINE_PATHS.stockfish);
     await e.init(); // resolves only after uciok + readyok
     e.quit();
     expect(true).toBe(true);
@@ -27,7 +31,7 @@ describe("UciEngine", () => {
   // engines/uci.ts) -- the process stays signalable well past the 3s
   // deadline below and the test times out waiting for it to disappear.
   it("quit() terminates the underlying OS process, not just this wrapper's own state", async () => {
-    const e = new UciEngine("stockfish");
+    const e = new UciEngine(ENGINE_PATHS.stockfish);
     const pid = e.pid;
     expect(pid).toBeTruthy();
 
@@ -68,7 +72,7 @@ describe("UciEngine", () => {
   });
 
   it("send after quit is a no-op", async () => {
-    const e = new UciEngine("stockfish");
+    const e = new UciEngine(ENGINE_PATHS.stockfish);
     e.quit();
     expect((e as any).dead).toBe(true);
     expect(() => e.send("isready")).not.toThrow();
