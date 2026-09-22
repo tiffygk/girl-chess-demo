@@ -53,6 +53,10 @@ tools/.focus-audit-scratch/
 # never committed)
 tools/.coach-backfill-scratch/
 
+# mate-tie-sweep tool scratch (db-triple copy so openDb()'s WAL pragma +
+# migrateSchema write never touches the owner's real db, never committed)
+tools/.mate-tie-sweep-scratch/
+
 # nested agent worktrees (owner reorg 2026-07-28) — registered via git worktree,
 # never committed as directories into the parent repo. vite.config.ts already
 # ignores dev-server watching with the wt-* pattern (union finding 7,
