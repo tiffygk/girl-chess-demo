@@ -28,6 +28,7 @@
 // which reads `current.side` rather than re-deriving it from `current.ply`.
 import { Chess } from "chess.js";
 import { toMoverCp, DECIDED_BAND_CP } from "./classify";
+import { keepsMateSchedule } from "./mateTie";
 
 // One row per HIGHLIGHTED ply, either side. All replay-derived, never
 // text-parsed. Mirrored (hand-mirroring, same convention as TurningLine's
@@ -117,7 +118,9 @@ function computeHighlightFacts(
   }
 
   const matchedBest =
-    seed.bestMove !== null && current.uci !== null ? seed.bestMove === current.uci : null;
+    seed.bestMove !== null && current.uci !== null
+      ? seed.bestMove === current.uci || keepsMateSchedule(seed, current)
+      : null;
 
   // Same convention chat.ts's gapWordForPly documents and reuses: prior
   // (seed, p-1) is already mover-of-p perspective; current (p) is

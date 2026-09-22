@@ -161,6 +161,23 @@ describe("buildHighlightLines -- matchedBest", () => {
     const [line] = buildHighlightLines(rows, realPvLine);
     expect(line.matchedBest).toBe(false);
   });
+
+  // Game 198 fixes (2026-09-21), cause 4: a mate tie is not a deviation.
+  // Ply 49 played a different move than the engine's stored best_move, but
+  // that move also mates on the spot, so the highlight line must still
+  // read "best" rather than "slip".
+  it("true when the played move differs from best_move but keeps the mate schedule (game 198 ply 49)", () => {
+    const rows: HighlightMoveRow[] = [
+      row({ ply: 1, san: "e4", uci: "e2e4" }),
+      row({ ply: 2, san: "e5", uci: "e7e5", evalCp: null, evalMate: 1, bestMove: "g1f3", pv: "g1f3" }),
+      row({ ply: 3, san: "Nf3", uci: "g1f3", highlighted: true, evalCp: null, evalMate: 0, bestMove: "e7e5", pv: "e7e5" }),
+    ];
+    // make the played uci differ from the seed's best_move while keeping the schedule
+    rows[1] = row({ ply: 2, san: "e5", uci: "e7e5", evalCp: null, evalMate: 1, bestMove: "d1h5", pv: "d1h5" });
+    const [line] = buildHighlightLines(rows, realPvLine);
+    expect(line.matchedBest).toBe(true);
+    expect(line.quality).toBe("best");
+  });
 });
 
 describe("buildHighlightLines -- quality tiers at the 35/150 boundaries", () => {
