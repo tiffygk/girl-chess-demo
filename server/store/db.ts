@@ -191,6 +191,17 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // written before this column existed, same as cause/backfilled_at/
     // attempts_json above -- additive/nullable, no default.
     { name: "thinking_pref", addSql: "thinking_pref TEXT" },
+    // A2 (live-telemetry round, 2026-09-22): computeClaimCoverage's
+    // sentence-level result (see server/coach/claimCoverage.ts's own
+    // ClaimCoverage type comment), JSON.stringify'd -- how many board
+    // sentences an existing validator actually inspected vs. left
+    // unchecked, and a per-violation-class count. Written only at chat.ts's
+    // FINAL insert (narrate()'s own recordAdviceTrace call in
+    // server/coach/index.ts does not compute it this wave). NULL is the
+    // "not recorded" convention for every row written before this column
+    // existed, same as thinking_pref/attempts_json/cause above --
+    // additive/nullable, no default.
+    { name: "coverage_json", addSql: "coverage_json TEXT" },
   ],
   // Increment 3b: panel-ruled turning points (server/annotator/turningPoints.ts),
   // up to 3 rows per game, written once at game end. Brand-new table (CREATE
@@ -355,7 +366,8 @@ export function openDb(path = "data/girlchess.db") {
       kind TEXT, facts_json TEXT, prompt TEXT, output TEXT, source TEXT,
       backend TEXT, validated INTEGER, regen_count INTEGER, latency_ms INTEGER,
       created_at TEXT DEFAULT (datetime('now')), rating INTEGER, feedback_text TEXT,
-      cause TEXT, backfilled_at TEXT, attempts_json TEXT, thinking_pref TEXT);
+      cause TEXT, backfilled_at TEXT, attempts_json TEXT, thinking_pref TEXT,
+      coverage_json TEXT);
     CREATE TABLE IF NOT EXISTS turning_points(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), rank INTEGER,
       ply INTEGER, san TEXT, label TEXT, punish_san TEXT, delta_p REAL,
@@ -523,14 +535,21 @@ export const insertAdviceTrace = (t: {
   // every pre-this-task call site (narrate()'s recordAdviceTrace wrapper,
   // existing tests) keeps working unchanged and gets NULL.
   thinkingPref?: string | null;
+  // A2 (live-telemetry round, 2026-09-22): see EXPECTED_COLUMNS.
+  // advice_traces' `coverage_json` comment above for the shape and the
+  // NULL convention. Optional so every pre-this-task call site (existing
+  // tests, narrate()'s recordAdviceTrace wrapper) keeps working unchanged
+  // and gets NULL.
+  coverageJson?: string | null;
 }): number =>
   Number(
     db.prepare(
-      `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms, cause, attempts_json, thinking_pref)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms, cause, attempts_json, thinking_pref, coverage_json)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).run(
       t.gameId, t.ply, t.kind, t.factsJson, t.prompt, t.output, t.source, t.backend,
-      t.validated ? 1 : 0, t.regenCount, t.latencyMs, t.cause ?? null, t.attemptsJson ?? null, t.thinkingPref ?? null
+      t.validated ? 1 : 0, t.regenCount, t.latencyMs, t.cause ?? null, t.attemptsJson ?? null, t.thinkingPref ?? null,
+      t.coverageJson ?? null
     ).lastInsertRowid
   );
 export const getAdviceTraces = (gameId: number) =>

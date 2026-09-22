@@ -1,3 +1,5 @@
+import { splitSentences } from "./defenseClaims";
+
 // Task 1 (R3, 2026-07-22 fact-gap round): a third claim shape alongside
 // defenseClaims.ts's guard/safety checks and chat.ts's own side-attribution
 // check -- the coach names a piece and a square ("your rook on a1", "the
@@ -142,4 +144,21 @@ export function checkPlacementClaims(
     keys = new Set([...keys].filter((x) => k.has(x)));
   }
   return current.filter((v) => keys.has(v.key)).map((v) => v.message);
+}
+
+// A2 (live-telemetry round, 2026-09-22): checkPlacementClaims above works
+// over the whole text at once (no sentence split -- placement claims are
+// self-contained within a single regex match and never depended on a
+// sentence boundary). claimCoverage.ts still needs sentence-level
+// attribution though, so this sibling walks the same splitSentences(text)
+// unit the other three claim-coverage siblings use and reports which
+// sentence indices contain a match of placementClaimRe -- the exact
+// pattern checkPlacementClaims adjudicates. Byte-unchanged:
+// checkPlacementClaims itself is untouched above.
+export function placementClaimSentences(text: string): { sentence: number }[] {
+  const out: { sentence: number }[] = [];
+  splitSentences(text).forEach((sentence, i) => {
+    if (placementClaimRe().test(sentence)) out.push({ sentence: i });
+  });
+  return out;
 }
