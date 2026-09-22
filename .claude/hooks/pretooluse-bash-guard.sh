@@ -27,6 +27,18 @@ if printf '%s' "$cmd" | grep -qE '\bnpm run gate\b' && ! printf '%s' "$cmd" | gr
   jq -n --arg m "Play rule: never run npm run gate while she is playing. tools/gate.ts checkInPlay hard-blocks if a game moved in the last 30min, but the standing rule is to ASK or WAIT anyway (broken twice: 07-29 starved her live game at +492, 07-30 five runs in one round). Confirm she is not mid-game before this runs." '{systemMessage:$m}'
 fi
 
+# #19 quiet-machine rule (2026-09-22): never start a gate while another gate or
+# vitest run is live on this machine. The rule existed in CLAUDE.md and the
+# build-round skill; on 2026-09-21 the controller's quiet check PRINTED another
+# session's vitest run and the gate ran anyway because the two commands were
+# joined with ";". A shell can check this, so the model no longer has to.
+if printf '%s' "$cmd" | grep -qE '\bnpm run gate\b'; then
+  busy="$(pgrep -fl 'vitest|tools/gate' 2>/dev/null | grep -vE 'tail -n|grep' | head -5)"
+  if [ -n "$busy" ]; then
+    deny "Quiet-machine rule: another gate or vitest run is live on this machine, so this gate would race it for Stockfish and CPU and neither result is trustworthy (2026-09-21: a gate ran beside another session's vitest because the check and the gate were chained with ';'). Wait for it to finish, or report it to the controller. Live: $busy"
+  fi
+fi
+
 # #16 git push content scan against a LOCAL, gitignored pattern file (2026-08-26).
 # Three failures in one session: a sweep was reported clean, then a later commit
 # put the string back; a scrub script reintroduced it by grepping for it; and a
@@ -73,6 +85,7 @@ GIT_PUSH_TRIGGER="\\bgit[[:space:]]+((${GIT_OPT_TRIGGER})[[:space:]]+)*push\\b"
 # .../push-guard-test-XXXX/repo and truncate the wrong place, F1) is where a
 # preceding `cd` is allowed to come from.
 push_in_command_position=0
+push_segment=""
 prior_segments=""
 segments="$(printf '%s' "$cmd" | sed -E 's/(&&|\|\||[|;]|\()/\n/g')"
 while IFS= read -r seg; do
@@ -80,6 +93,7 @@ while IFS= read -r seg; do
   stripped="$(printf '%s' "$trimmed" | sed -E 's/^env([[:space:]]+(-u[[:space:]]+[A-Za-z_][A-Za-z0-9_]*|-[a-zA-Z]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*))*[[:space:]]+//')"
   if printf '%s' "$stripped" | grep -qE "^${GIT_PUSH_TRIGGER}"; then
     push_in_command_position=1
+    push_segment="$stripped"
     break
   fi
   prior_segments="${prior_segments}${seg}
@@ -110,8 +124,11 @@ if [ "$push_in_command_position" = "1" ]; then
   }
 
   resolved=""
-  if printf '%s' "$cmd" | grep -qE '\bgit[[:space:]]+-C[[:space:]]'; then
-    resolved="$(extract_path_after "$cmd" 'git[[:space:]]+-C')"
+  # F4 (2026-09-21): read -C from the PUSH's own segment only. Reading it from
+  # the full command took a LATER, unrelated `git -C wt-owner log` as the push
+  # repo and refused a tag push from the main checkout.
+  if printf '%s' "$push_segment" | grep -qE '\bgit[[:space:]]+-C[[:space:]]'; then
+    resolved="$(extract_path_after "$push_segment" 'git[[:space:]]+-C')"
   elif printf '%s' "$cmd" | grep -qE -- '--git-dir='; then
     gd="$(printf '%s' "$cmd" | sed -nE 's/.*--git-dir=("[^"]+"|'"'"'[^'"'"']+'"'"'|[^[:space:]]+).*/\1/p' | tail -1)"
     gd="$(printf '%s' "$gd" | sed -E 's/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/')"
