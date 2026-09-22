@@ -26,11 +26,23 @@ const SQ = "[a-h][1-8]";
 const PIECE = "pawn|knight|bishop|rook|queen|king";
 const NEGATION_WORDS = new Set(["can't", "cant", "cannot", "does not", "doesn't", "doesnt", "could not", "couldn't"]);
 
+// Filler words that mark a PASS-THROUGH square rather than the target: "hits
+// the king through e7 to f8" names e7 only as a waypoint, not the claimed
+// relation's target (game 198 dry-run false alarm, trace 360). The filler
+// between the verb and the target square must stop at the first of these,
+// so a square named only as a waypoint is never read as the target.
+const PASSTHROUGH_STOP = "through|via|along|past";
+
 export function standingRelationRe(): RegExp {
   // group 1: sqA, group 2: piece (optional), group 3: negation/verb prefix
   // (checked for negation), group 4: the verb, group 5: sqB.
+  // The filler between the verb and sqB stops at a pass-through word
+  // (PASSTHROUGH_STOP) or another square -- so "hits the king through e7 to
+  // f8" never matches at all (e7 is a waypoint, not a target, and the
+  // filler is cut off before "through" reaches it), rather than being
+  // misread as a claim about e7.
   return new RegExp(
-    `\\b(?:your|her|mallow'?s|the)?\\s*(${PIECE})\\s+on\\s+(${SQ})\\s+(can'?t|cannot|can|could|does not|doesn'?t|)\\s*(take|capture|reach|attack|attacks|hit|hits|eye|eyes|see|sees|line up with|lines up with)\\b(?:(?!\\b${SQ}\\b).){0,40}?\\b(${SQ})\\b`,
+    `\\b(?:your|her|mallow'?s|the)?\\s*(${PIECE})\\s+on\\s+(${SQ})\\s+(can'?t|cannot|can|could|does not|doesn'?t|)\\s*(take|capture|reach|attack|attacks|hit|hits|eye|eyes|see|sees|line up with|lines up with)\\b(?:(?!\\b(?:${PASSTHROUGH_STOP})\\b)(?!\\b${SQ}\\b).){0,40}?\\b(${SQ})\\b`,
     "gi"
   );
 }
@@ -49,8 +61,12 @@ export function bareSquareRelationRe(): RegExp {
 
 export function hypotheticalRelationRe(): RegExp {
   // group 1: piece, group 2: destination square, group 3: the verb, group 4: target square
+  // Up to 40 chars of filler ("does that instead, ") may separate
+  // "<piece> to <sq>" from the verb (game 198 dry-run miss, trace 369), and
+  // the verb list includes -ing forms (the coach narrates in the present
+  // progressive as often as the simple present).
   return new RegExp(
-    `\\b(${PIECE})\\s+to\\s+(${SQ})\\s+(attacks|hits|eyes|sees|lines up with|threatens)\\b(?:(?!\\b${SQ}\\b).){0,40}?\\b(${SQ})\\b`,
+    `\\b(${PIECE})\\s+to\\s+(${SQ})\\b(?:(?!\\b(?:attacks|hits|eyes|sees|lines up with|threatens|attacking|hitting|eyeing|seeing|lining up with|threatening)\\b).){0,40}?\\b(attacks|hits|eyes|sees|lines up with|threatens|attacking|hitting|eyeing|seeing|lining up with|threatening)\\b(?:(?!\\b${SQ}\\b).){0,40}?\\b(${SQ})\\b`,
     "gi"
   );
 }

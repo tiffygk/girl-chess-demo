@@ -32,4 +32,28 @@ describe("checkRelationClaims", () => {
   it("skips guard and defend verbs (checkDefenseClaims owns them)", () => {
     expect(checkRelationClaims("the pawn on c7 defends d6.", AFTER_QXD6)).toEqual([]);
   });
+
+  // dry-run false alarm, real row text (trace 360): a pass-through square
+  // ("through e7") must not be read as the target -- the filler stops at
+  // "through"/"via"/"along"/"past", so this whole claim goes unmatched
+  // rather than flagged against the wrong square. Board: knight on d6,
+  // e7 empty, king on f8 (not the game-198 FEN family verbatim -- built to
+  // isolate the pass-through shape, per the controller's override).
+  const KNIGHT_D6_KING_F8 = "5k2/8/3N4/8/8/8/8/4K3 w - - 0 1";
+  it("does not read a pass-through square as the target (trace 360)", () => {
+    expect(
+      checkRelationClaims(
+        "taking the knight on d6 hits the king through e7 to f8, so mallow has to deal with check.",
+        KNIGHT_D6_KING_F8
+      )
+    ).toEqual([]);
+  });
+
+  // dry-run miss, real row text (trace 369): filler between "<piece> to <sq>"
+  // and the verb, plus an -ing verb form.
+  it("flags a fabricated hypothetical across filler and an -ing verb (trace 369)", () => {
+    expect(
+      checkRelationClaims("bishop to d6 does that instead, eyeing their rook on h8.", PLY26)
+    ).toEqual(["relation-claim: bishop to d6 attacks h8 -- it would not"]);
+  });
 });

@@ -1876,4 +1876,89 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(parts.dynamic).toContain("MALLOW'S move");
     });
   });
+
+  // Game 198 fixes (2026-09-21), Task C2, cause 2: relation claims (can
+  // take, attacks, lines up with) reach validateChat the same way
+  // placement/defense claims already do, checked on the current, focused
+  // and after-move (hint pv / turning-point pv / candidate line / pending
+  // move) boards via lineFens.
+  describe("validateChat -- relation-claim validation (game 198, cause 2)", () => {
+    // trace 369's board (ply 26): her bishop on e5, mallow rooks a8/h8.
+    const PLY26_FEN = "rnb3kr/pp1p2p1/5p1p/3PB3/2P5/8/PP2BPPP/RN2K1NR w KQ - 0 14";
+
+    function ply26Facts(): ChatFactList {
+      const chess = new Chess(PLY26_FEN);
+      const occupancy: ChatFactList["occupancy"] = [];
+      for (const row of chess.board()) {
+        for (const cell of row) {
+          if (!cell) continue;
+          occupancy.push({ square: cell.square, pieceKind: cell.type, color: cell.color === "w" ? "you" : "mallow" });
+        }
+      }
+      return {
+        gameSans: [],
+        currentFen: PLY26_FEN,
+        toMove: "you",
+        occupancy,
+        legalSans: [],
+        allowedSans: [],
+        contested: [],
+      };
+    }
+
+    it("flags a fabricated hypothetical relation claim (trace 369)", () => {
+      const result = validateChat("bishop to d6 eyes their rook on h8.", ply26Facts());
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.violations).toEqual(["relation-claim: bishop to d6 attacks h8 -- it would not"]);
+      }
+    });
+  });
+
+  // Game 198 fixes (2026-09-21), Task C2: contestedAfterBest gives the
+  // model the contested squares after the verified best move, the same
+  // "after-move relations exist" gap that motivated cause 2's checker.
+  describe("assembleChatFactList -- contestedAfterBest", () => {
+    const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    it("is defined, keyed to hintFindings.bestSan, when hintFindings is set", () => {
+      const facts = assembleChatFactList(
+        [],
+        { mode: "live" },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          fen: START_FEN,
+          facts: {
+            bestUci: "e2e4",
+            pv: ["e2e4", "e7e5"],
+            evalCp: null,
+            evalMate: null,
+            trade: false,
+            escalated: false,
+            verified: true,
+          },
+        }
+      );
+      expect(facts.hintFindings).toBeDefined();
+      expect(facts.contestedAfterBest).toBeDefined();
+      expect(facts.contestedAfterBest!.san).toBe(facts.hintFindings!.bestSan);
+    });
+
+    it("is absent when there is no hintFindings", () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      expect(facts.hintFindings).toBeUndefined();
+      expect(facts.contestedAfterBest).toBeUndefined();
+    });
+  });
+
+  describe("correctiveSuffix -- relation-claim guidance", () => {
+    it("a relation-claim violation gets its own guidance, not the SAN catch-all", () => {
+      const suffix = correctiveSuffix(["relation-claim: c7 does not attack d6 -- it does"]);
+      expect(suffix).not.toContain("isn't a move from this game");
+      expect(suffix.toLowerCase()).toContain("attackers and defenders");
+    });
+  });
 });
