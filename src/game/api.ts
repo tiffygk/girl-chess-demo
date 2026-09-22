@@ -1,5 +1,11 @@
 // Typed client for the girl-chess API (server/index.ts).
 import { initChatStream, pushChunk, type ChatStatusPhase } from "./chatStream";
+// Wave C (live-telemetry round, 2026-09-22): devLog is a no-op unless the
+// gc-dev flag is on (src/agent/devLog.ts) -- wiring it into every fetch
+// site here costs nothing when off, and when on lets an agent grep the
+// browser console for /\[gc:/ and correlate a request with what
+// tools/tail.ts shows landing in the db at the same moment.
+import { devLog } from "../agent/devLog";
 
 export interface NewSessionResponse {
   sessionId: number;
@@ -297,7 +303,7 @@ export function highlightMove(gameId: number, ply: number, highlighted: boolean)
 // `strictness` (Task 6, F10 tuning — UI label "judge strictness"): the
 // caller reads this from localStorage `gc-judge-strictness` (GamePage) and
 // passes it straight through; omitted, the server judges at "standard".
-export function judgeMove(
+export async function judgeMove(
   gameId: number,
   from: string,
   to: string,
@@ -305,7 +311,10 @@ export function judgeMove(
   mode?: string,
   strictness?: string
 ): Promise<JudgeResponse> {
-  return postJson(`/game/${gameId}/judge`, { from, to, promotion, mode, strictness });
+  const start = Date.now();
+  const res = await postJson<JudgeResponse>(`/game/${gameId}/judge`, { from, to, promotion, mode, strictness });
+  devLog("board", "judge", `${from}${to}`, res.verdict?.tier ?? "?", `${Date.now() - start}ms`);
+  return res;
 }
 
 export function resign(gameId: number): Promise<ResignResponse> {
@@ -352,8 +361,11 @@ export interface HintFactsResponse {
   };
 }
 
-export function fetchHintFacts(gameId: number): Promise<HintFactsResponse> {
-  return postJson(`/game/${gameId}/hint-facts`, {});
+export async function fetchHintFacts(gameId: number): Promise<HintFactsResponse> {
+  const start = Date.now();
+  const res = await postJson<HintFactsResponse>(`/game/${gameId}/hint-facts`, {});
+  devLog("hint", "hint-facts", res.ok, `${Date.now() - start}ms`);
+  return res;
 }
 
 // Increment 3a Wave 3: the coach's corner async narration call. Posts the
@@ -373,7 +385,7 @@ export interface NarrateResponse {
 // read from localStorage gc-coach-backend by the caller (GamePage.tsx) and
 // passed straight through — this client stays a thin typed wrapper with no
 // opinion of its own about the preference's source or default.
-export function narrate(
+export async function narrate(
   gameId: number,
   body: {
     herPiece: string;
@@ -392,7 +404,10 @@ export function narrate(
     backendPref?: string;
   }
 ): Promise<NarrateResponse> {
-  return postJson(`/game/${gameId}/narrate`, body);
+  const start = Date.now();
+  const res = await postJson<NarrateResponse>(`/game/${gameId}/narrate`, body);
+  devLog("coach", "narrate", body.tier, res.source ?? "?", res.traceId ?? "no-trace", `${Date.now() - start}ms`);
+  return res;
 }
 
 // Increment 3.9, Task 3 (F16 chat client): client-side mirror of
@@ -509,11 +524,14 @@ export interface ChatResponse {
 // off the body and threads it to GameManager.chat's pickCoachBackend. Same
 // "caller supplies it, this client has no opinion" convention as narrate()
 // above.
-export function chatWithCoach(
+export async function chatWithCoach(
   gameId: number,
   body: { message: string; context: ChatContext; backendPref?: string }
 ): Promise<ChatResponse> {
-  return postJson(`/game/${gameId}/chat`, body);
+  const start = Date.now();
+  const res = await postJson<ChatResponse>(`/game/${gameId}/chat`, body);
+  devLog("coach", "chat", res.ok, res.cause ?? res.source ?? "?", res.traceId ?? "no-trace", `${Date.now() - start}ms`);
+  return res;
 }
 
 // B-stream (2026-07-27, coach-truth-speed round): the SSE-over-POST sibling
@@ -547,14 +565,17 @@ export async function streamChatWithCoach(
   body: { message: string; context: ChatContext; backendPref?: string },
   handlers: ChatStreamHandlers
 ): Promise<void> {
+  const start = Date.now();
   const res = await fetch(`/api/game/${gameId}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok || !res.body) {
+    devLog("coach", "chat-stream failed to open", res.status, `${Date.now() - start}ms`);
     throw new Error(`chat stream failed to open (status ${res.status})`);
   }
+  devLog("coach", "chat-stream open", `${Date.now() - start}ms`);
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -569,11 +590,17 @@ export async function streamChatWithCoach(
         if (f.event === "delta") handlers.onDelta?.(f.data.text);
         else if (f.event === "redraft") handlers.onRedraft?.();
         else if (f.event === "status") handlers.onStatus?.(f.data.phase);
-        else if (f.event === "done") handlers.onDone?.(f.data);
-        else if (f.event === "error") handlers.onError?.(f.data);
+        else if (f.event === "done") {
+          devLog("coach", "chat-stream done", f.data.ok, f.data.traceId ?? "no-trace", `${Date.now() - start}ms`);
+          handlers.onDone?.(f.data);
+        } else if (f.event === "error") {
+          devLog("coach", "chat-stream error", f.data.error ?? "?", `${Date.now() - start}ms`);
+          handlers.onError?.(f.data);
+        }
       }
     }
   } catch {
+    devLog("coach", "chat-stream internal error", `${Date.now() - start}ms`);
     handlers.onError?.({ ok: false, error: "internal" });
   }
 }
@@ -743,6 +770,13 @@ export interface ChatHistoryMessage {
   role: string;
   text: string;
   createdAt: string;
+  // B2.3 (live-telemetry round, 2026-09-22): optional pass-through so a
+  // history-seeded ThreadEntry CAN carry a traceId when the source object
+  // has one (dataGc.test.tsx's data-gc-trace-id distinct-content test
+  // relies on this) -- additive, backward compatible: today's server never
+  // populates this field on /game/:id/chat, so no runtime behavior changes
+  // for real traffic.
+  traceId?: number;
 }
 
 export function fetchChatHistory(gameId: number): Promise<{ ok: boolean; messages: ChatHistoryMessage[] }> {

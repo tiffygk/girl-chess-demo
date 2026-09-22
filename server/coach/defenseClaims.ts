@@ -179,3 +179,22 @@ export function checkDefenseClaims(
 
   return violations;
 }
+
+// A2 (live-telemetry round, 2026-09-22): checkDefenseClaims above returns
+// only violation-message strings, no sentence indices, so claimCoverage.ts
+// can't attribute what it checked. This sibling reuses the SAME per-sentence
+// walk and the SAME two regex shapes (guardClaimRe/safetyClaimRe) checkDefenseClaims
+// scans, and reports the sentence indices where either shape matched --
+// i.e. the sentences this checker actually found a defense-claim in,
+// whether or not that claim later turned out to be a violation. Precision
+// note: a match here does not imply a violation was raised (most matched
+// claims are true and produce nothing); it means the sentence WAS inspected
+// for this claim shape. Byte-unchanged: checkDefenseClaims itself is
+// untouched above.
+export function defenseClaimSentences(text: string): { sentence: number }[] {
+  const out: { sentence: number }[] = [];
+  splitSentences(text).forEach((sentence, i) => {
+    if (guardClaimRe().test(sentence) || safetyClaimRe().test(sentence)) out.push({ sentence: i });
+  });
+  return out;
+}

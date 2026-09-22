@@ -39,6 +39,19 @@ export function recordAdviceTrace(input: {
   // `attempts_json` comment in server/store/db.ts for the shape and the
   // NULL convention.
   attemptsJson?: string | null;
+  // A1 (live-telemetry round, 2026-09-22): threaded straight through to
+  // insertAdviceTrace's own optional `thinkingPref` -- additive/optional so
+  // every pre-this-wave caller (existing tests) omits it and keeps writing
+  // NULL, exactly as before. See EXPECTED_COLUMNS.advice_traces'
+  // `thinking_pref` comment in server/store/db.ts for the vocabulary and
+  // the NULL convention.
+  thinkingPref?: string | null;
+  // A2 (live-telemetry round, 2026-09-22): threaded straight through to
+  // insertAdviceTrace's own optional `coverageJson` -- additive/optional so
+  // every pre-this-wave caller (existing tests, narrate() itself, which
+  // does not compute coverage this wave) omits it and keeps writing NULL,
+  // exactly as before.
+  coverageJson?: string | null;
 }): number {
   return insertAdviceTrace({
     gameId: input.gameId,
@@ -54,5 +67,7 @@ export function recordAdviceTrace(input: {
     latencyMs: input.latencyMs,
     cause: input.cause,
     attemptsJson: input.attemptsJson,
+    thinkingPref: input.thinkingPref,
+    coverageJson: input.coverageJson,
   });
 }

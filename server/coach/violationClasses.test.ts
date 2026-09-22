@@ -1,12 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { VIOLATION_KIND_GUIDANCE } from "./chat";
-
-// Game 198 fixes (2026-09-21), Task C2b: the validator's classes. The
-// coach-eval skill (rule 11) cites this literal; change both together.
-export const VIOLATION_CLASSES = [
-  "placement-claim", "side-claim", "defense-claim", "mate-claim",
-  "relation-claim", "voice-notation", "voice-word", "voice-number",
-] as const;
+import { VIOLATION_CLASSES } from "./violationClasses";
 
 describe("validator classes", () => {
   it("the guidance map names exactly the documented classes", () => {

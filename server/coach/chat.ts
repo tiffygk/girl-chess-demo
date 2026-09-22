@@ -25,6 +25,7 @@ import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims, type OccupancyEntry } from "./placementClaims";
 import { checkRelationClaims } from "./relationClaims";
 import { checkMateClaims } from "./mateClaims";
+import { computeClaimCoverage } from "./claimCoverage";
 import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
 import { isOffTopic, mentionedPlies, thinkingForIntent, type ChatIntent } from "./intent";
 import { normalizeVoice } from "./textNormalize";
@@ -2612,6 +2613,14 @@ export async function chat(
   }
   const latencyMs = Date.now() - start;
 
+  // A2 (live-telemetry round, 2026-09-22): coverage is computed against the
+  // FINAL returned text (the same value the `output` field below stores on
+  // a model row) -- a template/apology row still gets a coverage row (a
+  // template only ever names board facts the persona template itself
+  // wrote, so its coverage is cheap and still worth recording for the
+  // rollup).
+  const coverageJson = JSON.stringify(computeClaimCoverage(text, facts));
+
   // kind is always literally "chat" for this surface -- not caller
   // configurable via trace.kind, even though NarrateTraceContext's shape
   // carries that field for narrate()'s sake (nudge/warning).
@@ -2669,6 +2678,7 @@ export async function chat(
     // (attempt 0 on a clean first try, attempt 1 on a regen). NULL only on
     // the off-topic early return above, which never enters this loop.
     thinkingPref: lastThinkingPref,
+    coverageJson,
   });
 
   return failureCause ? { text, source, cause: failureCause, traceId } : { text, source, traceId };

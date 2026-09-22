@@ -38,6 +38,8 @@ import {
   type ChatHistoryMessage,
 } from "./api";
 import { CoachChat, ThumbRating } from "./CoachChat";
+// B2.2 (live-telemetry round, 2026-09-22): see src/agent/dataGc.ts's header.
+import { DATA_GC } from "../agent/dataGc";
 import {
   hintFocusContext,
   turningPointFocusContext,
@@ -2496,7 +2498,10 @@ export function GamePage() {
   };
 
   return (
-    <div className={"game-page" + (gameOver || reviewGame ? " postgame" : "")}>
+    <div
+      className={"game-page" + (gameOver || reviewGame ? " postgame" : "")}
+      {...{ [DATA_GC.postgame]: gameOver || reviewGame ? "true" : "false" }}
+    >
       {fallback && <div className="fallback-banner">fallback opponents (lc0 unavailable)</div>}
       {sessionGone && (
         <div className="session-gone-banner">
@@ -2901,7 +2906,13 @@ export function GamePage() {
           </div>
         )}
       </div>
-      <div className="coach-hint-band">
+      <div
+        className="coach-hint-band"
+        {...{
+          [DATA_GC.hintLevel]: hintPress,
+          [DATA_GC.hintVisible]: coachHints && (coachText != null || coachLoading) ? "true" : "false",
+        }}
+      >
         {coachHints && (coachText != null || coachLoading) && (
           <div className="coach-hint-slot">
             <span className="coach-slot-copy">

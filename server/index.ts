@@ -1,7 +1,8 @@
 import express from "express";
 import { openDb, resolveServeDbPath, createSession, addModeMinutes, rateAdviceTrace, getRatedTraces, listCoachNotes, deleteCoachNote, getGame, getAllChatMessages } from "./store/db";
 import { GameManager } from "./game/manager";
-import { servedCommit } from "./version";
+import { servedCommit, loadedCommit, startedAt } from "./version";
+import { AGENT_MANIFEST } from "./agentManifest";
 import { assertWeightsPresent } from "./engines/weightsCheck";
 import { ENGINE_PATHS, ALLOWED_ELOS } from "./engines/paths";
 export { ALLOWED_ELOS } from "./engines/paths";
@@ -24,8 +25,17 @@ openDb(servedDb.path);
 export const gm = new GameManager();
 export const ready = gm.init();
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, commit: servedCommit() }));
+// B1.1 (live-telemetry round, 2026-09-22): startedAt is captured once at
+// process boot (server/version.ts) -- the trustworthy freshness signal per
+// the playtest-freshness rule. commit/loadedCommit both read git HEAD and
+// are NOT proof this process loaded that code; they are reported for
+// visibility only, never as freshness proof on their own.
+app.get("/api/health", (_req, res) => res.json({ ok: true, commit: servedCommit(), loadedCommit: loadedCommit(), startedAt: startedAt() }));
 app.get("/api/coach/status", async (_req, res) => res.json(await coachStatus()));
+
+// B1.3 (live-telemetry round, 2026-09-22): the single machine-readable
+// description of this round's telemetry surfaces -- see agentManifest.ts.
+app.get("/api/agent/manifest", (_req, res) => res.json(AGENT_MANIFEST));
 
 app.post("/api/session", (_req, res) => res.json({ sessionId: createSession() }));
 
@@ -138,6 +148,20 @@ app.post("/api/game/:id/resume", async (req, res) => {
 app.get("/api/game/:id/status", (req, res) => {
   try {
     res.json(gm.gameStatus(Number(req.params.id)));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "internal" });
+  }
+});
+
+// B1.2 (live-telemetry round, 2026-09-22): the NEW fen/ply/side/breaker
+// surface -- GameListEntry (the /status route above) has none of these.
+// Sync (reads only, no rebuild-on-read -- see gameState's own comment),
+// same try/catch envelope as every other route.
+app.get("/api/game/:id/state", (req, res) => {
+  try {
+    const state = gm.gameState(Number(req.params.id));
+    if (!state) return res.status(404).json({ ok: false, reason: "not_found" });
+    res.json(state);
   } catch (error) {
     res.status(500).json({ ok: false, error: "internal" });
   }

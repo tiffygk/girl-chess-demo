@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkDefenseClaims, splitSentences } from "./defenseClaims";
+import { checkDefenseClaims, splitSentences, defenseClaimSentences } from "./defenseClaims";
 
 // The trace-180 shelf fen: game 167, her real move g2-g4, real-position fen
 // (before the move). h3 pawn geometrically defends g4 (a legal hxg4 exists),
@@ -95,5 +95,20 @@ describe("guard claims: bare negators and sentence boundaries (game 189, trace 2
 
   it("splits on sentence terminators", () => {
     expect(splitSentences("a. b! c? d")).toEqual(["a.", "b!", "c?", "d"]);
+  });
+});
+
+// A2 (live-telemetry round, 2026-09-22): same-set test for
+// defenseClaimSentences -- the sentences it reports inspecting must match
+// the sentences checkDefenseClaims itself would find a claim shape in,
+// hand-verified against this fixture: sentence 0 has no defense-claim
+// shape at all, sentence 1 is a guard claim, sentence 2 is a safety claim.
+// RED condition (verify by reverting): if defenseClaimSentences stops
+// testing safetyClaimRe (only checks guardClaimRe), sentence 2 drops out
+// and this fails.
+describe("defenseClaimSentences (A2 same-set test)", () => {
+  it("reports exactly the sentences containing a guard or safety claim shape", () => {
+    const text = "the knight develops well. b7 defends f2. f2 is undefended.";
+    expect(defenseClaimSentences(text)).toEqual([{ sentence: 1 }, { sentence: 2 }]);
   });
 });

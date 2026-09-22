@@ -1,6 +1,6 @@
 ## ACTIVE WORK -- start here (updated 2026-09-21, trimmed for length — full history in `docs/changelog.md`)
 
-**Newest handoff (2026-09-22): vault `6 handoffs/HANDOFF — Game 198 fixes round (2026-09-21).md`. Read it FIRST.** The game 198 fixes round is MERGED (PRs #38, #40, #41, #42, #43; main 780d9a7; visual gate passed on the ply-49 replay card): mate ties, after-move placement claims, a relation-claim checker, and the `thinking_pref` column plus `tools/replay-trace.ts`. Still open: the cause-3 replay RUN on a db copy (separate session), and the owner's playtest as acceptance for causes 1, 2 and 4. Changelog entry "Game 198 fixes" has the file map. Earlier the same day: the "quiet" ban (PR #33, #35) and the retro rules (PR #36). The 2026-08-05 paragraph below is history.
+**Newest handoff (2026-09-22): vault `6 handoffs/HANDOFF — Live telemetry round (2026-09-22).md`. Read it FIRST.** Earlier the same day, the game 198 fixes round is MERGED (PRs #38, #40, #41, #42, #43; main 780d9a7; visual gate passed on the ply-49 replay card): mate ties, after-move placement claims, a relation-claim checker, and the `thinking_pref` column plus `tools/replay-trace.ts`. Still open: the cause-3 replay RUN on a db copy (separate session), and the owner's playtest as acceptance for causes 1, 2 and 4. Changelog entry "Game 198 fixes" has the file map. Earlier the same day: the "quiet" ban (PR #33, #35) and the retro rules (PR #36). The 2026-08-05 paragraph below is history.
 
 **Read `6 handoffs/HANDOFF — Next model (2026-08-05).md`** (historical now) (written for a fresh context — current
 state, the play answer, and the one greenlit build). **Everything through 2026-08-05 is SHIPPED to `main`
@@ -52,7 +52,8 @@ the front-end component library (vault `3 visual/component-library.html`); the n
 protected behaviour (any wave touching `sugar-glitch.css`/`.postgame`/`--board-size` must verify it by
 eye); no agent moves/renames/deletes a directory, ever; a check narrower (or wider) than what it
 claims to cover is the recurring bug class — see "Invariant rule" below; one worktree, one writer —
-see "Worktree rule" below (caught colliding TWICE in the same session this file was trimmed in).
+see "Worktree rule" below (caught colliding TWICE in the same session this file was trimmed in);
+live game/coach state is queryable as structured data, not just visible on screen — see `.claude/rules/live-state.md`.
 
 ## Session start
 
