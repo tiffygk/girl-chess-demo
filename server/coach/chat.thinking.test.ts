@@ -95,4 +95,49 @@ describe("chat() OD-3b thinking-pref escalation", () => {
     expect(result.source).toBe("model");
     expect(seenPrefs).toEqual(["low", "default"]);
   });
+
+  // Game 198 fixes (2026-09-21), Task D2: chat() accepts a thinking
+  // override for MEASUREMENT ONLY -- the replay tool (Task D3) needs to
+  // ask "what would this row have looked like at a different thinking
+  // level" without touching the real live/review attempt-0 pref
+  // (thinkingForIntent(intent)), which stays exactly as this file's tests
+  // above pin it. The memory note thinking-eval-lever-inert-for-chat
+  // explains why an env knob (GC_COACH_THINKING) can't do this: since
+  // thinking-low shipped, chat()'s own explicit-pref-wins derivation
+  // ignores any env var, so the only way to vary attempt 0's level from
+  // outside is a real opt this function reads itself.
+  it("thinkingOverride replaces attempt 0's level; omitting it keeps thinkingForIntent's low", async () => {
+    const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+
+    const seenWithOverride: (ThinkingPref | undefined)[] = [];
+    const backendWithOverride = fakeBackend(async (_prompt, _timeoutMs, _stablePrefix, _onUsage, thinkingPref) => {
+      seenWithOverride.push(thinkingPref);
+      return "e4 is a fine start for you.";
+    });
+    const resultWithOverride = await chat(
+      "what's happening?",
+      [],
+      facts,
+      backendWithOverride,
+      { gameId, ply: 1, kind: "chat" },
+      { thinkingOverride: "default" }
+    );
+    expect(resultWithOverride.source).toBe("model");
+    expect(seenWithOverride).toEqual(["default"]);
+
+    const seenWithoutOverride: (ThinkingPref | undefined)[] = [];
+    const backendWithoutOverride = fakeBackend(async (_prompt, _timeoutMs, _stablePrefix, _onUsage, thinkingPref) => {
+      seenWithoutOverride.push(thinkingPref);
+      return "e4 is a fine start for you.";
+    });
+    const resultWithoutOverride = await chat(
+      "what's happening?",
+      [],
+      facts,
+      backendWithoutOverride,
+      { gameId, ply: 1, kind: "chat" }
+    );
+    expect(resultWithoutOverride.source).toBe("model");
+    expect(seenWithoutOverride).toEqual(["low"]);
+  });
 });
