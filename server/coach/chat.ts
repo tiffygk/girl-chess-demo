@@ -22,7 +22,7 @@ import type { CoachBackend, CoachUsage } from "./backends/types";
 import { getPersona, isTimeoutError, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
-import { checkPlacementClaims } from "./placementClaims";
+import { checkPlacementClaims, type OccupancyEntry } from "./placementClaims";
 import { checkMateClaims } from "./mateClaims";
 import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
 import { isOffTopic, mentionedPlies, thinkingForIntent, type ChatIntent } from "./intent";
@@ -483,6 +483,39 @@ function derivePositionFacts(chess: Chess): {
   }
 
   return { fen: chess.fen(), toMove, occupancy, legalSans: chess.moves(), contested };
+}
+
+// Game 198 fixes (2026-09-21), cause 1: the boards a reply may be narrating.
+// Replays `sans` from `fen` one ply at a time and returns the occupancy after
+// each ply (at most maxPlies), stopping at the first illegal san. chess.js
+// only, no engine call.
+export function occupanciesAlongLine(fen: string, sans: string[], maxPlies = 4): OccupancyEntry[][] {
+  const out: OccupancyEntry[][] = [];
+  const c = new Chess(fen);
+  for (const san of sans.slice(0, maxPlies)) {
+    try { c.move(san); } catch { break; }
+    out.push(derivePositionFacts(c).occupancy);
+  }
+  return out;
+}
+
+// Game 198 fixes (2026-09-21), cause 1: every board a placement claim might
+// legitimately be describing beyond the current and focused positions --
+// the hint ladder's verified PV, a focused turning point's PV, and the
+// candidate line a named-but-unplayed move produces. Used by both
+// checkPlacementClaims call sites below so neither drifts from the other.
+function lineOccupancies(facts: ChatFactList): OccupancyEntry[][] {
+  const boards: OccupancyEntry[][] = [];
+  const live = facts.currentFen;
+  const hint = facts.hintFindings?.pvSans ?? facts.context?.hintFocus?.pvSans;
+  if (hint?.length) boards.push(...occupanciesAlongLine(live, hint));
+  const tp = facts.context?.turningPointFocus?.pvSans;
+  if (tp?.length && facts.focusPosition) boards.push(...occupanciesAlongLine(facts.focusPosition.fen, tp));
+  if (facts.candidateLine) {
+    const sans = [facts.candidateLine.san, ...(facts.candidateLine.replySan ? [facts.candidateLine.replySan] : [])];
+    boards.push(...occupanciesAlongLine(live, sans, 2));
+  }
+  return boards;
 }
 
 // Task 3 (R1a) input shape: one game's already-persisted per-ply analysis,
@@ -1214,7 +1247,7 @@ export function validateChat(
   // intersection internally (see checkPlacementClaims's own comment) --
   // unlike checkDefenseClaims above, there's no separate current/focus call
   // + filter needed here.
-  violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
+  violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy, ...lineOccupancies(facts)));
   // Task 3a (R2, voice-enforcement round): no facts needed -- this checker
   // is about the SHAPE of the prose (notation/banned words/numbers), not
   // whether a claim matches the position. Round 3 Task 13: opts threads
@@ -1315,7 +1348,7 @@ export function validateChatGeneral(
       violations.push(...currentDefense);
     }
     violations.push(...checkSideAttributionClaims(text, facts));
-    violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
+    violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy, ...lineOccupancies(facts)));
   }
 
   violations.push(...checkVoice(text, opts));

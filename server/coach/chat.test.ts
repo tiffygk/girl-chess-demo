@@ -643,6 +643,72 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
+  // Game 198 fixes (2026-09-21), Task B1, cause 1: validateChat's own
+  // call-site wiring for lineOccupancies -- the unit-level proof that
+  // checkPlacementClaims accepts extra occupancy lists lives in
+  // placementClaims.test.ts; this is the integration-level proof that
+  // validateChat actually threads the hint ladder's PV into that check
+  // (the invariant rule: a unit test proves the function, not the wiring).
+  // 16 of 16 stored placement rejections for the real game 198 flagged a
+  // square that was a PV/hint/played-move destination -- true after a move
+  // the reply had already named, just not true on the board validateChat
+  // compared against before this task.
+  describe("validateChat — a placement claim true along the hint ladder's PV is not a violation (game 198, trace 361/363)", () => {
+    // game 198, before her Qxd6+ (trace 361's currentFen)
+    const G198_BEFORE = "rnbq1k1r/pppp1ppp/3n4/B2PQ3/2P5/8/PP3PPP/RN2KBNR w KQ - 1 9";
+
+    function occupancyFromFen(fen: string): ChatFactList["occupancy"] {
+      const chess = new Chess(fen);
+      const occupancy: ChatFactList["occupancy"] = [];
+      for (const row of chess.board()) {
+        for (const cell of row) {
+          if (!cell) continue;
+          occupancy.push({ square: cell.square, pieceKind: cell.type, color: cell.color === "w" ? "you" : "mallow" });
+        }
+      }
+      return occupancy;
+    }
+
+    function factsWithHint(): ChatFactList {
+      const chess = new Chess(G198_BEFORE);
+      return {
+        gameSans: [],
+        currentFen: G198_BEFORE,
+        toMove: chess.turn() === "w" ? "you" : "mallow",
+        occupancy: occupancyFromFen(G198_BEFORE),
+        legalSans: chess.moves(),
+        allowedSans: [],
+        contested: [],
+        status: "in-progress",
+        hintFindings: {
+          fen: G198_BEFORE,
+          bestSan: "Qxd6+",
+          bestUci: "e5d6",
+          evalCp: null,
+          evalMate: null,
+          pvSans: ["Qxd6+", "Qe7+", "Qxe7+", "Kxe7"],
+          trade: false,
+          escalated: false,
+          candidates: [],
+          verified: true,
+        },
+      };
+    }
+
+    it("clears both 'your queen on d6' and 'her queen on e7' -- true one and two plies into the hint's PV", () => {
+      const facts = factsWithHint();
+      const result = validateChat("your queen on d6 gives check, and her queen on e7 is the block.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("still flags a claim false on every board in the PV", () => {
+      const facts = factsWithHint();
+      const result = validateChat("your queen on h8 is safe.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.includes("h8"))).toBe(true);
+    });
+  });
+
   // Side-to-move fact (round 2026-07-22): the coach once attributed the
   // PLAYER's own pending move to mallow ("you win her queen for free" about
   // the player's own Qh5) because ChatFactList had no fact stating whose

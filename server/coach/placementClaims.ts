@@ -89,12 +89,15 @@ function placementViolationsAgainst(text: string, occupancy: OccupancyEntry[]): 
 }
 
 // Produces one "placement-claim: ..." string per contradiction, [] if none.
-// When focusOccupancy is supplied (the position just before a focused
-// turning point -- see ChatFactList.focusPosition in chat.ts), a claim is
-// only flagged when it is false in BOTH the current and the focused
-// position -- the intersection discipline validateChat already uses for
-// checkDefenseClaims, so a claim true at the moment being discussed is never
-// penalized for being untrue today.
+// When otherOccupancies are supplied -- the focused past position (see
+// ChatFactList.focusPosition in chat.ts) and, since the game 198 round
+// (2026-09-21), each position along a line the reply may be narrating (a
+// hint PV, a turning-point PV, or the candidate line -- see
+// occupanciesAlongLine and lineOccupancies in chat.ts) -- a claim is only
+// flagged when it is false against EVERY occupancy given: the current
+// board AND all of those. The intersection discipline validateChat already
+// uses for checkDefenseClaims, so a claim true at any moment the reply may
+// be describing is never penalized for being untrue on some other board.
 //
 // 2026-08-26 (coach-truth round). This intersection used to be keyed on the
 // rendered violation MESSAGE, and that was wrong: placementViolationsAgainst
@@ -113,15 +116,30 @@ function placementViolationsAgainst(text: string, occupancy: OccupancyEntry[]): 
 // square, independent of why either run failed it) rather than the message
 // text, then reports the CURRENT position's message for anything that
 // survives -- so a claim that is false everywhere is caught regardless of
-// which reason each position gives, while a claim true at the focused
-// moment (the case this intersection exists to protect) is still cleared.
+// which reason each position gives, while a claim true at any moment the
+// reply may be describing (the case this intersection exists to protect)
+// is still cleared.
+//
+// 2026-09-21 (game 198 fixes, cause 1): generalized from one optional focus
+// board to N boards, because 16 of 16 stored placement rejections named a
+// square that was true on a PV, hint, or played-move destination the reply
+// had already announced -- just not true on the single board the checker
+// compared against.
 export function checkPlacementClaims(
   text: string,
   occupancy: OccupancyEntry[],
-  focusOccupancy?: OccupancyEntry[]
+  ...otherOccupancies: (OccupancyEntry[] | undefined)[]
 ): string[] {
   const current = placementViolationsAgainst(text, occupancy);
-  if (!focusOccupancy) return current.map((v) => v.message);
-  const focusKeys = new Set(placementViolationsAgainst(text, focusOccupancy).map((v) => v.key));
-  return current.filter((v) => focusKeys.has(v.key)).map((v) => v.message);
+  const others = otherOccupancies.filter((o): o is OccupancyEntry[] => o !== undefined);
+  if (others.length === 0) return current.map((v) => v.message);
+  // A claim survives only if it is false on EVERY board offered: the focused
+  // past position (2026-08-26) and, since the game 198 round (2026-09-21),
+  // each position along a line the reply may be narrating.
+  let keys = new Set(current.map((v) => v.key));
+  for (const o of others) {
+    const k = new Set(placementViolationsAgainst(text, o).map((v) => v.key));
+    keys = new Set([...keys].filter((x) => k.has(x)));
+  }
+  return current.filter((v) => keys.has(v.key)).map((v) => v.message);
 }

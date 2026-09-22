@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { Chess } from "chess.js";
 import { checkPlacementClaims } from "./placementClaims";
 import type { OccupancyEntry } from "./placementClaims";
 
@@ -102,5 +103,40 @@ describe("checkPlacementClaims (Task 1, R3)", () => {
   it("accepts the 'mallow's' owner form as well as 'her'", () => {
     const occupancy: OccupancyEntry[] = [{ square: "d8", pieceKind: "q", color: "mallow" }];
     expect(checkPlacementClaims("mallow's queen on d8 looks exposed.", occupancy)).toEqual([]);
+  });
+});
+
+// Game 198 fixes (2026-09-21), Task B1, cause 1: the placement check must
+// also clear a claim that is true somewhere along a line the reply may be
+// narrating (a hint PV, a turning-point PV, or the candidate line), not
+// only the current board and the focused-turning-point board. Sixteen of
+// sixteen stored rejections for this checker flagged a square that was a
+// PV, hint, or played-move destination -- true after a move the reply had
+// already named, just not true on the single board the checker compared
+// against.
+function occ(fen: string): OccupancyEntry[] {
+  return new Chess(fen).board().flat().filter((c): c is NonNullable<typeof c> => !!c)
+    .map((c) => ({ square: c.square, pieceKind: c.type, color: c.color === "w" ? "you" : "mallow" as const }));
+}
+// game 198, before her Qxd6+ (trace 361's currentFen)
+const BEFORE = "rnbq1k1r/pppp1ppp/3n4/B2PQ3/2P5/8/PP3PPP/RN2KBNR w KQ - 1 9";
+function after(fen: string, sans: string[]): string { const c = new Chess(fen); for (const s of sans) c.move(s); return c.fen(); }
+
+describe("checkPlacementClaims with after-move boards", () => {
+  it("'your queen on d6' is true after Qxd6+, so it is not flagged (game 198 trace 361)", () => {
+    const v = checkPlacementClaims("your queen on d6 gives check.", occ(BEFORE), occ(after(BEFORE, ["Qxd6+"])));
+    expect(v).toEqual([]);
+  });
+  it("'her queen on e7' is true two plies into the line, so it is not flagged (trace 363)", () => {
+    const boards = [occ(after(BEFORE, ["Qxd6+"])), occ(after(BEFORE, ["Qxd6+", "Qe7+"]))];
+    expect(checkPlacementClaims("you take her queen on e7.", occ(BEFORE), ...boards)).toEqual([]);
+  });
+  it("a claim false on every board is still flagged", () => {
+    const v = checkPlacementClaims("your queen on h8 is safe.", occ(BEFORE), occ(after(BEFORE, ["Qxd6+"])));
+    // h8 holds mallow's rook in BEFORE (not empty), so the message is "-- not there".
+    expect(v).toEqual(["placement-claim: your queen on h8 -- not there"]);
+  });
+  it("with no extra boards the current-board check is unchanged", () => {
+    expect(checkPlacementClaims("your queen on d6 gives check.", occ(BEFORE))).toEqual(["placement-claim: your queen on d6 -- not there"]);
   });
 });
