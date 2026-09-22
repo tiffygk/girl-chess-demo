@@ -282,115 +282,104 @@ function fenOf(board: TaggedBoard): string {
   return board.fen;
 }
 
+// Fix (2a round, found by the mutation dry-run before Step 3): the first
+// version of this function chose which polarity to emit (positive vs
+// denial) BY the same geometric truth it then used to compute the label --
+// so every generated claim was true by construction and the miss cell
+// could never fire, on any SHA. Both shapes are now generated
+// UNCONDITIONALLY for every ordered pair, each independently labelled per
+// the spec, so a genuinely false claim of either shape exists to test
+// whether the checker wrongly accepts it.
 export function generateRelationClaims(
   boards: TaggedBoard[],
   squareCap = 6
 ): RelationClaim[] {
   const liveBoard = boards.find((b) => b.depth === "live")!;
   const liveOcc = occupancyFromFen(liveBoard.fen);
-  const liveColorMap = new Map<string, "you" | "mallow">();
-  try {
-    const c = new Chess(liveBoard.fen);
-    for (const row of c.board()) {
-      for (const cell of row) {
-        if (cell) liveColorMap.set(cell.square, cell.color === "w" ? "you" : "mallow");
-      }
-    }
-  } catch {
-    // leave empty
-  }
   const squares = [...liveOcc.keys()].slice(0, squareCap);
   const claims: RelationClaim[] = [];
 
+  const paraphrasesFor = (aKind: string, a: string, b: string): string[] => [
+    `the ${KIND_WORD[aKind]} on ${a} could capture the piece on ${b}`,
+    `the ${KIND_WORD[aKind]} on ${a} is aiming at ${b}`,
+    `the piece on ${b} can be taken by the ${KIND_WORD[aKind]} on ${a}`,
+  ];
+
   for (const a of squares) {
     const aKind = liveOcc.get(a)!;
-    const aColor = liveColorMap.get(a) === "you" ? "w" : "b";
     for (const b of squares) {
       if (a === b) continue;
 
-      // Geometric truth per the label spec: true if relationHolds on ANY
-      // board (live, focus, line boards within the relation horizon).
+      // --- positive claim: "<piece> on a attacks b" ---
+      // Label per spec: true if relationHolds (attackers()) on ANY board.
       let attackersLabel = false;
-      let deepestTrueDepth: number | null = null;
       for (const board of boards) {
         if (relationHoldsOnBoard(fenOf(board), a, b)) {
           attackersLabel = true;
-          if (typeof board.depth === "number") {
-            deepestTrueDepth = deepestTrueDepth === null ? board.depth : Math.min(deepestTrueDepth, board.depth);
-          }
+          break;
         }
       }
-
-      if (attackersLabel) {
-        // Positive claim: "<piece> on <a> attacks <b>". Double-labelled by
-        // legal-capture existence per B1.
-        let legalCaptureLabel: boolean | null = null;
-        let adjudicated = false;
-        for (const board of boards) {
-          const lc = legalCaptureOnBoard(fenOf(board), a, b);
-          if (lc !== null) {
-            adjudicated = true;
-            legalCaptureLabel = legalCaptureLabel === true ? true : lc;
-          }
-        }
-        const semanticCut = adjudicated && legalCaptureLabel !== attackersLabel;
-        const claimKey = `pos>${a}>${b}`;
-        claims.push({
-          text: `the ${KIND_WORD[aKind]} on ${a} attacks ${b}`,
-          claimKey,
-          polarity: "positive",
-          label: true,
-          attackersLabel,
-          legalCaptureLabel: adjudicated ? legalCaptureLabel : null,
-          semanticCut,
-          paraphrases: [
-            `the ${KIND_WORD[aKind]} on ${a} could capture the piece on ${b}`,
-            `the ${KIND_WORD[aKind]} on ${a} is aiming at ${b}`,
-            `the piece on ${b} can be taken by the ${KIND_WORD[aKind]} on ${a}`,
-          ],
-        });
-      } else {
-        // Denial claim: "<piece> on <a> can't reach <b>". Adjudicable only
-        // on boards where a's occupant is the side to move there.
-        let adjudicated = false;
-        let anyBoardTrue = false; // "true" for a denial = no legal capture exists
-        for (const board of boards) {
-          const lc = legalCaptureOnBoard(fenOf(board), a, b);
-          if (lc === null) continue;
+      // Double label (B1): legal-capture existence, only where adjudicable
+      // (occupant at a is the side to move on that board).
+      let legalCaptureLabel: boolean | null = null;
+      let adjudicated = false;
+      for (const board of boards) {
+        const lc = legalCaptureOnBoard(fenOf(board), a, b);
+        if (lc !== null) {
           adjudicated = true;
-          if (!lc) anyBoardTrue = true;
+          legalCaptureLabel = legalCaptureLabel === true ? true : lc;
         }
-        if (!adjudicated) {
-          claims.push({
-            text: `the ${KIND_WORD[aKind]} on ${a} can't reach ${b}`,
-            claimKey: `den>${a}>${b}`,
-            polarity: "denial",
-            label: null,
-            scopeReason: "non-mover denial (relationClaims.ts:110,:136): unadjudicable on every board offered",
-            paraphrases: [
-              `the ${KIND_WORD[aKind]} on ${a} could capture the piece on ${b}`,
-              `the ${KIND_WORD[aKind]} on ${a} is aiming at ${b}`,
-              `the piece on ${b} can be taken by the ${KIND_WORD[aKind]} on ${a}`,
-            ],
-          });
-          continue;
-        }
+      }
+      const semanticCut = adjudicated && legalCaptureLabel !== attackersLabel;
+      claims.push({
+        text: `the ${KIND_WORD[aKind]} on ${a} attacks ${b}`,
+        claimKey: `pos>${a}>${b}`,
+        polarity: "positive",
+        label: attackersLabel,
+        attackersLabel,
+        legalCaptureLabel: adjudicated ? legalCaptureLabel : null,
+        semanticCut,
+        paraphrases: paraphrasesFor(aKind, a, b),
+      });
+
+      // --- denial claim: "<piece> on a can't reach b" ---
+      // Adjudicable only on boards where a's occupant is the side to move
+      // there (deniedCaptureHolds's own discipline, relationClaims.ts:105-113).
+      // A denial claim is TRUE on an adjudicating board iff no legal
+      // capture exists from a to b there; per spec, the whole claim is
+      // TRUE if true on ANY board. If no board adjudicates at all, this
+      // exact claim (this a, this b) is out of scope.
+      let denialAdjudicated = false;
+      let denialTrueSomewhere = false;
+      for (const board of boards) {
+        const lc = legalCaptureOnBoard(fenOf(board), a, b);
+        if (lc === null) continue;
+        denialAdjudicated = true;
+        if (!lc) denialTrueSomewhere = true;
+      }
+      if (!denialAdjudicated) {
         claims.push({
           text: `the ${KIND_WORD[aKind]} on ${a} can't reach ${b}`,
           claimKey: `den>${a}>${b}`,
           polarity: "denial",
-          label: anyBoardTrue,
-          paraphrases: [
-            `the ${KIND_WORD[aKind]} on ${a} could capture the piece on ${b}`,
-            `the ${KIND_WORD[aKind]} on ${a} is aiming at ${b}`,
-            `the piece on ${b} can be taken by the ${KIND_WORD[aKind]} on ${a}`,
-          ],
+          label: null,
+          scopeReason: "non-mover denial (relationClaims.ts:110,:136): unadjudicable on every board offered",
+          paraphrases: paraphrasesFor(aKind, a, b),
+        });
+      } else {
+        claims.push({
+          text: `the ${KIND_WORD[aKind]} on ${a} can't reach ${b}`,
+          claimKey: `den>${a}>${b}`,
+          polarity: "denial",
+          label: denialTrueSomewhere,
+          paraphrases: paraphrasesFor(aKind, a, b),
         });
       }
     }
   }
   return claims;
 }
+
 
 // Today's-board control claims (M3/B1): true-by-construction claims about a
 // single finished-game position, using the same two grammars, for the
