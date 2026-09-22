@@ -86,7 +86,8 @@ voice-notation, voice-word, voice-number, voice-self-correction, voice-label-lea
 (Wave C, `server/coach/relationClaims.ts`) checks capture legality and line of sight
 (attacks/lines-up-with/eyes/sees), the gap this list used to name as unchecked.
 voice-self-correction and voice-label-leak (brief-6b, game 198 follow-up round, 2026-09-22) are
-the two newest: a self-correcting aside ("wait,"/"actually," at a clause start) and an internal
+the two newest: a self-correcting aside ("wait," at a clause start -- "actually," was dropped in
+the fix round, 2026-09-22: it flagged honest emphasis, not a correction) and an internal
 fact-list key name reaching prose (`attackedBy`, `defendedBy`, `perPly`, or "contested" used as
 the key rather than the ordinary word -- "the contested list" flags, "a contested square" does
 not). Neither is a `claimCoverage.ts` `SPAN_PRODUCERS` entry (that list stays the four board-fact

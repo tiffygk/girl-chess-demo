@@ -1483,17 +1483,33 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(result.ok).toBe(true);
     });
 
-    it("flags 'actually,' after a comma (a clause start mid-sentence)", () => {
-      const facts = voiceFacts();
-      const result = validateChat("she plays knight to f3, actually, that's forcing.", facts);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-self-correction"))).toBe(true);
-    });
-
     it("does not flag 'actually' when no comma follows (not a self-correcting aside)", () => {
       const facts = voiceFacts();
       const result = validateChat("that is actually a strong reply for you.", facts);
       expect(result.ok).toBe(true);
+    });
+
+    // Fix round (2026-09-22, reviewer MAJOR): "actually," at a clause start
+    // is honest emphasis, not a self-correction -- unlike "wait,", it never
+    // caught a real one in the 168-row corpus, and it would have cost her a
+    // regen/template fallback for clean prose like these two.
+    it("does NOT flag 'actually,' at a sentence start (honest emphasis, not a correction)", () => {
+      const facts = voiceFacts();
+      const result = validateChat("actually, the knight is fine.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    // "Nf3" here trips the pre-existing voice-notation check (raw notation
+    // is always banned, independent of this fix) -- the fix under test is
+    // that "Actually," contributes no SEPARATE voice-self-correction
+    // violation on top of that, so this asserts on the violations list
+    // rather than overall ok.
+    it("does NOT add a voice-self-correction violation for 'Actually,' after a period", () => {
+      const facts = voiceFacts();
+      const result = validateChat("she plays Nf3. Actually, that is the strongest reply.", facts);
+      if (!result.ok) {
+        expect(result.violations.some((v) => v.startsWith("voice-self-correction"))).toBe(false);
+      }
     });
 
     it("flags a fact-list key name leaking into prose ('defendedBy')", () => {
