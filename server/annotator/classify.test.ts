@@ -501,7 +501,21 @@ describe("classifyMove — judge mate nudge, depth 8 and wording (2026-09-22 own
     const verdict = await classifyMove(chess, move, evaluator);
     expect(verdict.tier).toBe("nudge");
     expect(verdict.conversionCopy).toBe(
-      "still winning, but there's a mate one move faster. this move mates in 6, the fastest mates in 5."
+      "still winning, but there's a mate 1 move faster. this move mates in 6, the fastest mates in 5."
+    );
+  });
+
+  it("slip 2 uses the same template: mateBefore 5, mateAfter 6 -> 'a mate 2 moves faster ... mates in 7, the fastest mates in 5'", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // quiet
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 5, bestMove: "e1e2", pv: [] }, // beforeEval: mate-in-5 held
+      { cp: 0, mate: -6, bestMove: "e8d8", pv: [] } // afterEval: afterAbs 6, slip 2
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("nudge");
+    expect(verdict.conversionCopy).toBe(
+      "still winning, but there's a mate 2 moves faster. this move mates in 7, the fastest mates in 5."
     );
   });
 

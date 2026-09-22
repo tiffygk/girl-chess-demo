@@ -205,8 +205,8 @@ function freeMaterialCopyFor(pieceKind: string): string {
 // {mateBefore}" (the count before she moved). Never names the faster move
 // itself -- the help ladder reveals it on request. No server-side
 // spelled-number helper exists (src/review/numberWords.ts is client-only),
-// so counts are digits per the brief's fallback, except "one" in the slip-1
-// sentence, which is fixed text, not a template.
+// so counts are digits. One template for every slip size (owner ruling
+// 2026-09-22: "It shouldn't have to be tied to specific wording for 2 or 1.").
 function conversionCopyFor(event: MoveConversionEvent): string {
   if (event.kind === "lost-mate") {
     return "still winning, but the forced mate is gone for now.";
@@ -217,10 +217,8 @@ function conversionCopyFor(event: MoveConversionEvent): string {
   // Non-null for missed-mate/mate-slip: mateAfter is only ever null on the
   // lost-mate branch above, already returned.
   const mateAfterCount = event.mateAfter as number;
-  if (event.slip === 1) {
-    return `still winning, but there's a mate one move faster. this move mates in ${mateAfterCount + 1}, the fastest mates in ${event.mateBefore}.`;
-  }
-  return `still winning, but there's a mate ${event.slip} moves faster. this move mates in ${mateAfterCount + 1}, the fastest mates in ${event.mateBefore}.`;
+  const moves = event.slip === 1 ? "move" : "moves";
+  return `still winning, but there's a mate ${event.slip} ${moves} faster. this move mates in ${mateAfterCount + 1}, the fastest mates in ${event.mateBefore}.`;
 }
 
 // Exported for adjudicate.ts (Wave C, C-A): the "what governs when someone
