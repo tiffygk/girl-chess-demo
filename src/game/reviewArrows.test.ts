@@ -332,6 +332,34 @@ describe("reviewArrowsForMove", () => {
     expect("secondary" in arrows[0]).toBe(false);
   });
 
+  it("game-198 fix: HER made move differs from moverBest but equalMate is true (second mating move) yields ONE primary 'found' arrow, no 'best'", () => {
+    // ply 49 shape: she played f5-g7, engine's moverBest is f5-g3, but the
+    // server flagged equalMate because both mate on the same schedule.
+    const l = line({
+      ply: 49,
+      playedFromTo: { from: "f5", to: "g7" },
+      equalMate: true,
+    });
+    const moverBest = { from: "f5", to: "g3" };
+    const arrows = reviewArrowsForMove(l, { moverBest });
+
+    expect(arrows.filter((a) => ["found", "played", "mallow", "best"].includes(a.color))).toHaveLength(1);
+    expect(arrows[0]).toEqual({ from: "f5", to: "g7", color: "found" });
+    expect(arrows.some((a) => a.color === "best")).toBe(false);
+  });
+
+  it("game-198 sibling: without equalMate, a differing HER move still yields the two-arrow played+best pair (no regression)", () => {
+    const l = line({
+      ply: 49,
+      playedFromTo: { from: "f5", to: "g7" },
+    });
+    const moverBest = { from: "f5", to: "g3" };
+    const arrows = reviewArrowsForMove(l, { moverBest });
+
+    expect(arrows).toContainEqual({ from: "f5", to: "g7", color: "played" });
+    expect(arrows).toContainEqual({ from: "f5", to: "g3", color: "best" });
+  });
+
   it("MALLOW made move === best move (even ply): ONE plain 'mallow' arrow -- never 'found', whose cyan halo is HER voice (F-1 palette law)", () => {
     // Arrow follow-ups F-1 (2026-08-05): "found" renders a CYAN halo
     // (analysisLegend.ts / .arrow-found), and cyan is the player's voice --
