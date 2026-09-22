@@ -38,7 +38,39 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import { keepsMateSchedule } from "../server/annotator/mateTie";
+// Dynamic, not a static import: part 3 of this brief copies this one file
+// into a scratch worktree checked out at an old SHA (99d4231, before PR
+// #38) where server/annotator/mateTie.ts does not exist yet -- a static
+// import would crash the whole tool before it could even label the
+// population there. Resolved once in main() via loadKeepsMateSchedule().
+type KeepsMateScheduleFn = (
+  before: { evalMate: number | null },
+  after: { evalMate: number | null }
+) => boolean;
+let keepsMateSchedule: KeepsMateScheduleFn;
+let keepsMateScheduleSource = "(not yet loaded)";
+async function loadKeepsMateSchedule(): Promise<void> {
+  try {
+    const mod = await import("../server/annotator/mateTie");
+    keepsMateSchedule = mod.keepsMateSchedule;
+    keepsMateScheduleSource = "server/annotator/mateTie.ts (production, imported)";
+  } catch {
+    // Fallback: byte-identical arithmetic to keepsMateSchedule's own body
+    // (server/annotator/mateTie.ts, as of the game 198 fixes round) --
+    // kept here ONLY so the population label is computable at a SHA
+    // before that file existed. Never used when the real module is
+    // available; every report states which path ran.
+    keepsMateSchedule = (before, after) => {
+      const n = before.evalMate;
+      if (n === null || n <= 0) return false;
+      const a = after.evalMate;
+      if (a === null) return false;
+      if (a === 0) return n === 1;
+      return -a === n - 1;
+    };
+    keepsMateScheduleSource = "inline fallback copy (server/annotator/mateTie.ts absent at this SHA)";
+  }
+}
 
 // -- NOT SWEPT -----------------------------------------------------------
 // The chat gap tag (server/coach/chat.ts:794, the `gap: ... && !keepsMate
@@ -60,17 +92,28 @@ export const NOT_SWEPT = [
 interface Args {
   dbPath: string;
   label: string | undefined;
+  resultsDir: string;
 }
 
+// Hardcoded absolute paths, not resolved from import.meta.url: this file
+// is copied into scratch worktrees at other SHAs (part 3 of this brief),
+// where "relative to this file" would resolve inside the scratch worktree
+// instead of the one round folder every baseline's results belong in.
+const DEFAULT_DB_PATH =
+  "/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/data/girlchess.db";
+const DEFAULT_RESULTS_DIR =
+  "/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/.superpowers/sdd/rounds/2026-09-22-game198-followup/results";
+
 function parseArgs(argv: string[]): Args {
-  let dbPath =
-    "/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/data/girlchess.db";
+  let dbPath = DEFAULT_DB_PATH;
   let label: string | undefined;
+  let resultsDir = DEFAULT_RESULTS_DIR;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--db" && argv[i + 1]) dbPath = argv[++i];
     else if (argv[i] === "--label" && argv[i + 1]) label = argv[++i];
+    else if (argv[i] === "--results-dir" && argv[i + 1]) resultsDir = argv[++i];
   }
-  return { dbPath, label };
+  return { dbPath, label, resultsDir };
 }
 
 interface RawPair {
@@ -325,7 +368,8 @@ function renderTable(r: ReporterResult): string {
 }
 
 async function main() {
-  const { dbPath, label } = parseArgs(process.argv.slice(2));
+  const { dbPath, label, resultsDir } = parseArgs(process.argv.slice(2));
+  await loadKeepsMateSchedule();
   // Reporters 1/2/4 call buildTurningLines, which reads through
   // getMoveEvalsByPlies over server/store/db.ts's own module-level `db`
   // singleton -- only ever opened by openDb(), which is read-write (WAL
@@ -369,6 +413,7 @@ async function main() {
     out.push(`# mate-tie sweep${label ? ` -- ${label}` : ""}`);
     out.push("");
     out.push(`db: ${dbPath}`);
+    out.push(`keepsMateSchedule source: ${keepsMateScheduleSource}`);
     out.push("");
     out.push("## population");
     out.push("");
@@ -394,11 +439,6 @@ async function main() {
     console.log(text);
 
     if (label) {
-      const resultsDir = path.resolve(
-        path.dirname(fileURLToPath(import.meta.url)),
-        "..",
-        ".superpowers/sdd/rounds/2026-09-22-game198-followup/results"
-      );
       fs.mkdirSync(resultsDir, { recursive: true });
       const outPath = path.join(resultsDir, `2b-mate-tie-${label}.md`);
       fs.writeFileSync(outPath, text);
