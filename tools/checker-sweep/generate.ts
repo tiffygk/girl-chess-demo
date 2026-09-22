@@ -244,7 +244,13 @@ export interface RelationClaim {
   attackersLabel?: boolean; // positives only
   legalCaptureLabel?: boolean | null; // positives only; null if never adjudicable
   semanticCut?: boolean;
-  paraphrases: string[];
+  // Fix round (2026-09-22): labelled per verb so a recall table can report
+  // each of the brief's three paraphrase verbs separately -- "could
+  // capture" turned out to parse inside standingRelationRe's own grammar
+  // (relationClaims.ts:55, its negation-prefix group accepts the bare word
+  // "could" without treating it as a negation), so lumping it with the
+  // other two overstated the out-of-grammar recall number.
+  paraphrases: { verb: "could capture" | "is aiming at" | "can be taken by"; text: string }[];
 }
 
 // Whether square `a`'s occupant (on board `fen`) geometrically attacks
@@ -299,10 +305,14 @@ export function generateRelationClaims(
   const squares = [...liveOcc.keys()].slice(0, squareCap);
   const claims: RelationClaim[] = [];
 
-  const paraphrasesFor = (aKind: string, a: string, b: string): string[] => [
-    `the ${KIND_WORD[aKind]} on ${a} could capture the piece on ${b}`,
-    `the ${KIND_WORD[aKind]} on ${a} is aiming at ${b}`,
-    `the piece on ${b} can be taken by the ${KIND_WORD[aKind]} on ${a}`,
+  const paraphrasesFor = (
+    aKind: string,
+    a: string,
+    b: string
+  ): { verb: "could capture" | "is aiming at" | "can be taken by"; text: string }[] => [
+    { verb: "could capture", text: `the ${KIND_WORD[aKind]} on ${a} could capture the piece on ${b}` },
+    { verb: "is aiming at", text: `the ${KIND_WORD[aKind]} on ${a} is aiming at ${b}` },
+    { verb: "can be taken by", text: `the piece on ${b} can be taken by the ${KIND_WORD[aKind]} on ${a}` },
   ];
 
   for (const a of squares) {

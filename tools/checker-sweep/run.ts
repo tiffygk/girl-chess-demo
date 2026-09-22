@@ -129,6 +129,18 @@ async function main() {
 
   const placementCell = newCell();
   const placementMissCell = newCell(); // M2: separate miss cell for placement
+  // Fix round (2c has its own cause-1 line, after-move false alarms at or
+  // under 0.5%, distinct from the whole-family line): a claim is
+  // "after-move only" when it is false on the live board and true ONLY via
+  // the focused board or a line board (every "adversarial" claim already
+  // has trueOnLive === false by construction -- generate.ts always picks a
+  // wrong kind -- so this is exactly the label===true subset of
+  // "adversarial" claims). Split focus-only vs line-only vs both, since the
+  // fields are already on the claim.
+  const placementAfterMoveOnlyCell = newCell();
+  const placementAfterMoveFocusOnlyCell = newCell();
+  const placementAfterMoveLineOnlyCell = newCell();
+  const placementAfterMoveBothCell = newCell();
   // Split into a false-alarm arm (n = label-true claims only) and a miss
   // arm (n = label-false claims only), same discipline as the placement
   // family's two cells -- a single mixed-denominator cell understates the
@@ -137,7 +149,18 @@ async function main() {
   const relationMissCell = newCell();
   const relationSemanticCutCell = newCell();
   const relationOutOfScope = { n: 0 };
-  const relationParaphrase = { n: 0, caught: 0 };
+  // Fix round (2026-09-22): per-verb, not one lumped number -- "could
+  // capture" parses inside standingRelationRe's own grammar
+  // (relationClaims.ts:55: its negation-prefix group accepts "could"
+  // without treating it as a negation), so it is in-grammar by accident of
+  // the paraphrase list, not out-of-grammar, and inflated the combined
+  // recall number. Reported separately so the genuinely out-of-grammar
+  // recall (the other two verbs) stands on its own.
+  const paraphraseByVerb: Record<string, { n: number; caught: number }> = {
+    "could capture": { n: 0, caught: 0 },
+    "is aiming at": { n: 0, caught: 0 },
+    "can be taken by": { n: 0, caught: 0 },
+  };
   const placementControlCell = newCell();
   const relationControlCell = newCell();
 
@@ -162,6 +185,33 @@ async function main() {
       if (claim.leniency) {
         placementCell.leniency++;
         pushExample(placementCell, claim.text, claim.label, `trace ${id}: leniency (true only via depth ${claim.trueOnLineDepth})`);
+      }
+      if (claim.kind === "adversarial" && claim.label) {
+        // trueOnLive is always false for an adversarial claim (generate.ts
+        // picks a kind that is not the live occupant's), so label===true
+        // here means true ONLY via the focused board or a line board.
+        placementAfterMoveOnlyCell.n++;
+        if (placementFlagged) {
+          placementAfterMoveOnlyCell.falseAlarms++;
+          pushExample(placementAfterMoveOnlyCell, claim.text, claim.label, `trace ${id}: after-move-only true claim flagged as a violation`);
+        }
+        const focusOnly = !!claim.trueOnFocus && claim.trueOnLineDepth === null;
+        const lineOnly = claim.trueOnLineDepth !== null && !claim.trueOnFocus;
+        const both = !!claim.trueOnFocus && claim.trueOnLineDepth !== null;
+        const bucket = focusOnly
+          ? placementAfterMoveFocusOnlyCell
+          : lineOnly
+            ? placementAfterMoveLineOnlyCell
+            : both
+              ? placementAfterMoveBothCell
+              : null;
+        if (bucket) {
+          bucket.n++;
+          if (placementFlagged) {
+            bucket.falseAlarms++;
+            pushExample(bucket, claim.text, claim.label, `trace ${id}: flagged as a violation`);
+          }
+        }
       }
     }
 
@@ -200,11 +250,12 @@ async function main() {
 
       // paraphrases: recall table only, never scored as pass/fail
       for (const p of claim.paraphrases) {
-        const { relationFlagged: pFlagged } = runBoth(p, facts);
-        relationParaphrase.n++;
+        const { relationFlagged: pFlagged } = runBoth(p.text, facts);
+        const bucket = paraphraseByVerb[p.verb];
+        bucket.n++;
         // "caught" = the checker flagged a claim that is actually FALSE --
         // the only case where an out-of-grammar catch would matter.
-        if (!claim.label && pFlagged) relationParaphrase.caught++;
+        if (!claim.label && pFlagged) bucket.caught++;
       }
     }
   }
@@ -295,6 +346,18 @@ async function main() {
     `| placement (miss arm, false claims only) | ${placementMissCell.n} | -- | -- | ${placementMissCell.misses} | ${pct(placementMissCell.misses, placementMissCell.n)} | -- | -- |`
   );
   lines.push(
+    `| placement, after-move only (2c's own cause-1 line: false on live, true only via focus/line) | ${placementAfterMoveOnlyCell.n} | ${placementAfterMoveOnlyCell.falseAlarms} | ${pct(placementAfterMoveOnlyCell.falseAlarms, placementAfterMoveOnlyCell.n)} | -- | -- | -- | -- |`
+  );
+  lines.push(
+    `| placement, after-move only -- focus-only | ${placementAfterMoveFocusOnlyCell.n} | ${placementAfterMoveFocusOnlyCell.falseAlarms} | ${pct(placementAfterMoveFocusOnlyCell.falseAlarms, placementAfterMoveFocusOnlyCell.n)} | -- | -- | -- | -- |`
+  );
+  lines.push(
+    `| placement, after-move only -- line-only | ${placementAfterMoveLineOnlyCell.n} | ${placementAfterMoveLineOnlyCell.falseAlarms} | ${pct(placementAfterMoveLineOnlyCell.falseAlarms, placementAfterMoveLineOnlyCell.n)} | -- | -- | -- | -- |`
+  );
+  lines.push(
+    `| placement, after-move only -- both focus and line | ${placementAfterMoveBothCell.n} | ${placementAfterMoveBothCell.falseAlarms} | ${pct(placementAfterMoveBothCell.falseAlarms, placementAfterMoveBothCell.n)} | -- | -- | -- | -- |`
+  );
+  lines.push(
     `| relation, in-grammar (false-alarm arm) | ${relationFalseAlarmCell.n} | ${relationFalseAlarmCell.falseAlarms} | ${pct(relationFalseAlarmCell.falseAlarms, relationFalseAlarmCell.n)} | -- | -- | -- | -- |`
   );
   lines.push(
@@ -313,10 +376,23 @@ async function main() {
     `| today's-board relation control | ${relationControlCell.n} | ${relationControlCell.falseAlarms} | ${pct(relationControlCell.falseAlarms, relationControlCell.n)} | -- | -- | -- | -- |`
   );
   lines.push("");
-  lines.push("## relation paraphrase recall table (UNMEASURED, never scored as passes)");
+  lines.push("## relation paraphrase recall table, per verb (UNMEASURED, never scored as passes)");
   lines.push("");
+  lines.push("| verb | in grammar? | n (false in-grammar claims paraphrased) | caught anyway | recall |");
+  lines.push("|---|---|---|---|---|");
+  const cc = paraphraseByVerb["could capture"];
+  const ia = paraphraseByVerb["is aiming at"];
+  const cb = paraphraseByVerb["can be taken by"];
   lines.push(
-    `n = ${relationParaphrase.n} paraphrases of false in-grammar relation claims; ${relationParaphrase.caught} were flagged anyway (recall ${pct(relationParaphrase.caught, relationParaphrase.n)})`
+    `| "could capture" | YES -- parses inside standingRelationRe (relationClaims.ts:55); its negation-prefix group accepts "could" without treating it as a negation, so this is the paraphrase list's mistake, not a checker bug | ${cc.n} | ${cc.caught} | ${pct(cc.caught, cc.n)} |`
+  );
+  lines.push(`| "is aiming at" | no | ${ia.n} | ${ia.caught} | ${pct(ia.caught, ia.n)} |`);
+  lines.push(`| "can be taken by" | no | ${cb.n} | ${cb.caught} | ${pct(cb.caught, cb.n)} |`);
+  lines.push("");
+  const outOfGrammarN = ia.n + cb.n;
+  const outOfGrammarCaught = ia.caught + cb.caught;
+  lines.push(
+    `out-of-grammar recall (the two genuinely out-of-grammar verbs combined, "could capture" excluded): ${outOfGrammarCaught} of ${outOfGrammarN} (${pct(outOfGrammarCaught, outOfGrammarN)})`
   );
   lines.push("");
 
@@ -334,6 +410,10 @@ async function main() {
   };
   dumpCell("placement false alarms / leniency", placementCell);
   dumpCell("placement misses", placementMissCell);
+  dumpCell("placement after-move only", placementAfterMoveOnlyCell);
+  dumpCell("placement after-move only, focus-only", placementAfterMoveFocusOnlyCell);
+  dumpCell("placement after-move only, line-only", placementAfterMoveLineOnlyCell);
+  dumpCell("placement after-move only, both", placementAfterMoveBothCell);
   dumpCell("relation in-grammar false alarms", relationFalseAlarmCell);
   dumpCell("relation in-grammar misses", relationMissCell);
   dumpCell("relation semantic cut", relationSemanticCutCell);
@@ -348,7 +428,8 @@ async function main() {
     `[checker-sweep] placement false-alarm ${pct(placementCell.falseAlarms, placementCell.n)} (n=${placementCell.n}), ` +
       `placement miss ${pct(placementMissCell.misses, placementMissCell.n)} (n=${placementMissCell.n}), ` +
       `relation false-alarm ${pct(relationFalseAlarmCell.falseAlarms, relationFalseAlarmCell.n)} (n=${relationFalseAlarmCell.n}), ` +
-      `relation miss ${pct(relationMissCell.misses, relationMissCell.n)} (n=${relationMissCell.n})`
+      `relation miss ${pct(relationMissCell.misses, relationMissCell.n)} (n=${relationMissCell.n}), ` +
+      `after-move-only false-alarm ${pct(placementAfterMoveOnlyCell.falseAlarms, placementAfterMoveOnlyCell.n)} (n=${placementAfterMoveOnlyCell.n})`
   );
 }
 
