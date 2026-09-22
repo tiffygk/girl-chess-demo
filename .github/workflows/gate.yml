@@ -20,18 +20,4 @@ jobs:
       - name: engine version
         run: ./tools/engineVersion.sh
       - run: npm run doctor
-      - name: diagnostic experiments (temporary for PR 32, reverted before merge)
-        run: |
-          sysctl hw.memsize hw.ncpu vm.swapusage
-          ( while sleep 15; do echo "MEM $(date +%T) $(sysctl -n vm.swapusage) free_pages=$(vm_stat | awk '/Pages free/ {print $3}') stockfish_procs=$(ps -A -o comm= | grep -c stockfish)"; done ) &
-          MON=$!
-          run_server () { echo "=== $1 start $(date +%T) ==="; npx vitest run server --reporter=dot $2 && echo "=== $1 PASSED $(date +%T) ===" || echo "=== $1 exited $? $(date +%T) ==="; }
-          mv engines/stockfish engines/stockfish.pinned
-          brew install stockfish >/dev/null 2>&1 || brew install stockfish
-          printf "uci\nquit\n" | stockfish | grep "id name"
-          run_server "A brew binary, default workers" ""
-          mv engines/stockfish.pinned engines/stockfish
-          run_server "B pinned binary, one worker" "--maxWorkers=1"
-          run_server "C pinned binary, default workers" ""
-          kill $MON
       - run: npm run gate
