@@ -1,6 +1,6 @@
 # Technical decisions
 
-Three decisions from building this chess coach. In each one the obvious fix was the wrong one. I measured before I believed it. All three shipped on 2026-07-22.
+Four decisions from building this chess coach. In each one the obvious fix was the wrong one. I measured before I believed it. The first three shipped on 2026-07-22, the fourth on 2026-09-21.
 
 ## The coach gave wrong answers, and a bigger model was not the fix
 
@@ -69,3 +69,73 @@ What I built instead closes one specific hole, false claims about what protects 
 ![A claim is checked against the board instead of the engine](images/diagrams/defender-check-flow.svg)
 
 Where this lives: the defender map is read off the board by the chess library the app already carries, and the claim check runs in the coach's validator before an answer sends.
+
+## When real chess terms sound like AI-isms: banning "quietly" and "quiet move" while teaching chess vocabulary
+
+The coach kept calling moves "quiet". "Quietly" as a softener is a language-model tic, and I had banned it in the coach's persona on 2026-09-08 with a carve-out for the chess term "quiet move", a move that is not a check, a capture or a threat. The carve-out was the problem. "A quiet regrouping move" and "a quiet move to untangle her pieces" both reached me in game 198, and to a player they read as the same tic. The term is real. It still tells you nothing about why the move was played.
+
+For the player: the coach never says quiet, quietly or quieter about a move. It names what the move does instead, from a fixed vocabulary.
+
+### The evidence
+
+The word had reached me once as a softener in 335 stored coach replies, and never since the persona line. So the line worked. What the record also showed is why: the list of banned words in the code that carried "quietly" was used only by the evaluation harness. Nothing on the live path ran it. The live check banned six words, all engine jargon. A banned word that only the prompt enforces holds until the model decides the chess sense is allowed, which is exactly what happened.
+
+The vocabulary came from a sourced pass over the standard glossaries: Wikipedia's glossary of chess and its articles on prophylaxis, tempo, sacrifice and the in-between move, plus two coaching pages on the checks-captures-threats method. Nineteen terms, grouped by the one split every coach uses: does the move force a reply or not.
+
+### The vocabulary
+
+A move that forces a reply is one of these.
+
+<table>
+<thead><tr><th style="background:#6c5ce7;color:#ffffff;text-align:left;padding:6px 10px">word</th><th style="background:#6c5ce7;color:#ffffff;text-align:left;padding:6px 10px">what the move does</th></tr></thead>
+<tbody>
+<tr><td style="padding:6px 10px">check</td><td style="padding:6px 10px">attacks her king</td></tr>
+<tr><td style="padding:6px 10px">capture</td><td style="padding:6px 10px">takes a piece or pawn</td></tr>
+<tr><td style="padding:6px 10px">en passant</td><td style="padding:6px 10px">a pawn takes a pawn that just passed it (a capture)</td></tr>
+<tr><td style="padding:6px 10px">trade</td><td style="padding:6px 10px">a capture she can take back; material stays level</td></tr>
+<tr><td style="padding:6px 10px">threat</td><td style="padding:6px 10px">attacks a piece or a square she has to answer</td></tr>
+<tr><td style="padding:6px 10px">pawn break</td><td style="padding:6px 10px">a pawn hits her pawn chain</td></tr>
+<tr><td style="padding:6px 10px">sacrifice</td><td style="padding:6px 10px">gives material for something bigger</td></tr>
+<tr><td style="padding:6px 10px">in-between move</td><td style="padding:6px 10px">answers a threat with a bigger threat first</td></tr>
+</tbody>
+</table>
+
+A move that forces nothing is one of these. This is the whole territory "quiet" used to cover.
+
+<table>
+<thead><tr><th style="background:#f3f0fb;color:#1f1f1f;text-align:left;padding:6px 10px">word</th><th style="background:#f3f0fb;color:#1f1f1f;text-align:left;padding:6px 10px">what the move does</th></tr></thead>
+<tbody>
+<tr><td style="padding:6px 10px">developing move</td><td style="padding:6px 10px">a piece leaves its starting square into play</td></tr>
+<tr><td style="padding:6px 10px">regrouping move</td><td style="padding:6px 10px">a piece already in play goes to a better square</td></tr>
+<tr><td style="padding:6px 10px">retreat</td><td style="padding:6px 10px">a piece steps out of danger</td></tr>
+<tr><td style="padding:6px 10px">preventing move</td><td style="padding:6px 10px">stops her plan before it starts (the textbook word is prophylactic, which I dropped as too clinical)</td></tr>
+<tr><td style="padding:6px 10px">waiting move</td><td style="padding:6px 10px">passes the turn and keeps everything as it is</td></tr>
+<tr><td style="padding:6px 10px">consolidating move</td><td style="padding:6px 10px">tidies up after an attack</td></tr>
+<tr><td style="padding:6px 10px">king-safety move</td><td style="padding:6px 10px">tucks the king away</td></tr>
+<tr><td style="padding:6px 10px">castling</td><td style="padding:6px 10px">the king-safety move where king and rook swap sides in one turn</td></tr>
+<tr><td style="padding:6px 10px">pawn advance</td><td style="padding:6px 10px">gains space</td></tr>
+<tr><td style="padding:6px 10px">promotion</td><td style="padding:6px 10px">the pawn advance that reaches the last rank and becomes a queen</td></tr>
+<tr><td style="padding:6px 10px">preparing move</td><td style="padding:6px 10px">sets up a forcing move next</td></tr>
+</tbody>
+</table>
+
+A move that does two things is named by the forcing one, because that is what the opponent has to answer. "Blocking move" is left out on purpose: in chess it already means putting a piece between a check and your king, so using it for prevention would give one word two meanings.
+
+### How it is enforced
+
+<table>
+<thead><tr><th style="background:#e5e5e5;color:#1f1f1f;text-align:left;padding:6px 10px">layer</th><th style="background:#e5e5e5;color:#1f1f1f;text-align:left;padding:6px 10px">where it runs</th><th style="background:#e5e5e5;color:#1f1f1f;text-align:left;padding:6px 10px">what it does</th><th style="background:#e5e5e5;color:#1f1f1f;text-align:left;padding:6px 10px">if it fails</th></tr></thead>
+<tbody>
+<tr><td style="padding:6px 10px">persona paragraph</td><td style="padding:6px 10px">in the prompt, every coach call</td><td style="padding:6px 10px">steers the first attempt toward the vocabulary</td><td style="padding:6px 10px">nothing stops the word yet</td></tr>
+<tr><td style="padding:6px 10px">live check</td><td style="padding:6px 10px">on every reply before it sends</td><td style="padding:6px 10px">rejects any form of "quiet" and tells the retry to name what the move does, without repeating the banned word</td><td style="padding:6px 10px">the reply is rewritten once, then falls back to a template</td></tr>
+<tr><td style="padding:6px 10px">template lint</td><td style="padding:6px 10px">in the test suite, before any merge</td><td style="padding:6px 10px">fails the build if a code-written string or the persona file uses the word</td><td style="padding:6px 10px">the change cannot merge</td></tr>
+</tbody>
+</table>
+
+Two debrief strings changed under the lint: "fifty quiet moves" became "fifty moves with no capture or pawn move", and "a quieter move" became "a slower move".
+
+### What it cost
+
+The coach can no longer say "quiet move", a term real chess books use, and its prompt is one paragraph longer. Code checks only that the banned word is gone. It does not check that the coach picked the right word for a move. I judge that reply by reply, the same way I judge any other claim it makes.
+
+Where this lives: the vocabulary in `server/coach/personas/coach.md`, the live check and the retry instruction in `server/coach/chat.ts`, the template lint in `src/review/templateVoice.test.ts`, the harness copy of the banned list in `server/coach/voiceRules.ts`.

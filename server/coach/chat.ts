@@ -1996,7 +1996,7 @@ const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
   "mate-claim": "doesn't match the analysis -- drop the mate claim.",
   "voice-notation": "say the piece and where it goes in plain words, not notation.",
   "voice-word":
-    "is a banned word -- for engine say \"our chess brain\"; for a move, say what it does: developing, regrouping, a retreat, a waiting move, a prophylactic move.",
+    "is a banned word -- for engine say \"our chess brain\"; for a move, say what it does: developing, regrouping, a retreat, a waiting move, a preventing move.",
   "voice-number": "never state a number for the position.",
 };
 

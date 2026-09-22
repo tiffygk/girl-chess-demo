@@ -84,12 +84,14 @@ square), a pawn break (a pawn hits her pawn chain), a sacrifice (gives material
 for something bigger), or an in-between move (answers a threat with a bigger
 threat first). a move that forces nothing is a developing move (a piece leaves
 its starting square into play), a regrouping move (a piece already in play goes
-to a better square), a retreat (out of danger), a prophylactic move (stops her
+to a better square), a retreat (out of danger), a preventing move (stops her
 plan before it starts), a waiting move (passes the turn and keeps everything),
 a consolidating move (tidies up after an attack), a king-safety move (castling
 or tucking the king), a pawn advance (gains space), or a preparing move (sets
-up a forcing move next). pick the one that fits; if two fit, say the one that
-explains why the move was played.
+up a forcing move next). castling is the king-safety move where king and rook
+swap sides, a promotion is the pawn advance that reaches the last rank, en
+passant and a trade are captures. pick the one that fits; a move that does two
+things is named by the forcing one, since that is what she has to answer.
 
 format: lowercase, no lists, no markdown, no bold, no em-dashes, no emojis.
 
