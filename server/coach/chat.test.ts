@@ -707,6 +707,37 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.violations.some((v) => v.includes("h8"))).toBe(true);
     });
+
+    it("a claim true after the staged (pending) move is not a placement violation; a wrong piece still is (traces 369 / 368)", () => {
+      // game 198 ply 26 before her move: her bishop on e5, mallow's knight on b8, rook a8.
+      const fen = "rnb3kr/pp1p2p1/5p1p/3PB3/2P5/8/PP2BPPP/RN2K1NR w KQ - 0 14";
+      const chess = new Chess(fen);
+      const occupancy: ChatFactList["occupancy"] = [];
+      for (const row of chess.board()) {
+        for (const cell of row) {
+          if (!cell) continue;
+          occupancy.push({ square: cell.square, pieceKind: cell.type, color: cell.color === "w" ? "you" : "mallow" });
+        }
+      }
+      const facts: ChatFactList = {
+        gameSans: [],
+        currentFen: fen,
+        toMove: chess.turn() === "w" ? "you" : "mallow",
+        occupancy,
+        legalSans: chess.moves(),
+        allowedSans: [],
+        contested: [],
+        status: "in-progress",
+        context: {
+          mode: "live",
+          pendingMove: { pieceKind: "b", from: "e5", to: "b8", san: "Bxb8", tier: "silent", judged: true },
+        },
+      };
+      expect(validateChat("your bishop on b8 can be taken back by the rook.", facts)).toEqual({ ok: true });
+      const wrong = validateChat("your knight on b8 is safe.", facts);
+      expect(wrong.ok).toBe(false);
+      if (!wrong.ok) expect(wrong.violations).toContain("placement-claim: your knight on b8 -- not there");
+    });
   });
 
   // Side-to-move fact (round 2026-07-22): the coach once attributed the
