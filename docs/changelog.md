@@ -92,6 +92,8 @@ README: the Maia/Claude paragraph now credits Maia correctly (an open source neu
 
 CLAUDE.md gained a Surfaces rule: a table of the four player-facing text surfaces (hint ladder, coach band, coach chat, post-game analysis), by place and author, correcting a controller statement on 2026-09-21 that conflated the two under-board surfaces into one. The same table is mirrored into `.claude/rules/hint-ladder.md`, which is now budget-guarded by `tools/claudeMdBudget.test.ts` alongside the other scoped rule files.
 
+PR #32 (the same round, merged later the same day) pins the engine. `setup.sh` no longer installs Stockfish through Homebrew; it downloads the official Stockfish 19 macOS universal binary, checks its sha256 against `tools/engines-sha256.txt` before extracting, and places it at `engines/stockfish` (gitignored). `server/engines/paths.ts` resolves that binary first and falls back to PATH; `tools/engineVersion.sh` asserts the version against it, so CI keeps the hard pin; the doctor reports a Stockfish of another version as a note with exit 0. The PR's first three CI runs were cancelled inside the tests because three UCI tests spawned the engine by bare name, which no longer existed on the runner; they now spawn the resolved path.
+
 From PR #30 (round/2026-09-21-play, merged to main as `55dbedc`): the end-game confirm window widened from three seconds to six; the coach voice picker now labels its options "Claude (Recommended)" and "Local Ollama", with the claude CLI option shown only behind the `gc-dev` localStorage flag.
 
 ## A back button leaves a live game without ending it, and the start button says start new game (2026-09-09, merged)
