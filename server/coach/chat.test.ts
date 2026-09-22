@@ -1913,6 +1913,51 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
         expect(result.violations).toEqual(["relation-claim: bishop to d6 attacks h8 -- it would not"]);
       }
     });
+
+    // trace 361: the denial is about the LIVE board (cxd6 is a legal capture
+    // there), but the hint pv's 4th ply lands on a board where the pawn is
+    // long gone and c7 genuinely can't reach d6 -- a denial coming true by
+    // coincidence deeper in the line. lineFens must not look that far.
+    it("does not let a denial come true by coincidence on a deep board in the hint line (trace 361)", () => {
+      const fen = "rnbq1k1r/pppp1ppp/3n4/B2PQ3/2P5/8/PP3PPP/RN2KBNR w KQ - 1 9";
+      const chess = new Chess(fen);
+      const occupancy: ChatFactList["occupancy"] = [];
+      for (const row of chess.board()) {
+        for (const cell of row) {
+          if (!cell) continue;
+          occupancy.push({ square: cell.square, pieceKind: cell.type, color: cell.color === "w" ? "you" : "mallow" });
+        }
+      }
+      const facts: ChatFactList = {
+        gameSans: [],
+        currentFen: fen,
+        toMove: "you",
+        occupancy,
+        legalSans: [],
+        allowedSans: [],
+        contested: [],
+        hintFindings: {
+          fen,
+          bestSan: "Qxd6+",
+          bestUci: "e5d6",
+          evalCp: null,
+          evalMate: null,
+          pvSans: ["Qxd6+", "Qe7+", "Qxe7+", "Kxe7", "Be2", "d6"],
+          trade: false,
+          escalated: false,
+          candidates: [],
+          verified: true,
+        },
+      };
+      const result = validateChat(
+        "no, the pawn on c7 can't reach d6, it isn't a legal capture from there.",
+        facts,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.violations[0]).toMatch(/^relation-claim: c7 does not attack d6/);
+      }
+    });
   });
 
   // Game 198 fixes (2026-09-21), Task C2: contestedAfterBest gives the

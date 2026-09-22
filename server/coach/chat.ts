@@ -558,13 +558,24 @@ function lineOccupancies(facts: ChatFactList): OccupancyEntry[][] {
 // turning-point pv from the focus fen, candidate line, pending move) so
 // checkRelationClaims sees exactly the boards checkPlacementClaims already
 // sees -- no separate gap for this checker to reintroduce.
+//
+// Horizon is 2 plies here (not lineOccupancies' 4), fixed 2026-09-22 for
+// trace 361: a relation claim ("the pawn on c7 can't reach d6") is about the
+// board her sentence is actually standing on -- the live position or the
+// first move or two of a line -- not a board four plies deep. Trace 361's
+// denial was false on the live board (cxd6 was a legal capture) but the
+// hint pv's 4th-ply board had long since moved that pawn, so the denial
+// came true there by coincidence and the checker cleared a false claim.
+// lineOccupancies (placement) keeps its 4-ply horizon on purpose: "the
+// bishop is on e5" stays checkable arbitrarily deep into a line, since
+// placement doesn't drift false the way a denial can drift true.
 function lineFens(facts: ChatFactList): string[] {
   const fens: string[] = [];
   const live = facts.currentFen;
   const hint = facts.hintFindings?.pvSans ?? facts.context?.hintFocus?.pvSans;
-  if (hint?.length) fens.push(...fensAlongLine(live, hint));
+  if (hint?.length) fens.push(...fensAlongLine(live, hint, 2));
   const tp = facts.context?.turningPointFocus?.pvSans;
-  if (tp?.length && facts.focusPosition) fens.push(...fensAlongLine(facts.focusPosition.fen, tp));
+  if (tp?.length && facts.focusPosition) fens.push(...fensAlongLine(facts.focusPosition.fen, tp, 2));
   if (facts.candidateLine) {
     const sans = [facts.candidateLine.san, ...(facts.candidateLine.replySan ? [facts.candidateLine.replySan] : [])];
     fens.push(...fensAlongLine(live, sans, 2));
