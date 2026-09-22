@@ -743,6 +743,13 @@ export interface ChatHistoryMessage {
   role: string;
   text: string;
   createdAt: string;
+  // B2.3 (live-telemetry round, 2026-09-22): optional pass-through so a
+  // history-seeded ThreadEntry CAN carry a traceId when the source object
+  // has one (dataGc.test.tsx's data-gc-trace-id distinct-content test
+  // relies on this) -- additive, backward compatible: today's server never
+  // populates this field on /game/:id/chat, so no runtime behavior changes
+  // for real traffic.
+  traceId?: number;
 }
 
 export function fetchChatHistory(gameId: number): Promise<{ ok: boolean; messages: ChatHistoryMessage[] }> {

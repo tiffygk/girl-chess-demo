@@ -117,5 +117,5 @@ export function historyToThread(history: ChatHistoryMessage[] | null | undefined
   if (!history) return [];
   return history
     .filter((m): m is ChatHistoryMessage & { role: "user" | "coach" } => m.role === "user" || m.role === "coach")
-    .map((m) => ({ kind: "message" as const, role: m.role, text: m.text }));
+    .map((m) => ({ kind: "message" as const, role: m.role, text: m.text, traceId: m.traceId }));
 }
