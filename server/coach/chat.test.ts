@@ -1079,6 +1079,39 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
       expect(attempts[1].violations).toEqual([]);
     });
 
+    // Game 198 fixes (2026-09-21), Task D1: a chat row now records which
+    // thinking level actually produced it -- cause 3 of the game-198 map
+    // (attempt 0 at low over a July-sized prompt) can't be separated from
+    // cause 1 without knowing per-row what level ran. thinking_pref carries
+    // the WINNING attempt's level (low on a clean first try, default on a
+    // regen); each attempts_json entry also carries its own `thinking` so a
+    // rejected attempt 0's level survives even when the row overall reads
+    // "default".
+    it("first-try answer -> row thinking_pref is 'low'; a validation-failed regen -> row thinking_pref is 'default' and attempts entries carry their own thinking", async () => {
+      const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+      const cleanBackend = fakeBackend(async () => "e4 opens things up nicely for you.");
+      const sessionId1 = createSession();
+      const gameId1 = createGame(sessionId1, "maia-1100");
+      const cleanResult = await chat("what did I just play?", [], facts, cleanBackend, { gameId: gameId1, ply: 1, kind: "chat" });
+      const cleanRow = getAdviceTraces(gameId1).find((r) => r.id === cleanResult.traceId)!;
+      expect(cleanRow.thinking_pref).toBe("low");
+
+      let calls = 0;
+      const regenBackend = fakeBackend(async () => {
+        calls += 1;
+        if (calls === 1) return "Qxh7 wins the game right now.";
+        return "e4 opens things up nicely for you.";
+      });
+      const sessionId2 = createSession();
+      const gameId2 = createGame(sessionId2, "maia-1100");
+      const regenResult = await chat("what should I do next?", [], facts, regenBackend, { gameId: gameId2, ply: 1, kind: "chat" });
+      const regenRow = getAdviceTraces(gameId2).find((r) => r.id === regenResult.traceId)!;
+      expect(regenRow.thinking_pref).toBe("default");
+      const regenAttempts = JSON.parse(regenRow.attempts_json);
+      expect(regenAttempts[0].thinking).toBe("low");
+      expect(regenAttempts[1].thinking).toBe("default");
+    });
+
     it("clean first attempt -> attempts_json is NULL (the row's own output IS attempt 0, nothing lost)", async () => {
       const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
       const backend = fakeBackend(async () => "e4 opens things up nicely for you.");

@@ -181,6 +181,16 @@ const EXPECTED_COLUMNS: Record<string, { name: string; addSql: string }[]> = {
     // `facts_json`, but not free to read back. Additive/nullable, no
     // default, same convention as cause/backfilled_at above.
     { name: "attempts_json", addSql: "attempts_json TEXT" },
+    // Game 198 fixes (2026-09-21), Task D1: the thinking level (ThinkingPref
+    // -- "low" | "disabled" | "default") that produced the row's own
+    // `output` -- attempt 0's level on a clean first try, or the level of
+    // whichever attempt finally validated on a regen. Cause 3 of the
+    // game-198 map (attempt 0 at low over a doubled-size prompt) can't be
+    // separated from cause 1 without this column and the replay tool (Task
+    // D3) it feeds. NULL is the "not recorded" convention for every row
+    // written before this column existed, same as cause/backfilled_at/
+    // attempts_json above -- additive/nullable, no default.
+    { name: "thinking_pref", addSql: "thinking_pref TEXT" },
   ],
   // Increment 3b: panel-ruled turning points (server/annotator/turningPoints.ts),
   // up to 3 rows per game, written once at game end. Brand-new table (CREATE
@@ -345,7 +355,7 @@ export function openDb(path = "data/girlchess.db") {
       kind TEXT, facts_json TEXT, prompt TEXT, output TEXT, source TEXT,
       backend TEXT, validated INTEGER, regen_count INTEGER, latency_ms INTEGER,
       created_at TEXT DEFAULT (datetime('now')), rating INTEGER, feedback_text TEXT,
-      cause TEXT, backfilled_at TEXT, attempts_json TEXT);
+      cause TEXT, backfilled_at TEXT, attempts_json TEXT, thinking_pref TEXT);
     CREATE TABLE IF NOT EXISTS turning_points(
       id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), rank INTEGER,
       ply INTEGER, san TEXT, label TEXT, punish_san TEXT, delta_p REAL,
@@ -507,14 +517,20 @@ export const insertAdviceTrace = (t: {
   // Optional so every pre-this-task call site (existing tests, any future
   // caller that never regenerates) keeps working unchanged and gets NULL.
   attemptsJson?: string | null;
+  // Game 198 fixes (2026-09-21), Task D1: the thinking level that produced
+  // this row's `output` -- see EXPECTED_COLUMNS.advice_traces'
+  // `thinking_pref` comment above for the NULL convention. Optional so
+  // every pre-this-task call site (narrate()'s recordAdviceTrace wrapper,
+  // existing tests) keeps working unchanged and gets NULL.
+  thinkingPref?: string | null;
 }): number =>
   Number(
     db.prepare(
-      `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms, cause, attempts_json)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms, cause, attempts_json, thinking_pref)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).run(
       t.gameId, t.ply, t.kind, t.factsJson, t.prompt, t.output, t.source, t.backend,
-      t.validated ? 1 : 0, t.regenCount, t.latencyMs, t.cause ?? null, t.attemptsJson ?? null
+      t.validated ? 1 : 0, t.regenCount, t.latencyMs, t.cause ?? null, t.attemptsJson ?? null, t.thinkingPref ?? null
     ).lastInsertRowid
   );
 export const getAdviceTraces = (gameId: number) =>
