@@ -242,3 +242,25 @@ function pieceTypeMatches(pieceChar: string, pieceName: string): boolean {
   };
   return map[pieceChar.toLowerCase()] === pieceName.toLowerCase();
 }
+
+// A2 (live-telemetry round, 2026-09-22): checkRelationClaims above returns
+// only violation-message strings. This sibling walks the same per-sentence
+// loop and the same three regex shapes (standingRelationRe,
+// bareSquareRelationRe, hypotheticalRelationRe) checkRelationClaims scans,
+// reporting which sentence indices matched any of the three -- the
+// sentences this checker actually found a relation-claim in, whether or
+// not it turned out to be a violation. Byte-unchanged: checkRelationClaims
+// itself is untouched above.
+export function relationClaimSentences(text: string): { sentence: number }[] {
+  const out: { sentence: number }[] = [];
+  splitSentences(text).forEach((sentence, i) => {
+    if (
+      standingRelationRe().test(sentence) ||
+      bareSquareRelationRe().test(sentence) ||
+      hypotheticalRelationRe().test(sentence)
+    ) {
+      out.push({ sentence: i });
+    }
+  });
+  return out;
+}

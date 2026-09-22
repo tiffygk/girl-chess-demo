@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkMateClaims } from "./mateClaims";
+import { checkMateClaims, mateClaimSentences } from "./mateClaims";
 
 const perPlyWithMate = [
   { evalMate: null, then: undefined },
@@ -56,5 +56,18 @@ describe("checkMateClaims", () => {
   it("a mate claim with NO grounding is still blocked", () => {
     const violations = checkMateClaims("there's a forced mate in 5", [], [], null);
     expect(violations.length).toBeGreaterThan(0);
+  });
+});
+
+// A2 (live-telemetry round, 2026-09-22): same-set test for
+// mateClaimSentences -- hand-verified against this fixture: sentence 0 has
+// no "mate in N" claim, sentence 1 does.
+// RED condition (verify by reverting): if mateClaimSentences is changed to
+// test against the whole text instead of per-sentence (losing sentence
+// attribution), this exact-shape assertion on which INDEX matched fails.
+describe("mateClaimSentences (A2 same-set test)", () => {
+  it("reports exactly the sentences containing a mate-in-N claim", () => {
+    const text = "you're up material here. there's mate in 3 starting with Ng5.";
+    expect(mateClaimSentences(text)).toEqual([{ sentence: 1 }]);
   });
 });

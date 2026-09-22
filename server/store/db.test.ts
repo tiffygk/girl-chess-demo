@@ -1048,3 +1048,56 @@ describe("session-gone recovery: sessionExists + addModeMinutes FK guard (owner 
     expect(addModeMinutes(999999, "game", 30)).toBe(false);
   });
 });
+
+// A2 (live-telemetry round, 2026-09-22): advice_traces gains coverage_json
+// TEXT (additive, EXPECTED_COLUMNS convention). RED condition (verify by
+// reverting): insertAdviceTrace stops forwarding t.coverageJson into its
+// INSERT, or EXPECTED_COLUMNS/CREATE TABLE drops the column -- either way
+// the persisted row's coverage_json reads NULL/undefined instead of the
+// passed JSON string.
+describe("insertAdviceTrace: coverage_json (A2)", () => {
+  it("persists a passed coverageJson onto the stored advice_traces row", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    const traceId = insertAdviceTrace({
+      gameId: g,
+      ply: 1,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "o",
+      source: "model",
+      backend: "agent-sdk",
+      validated: true,
+      regenCount: 0,
+      latencyMs: 10,
+      coverageJson: JSON.stringify({ sentences: 2, boardSentences: 1, checked: 1, unchecked: [], byClass: {} }),
+    });
+    const row = getAdviceTraceById(traceId) as any;
+    expect(row.coverage_json).toBe(
+      JSON.stringify({ sentences: 2, boardSentences: 1, checked: 1, unchecked: [], byClass: {} })
+    );
+  });
+
+  it("omitting coverageJson still writes NULL", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+    const traceId = insertAdviceTrace({
+      gameId: g,
+      ply: 1,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "o",
+      source: "model",
+      backend: "agent-sdk",
+      validated: true,
+      regenCount: 0,
+      latencyMs: 10,
+    });
+    const row = getAdviceTraceById(traceId) as any;
+    expect(row.coverage_json).toBeNull();
+  });
+});

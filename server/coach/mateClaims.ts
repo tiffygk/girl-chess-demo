@@ -1,3 +1,5 @@
+import { splitSentences } from "./defenseClaims";
+
 // Forward-prediction round (2026-07-28): the per-ply `then` facts invite the
 // model to speak about mates by number, so this closes the loop the same
 // way checkDefenseClaims/checkPlacementClaims do for their claim shapes --
@@ -15,7 +17,10 @@
 // prompt could have shown the model comes from evalMate, a then claim, or a
 // focused mating line, so a stray N is invented precision -- the persona's
 // "ground every claim in the fact list" made mechanical.
-const MATE_CLAIM_RE = /\bmate in (\d+)\b/gi;
+// Exported (A2, live-telemetry round, 2026-09-22) so mateClaimSentences
+// below can reuse the exact same pattern checkMateClaims adjudicates
+// against, rather than a second hand-maintained copy drifting from it.
+export const MATE_CLAIM_RE = /\bmate in (\d+)\b/gi;
 const THEN_MATE_RE = /\bin (\d+)$/;
 
 export function checkMateClaims(
@@ -58,4 +63,21 @@ export function checkMateClaims(
     }
   }
   return violations;
+}
+
+// A2 (live-telemetry round, 2026-09-22): checkMateClaims above never split
+// its text into sentences -- it scans the whole reply at once via
+// MATE_CLAIM_RE.matchAll. claimCoverage.ts needs sentence-level attribution
+// though, so this sibling walks the SAME splitSentences(text) unit
+// claimCoverage.ts uses for every other claim class and reports which
+// sentence indices contain a "mate in N" claim -- the exact substring
+// checkMateClaims itself adjudicates. Byte-unchanged: checkMateClaims above
+// is untouched; this only reads MATE_CLAIM_RE, never writes to it.
+export function mateClaimSentences(text: string): { sentence: number }[] {
+  const out: { sentence: number }[] = [];
+  splitSentences(text).forEach((sentence, i) => {
+    const re = new RegExp(MATE_CLAIM_RE.source, "gi");
+    if (re.test(sentence)) out.push({ sentence: i });
+  });
+  return out;
 }
