@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeClaimCoverage } from "./claimCoverage";
+import { computeClaimCoverage, ALL_CHECKER_CLASSES } from "./claimCoverage";
 
 // A2 (live-telemetry round, 2026-09-22): computeClaimCoverage's own coverage
 // math, isolated from any real ClaimCoverage caller (chat.ts wiring is
@@ -10,7 +10,7 @@ import { computeClaimCoverage } from "./claimCoverage";
 describe("computeClaimCoverage (A2)", () => {
   it("counts total sentences and board-relevant sentences", () => {
     const text = "nice opening. the pawn on c7 attacks d6. good luck out there.";
-    const coverage = computeClaimCoverage(text, {});
+    const coverage = computeClaimCoverage(text, {}, ALL_CHECKER_CLASSES);
     expect(coverage.sentences).toBe(3);
     // sentence 0 ("nice opening.") and sentence 2 ("good luck out
     // there.") have no SAN-shaped token or square name -- not board
@@ -20,7 +20,7 @@ describe("computeClaimCoverage (A2)", () => {
 
   it("marks a board sentence as checked when an existing validator's claim shape matches it", () => {
     const text = "the pawn on c7 attacks d6.";
-    const coverage = computeClaimCoverage(text, {});
+    const coverage = computeClaimCoverage(text, {}, ALL_CHECKER_CLASSES);
     expect(coverage.checked).toBe(1);
     expect(coverage.unchecked).toEqual([]);
     expect(coverage.byClass["relation-claim"]).toBe(1);
@@ -31,7 +31,7 @@ describe("computeClaimCoverage (A2)", () => {
     // regex families (no piece word, no verb, no owner phrase) -- a
     // board-relevant sentence with nothing to check it.
     const text = "e4 looks like a fine square for a pawn someday.";
-    const coverage = computeClaimCoverage(text, {});
+    const coverage = computeClaimCoverage(text, {}, ALL_CHECKER_CLASSES);
     expect(coverage.boardSentences).toBe(1);
     expect(coverage.checked).toBe(0);
     expect(coverage.unchecked).toEqual([text.trim()]);
@@ -44,7 +44,7 @@ describe("computeClaimCoverage (A2)", () => {
     // placement-claim shapes and this test asserts the real count, not a
     // wished-for one.
     const text = "the pawn on c7 attacks d6. your rook on a1 is active. there's mate in 3 here.";
-    const coverage = computeClaimCoverage(text, {});
+    const coverage = computeClaimCoverage(text, {}, ALL_CHECKER_CLASSES);
     expect(coverage.byClass["relation-claim"]).toBe(1);
     expect(coverage.byClass["placement-claim"]).toBe(2);
     expect(coverage.byClass["mate-claim"]).toBe(1);
@@ -54,9 +54,25 @@ describe("computeClaimCoverage (A2)", () => {
     // "your rook on a1 attacks d6" -- a1 is a placement claim shape AND
     // (rook on a1 attacks d6) a relation claim shape in the same sentence.
     const text = "your rook on a1 attacks d6.";
-    const coverage = computeClaimCoverage(text, {});
+    const coverage = computeClaimCoverage(text, {}, ALL_CHECKER_CLASSES);
     expect(coverage.checked).toBe(1);
     expect(coverage.byClass["placement-claim"]).toBe(1);
     expect(coverage.byClass["relation-claim"]).toBe(1);
+  });
+
+  // Game 198 follow-up round (2026-09-22, brief-4.md, B3/step 4): a caller
+  // that only ran ONE checker on its route (narrate()'s validateNarration
+  // runs only checkDefenseClaims) must not have this function claim a
+  // relation-claim-shaped sentence was checked. RED condition (verify by
+  // reverting this file's checkedClasses filter, i.e. going back to "for
+  // every SPAN_PRODUCER" with no `checked.has` guard): this test fails
+  // because the sentence comes back checked=1 regardless of which classes
+  // were passed.
+  it("a sentence matched only by a class NOT in checkedClasses is reported unchecked", () => {
+    const text = "the pawn on c7 attacks d6.";
+    const coverage = computeClaimCoverage(text, {}, ["defense-claim"]);
+    expect(coverage.checked).toBe(0);
+    expect(coverage.unchecked).toEqual([text.trim()]);
+    expect(coverage.byClass["relation-claim"]).toBeUndefined();
   });
 });
