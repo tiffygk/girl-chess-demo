@@ -87,6 +87,13 @@ interface LiveGame {
    *  same as lastHint/hintHistory above). Cap 8 entries, oldest dropped --
    *  same "keep it small" discipline HINT_HISTORY_CAP already applies. */
   candidateLines: Map<string, CandidateLine>;
+  /** B1.2 (live-telemetry round, 2026-09-22): the most recent judge verdict
+   *  for THIS game, set only by judgeMove below. In-memory only, mirrors
+   *  lastHint's own contract -- a fresh process starts every game's shelf
+   *  empty (gameState reports null until the first judge call after
+   *  restart, which is honest: no verdict has happened yet in this
+   *  process's lifetime). */
+  lastVerdict?: { ply: number; tier: string };
 }
 
 // Wave A2: cap on LiveGame.candidateLines, mirrors HINT_HISTORY_CAP's own
@@ -306,6 +313,20 @@ export type GameListEntry = {
   resumable: boolean;
 };
 
+// B1.2 (live-telemetry round, 2026-09-22): the NEW surface for GET
+// /api/game/:id/state -- deliberately not GameListEntry (which carries no
+// fen/ply/side). See gameState() below for the live-vs-persisted contract.
+export type GameState = {
+  ok: boolean;
+  gameId: number;
+  fen: string;
+  ply: number;
+  sideToMove: "w" | "b";
+  result: string | null;
+  lastVerdict: { ply: number; tier: string } | null;
+  coachBreaker: { unhealthyUntil: string | null };
+};
+
 export class GameManager {
   private games = new Map<number, LiveGame>();
   private evaluator = new StockfishEvaluator();
@@ -419,6 +440,22 @@ export class GameManager {
   private isCoachBackendUnhealthy(name: string): boolean {
     const until = this.coachUnhealthy.get(name);
     return until !== undefined && this.clock() < until;
+  }
+
+  // B1.2 (live-telemetry round, 2026-09-22): public accessor for
+  // gameState's coachBreaker field. coachUnhealthy is keyed by BACKEND NAME,
+  // not by game (see its own comment above) -- there is no per-game breaker
+  // to report, so this reports whether ANY backend currently has an active
+  // cooldown, converting the stored clock-time NUMBER to an ISO string
+  // (VERIFIER CORRECTION: the map value is `this.clock() + cooldown`, never
+  // an ISO string already). Never exposes the raw map.
+  coachBreaker(): { unhealthyUntil: string | null } {
+    const now = this.clock();
+    let latest: number | null = null;
+    for (const until of this.coachUnhealthy.values()) {
+      if (now < until && (latest === null || until > latest)) latest = until;
+    }
+    return { unhealthyUntil: latest === null ? null : new Date(latest).toISOString() };
   }
 
   // Test seam only (Task 6): manager.test.ts shares ONE gm/one process
@@ -1115,6 +1152,53 @@ export class GameManager {
     };
   }
 
+  // B1.2 (live-telemetry round, 2026-09-22): "what is this game's live board
+  // right now" -- fen/ply/side, for an agent testing/debugging against the
+  // running server. Synchronous and deliberately does NOT go through
+  // ensureLive/rebuildFromDb (no rebuild-on-read): a resident LiveGame is
+  // read straight off its own `chess`/`ply` fields (VERIFIER CORRECTION:
+  // never derived from GameListEntry or the moves table while a game is
+  // live); a non-resident but real game is reconstructed via the same
+  // synchronous replayMoves() rebuildFromDb itself uses, so a finished or
+  // forgotten game still answers without fabricating a live position. Null
+  // only when the id was never a game at all.
+  gameState(gameId: number): GameState | null {
+    const row = getGame(gameId);
+    if (!row) return null;
+    const coachBreaker = this.coachBreaker();
+    const live = this.games.get(gameId);
+    if (live) {
+      return {
+        ok: true,
+        gameId,
+        fen: live.chess.fen(),
+        ply: live.ply,
+        sideToMove: live.chess.turn(),
+        result: row.result ?? null,
+        lastVerdict: live.lastVerdict ?? null,
+        coachBreaker,
+      };
+    }
+    // Not resident (process restarted, or the game finished and was never
+    // reloaded) -- reconstruct the persisted end state from the moves table,
+    // never fabricate a live fen for a game with no live object.
+    const rows = getGameMoves(gameId);
+    const chess = replayMoves(rows);
+    if (!chess) {
+      return { ok: false, gameId, fen: "", ply: 0, sideToMove: "w", result: row.result ?? null, lastVerdict: null, coachBreaker };
+    }
+    return {
+      ok: true,
+      gameId,
+      fen: chess.fen(),
+      ply: rows.length,
+      sideToMove: chess.turn(),
+      result: row.result ?? null,
+      lastVerdict: null,
+      coachBreaker,
+    };
+  }
+
   // Wave 3.5, item 2 (owner ask, 2026-08-01): real per-game deletion for the
   // past-games drawer's delete X. Guard checks BOTH sources of "is this
   // actually over" -- `this.games`' own finished flag when a LiveGame entry
@@ -1336,6 +1420,9 @@ export class GameManager {
       mode,
       factsJson: buildVerdictFactsJson(verdict.threat, verdict.conversionCopy),
     });
+    // B1.2: recorded on the LIVE object (not the db row) so gameState can
+    // read it back synchronously without a query -- see LiveGame.lastVerdict.
+    live.lastVerdict = { ply: live.ply + 1, tier: verdict.tier };
     return { ok: true, verdict };
   }
 

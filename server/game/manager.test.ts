@@ -413,6 +413,56 @@ describe("GameManager", () => {
     expect(rows[0].advice_level).toBe("standard");
   }, 20000);
 
+  // B1.2 (live-telemetry round, 2026-09-22): gameState must read the LIVE
+  // chess object, never a stale/derived source -- RED if it reads
+  // GameListEntry or the moves table instead of live.chess (verified by
+  // temporarily reading `getGameMoves(gameId).length` for ply and watching
+  // this fail after a move that hasn't hit the db yet, e.g. a judge-only
+  // call, then reverting).
+  it("gameState reflects the live chess object's fen/side/ply after a move", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    await gm.playerMove(g.gameId, "e2", "e4", undefined, 3000);
+    const live = (gm as any).games.get(g.gameId);
+    const state = gm.gameState(g.gameId);
+    expect(state?.ok).toBe(true);
+    expect(state?.fen).toBe(live.chess.fen());
+    expect(state?.ply).toBe(live.ply);
+    expect(state?.sideToMove).toBe(live.chess.turn());
+    expect(state?.result).toBe(null);
+  });
+
+  it("gameState reports null for an id that was never a game", () => {
+    expect(gm.gameState(999999)).toBe(null);
+  });
+
+  it("gameState carries the most recent judge verdict's ply/tier after judgeMove", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    await gm.judgeMove(g.gameId, "e2", "e4");
+    const state = gm.gameState(g.gameId);
+    expect(state?.lastVerdict).toEqual({ ply: 1, tier: "silent" });
+  }, 20000);
+
+  it("gameState's lastVerdict is null before any judge call", async () => {
+    const g = await gm.newGame(sessionId, 1100);
+    const state = gm.gameState(g.gameId);
+    expect(state?.lastVerdict).toBe(null);
+  });
+
+  // The stored breaker value is a NUMBER (clock() + cooldown), never an ISO
+  // string -- RED if coachBreaker() returns the raw map value instead of
+  // converting (verified by temporarily returning the raw number and
+  // watching the ISO-format assertion fail, then reverting).
+  it("coachBreaker converts an active cooldown to ISO and reports null when healthy", () => {
+    expect(gm.coachBreaker()).toEqual({ unhealthyUntil: null });
+    gm.setClockForTesting(() => Date.now());
+    gm.markCoachBackendUnhealthy(claudeCliBackend.name);
+    const breaker = gm.coachBreaker();
+    expect(breaker.unhealthyUntil).not.toBeNull();
+    expect(breaker.unhealthyUntil).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    gm.resetCoachBackendStateForTesting();
+    expect(gm.coachBreaker()).toEqual({ unhealthyUntil: null });
+  });
+
   it("judgeMove rejects an illegal move without touching the game", async () => {
     const g = await gm.newGame(sessionId, 1100);
     const before = (gm as any).games.get(g.gameId).chess.fen();
