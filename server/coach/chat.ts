@@ -22,7 +22,7 @@ import type { CoachBackend, CoachUsage } from "./backends/types";
 import { getPersona, isTimeoutError, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
-import { checkPlacementClaims } from "./placementClaims";
+import { checkPlacementClaims, type OccupancyEntry } from "./placementClaims";
 import { checkMateClaims } from "./mateClaims";
 import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
 import { isOffTopic, mentionedPlies, thinkingForIntent, type ChatIntent } from "./intent";
@@ -483,6 +483,44 @@ function derivePositionFacts(chess: Chess): {
   }
 
   return { fen: chess.fen(), toMove, occupancy, legalSans: chess.moves(), contested };
+}
+
+// Game 198 fixes (2026-09-21), cause 1: the boards a reply may be narrating.
+// Replays `sans` from `fen` one ply at a time and returns the occupancy after
+// each ply (at most maxPlies), stopping at the first illegal san. chess.js
+// only, no engine call.
+export function occupanciesAlongLine(fen: string, sans: string[], maxPlies = 4): OccupancyEntry[][] {
+  const out: OccupancyEntry[][] = [];
+  const c = new Chess(fen);
+  for (const san of sans.slice(0, maxPlies)) {
+    try { c.move(san); } catch { break; }
+    out.push(derivePositionFacts(c).occupancy);
+  }
+  return out;
+}
+
+// Game 198 fixes (2026-09-21), cause 1: every board a placement claim might
+// legitimately be describing beyond the current and focused positions --
+// the hint ladder's verified PV, a focused turning point's PV, and the
+// candidate line a named-but-unplayed move produces. Used by both
+// checkPlacementClaims call sites below so neither drifts from the other.
+function lineOccupancies(facts: ChatFactList): OccupancyEntry[][] {
+  const boards: OccupancyEntry[][] = [];
+  const live = facts.currentFen;
+  const hint = facts.hintFindings?.pvSans ?? facts.context?.hintFocus?.pvSans;
+  if (hint?.length) boards.push(...occupanciesAlongLine(live, hint));
+  const tp = facts.context?.turningPointFocus?.pvSans;
+  if (tp?.length && facts.focusPosition) boards.push(...occupanciesAlongLine(facts.focusPosition.fen, tp));
+  if (facts.candidateLine) {
+    const sans = [facts.candidateLine.san, ...(facts.candidateLine.replySan ? [facts.candidateLine.replySan] : [])];
+    boards.push(...occupanciesAlongLine(live, sans, 2));
+  }
+  // Game 198 fixes (2026-09-21), wave B fix: the move she has staged on the
+  // board but not confirmed is the board most of her questions are about
+  // (traces 329, 342, 369 were all rejected for claims true after it).
+  const pending = facts.context?.pendingMove?.san;
+  if (pending) boards.push(...occupanciesAlongLine(live, [pending], 1));
+  return boards;
 }
 
 // Task 3 (R1a) input shape: one game's already-persisted per-ply analysis,
@@ -1214,7 +1252,7 @@ export function validateChat(
   // intersection internally (see checkPlacementClaims's own comment) --
   // unlike checkDefenseClaims above, there's no separate current/focus call
   // + filter needed here.
-  violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
+  violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy, ...lineOccupancies(facts)));
   // Task 3a (R2, voice-enforcement round): no facts needed -- this checker
   // is about the SHAPE of the prose (notation/banned words/numbers), not
   // whether a claim matches the position. Round 3 Task 13: opts threads
@@ -1315,7 +1353,7 @@ export function validateChatGeneral(
       violations.push(...currentDefense);
     }
     violations.push(...checkSideAttributionClaims(text, facts));
-    violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy));
+    violations.push(...checkPlacementClaims(text, facts.occupancy, facts.focusPosition?.occupancy, ...lineOccupancies(facts)));
   }
 
   violations.push(...checkVoice(text, opts));
@@ -2004,7 +2042,16 @@ export function buildChatPromptParts(
 // original "isn't a move from this game" wording.
 const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
   "": "isn't a move from this game.",
-  "placement-claim": "misstates where a piece is -- restate only what the fact list proves.",
+  // Game 198 fixes (2026-09-21), Task B2, cause 1: the old wording
+  // ("restate only what the fact list proves") turned a true after-move
+  // claim into a false one on retry -- the reply had named a piece on a
+  // square that IS where it will be after a move it already stated, and
+  // this told it to erase that instead of naming the move (trace 361
+  // denied a legal capture on retry; trace 363 fell to the template
+  // fallback twice). The retry hint now asks for the move, not for
+  // silence.
+  "placement-claim":
+    "names a piece on a square it is not on right now. if you mean a position after a move, say the move first (\"after queen takes on d6, ...\"); otherwise keep to where the pieces stand on the fact list.",
   "side-claim": "names the wrong side -- that move belongs to the other side.",
   "defense-claim": "isn't a defense the position supports -- drop the defense claim.",
   "mate-claim": "doesn't match the analysis -- drop the mate claim.",
@@ -2309,11 +2356,13 @@ export async function chat(
       // seam every downstream use (validateChat, trimmed/modelText, and the
       // advice_traces `output` field this function persists at the end)
       // reads from, so a model reply can never carry an em-dash or a
-      // swap-list phrase into the db or the caller. This is also the value
-      // that ends up persisted on a REJECTED draft (a template-fallback
-      // row's `output` is this raw last attempt, not the apology copy the
-      // user sees) -- normalizing here is what covers that path too, per
-      // the brief's "do not patch only the model branch".
+      // swap-list phrase into the db or the caller. This value also feeds a
+      // REJECTED draft's entry in attempts_json (since wave B, a
+      // template-fallback row's `output` is the apology copy she saw, not
+      // this raw last attempt -- the raw attempt(s), including any
+      // "[backend error]" text, live in attempts_json instead) --
+      // normalizing here is what covers that path too, per the brief's
+      // "do not patch only the model branch".
       attemptOutput = normalizeVoice(
         backend.generateStream && opts?.onDelta
           ? await backend.generateStream(
@@ -2462,7 +2511,13 @@ export async function chat(
     // backend; this is the one JSON.stringify(facts) in the whole function.
     factsJson: JSON.stringify(facts),
     prompt: attemptPrompt,
-    output: attemptOutput,
+    // Game 198 fixes (2026-09-21), Task B3: this used to always store
+    // attemptOutput -- the last REJECTED attempt's raw text -- even on a
+    // template-fallback row, so a reader of the row (trace 363) could not
+    // tell what she actually saw from what the model tried and lost. A
+    // template row now stores the template text (`text`, the same value
+    // returned below); the rejected attempt(s) still live in attempts_json.
+    output: source === "model" ? attemptOutput : text,
     source,
     backend: backend.name,
     validated: source === "model",
@@ -2487,7 +2542,14 @@ export async function chat(
     // Task 6 (game192-fixes round, RC4): NULL when there's only one attempt
     // to record -- no information is lost then, because the row's own
     // `output` above IS that attempt.
-    attemptsJson: attempts.length > 1 ? JSON.stringify(attempts) : null,
+    //
+    // Game 198 fixes (2026-09-21), Task B3: that "no information lost"
+    // reasoning breaks for a template-fallback row now that `output` above
+    // stores the template, not the attempt -- a single-attempt template row
+    // would otherwise lose the rejected text entirely (trace 363: a reader
+    // of the row could not tell what she saw). A template row always keeps
+    // its attempt(s), even when there is only one.
+    attemptsJson: attempts.length > 1 || source === "template" ? JSON.stringify(attempts) : null,
   });
 
   return failureCause ? { text, source, cause: failureCause, traceId } : { text, source, traceId };

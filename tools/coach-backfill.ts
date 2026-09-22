@@ -119,10 +119,19 @@ export function findFailedTraces(gameId?: number): FailedTrace[] {
       (r: any) =>
         r.source === "template" &&
         r.backend !== "none" &&
-        typeof r.output === "string" &&
-        r.output.startsWith(BACKEND_ERROR_PREFIX) &&
-        !r.output.includes("timed out") &&
-        (r.cause == null || r.cause === "backend-down") &&
+        // `cause` is the authority since the cause column was added: a row
+        // written since then always carries it, and "backend-down" is
+        // unambiguous regardless of what `output` holds (since commit
+        // 6b88ece / Task B3, a template row's `output` is the apology copy
+        // she saw, not the raw "[backend error]" text -- that moved to
+        // attempts_json). A NULL cause means the row predates the column;
+        // for that branch only, fall back to the old text-match on `output`
+        // (kept verbatim, including the timeout exclusion).
+        (r.cause === "backend-down" ||
+          (r.cause == null &&
+            typeof r.output === "string" &&
+            r.output.startsWith(BACKEND_ERROR_PREFIX) &&
+            !r.output.includes("timed out"))) &&
         (gameId == null || r.game_id === gameId)
     )
     .map(toFailedTrace);
