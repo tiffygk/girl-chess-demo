@@ -2598,6 +2598,69 @@ describe("GameManager", () => {
     expect(piece?.color).toBe("w");
   });
 
+  // Game 198 fixes (2026-09-21), Task A4: a mate tie is not a deviation.
+  // seedPly's row (ply 4, "Nc6") carries eval_mate: 1 (mate in one for the
+  // mover) with the engine's stored best being Bc4; the played move at
+  // seedPly + 1 (ply 5) is Bb5 instead -- a different move, but its row's
+  // eval_mate: 0 means it delivered the same mate schedule. equalMate must
+  // be true even though the played SAN differs from bestSan.
+  it("getTurningLines: equalMate is true when the played move differs from bestSan but keeps the mate schedule", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 3, side: "her", san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 4, side: "mallow", san: "Nc6", uci: "b8c6", fenAfter: "fen4", timeSpentMs: 0 });
+    // seedRow (ply 4): mate in one for the mover (her, to move after Nc6),
+    // engine's stored best is Bc4.
+    attachEval(g, 4, { cp: null, mate: 1, bestMove: "f1c4", pv: ["f1c4"] });
+    recordMove({ gameId: g, ply: 5, side: "her", san: "Bb5", uci: "f1b5", fenAfter: "fen5", timeSpentMs: 0 });
+    // playedRow (ply 5): eval_mate 0 -- mate delivered on the same schedule,
+    // even though Bb5 (played) differs from Bc4 (engine's stored best).
+    attachEval(g, 5, { cp: null, mate: 0, bestMove: "f1b5", pv: ["f1b5"] });
+    finishGame(g, "1-0");
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 5, san: "Bb5", label: "good move", deltaP: 0.1, lowConfidence: false, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    const result = gm.getTurningLines(g);
+    expect(result.ok).toBe(true);
+    const line = result.lines[0];
+    expect(line.ply).toBe(5);
+    expect(line.bestSan).toBe("Bc4");
+    expect(line.equalMate).toBe(true);
+  });
+
+  // Sibling: eval_mate -2 after the move does not keep the mate schedule
+  // (mate one move LATER than the seed position promised, not the same
+  // move) -- equalMate must stay undefined.
+  it("getTurningLines: equalMate stays undefined when the played move does not keep the mate schedule", () => {
+    const g = createGame(sessionId, "maia-1100");
+    recordMove({ gameId: g, ply: 1, side: "her", san: "e4", uci: "e2e4", fenAfter: "fen1", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 2, side: "mallow", san: "e5", uci: "e7e5", fenAfter: "fen2", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 3, side: "her", san: "Nf3", uci: "g1f3", fenAfter: "fen3", timeSpentMs: 0 });
+    recordMove({ gameId: g, ply: 4, side: "mallow", san: "Nc6", uci: "b8c6", fenAfter: "fen4", timeSpentMs: 0 });
+    attachEval(g, 4, { cp: null, mate: 1, bestMove: "f1c4", pv: ["f1c4"] });
+    recordMove({ gameId: g, ply: 5, side: "her", san: "Bb5", uci: "f1b5", fenAfter: "fen5", timeSpentMs: 0 });
+    // playedRow (ply 5): eval_mate -2 -- mate one move later than the
+    // schedule the seed row promised, not the same move.
+    attachEval(g, 5, { cp: null, mate: -2, bestMove: "f1b5", pv: ["f1b5"] });
+    finishGame(g, "1-0");
+    insertTurningPoints(
+      g,
+      [{ rank: 1, ply: 5, san: "Bb5", label: "good move", deltaP: 0.1, lowConfidence: false, kind: "swing" }],
+      TP_ALGO_VERSION
+    );
+
+    const result = gm.getTurningLines(g);
+    expect(result.ok).toBe(true);
+    const line = result.lines[0];
+    expect(line.ply).toBe(5);
+    expect(line.bestSan).toBe("Bc4");
+    expect(line.equalMate).toBeUndefined();
+  });
+
   // Guard: a turning point at ply 1 has no prior ply to seed a player-to-move
   // eval from (seedPly = 1 - 1 = 0). Must degrade to pvSans: [] gracefully,
   // never throw, and must not crash trying to fetch/replay a nonexistent
