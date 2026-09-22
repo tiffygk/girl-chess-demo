@@ -33,6 +33,16 @@ const NEGATION_WORDS = new Set(["can't", "cant", "cannot", "does not", "doesn't"
 // so a square named only as a waypoint is never read as the target.
 const PASSTHROUGH_STOP = "through|via|along|past";
 
+// Clause-boundary words: the filler between the verb and the target square
+// must also stop here, so a square in the NEXT clause is never read as this
+// claim's target (game 198 dry-run false alarm, trace 165: "knight to b2
+// hits your queen, but your bishop on c1 covers b2..." matched "c1" as the
+// target before this fix, reaching straight across the ", but " boundary
+// into an unrelated clause). Punctuation (comma/semicolon/colon) is
+// checked separately since it isn't a \b-delimited word.
+const CLAUSE_STOP = "but|and|so|while";
+const CLAUSE_PUNCTUATION = "[,;:]";
+
 export function standingRelationRe(): RegExp {
   // group 1: sqA, group 2: piece (optional), group 3: negation/verb prefix
   // (checked for negation), group 4: the verb, group 5: sqB.
@@ -42,7 +52,7 @@ export function standingRelationRe(): RegExp {
   // filler is cut off before "through" reaches it), rather than being
   // misread as a claim about e7.
   return new RegExp(
-    `\\b(?:your|her|mallow'?s|the)?\\s*(${PIECE})\\s+on\\s+(${SQ})\\s+(can'?t|cannot|can|could|does not|doesn'?t|)\\s*(take|capture|reach|attack|attacks|hit|hits|eye|eyes|see|sees|line up with|lines up with)\\b(?:(?!\\b(?:${PASSTHROUGH_STOP})\\b)(?!\\b${SQ}\\b).){0,40}?\\b(${SQ})\\b`,
+    `\\b(?:your|her|mallow'?s|the)?\\s*(${PIECE})\\s+on\\s+(${SQ})\\s+(can'?t|cannot|can|could|does not|doesn'?t|)\\s*(take|capture|reach|attack|attacks|hit|hits|eye|eyes|see|sees|line up with|lines up with)\\b(?:(?!\\b(?:${PASSTHROUGH_STOP}|${CLAUSE_STOP})\\b)(?!${CLAUSE_PUNCTUATION})(?!\\b${SQ}\\b).){0,40}?\\b(${SQ})\\b`,
     "gi"
   );
 }
@@ -66,7 +76,7 @@ export function hypotheticalRelationRe(): RegExp {
   // the verb list includes -ing forms (the coach narrates in the present
   // progressive as often as the simple present).
   return new RegExp(
-    `\\b(${PIECE})\\s+to\\s+(${SQ})\\b(?:(?!\\b(?:attacks|hits|eyes|sees|lines up with|threatens|attacking|hitting|eyeing|seeing|lining up with|threatening)\\b).){0,40}?\\b(attacks|hits|eyes|sees|lines up with|threatens|attacking|hitting|eyeing|seeing|lining up with|threatening)\\b(?:(?!\\b${SQ}\\b).){0,40}?\\b(${SQ})\\b`,
+    `\\b(${PIECE})\\s+to\\s+(${SQ})\\b(?:(?!\\b(?:attacks|hits|eyes|sees|lines up with|threatens|attacking|hitting|eyeing|seeing|lining up with|threatening)\\b).){0,40}?\\b(attacks|hits|eyes|sees|lines up with|threatens|attacking|hitting|eyeing|seeing|lining up with|threatening)\\b(?:(?!\\b(?:${CLAUSE_STOP})\\b)(?!${CLAUSE_PUNCTUATION})(?!\\b${SQ}\\b).){0,40}?\\b(${SQ})\\b`,
     "gi"
   );
 }

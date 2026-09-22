@@ -56,4 +56,24 @@ describe("checkRelationClaims", () => {
       checkRelationClaims("bishop to d6 does that instead, eyeing their rook on h8.", PLY26)
     ).toEqual(["relation-claim: bishop to d6 attacks h8 -- it would not"]);
   });
+
+  // dry-run false alarm, real row text (trace 165): "knight to b2 hits your
+  // queen" has no square for its object (a piece word only), so it is not
+  // this checker's job to evaluate it -- it must not reach across the
+  // ", but " clause boundary and grab "c1" (from the NEXT clause, "your
+  // bishop on c1 covers b2 and takes it right back") as if it were the
+  // claim's target square. Black to move, knight on c4 can legally play
+  // Nb2 (verified: chess.js moves({square:"c4"}) includes Nb2), and her
+  // bishop on c1 does attack b2 after that move (verified via
+  // c.attackers("b2","w") including "c1") -- so both clauses are true
+  // chess facts, just not facts this checker is being asked about.
+  const KNIGHT_C4_BISHOP_C1 = "r1bqkbnr/ppp1pppp/8/3P4/1Pn5/8/P2PPPPP/RNBQKBNR b KQkq - 1 5";
+  it("does not read a clause-boundary square as the target (trace 165)", () => {
+    expect(
+      checkRelationClaims(
+        "knight to b2 hits your queen, but your bishop on c1 covers b2 and takes it right back.",
+        KNIGHT_C4_BISHOP_C1
+      )
+    ).toEqual([]);
+  });
 });
