@@ -95,15 +95,35 @@ function relationHolds(chess: Chess, a: string, b: string): boolean {
   return chess.attackers(to, piece.color).includes(from);
 }
 
+// A NEGATED claim ("can't take", "cannot reach", ...) is judged by legal
+// moves, not by geometric attackers() -- attackers() ignores pins, so a
+// pinned piece's TRUE denial ("the knight on e5 can't take g4" while pinned
+// to its own king) was flagged as false (review-C Minor). If the source
+// piece doesn't belong to the side to move on this board, legality here
+// can't adjudicate the denial at all -- return null so the caller skips
+// this board rather than treating it as confirming or refuting the claim.
+function deniedCaptureHolds(chess: Chess, a: string, b: string): boolean | null {
+  const from = a.toLowerCase() as Parameters<typeof chess.get>[0];
+  const to = b.toLowerCase() as Parameters<typeof chess.get>[0];
+  const piece = chess.get(from);
+  if (!piece) return null;
+  if (piece.color !== chess.turn()) return null;
+  const legal = chess.moves({ verbose: true }).some((mv) => mv.from === from && mv.to === to);
+  return legal; // "can take" is true (denial is false) iff a legal move exists
+}
+
 // Truth of a standing claim over the intersection of [fen, ...otherFens]:
 // the claim only survives as a violation if it is false on EVERY board
-// offered (same intersection discipline as checkPlacementClaims).
+// offered (same intersection discipline as checkPlacementClaims). Boards
+// where a negated claim can't be adjudicated (deniedCaptureHolds returns
+// null) are skipped rather than counted either way.
 function standingClaimFalseEverywhere(
   fens: string[],
   a: string,
   b: string,
   claimsRelation: boolean
 ): boolean {
+  let adjudicated = false;
   for (const fen of fens) {
     let chess: Chess;
     try {
@@ -111,10 +131,19 @@ function standingClaimFalseEverywhere(
     } catch {
       continue;
     }
+    if (!claimsRelation) {
+      const canTake = deniedCaptureHolds(chess, a, b);
+      if (canTake === null) continue; // can't adjudicate this denial on this board -- skip it
+      adjudicated = true;
+      const truth = canTake; // "a attacks b" is true iff a legal capture exists
+      if (claimsRelation === truth) return false; // true on at least one board -- not a violation
+      continue;
+    }
+    adjudicated = true;
     const truth = relationHolds(chess, a, b);
     if (claimsRelation === truth) return false; // true on at least one board -- not a violation
   }
-  return true;
+  return adjudicated; // no violation if no board could adjudicate the claim at all
 }
 
 export function checkRelationClaims(text: string, fen: string, otherFens: string[] = []): string[] {
