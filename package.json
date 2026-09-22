@@ -15,7 +15,8 @@
     "playtest:serve": "tsx tools/playtest-serve.ts",
     "doctor": "node tools/doctor.cjs",
     "dossier": "tsx tools/dossier.ts",
-    "tail": "tsx tools/tail.ts"
+    "tail": "tsx tools/tail.ts",
+    "scoreboard": "tsx tools/game-scoreboard.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.217",
