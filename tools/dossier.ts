@@ -176,25 +176,63 @@ function loadFenAfter(db: Database.Database, gameId: number, ply: number): strin
   return row?.fen_after ?? null;
 }
 
-function runCoverageRollup(db: Database.Database, since: string): void {
-  const rows = db
-    .prepare("SELECT coverage_json FROM advice_traces WHERE created_at >= ? AND coverage_json IS NOT NULL")
-    .all(since) as { coverage_json: string }[];
-  let sentences = 0;
-  let boardSentences = 0;
-  let checked = 0;
-  const byClass: Record<string, number> = {};
+export interface CoverageRollup {
+  rows: number;
+  sentences: number;
+  boardSentences: number;
+  checked: number;
+  byClass: Record<string, number>;
+}
+
+function emptyRollup(): CoverageRollup {
+  return { rows: 0, sentences: 0, boardSentences: 0, checked: 0, byClass: {} };
+}
+
+function addRollupRow(r: CoverageRollup, c: ClaimCoverageShape): void {
+  r.rows++;
+  r.sentences += c.sentences;
+  r.boardSentences += c.boardSentences;
+  r.checked += c.checked;
+  for (const [k, v] of Object.entries(c.byClass)) r.byClass[k] = (r.byClass[k] ?? 0) + v;
+}
+
+// Game 198 follow-up round (2026-09-22, brief-4.md, step 4, item 3): once
+// narrate() (the band, kind "nudge"/"warning") writes coverage_json too,
+// a single combined number would silently blend two different "checked"
+// meanings -- chat's checked means "one of four checkers looked", the
+// band's means "checkDefenseClaims looked" (see B3's route-aware
+// checkedClasses fix in claimCoverage.ts). Split by route so a reader
+// never has to guess which meaning a printed number carries. Pure
+// (no db) so it's unit-testable directly, same discipline as
+// renderDossier above.
+export function computeCoverageRollup(rows: { coverage_json: string | null; kind: string }[]): {
+  chat: CoverageRollup;
+  band: CoverageRollup;
+} {
+  const chat = emptyRollup();
+  const band = emptyRollup();
   for (const r of rows) {
     const c = safeParse<ClaimCoverageShape>(r.coverage_json);
     if (!c) continue;
-    sentences += c.sentences;
-    boardSentences += c.boardSentences;
-    checked += c.checked;
-    for (const [k, v] of Object.entries(c.byClass)) byClass[k] = (byClass[k] ?? 0) + v;
+    addRollupRow(r.kind === "chat" ? chat : band, c);
   }
-  console.log(`[dossier] coverage rollup since ${since}: ${rows.length} row(s)`);
-  console.log(`  sentences: ${sentences}  board-relevant: ${boardSentences}  checked: ${checked}`);
-  console.log(`  by class: ${Object.entries(byClass).map(([k, v]) => `${k}=${v}`).join(", ") || "none"}`);
+  return { chat, band };
+}
+
+function printRollup(label: string, r: CoverageRollup): void {
+  console.log(`  ${label}: ${r.rows} row(s)`);
+  console.log(`    sentences: ${r.sentences}  board-relevant: ${r.boardSentences}  checked: ${r.checked}`);
+  console.log(`    by class: ${Object.entries(r.byClass).map(([k, v]) => `${k}=${v}`).join(", ") || "none"}`);
+}
+
+function runCoverageRollup(db: Database.Database, since: string): void {
+  const rows = db
+    .prepare("SELECT coverage_json, kind FROM advice_traces WHERE created_at >= ? AND coverage_json IS NOT NULL")
+    .all(since) as { coverage_json: string; kind: string }[];
+  const { chat, band } = computeCoverageRollup(rows);
+  console.log(`[dossier] coverage rollup since ${since}, split by route (chat's checked means all four checkers; band's means checkDefenseClaims only):`);
+  printRollup("chat", chat);
+  printRollup("band (nudge/warning)", band);
 }
 
 async function main() {
