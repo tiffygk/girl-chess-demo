@@ -93,7 +93,7 @@ Then, in Terminal:
 git clone https://github.com/tiffygk/girl-chess-demo.git
 cd girl-chess-demo
 npm ci          # installs the project's packages, under a minute. lines about "vulnerabilities", "deprecated", or "funding" are npm noise, not a problem here.
-./setup.sh      # once: installs two chess engines and downloads nine opponent files, 2 to 10 minutes. safe to run again.
+./setup.sh      # once: installs lc0 through Homebrew, the pinned Stockfish 19 into engines/ by checksum, and nine opponent files, 2 to 10 minutes. safe to run again.
 npm run doctor  # says what, if anything, is still missing and how to fix it
 npm run dev     # starts the game; the last line tells you the address to open
 ```

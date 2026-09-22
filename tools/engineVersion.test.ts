@@ -27,8 +27,12 @@ beforeEach(() => {
 });
 afterEach(() => fs.rmSync(work, { recursive: true, force: true }));
 
+// cwd is the isolated temp dir, never REPO_ROOT: since Task 8 (2026-09-21)
+// the script prefers a relative engines/stockfish, and the real checkout
+// has one once setup.sh has run, which would silently outrank every PATH
+// stub below.
 function run() {
-  return spawnSync("bash", [SCRIPT], { cwd: REPO_ROOT, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" });
+  return spawnSync("bash", [SCRIPT], { cwd: work, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" });
 }
 
 describe("engineVersion.sh", () => {
@@ -63,5 +67,22 @@ describe("engineVersion.sh", () => {
     expect(r.stdout).toContain(
       "stockfish answered without an id name line; this repo's eval fixtures are baselined on Stockfish 19. the game works; eval tests may differ. see .claude/rules/data-and-gate.md"
     );
+  });
+
+  // Task 8 (2026-09-21 engine-pin round): a pinned engines/stockfish (what
+  // setup.sh installs by checksum) wins over a PATH stockfish, matching the
+  // preference order in server/engines/paths.ts's resolveStockfishPath. Red
+  // when that preference is removed (the PATH stub's "Stockfish 20" would
+  // then win and the test would see the wrong id line / a failing exit).
+  it("prefers a pinned engines/stockfish over a PATH stockfish", () => {
+    stub(bin, "stockfish", 'echo "id name Stockfish 20"; echo uciok');
+    const engineWork = fs.mkdtempSync(path.join(os.tmpdir(), "gc-engine-version-pinned-"));
+    const engineDir = path.join(engineWork, "engines");
+    fs.mkdirSync(engineDir);
+    stub(engineDir, "stockfish", `echo "id name ${EXPECTED_STOCKFISH_ID}"; echo uciok`);
+    const r = spawnSync("bash", [SCRIPT], { cwd: engineWork, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" });
+    fs.rmSync(engineWork, { recursive: true, force: true });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout).toMatch(new RegExp(`^id name ${EXPECTED_STOCKFISH_ID}$`, "m"));
   });
 });

@@ -26,6 +26,7 @@ dist-ssr
 # Superpowers scratch
 .superpowers/
 weights/
+/engines/
 data/*
 !data/girlchess-demo.db
 

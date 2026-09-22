@@ -83,3 +83,34 @@ describe("findRepoRoot fallback arm (F2)", () => {
     expect(resolved).toBe(mainRoot);
   });
 });
+
+// Task 8 (2026-09-21 engine-pin round): resolveStockfishPath prefers a
+// pinned engines/stockfish binary over the bare "stockfish" PATH lookup.
+// Exported with an optional repoRoot, same pattern as findRepoRoot above, so
+// this is exercised against a synthesized temp tree, never the real
+// checkout's engines/ directory. Red when the resolver is removed or its
+// preference order is reversed.
+describe("resolveStockfishPath (Task 8)", () => {
+  let tmpRoot: string | undefined;
+
+  afterEach(() => {
+    if (tmpRoot) fs.rmSync(tmpRoot, { recursive: true, force: true });
+    tmpRoot = undefined;
+  });
+
+  it("returns the absolute pinned path when engines/stockfish exists", async () => {
+    const { resolveStockfishPath } = await import("./paths");
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gc-resolvesf-"));
+    fs.mkdirSync(path.join(tmpRoot, "engines"), { recursive: true });
+    fs.writeFileSync(path.join(tmpRoot, "engines", "stockfish"), "#!/bin/bash\necho pinned\n");
+
+    expect(resolveStockfishPath(tmpRoot)).toBe(path.join(tmpRoot, "engines", "stockfish"));
+  });
+
+  it("falls back to the bare command name when no pinned binary exists", async () => {
+    const { resolveStockfishPath } = await import("./paths");
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gc-resolvesf-"));
+
+    expect(resolveStockfishPath(tmpRoot)).toBe("stockfish");
+  });
+});
