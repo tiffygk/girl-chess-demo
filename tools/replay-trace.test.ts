@@ -13,7 +13,23 @@ import { describe, it, expect, vi } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { preflightFacts, preflightKnownBad, scoreResults, type ReplayResult } from "./replay-trace";
+import { preflightFacts, preflightKnownBad, scoreResults, seedGamesForRows, replayRow, type ReplayResult, type StoredRow } from "./replay-trace";
+import { seedScratchDb } from "./rca-eval/lib/scenarioDb";
+import { assembleChatFactList } from "../server/coach/chat";
+import type { CoachBackend } from "../server/coach/backends/types";
+
+// Sanctioned exception to the no-mocks convention, same precedent as
+// server/coach/chat.test.ts's own fakeBackend: the real agent-sdk backend
+// must never run in a test.
+function fakeBackend(generate: (prompt: string, timeoutMs: number) => Promise<string>): CoachBackend {
+  return {
+    name: "fake",
+    async available() {
+      return true;
+    },
+    generate,
+  };
+}
 
 describe("preflightFacts", () => {
   it("aborts on a facts_json lacking occupancy", () => {
@@ -69,6 +85,37 @@ describe("preflightKnownBad abort branch", () => {
 
     vi.doUnmock("../server/coach/chat");
     vi.resetModules();
+  });
+});
+
+describe("seedGamesForRows", () => {
+  // Fix round (2026-09-22), brief-T fix 1: the tool's own header used to
+  // say it was "NOT exercised by this round's tests, and not run by this
+  // session" -- its first real run failed on the FIRST id with
+  // `SqliteError: FOREIGN KEY constraint failed` inside chat()'s own
+  // insertAdviceTrace call, because seedScratchDb's fresh db has no games
+  // row for the replayed row's game_id. This test makes that failure go
+  // red on demand (seeding removed) and green once seedGamesForRows runs.
+  const row: StoredRow = {
+    id: 9001,
+    gameId: 42,
+    ply: 1,
+    factsJson: JSON.stringify(assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" })),
+    question: "what's my best move?",
+  };
+  const backend = fakeBackend(async () => "the pawn on e4 is a solid start.");
+
+  it("throws the FK error without seedGamesForRows (proves the fix is necessary)", async () => {
+    seedScratchDb("replay-trace-red");
+    await expect(replayRow(row, "default", 1, backend)).rejects.toThrow(/FOREIGN KEY constraint failed/);
+  });
+
+  it("completes and writes one trace once seedGamesForRows seeds the games row", async () => {
+    const scratchPath = seedScratchDb("replay-trace-green");
+    seedGamesForRows(scratchPath, [row.gameId]);
+    const result = await replayRow(row, "default", 1, backend);
+    expect(result.id).toBe(row.id);
+    expect(result.attempts.length).toBeGreaterThan(0);
   });
 });
 
