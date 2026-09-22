@@ -86,7 +86,10 @@ which side of the change each run measures.
 **8. Keep instruments separate.** Never compare an eval-run number to a live-trace number,
 or a synthetic-fixture failure to a real one -- different populations are different
 instruments and the comparison launders a rig difference into a product finding. (The
-synthetic-vs-real half is coach-eval rule 6.)
+synthetic-vs-real half is coach-eval rule 6.) The same rule across time: before comparing
+periods, read when each column began being recorded; NULL before that date is the absence of
+the instrument, not a zero (`attempts_json` starts 2026-09-03, so first-attempt violation
+classes cannot be compared before it; the retry count can, 2026-09-21).
 
 **9. Pre-merge RED is the receipt.** An acceptance green never seen red proves nothing.
 Capture the failing baseline before the fix (the over-budget payload, the pre-fix escape
