@@ -12,6 +12,7 @@ Purpose: the owner-calibratable starting values across the annotator, coach, and
 | nudgeCp / warningCp (gentle) | 90 / 200 | server/annotator/classify.ts | gentle judge-strictness thresholds |
 | nudgeCp / warningCp (blunt) | 40 / 110 | server/annotator/classify.ts | blunt judge-strictness thresholds |
 | DECIDED_BAND_CP | 300 | server/annotator/classify.ts | eval magnitude at/above which a position counts as decided |
+| JUDGE_MATE_NUDGE_DEPTH | 8 | server/annotator/classify.ts | the live judge's own mate-speed nudge fires only when the mate she held before her move was this shallow or shallower (owner ruling, game 200 move 27, 2026-09-22); untouched by MISSED_MATE_DEPTH/MATE_SLIP_MIN below, which stay the per-game debrief/turning-point gate |
 | ADJUDICATE_WIN_CP / ADJUDICATE_RESIGN_CP | 300 / -300 | server/annotator/adjudicate.ts | end-game adjudication bands |
 | JUDGE_MIN_MS | 900 | src/game/GamePage.tsx | minimum per-move judge cadence, so timing never tells |
 | CONFIRM_MS | 6000 | src/game/GamePage.tsx | end-game button arm-then-confirm window (was 3000 until 2026-09-21) |

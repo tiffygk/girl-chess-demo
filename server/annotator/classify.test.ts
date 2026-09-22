@@ -382,8 +382,11 @@ describe("classifyMove — decided-position conversion (Task K2)", () => {
     expect(verdict.tier).toBe("nudge");
     expect(verdict.mateAgainst).toBe(false); // still her mate -- never misreport this as against her
     expect(verdict.conversionCopy).toBeDefined();
-    expect(verdict.conversionCopy).toContain("mate in 2");
-    expect(verdict.conversionCopy).toContain("mate in 9");
+    // Wording fix (game 200, 2026-09-22): both counts now read from the
+    // same point, her move included -- "mates in 10" (mateAfter 9 + 1) is
+    // her move, "mates in 2" is the count before she moved.
+    expect(verdict.conversionCopy).toContain("mates in 10");
+    expect(verdict.conversionCopy).toContain("mates in 2");
   });
 
   // Discriminating fixture (c): the same mate-in-2 setup, but this time the
@@ -475,6 +478,99 @@ describe("classifyMove — decided-position conversion (Task K2)", () => {
     // silently flip this specific, real-game-169-shaped case to false.
     expect(verdict.deltaCp).toBeGreaterThan(BETTER_CLAIM_MIN_CP * 100); // sanity: still the huge folded artifact, not a real cp reading
     expect(verdict.claimsBetterMove).toBe(true);
+  });
+});
+
+// Owner ruling (game 200 move 27, 2026-09-22): the judge's own mate-nudge
+// wording and depth-8 gate. See classify.ts's conversionCopyFor and the
+// JUDGE_MATE_NUDGE_DEPTH constant for the full owner-quote comment trail.
+describe("classifyMove — judge mate nudge, depth 8 and wording (2026-09-22 owner ruling)", () => {
+  // Real game 200 move 27 shape: verdict ids 4064/4065, Stockfish depth 30
+  // confirms Rxc5 leaves mate-in-5 remaining, Rfd1 (the stored best) leaves
+  // mate-in-4 -- a genuine one-move slip. The OLD copy printed "mate in 5
+  // was there, now it's mate in 5" (mateBefore vs the raw mateAfter,
+  // uncorrected for her own move), which reads as no change at all. The new
+  // copy counts both from the same point, her move included.
+  it("game 200 shape: mateBefore 5, mateAfter 5 (slip 1) -> 'mates in 6, the fastest mates in 5'", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // quiet
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 5, bestMove: "e1e2", pv: [] }, // beforeEval: mate-in-5 held
+      { cp: 0, mate: -5, bestMove: "e8d8", pv: [] } // afterEval: still hers, afterAbs 5, slip 1
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("nudge");
+    expect(verdict.conversionCopy).toBe(
+      "still winning, but there's a mate one move faster. this move mates in 6, the fastest mates in 5."
+    );
+  });
+
+  it("mateBefore 1 (mate-in-1 available and missed) -> 'you have checkmate on the board right now'", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // quiet
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 1, bestMove: "e1e2", pv: [] }, // beforeEval: mate-in-1 held
+      { cp: 0, mate: -2, bestMove: "e8d8", pv: [] } // afterEval: mate still hers, slower
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("nudge");
+    expect(verdict.conversionCopy).toBe("still winning, but you have checkmate on the board right now.");
+  });
+
+  it("mateBefore 8, slip 1 -> nudges (within JUDGE_MATE_NUDGE_DEPTH)", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // quiet
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 8, bestMove: "e1e2", pv: [] }, // beforeEval: mate-in-8 held
+      { cp: 0, mate: -8, bestMove: "e8d8", pv: [] } // afterAbs 8, slip 1
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("nudge");
+    expect(verdict.conversionCopy).toBeDefined();
+  });
+
+  it("mateBefore 9, slip 1 -> does NOT nudge (one move past JUDGE_MATE_NUDGE_DEPTH)", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // quiet
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 9, bestMove: "e1e2", pv: [] }, // beforeEval: mate-in-9 held
+      { cp: 0, mate: -9, bestMove: "e8d8", pv: [] } // afterAbs 9, slip 1
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("silent");
+    expect(verdict.conversionCopy).toBeUndefined();
+  });
+
+  // Red today (pre-fix): a slip of 2 at mateBefore 20 clears the OLD
+  // MATE_SLIP_MIN gate at any depth and fires "mate-slip" regardless of how
+  // deep the held mate was -- the owner's exact complaint ("if it's 20
+  // moves versus 21 moves ... that doesn't make sense"). The fix must make
+  // this silent.
+  it("mateBefore 20, slip 2 -> does NOT nudge (owner: '20 vs 21 doesn't make sense')", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // quiet
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 20, bestMove: "e1e2", pv: [] }, // beforeEval: mate-in-20 held
+      { cp: 0, mate: -21, bestMove: "e8d8", pv: [] } // afterAbs 21, slip 2
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("silent");
+    expect(verdict.conversionCopy).toBeUndefined();
+  });
+
+  // Losing the forced mate entirely is a different failure than a slower
+  // mate, and always nudges (routes to warning) at ANY depth -- the owner
+  // ruling only narrows the slower-mate nudge, never lost-mate.
+  it("lost-mate at depth 20 still nudges (routes to warning) regardless of JUDGE_MATE_NUDGE_DEPTH", async () => {
+    const chess = new Chess("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+    const move = chess.move({ from: "c3", to: "d5" }); // quiet
+    const evaluator = new ScriptedEvaluator(
+      { cp: 0, mate: 20, bestMove: "e1e2", pv: [] }, // beforeEval: mate-in-20 held
+      { cp: 500, mate: null, bestMove: "e8d8", pv: [] } // afterEval: the mate reading is GONE
+    );
+    const verdict = await classifyMove(chess, move, evaluator);
+    expect(verdict.tier).toBe("warning");
+    expect(verdict.conversionCopy).toBe("still winning, but the forced mate is gone for now.");
   });
 });
 
