@@ -546,6 +546,99 @@ describe("advice_traces schema migration -- attempts_json (Task 6)", () => {
   });
 });
 
+// Game 198 fixes (2026-09-21), Task D1: advice_traces.thinking_pref -- the
+// per-row thinking level attempt 0 (or the winning attempt, on a regen) was
+// asked to run at. Cause 3 of the game-198 map can't be separated from
+// cause 1 without this column: the replay tool (Task D3) needs to know what
+// level a stored row actually ran at before it can compare "what if it had
+// run at a different level." Same migration shape as the attempts_json test
+// above -- an old-schema db (everything through attempts_json, missing
+// thinking_pref) reopened through openDb() should ALTER thinking_pref in
+// without disturbing the pre-existing row or breaking a fresh insert.
+describe("advice_traces schema migration -- thinking_pref (Task D1)", () => {
+  it("adds thinking_pref via ALTER TABLE on an old-schema db, preserving the existing row and accepting new inserts", () => {
+    const dbPath = path.join("data", `test-migration-thinkingpref-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+    fs.mkdirSync("data", { recursive: true });
+
+    const raw = new Database(dbPath);
+    raw.exec(`
+      CREATE TABLE sessions(id INTEGER PRIMARY KEY, started_at TEXT DEFAULT (datetime('now')), ended_at TEXT);
+      CREATE TABLE games(id INTEGER PRIMARY KEY, session_id INTEGER REFERENCES sessions(id),
+        opponent TEXT, result TEXT, source TEXT DEFAULT 'app', end_reason TEXT,
+        started_at TEXT DEFAULT (datetime('now')), ended_at TEXT);
+      CREATE TABLE moves(id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), ply INTEGER,
+        san TEXT, uci TEXT, fen_after TEXT, time_spent_ms INTEGER,
+        eval_cp INTEGER, eval_mate INTEGER, best_move TEXT, pv TEXT,
+        moved_at TEXT DEFAULT (datetime('now')), UNIQUE(game_id, ply));
+      CREATE TABLE mode_timers(id INTEGER PRIMARY KEY, session_id INTEGER REFERENCES sessions(id),
+        mode TEXT, seconds INTEGER DEFAULT 0, day TEXT DEFAULT (date('now')), UNIQUE(session_id, mode, day));
+      CREATE TABLE game_events(id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id),
+        type TEXT, detail TEXT, at TEXT DEFAULT (datetime('now')));
+      CREATE TABLE verdicts(id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), ply INTEGER,
+        fen TEXT, move TEXT, tier TEXT, delta_cp INTEGER, mate_against INTEGER,
+        latency_ms INTEGER, advice_level TEXT, mode TEXT DEFAULT 'guardian',
+        facts_json TEXT, at TEXT DEFAULT (datetime('now')));
+      CREATE TABLE advice_traces(
+        id INTEGER PRIMARY KEY, game_id INTEGER REFERENCES games(id), ply INTEGER,
+        kind TEXT, facts_json TEXT, prompt TEXT, output TEXT, source TEXT,
+        backend TEXT, validated INTEGER, regen_count INTEGER, latency_ms INTEGER,
+        created_at TEXT DEFAULT (datetime('now')), rating INTEGER, feedback_text TEXT,
+        cause TEXT, backfilled_at TEXT, attempts_json TEXT);
+    `);
+    // A pre-existing row from before thinking_pref existed -- proves the
+    // migration doesn't disturb real data, and that the new column reads
+    // back NULL on a row that predates it.
+    const preExistingId = Number(
+      raw
+        .prepare(
+          `INSERT INTO advice_traces(game_id, ply, kind, facts_json, prompt, output, source, backend, validated, regen_count, latency_ms)
+           VALUES (NULL, 1, 'nudge', '{}', 'p', 'o', 'model', 'claude-cli', 1, 0, 10)`
+        )
+        .run().lastInsertRowid
+    );
+    raw.close();
+
+    try {
+      openDb(dbPath);
+
+      const probe = new Database(dbPath, { readonly: true });
+      const cols = (probe.pragma("table_info(advice_traces)") as { name: string }[]).map((c) => c.name);
+      expect(cols).toContain("thinking_pref");
+      probe.close();
+
+      const survived = getAdviceTraceById(preExistingId);
+      expect(survived).toBeDefined();
+      expect(survived.output).toBe("o");
+      expect(survived.thinking_pref).toBeNull();
+
+      // A fresh insert (not just the migrated old row) also works against
+      // the newly-added column.
+      const s = createSession();
+      const g = createGame(s, "maia-1100");
+      const newId = insertAdviceTrace({
+        gameId: g,
+        ply: 1,
+        kind: "nudge",
+        factsJson: "{}",
+        prompt: "p",
+        output: "your knight on e5 is hanging.",
+        source: "model",
+        backend: "agent-sdk",
+        validated: true,
+        regenCount: 0,
+        latencyMs: 10,
+        thinkingPref: "low",
+      });
+      expect(getAdviceTraceById(newId).thinking_pref).toBe("low");
+    } finally {
+      openDb(":memory:"); // release the file handle before deleting
+      fs.rmSync(dbPath, { force: true });
+      fs.rmSync(`${dbPath}-shm`, { force: true });
+      fs.rmSync(`${dbPath}-wal`, { force: true });
+    }
+  });
+});
+
 // Task 8 (coach-backfill): the three accessors coach-backfill.ts needs and
 // nothing else exercises -- generic reads/writes, not the SELECTION
 // predicate (that lives in tools/coach-backfill.test.ts, next to the tool
