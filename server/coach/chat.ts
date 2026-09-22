@@ -25,7 +25,7 @@ import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims, type OccupancyEntry } from "./placementClaims";
 import { checkRelationClaims } from "./relationClaims";
 import { checkMateClaims } from "./mateClaims";
-import { computeClaimCoverage } from "./claimCoverage";
+import { computeClaimCoverage, ALL_CHECKER_CLASSES } from "./claimCoverage";
 import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
 import { isOffTopic, mentionedPlies, thinkingForIntent, type ChatIntent } from "./intent";
 import { normalizeVoice } from "./textNormalize";
@@ -2619,7 +2619,12 @@ export async function chat(
   // template only ever names board facts the persona template itself
   // wrote, so its coverage is cheap and still worth recording for the
   // rollup).
-  const coverageJson = JSON.stringify(computeClaimCoverage(text, facts));
+  // Game 198 follow-up round (2026-09-22, brief-4.md, B3/step 4):
+  // validateChat runs all four checkers (checkPlacementClaims,
+  // checkRelationClaims, checkMateClaims, checkDefenseClaims), so chat
+  // passes ALL_CHECKER_CLASSES -- this call's behaviour is byte-identical
+  // to before the checkedClasses parameter existed.
+  const coverageJson = JSON.stringify(computeClaimCoverage(text, facts, ALL_CHECKER_CLASSES));
 
   // kind is always literally "chat" for this surface -- not caller
   // configurable via trace.kind, even though NarrateTraceContext's shape
