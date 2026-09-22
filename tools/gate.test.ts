@@ -17,7 +17,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import Database from "better-sqlite3";
-import { checkInPlay, IN_PLAY_WINDOW_MS } from "./gate";
+import { checkInPlay, IN_PLAY_WINDOW_MS, contentionNotice, timeoutUnderContention } from "./gate";
 
 const tmpDirs: string[] = [];
 afterEach(() => {
@@ -95,5 +95,38 @@ describe("checkInPlay: an unfinished game with a recent move means she may be pl
     for (const args of opens) {
       expect(args).toMatch(/\{\s*readonly:\s*true\s*\}/);
     }
+  });
+});
+
+describe("contentionNotice: names machine load so a timeout can be told apart from a code failure", () => {
+  it("returns undefined on a quiet machine (no other vitest, load under core count)", () => {
+    expect(contentionNotice(0, 2.1, 16)).toBeUndefined();
+  });
+
+  it("returns a string naming the counts when other vitest processes are running", () => {
+    const notice = contentionNotice(2, 14.3, 16);
+    expect(notice).toBeDefined();
+    expect(notice).toMatch(/2 other vitest process/);
+    expect(notice).toMatch(/14\.3/);
+    expect(notice).toMatch(/16 cores/);
+  });
+
+  it("returns a string when load1 is at or above the core count, even with zero other vitest", () => {
+    const notice = contentionNotice(0, 16, 16);
+    expect(notice).toBeDefined();
+  });
+});
+
+describe("timeoutUnderContention: labels a timeout as machine load, not a code failure, only when contended", () => {
+  it("is false when not contended, even if the output contains a timeout message", () => {
+    expect(timeoutUnderContention("Test timed out in 20000ms.", false)).toBe(false);
+  });
+
+  it("is true when contended and the output contains a vitest timeout message", () => {
+    expect(timeoutUnderContention("Error: Test timed out in 20000ms.", true)).toBe(true);
+  });
+
+  it("is false when contended but the output has no timeout wording", () => {
+    expect(timeoutUnderContention("Expected 200 but got 500", true)).toBe(false);
   });
 });

@@ -26,6 +26,7 @@
 // name and the log line it prints).
 
 import { spawnSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
@@ -123,6 +124,27 @@ function checkVitest(output: string): string | undefined {
     return "vitest ran no tests at all";
   }
   return undefined;
+}
+
+// Contention pre-check (2026-09-22): three separate 20s timeouts (an
+// engine spawn in index.test, a /move confirm, the agent-sdk probe) each
+// failed the gate tonight while other vitest runs were live on the same
+// machine -- each file was green alone and the gate passed on a quiet
+// machine. This does not make a contended run pass; it labels a timeout
+// failure as "re-run on a quiet machine" instead of letting it read as a
+// code regression.
+export function contentionNotice(
+  otherVitest: number,
+  load1: number,
+  cores: number
+): string | undefined {
+  if (otherVitest === 0 && load1 < cores) return undefined;
+  return `contention: ${otherVitest} other vitest process(es), load ${load1.toFixed(1)} on ${cores} cores`;
+}
+
+export function timeoutUnderContention(stepOutput: string, contended: boolean): boolean {
+  if (!contended) return false;
+  return /timed out|Timeout|timeout of \d+/i.test(stepOutput);
 }
 
 const STEPS: Step[] = [
@@ -228,6 +250,30 @@ function main() {
     }
   }
 
+  // Contention pre-check: computed BEFORE the STEPS loop spawns this
+  // gate's own vitest, so that process never counts as "other."
+  const otherVitest = (() => {
+    const ps = spawnSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" });
+    const lines = (ps.stdout ?? "").split("\n");
+    let count = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const pidStr = trimmed.split(/\s+/, 1)[0];
+      const pid = Number(pidStr);
+      if (pid === process.pid) continue;
+      if (trimmed.includes("vitest")) count++;
+    }
+    return count;
+  })();
+  const load1 = os.loadavg()[0];
+  const cores = os.cpus().length;
+  const notice = contentionNotice(otherVitest, load1, cores);
+  const contended = notice !== undefined;
+  if (notice) {
+    console.log(`[gate] ${notice}`);
+  }
+
   for (const step of STEPS) {
     process.stdout.write(`[gate] ${step.name}... `);
     // NOT piped. spawnSync gives us the real exit status of the real command,
@@ -241,16 +287,22 @@ function main() {
       continue;
     }
     if (run.status !== 0) {
-      failures.push(`${step.name}: exit ${run.status}`);
-      process.stdout.write(`FAIL (exit ${run.status})\n`);
+      const suffix = timeoutUnderContention(output, contended)
+        ? " (timeout under contention: re-run on a quiet machine before diagnosing)"
+        : "";
+      failures.push(`${step.name}: exit ${run.status}${suffix}`);
+      process.stdout.write(`FAIL (exit ${run.status})${suffix}\n`);
       process.stdout.write(output.split("\n").slice(-40).join("\n") + "\n");
       continue;
     }
     const reason = step.check?.(output);
     if (reason) {
       // The dangerous case: the command exited 0 and is still not green.
-      failures.push(`${step.name}: ${reason}`);
-      process.stdout.write(`FAIL (exit 0 but not green)\n  ${reason}\n`);
+      const suffix = timeoutUnderContention(output, contended)
+        ? " (timeout under contention: re-run on a quiet machine before diagnosing)"
+        : "";
+      failures.push(`${step.name}: ${reason}${suffix}`);
+      process.stdout.write(`FAIL (exit 0 but not green)\n  ${reason}${suffix}\n`);
       continue;
     }
     process.stdout.write("ok\n");
