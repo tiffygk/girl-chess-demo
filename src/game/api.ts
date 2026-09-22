@@ -846,6 +846,11 @@ export interface TurningLine {
   // from bestFromTo (her best reply) on an opponent (even) ply. See
   // server/game/manager.ts's TurningLine comment for the full derivation.
   moverBestFromTo?: { from: string; to: string };
+  // Game 198 fixes (2026-09-21), cause 4: true when the played move at
+  // seedPly+1 differs from the engine's stored best move but keeps the
+  // same mate schedule (a second mating move) -- see
+  // server/annotator/mateTie.ts's keepsMateSchedule comment.
+  equalMate?: boolean;
   pvSans: string[];
   threat?: { from: string; to: string };
 }

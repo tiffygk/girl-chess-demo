@@ -74,7 +74,11 @@ export function followedBest(
   if (!gameSans || playerPly > gameSans.length) return undefined;
 
   const playedSan = gameSans[playerPly - 1]?.san;
-  const followed = !!playedSan && playedSan === bestSan;
+  // Game 198 fixes (2026-09-21), cause 4: the server flags equalMate when
+  // the played move differs from the pv/bestSan but delivers mate on the
+  // same schedule (a second mating move) -- that reads as followed, not a
+  // miss, even though the SAN strings differ.
+  const followed = (!!playedSan && playedSan === bestSan) || line.equalMate === true;
 
   return {
     seedPly,
