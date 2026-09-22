@@ -181,6 +181,101 @@ describe("coach-backfill: findFailedTraces", () => {
 
     expect(findFailedTraces(g1).map((r) => r.id)).toEqual([idG1]);
   });
+
+  // Wave B fix (2026-09-21): since commit 6b88ece (Task B3), a template-fallback
+  // row's `output` is the apology copy she saw -- the raw "[backend error]" text
+  // moved into `attempts_json`. findFailedTraces must read `cause` (the column
+  // written since the cause task) as authority, not re-derive from `output`'s
+  // text shape, or every future outage row goes invisible to the backfill.
+  it("finds a post-wave-B outage row by cause=backend-down even though output no longer carries the [backend error] prefix", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+
+    const outageRowId = insertAdviceTrace({
+      gameId: g,
+      ply: 4,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "i couldn't get that one clean. ask me again and i'll come at it from a different angle.",
+      source: "template",
+      backend: "agent-sdk",
+      validated: false,
+      regenCount: 0,
+      latencyMs: 10,
+      cause: "backend-down",
+      attemptsJson: JSON.stringify([
+        { text: "[backend error] Claude Code returned an error result: Failed", latencyMs: 10 },
+      ]),
+    });
+
+    expect(findFailedTraces().map((r) => r.id)).toContain(outageRowId);
+  });
+
+  it("still finds a pre-cause-column outage row (cause null, output carries the old [backend error] prefix)", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+
+    const oldRowId = insertAdviceTrace({
+      gameId: g,
+      ply: 4,
+      kind: "nudge",
+      factsJson: "{}",
+      prompt: "p",
+      output: "[backend error] Claude Code returned an error result: Failed",
+      source: "template",
+      backend: "agent-sdk",
+      validated: false,
+      regenCount: 0,
+      latencyMs: 10,
+      cause: null,
+    });
+
+    expect(findFailedTraces().map((r) => r.id)).toContain(oldRowId);
+  });
+
+  it("does not find a validation-failed template row or a timeout row post-wave-B", () => {
+    openDb(":memory:");
+    const s = createSession();
+    const g = createGame(s, "maia-1100");
+
+    insertAdviceTrace({
+      gameId: g,
+      ply: 9,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "i couldn't get that one clean. ask me again and i'll come at it from a different angle.",
+      source: "template",
+      backend: "agent-sdk",
+      validated: false,
+      regenCount: 1,
+      latencyMs: 900,
+      cause: "validation-failed",
+      attemptsJson: JSON.stringify([{ text: "Nf3 develops and threatens e5.", latencyMs: 900 }]),
+    });
+    insertAdviceTrace({
+      gameId: g,
+      ply: 10,
+      kind: "chat",
+      factsJson: "{}",
+      prompt: "p",
+      output: "i couldn't get that one clean. ask me again and i'll come at it from a different angle.",
+      source: "template",
+      backend: "agent-sdk",
+      validated: false,
+      regenCount: 1,
+      latencyMs: 45000,
+      cause: "timeout",
+      attemptsJson: JSON.stringify([
+        { text: "[backend error] agent-sdk generate timed out after 45000ms", latencyMs: 45000 },
+      ]),
+    });
+
+    expect(findFailedTraces()).toEqual([]);
+  });
 });
 
 describe("coach-backfill: backfillTrace", () => {

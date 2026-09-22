@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { openDb, createSession, createGame } from "../store/db";
+import { openDb, createSession, createGame, getAdviceTraces } from "../store/db";
 import { assembleChatFactList, chat } from "./chat";
 import type { CoachBackend } from "./backends/types";
 
@@ -58,6 +58,28 @@ describe("chat() — honest fallback causes (B3a/c)", () => {
     expect(result.text).toBe(
       "i couldn't get that one clean. ask me again and i'll come at it from a different angle."
     );
+  });
+
+  // Game 198 fixes (2026-09-21), Task B3: before this, a template-fallback
+  // row's `output` column stored the REJECTED attempt (attemptOutput), not
+  // the template she actually saw -- a reader of the row (a controller
+  // eval, a corpus mutation script) had no way to tell those apart. Trace
+  // 363: the row's output looked like a live model answer that happened to
+  // repeat itself, when what actually happened was two rejected attempts
+  // and a template fallback. Now a template row's `output` is the template
+  // text, and the rejected attempt(s) live in `attempts_json` -- never
+  // dropped, just no longer masquerading as what she saw.
+  it("a validation-failed fallback row stores the template as output and the rejected text in attempts_json (trace 363)", async () => {
+    // backend that always names a piece on an empty square, so both attempts fail validation
+    const backend = fakeBackend(async () => "your queen on h8 is safe and your queen on h8 is strong.");
+    const facts = assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" });
+    const res = await chat("is my queen safe?", [], facts, backend, { gameId, ply: 1, kind: "chat" });
+    expect(res.source).toBe("template");
+    const row = getAdviceTraces(gameId).find((r) => r.id === res.traceId)!;
+    expect(row.output).toBe(res.text);
+    const attempts = JSON.parse(row.attempts_json);
+    expect(attempts.length).toBeGreaterThanOrEqual(1);
+    expect(attempts[0].output).toContain("your queen on h8");
   });
 
   it("cause timeout -> the slow template", async () => {

@@ -643,6 +643,103 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
+  // Game 198 fixes (2026-09-21), Task B1, cause 1: validateChat's own
+  // call-site wiring for lineOccupancies -- the unit-level proof that
+  // checkPlacementClaims accepts extra occupancy lists lives in
+  // placementClaims.test.ts; this is the integration-level proof that
+  // validateChat actually threads the hint ladder's PV into that check
+  // (the invariant rule: a unit test proves the function, not the wiring).
+  // 16 of 16 stored placement rejections for the real game 198 flagged a
+  // square that was a PV/hint/played-move destination -- true after a move
+  // the reply had already named, just not true on the board validateChat
+  // compared against before this task.
+  describe("validateChat — a placement claim true along the hint ladder's PV is not a violation (game 198, trace 361/363)", () => {
+    // game 198, before her Qxd6+ (trace 361's currentFen)
+    const G198_BEFORE = "rnbq1k1r/pppp1ppp/3n4/B2PQ3/2P5/8/PP3PPP/RN2KBNR w KQ - 1 9";
+
+    function occupancyFromFen(fen: string): ChatFactList["occupancy"] {
+      const chess = new Chess(fen);
+      const occupancy: ChatFactList["occupancy"] = [];
+      for (const row of chess.board()) {
+        for (const cell of row) {
+          if (!cell) continue;
+          occupancy.push({ square: cell.square, pieceKind: cell.type, color: cell.color === "w" ? "you" : "mallow" });
+        }
+      }
+      return occupancy;
+    }
+
+    function factsWithHint(): ChatFactList {
+      const chess = new Chess(G198_BEFORE);
+      return {
+        gameSans: [],
+        currentFen: G198_BEFORE,
+        toMove: chess.turn() === "w" ? "you" : "mallow",
+        occupancy: occupancyFromFen(G198_BEFORE),
+        legalSans: chess.moves(),
+        allowedSans: [],
+        contested: [],
+        status: "in-progress",
+        hintFindings: {
+          fen: G198_BEFORE,
+          bestSan: "Qxd6+",
+          bestUci: "e5d6",
+          evalCp: null,
+          evalMate: null,
+          pvSans: ["Qxd6+", "Qe7+", "Qxe7+", "Kxe7"],
+          trade: false,
+          escalated: false,
+          candidates: [],
+          verified: true,
+        },
+      };
+    }
+
+    it("clears both 'your queen on d6' and 'her queen on e7' -- true one and two plies into the hint's PV", () => {
+      const facts = factsWithHint();
+      const result = validateChat("your queen on d6 gives check, and her queen on e7 is the block.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("still flags a claim false on every board in the PV", () => {
+      const facts = factsWithHint();
+      const result = validateChat("your queen on h8 is safe.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.includes("h8"))).toBe(true);
+    });
+
+    it("a claim true after the staged (pending) move is not a placement violation; a wrong piece still is (traces 369 / 368)", () => {
+      // game 198 ply 26 before her move: her bishop on e5, mallow's knight on b8, rook a8.
+      const fen = "rnb3kr/pp1p2p1/5p1p/3PB3/2P5/8/PP2BPPP/RN2K1NR w KQ - 0 14";
+      const chess = new Chess(fen);
+      const occupancy: ChatFactList["occupancy"] = [];
+      for (const row of chess.board()) {
+        for (const cell of row) {
+          if (!cell) continue;
+          occupancy.push({ square: cell.square, pieceKind: cell.type, color: cell.color === "w" ? "you" : "mallow" });
+        }
+      }
+      const facts: ChatFactList = {
+        gameSans: [],
+        currentFen: fen,
+        toMove: chess.turn() === "w" ? "you" : "mallow",
+        occupancy,
+        legalSans: chess.moves(),
+        allowedSans: [],
+        contested: [],
+        status: "in-progress",
+        context: {
+          mode: "live",
+          pendingMove: { pieceKind: "b", from: "e5", to: "b8", san: "Bxb8", tier: "silent", judged: true },
+        },
+      };
+      expect(validateChat("your bishop on b8 can be taken back by the rook.", facts)).toEqual({ ok: true });
+      const wrong = validateChat("your knight on b8 is safe.", facts);
+      expect(wrong.ok).toBe(false);
+      if (!wrong.ok) expect(wrong.violations).toContain("placement-claim: your knight on b8 -- not there");
+    });
+  });
+
   // Side-to-move fact (round 2026-07-22): the coach once attributed the
   // PLAYER's own pending move to mallow ("you win her queen for free" about
   // the player's own Qh5) because ChatFactList had no fact stating whose
@@ -1430,7 +1527,7 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     it("a placement violation does NOT get the bad-SAN catch-all, and gets its own guidance instead", () => {
       const suffix = correctiveSuffix(["placement-claim: your knight on b3 -- b3 is empty"]);
       expect(suffix).not.toContain("isn't a move from this game");
-      expect(suffix.toLowerCase()).toContain("restate only what the fact list proves");
+      expect(suffix.toLowerCase()).toContain("say the move first");
     });
 
     it("a side-claim violation gets its own guidance, not the SAN catch-all", () => {
@@ -1457,7 +1554,20 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
         "Qxh7",
       ]);
       expect(suffix).toContain("mentioned Qxh7, which isn't a move from this game.");
-      expect(suffix.toLowerCase()).toContain("restate only what the fact list proves");
+      expect(suffix.toLowerCase()).toContain("say the move first");
+    });
+
+    // Game 198 fixes (2026-09-21), Task B2: the old wording ("restate only
+    // what the fact list proves") turned a true after-move claim into a
+    // false one on retry -- the model had named a piece on a square that IS
+    // where it will be after a move it already stated, and the old hint
+    // told it to erase that instead of naming the move. Trace 361 denied a
+    // legal capture on retry; trace 363 fell to the template fallback
+    // twice. The new guidance asks for the move, not for silence.
+    it("the placement retry hint tells the model to name the move a claim follows", () => {
+      const s = correctiveSuffix(["placement-claim: your queen on d6 -- not there"]);
+      expect(s).toContain("say the move first");
+      expect(s).not.toContain("restate only what the fact list proves");
     });
   });
 
