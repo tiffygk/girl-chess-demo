@@ -138,6 +138,20 @@ const MATE_SCORE_CP = 100_000;
 // position already decided" across both consumers.
 export const DECIDED_BAND_CP = 300;
 
+// Owner ruling (game 200 move 27, 2026-09-22): "as long as I am within 8
+// moves to forced mate ... should get them. If it's 20 moves versus 21
+// moves to forced mate, then no, that doesn't make sense." The live
+// judge's mate-distance nudge (missed-mate/mate-slip, inside the
+// mateForMover branch below) now fires only when the mate she held BEFORE
+// her move was this shallow or shallower; beyond it, no mate-speed nudge at
+// all, even for a slip that would otherwise clear MATE_SLIP_MIN. This gates
+// ONLY the live judge's nudge -- the per-game debrief/turning-point path
+// (detectMateEvents in conversion.ts) keeps MISSED_MATE_DEPTH/MATE_SLIP_MIN
+// exactly as calibrated in the game-160 RCA, untouched by this constant.
+// Losing the forced mate entirely (lost-mate) is unaffected: that always
+// routes to warning regardless of depth, below.
+export const JUDGE_MATE_NUDGE_DEPTH = 8;
+
 // Round 3 Task 11 (item 5 / OD-5, trust floor -- "we shouldn't try to invent
 // better moves for her to have done"): a surface may assert "a better move
 // existed" only when the engine's own delta is at/above this, or the
@@ -180,11 +194,31 @@ function freeMaterialCopyFor(pieceKind: string): string {
 // the two ConversionEvent kinds is how shallow the mate was to begin with
 // (MISSED_MATE_DEPTH's gate in conversion.ts), not what she needs to hear.
 // lost-mate gets its own line since there's no "mate in N" left to name.
+//
+// Wording fix (game 200 move 27, 2026-09-22 owner finding): the old copy
+// compared a count taken BEFORE her move (mateBefore) with one taken AFTER
+// it (mateAfter) without saying so -- "mate in 5 was there, now it's mate
+// in 5" reads as no change on a genuine one-move slip, since mateAfter is
+// counted AFTER her move is already played. Both numbers below now count
+// from the SAME point, her move included: "this move mates in {mateAfter +
+// 1}" (her move plus the remaining mateAfter) against "the fastest mates in
+// {mateBefore}" (the count before she moved). Never names the faster move
+// itself -- the help ladder reveals it on request. No server-side
+// spelled-number helper exists (src/review/numberWords.ts is client-only),
+// so counts are digits. One template for every slip size (owner ruling
+// 2026-09-22: "It shouldn't have to be tied to specific wording for 2 or 1.").
 function conversionCopyFor(event: MoveConversionEvent): string {
   if (event.kind === "lost-mate") {
     return "still winning, but the forced mate is gone for now.";
   }
-  return `still winning, but there was a faster mate. mate in ${event.mateBefore} was there, now it's mate in ${event.mateAfter}.`;
+  if (event.mateBefore === 1) {
+    return "still winning, but you have checkmate on the board right now.";
+  }
+  // Non-null for missed-mate/mate-slip: mateAfter is only ever null on the
+  // lost-mate branch above, already returned.
+  const mateAfterCount = event.mateAfter as number;
+  const moves = event.slip === 1 ? "move" : "moves";
+  return `still winning, but there's a mate ${event.slip} ${moves} faster. this move mates in ${mateAfterCount + 1}, the fastest mates in ${event.mateBefore}.`;
 }
 
 // Exported for adjudicate.ts (Wave C, C-A): the "what governs when someone
@@ -330,15 +364,27 @@ export async function classifyMove(
   // reading only counts as a genuine lead, never a genuine deficit.
   const decided = (beforeEval.mate !== null && beforeEval.mate > 0) || (beforeEval.cp ?? 0) >= DECIDED_BAND_CP;
 
-  // Mate-distance conversion (missed-mate/mate-slip/lost-mate): the SAME
-  // math conversion.ts's detectMateEvents runs over a whole game, applied
-  // to this one move via conversionForMove — zero new engine calls, reuses
+  // Mate-distance conversion (missed-mate/mate-slip/lost-mate): applied to
+  // this one move via conversionForMove — zero new engine calls, reuses
   // beforeEval/afterEval exactly as computed above. Only ever attempted in
   // a decided position (conversionForMove itself also independently
   // requires before.mate > 0, so this gate is belt-and-suspenders, not
   // load-bearing on its own).
+  //
+  // Owner ruling (game 200, 2026-09-22): the live judge's own nudge-firing
+  // depth (JUDGE_MATE_NUDGE_DEPTH, defined above) is passed in here rather
+  // than conversion.ts hardcoding MISSED_MATE_DEPTH for this call site —
+  // see conversionForMove's own header comment for why this split exists.
+  // lost-mate is unaffected: conversionForMove returns it before this depth
+  // check ever runs.
   const mateConversion = decided
-    ? conversionForMove({ cp: beforeEval.cp, mate: beforeEval.mate }, { cp: afterEval.cp, mate: afterEval.mate }, move.before, move.san)
+    ? conversionForMove(
+        { cp: beforeEval.cp, mate: beforeEval.mate },
+        { cp: afterEval.cp, mate: afterEval.mate },
+        move.before,
+        move.san,
+        JUDGE_MATE_NUDGE_DEPTH
+      )
     : null;
 
   // Free material for nothing: her move made no capture of its own
@@ -373,6 +419,13 @@ export async function classifyMove(
     // free-material giveaway inside the same still-active mate run, e.g.
     // game 160's plies 123-124) still gets a nudge; an on-schedule mate
     // stays silent exactly as before.
+    //
+    // Owner ruling (game 200 move 27, 2026-09-22): mateConversion is null
+    // whenever the mate she held before her move was deeper than
+    // JUDGE_MATE_NUDGE_DEPTH (conversionForMove's own gate, see its header
+    // comment) -- "20 moves versus 21 ... doesn't make sense." So a
+    // deep-mate slip that would otherwise qualify never reaches here at
+    // all; nothing further to gate on this side.
     if (mateConversion) {
       tier = "nudge";
       conversionCopy = conversionCopyFor(mateConversion);

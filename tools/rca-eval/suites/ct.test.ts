@@ -96,13 +96,20 @@ describe.skipIf(!PRE_TPV7_CORPUS_PRESENT)("runCtSuite (needs the owner's pre-tpv
     expect(ct04.detail).toMatch(/conversion-claim/);
   });
 
-  it("CT-05: judge verdicts on game 160's fixture plies -- 95/123/125 nudge, 185 silent", async () => {
+  // Owner ruling (game 200 move 27, 2026-09-22): ply 125's mateBefore is
+  // 10 (mate-in-10 became mate-in-16, the RCA's own "worst" example) --
+  // deeper than JUDGE_MATE_NUDGE_DEPTH (8), so the live judge's own nudge
+  // now correctly stays silent on it, matching "if it's 20 moves versus
+  // 21 moves to forced mate, then no, that doesn't make sense." Ply 95
+  // (mateBefore 5) and ply 123 (mateBefore 7) are both within depth 8 and
+  // still nudge.
+  it("CT-05: judge verdicts on game 160's fixture plies -- 95/123 nudge, 125/185 silent", async () => {
     const suite = await runCtSuite();
     const ct05 = suite.results.find((r) => r.id === "CT-05")!;
     expect(ct05.verdict, ct05.detail).toBe("pass");
     expect(ct05.detail).toMatch(/ply 95 -> nudge/);
     expect(ct05.detail).toMatch(/ply 123 -> nudge/);
-    expect(ct05.detail).toMatch(/ply 125 -> nudge/);
+    expect(ct05.detail).toMatch(/ply 125 -> silent/);
     expect(ct05.detail).toMatch(/ply 185 -> silent/);
   });
 
