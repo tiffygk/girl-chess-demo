@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderDossier, type AdviceTraceRow, type DossierContext } from "./dossier";
+import { renderDossier, computeCoverageRollup, type AdviceTraceRow, type DossierContext } from "./dossier";
 
 // A3 (live-telemetry round, 2026-09-22): renderDossier is a pure function
 // (no db) so it can be exercised on a synthetic row -- the thin main()
@@ -81,5 +81,55 @@ describe("renderDossier (A3)", () => {
     const row = baseRow({ coverage_json: null });
     const text = renderDossier(row, {});
     expect(text.toLowerCase()).toContain("unrecorded");
+  });
+});
+
+// Game 198 follow-up round (2026-09-22, brief-4.md, step 4, item 3):
+// computeCoverageRollup must split by route rather than mixing chat's
+// "checked = one of four checkers looked" with the band's "checked =
+// checkDefenseClaims only" (B3's fix) under one combined number. RED
+// condition (verify by reverting to a single combined accumulator with no
+// kind branch): the "band-only" assertion below would then see the chat
+// row's counts folded into it too.
+describe("computeCoverageRollup (brief-4)", () => {
+  const chatCoverage = JSON.stringify({
+    sentences: 3,
+    boardSentences: 2,
+    checked: 2,
+    unchecked: [],
+    byClass: { "relation-claim": 1, "placement-claim": 1 },
+  });
+  const bandCoverage = JSON.stringify({
+    sentences: 2,
+    boardSentences: 1,
+    checked: 0,
+    unchecked: ["the knight on g4 attacks f6."],
+    byClass: {},
+  });
+
+  it("aggregates chat and band rows into separate totals", () => {
+    const { chat, band } = computeCoverageRollup([
+      { coverage_json: chatCoverage, kind: "chat" },
+      { coverage_json: bandCoverage, kind: "nudge" },
+      { coverage_json: bandCoverage, kind: "warning" },
+    ]);
+    expect(chat).toEqual({
+      rows: 1,
+      sentences: 3,
+      boardSentences: 2,
+      checked: 2,
+      byClass: { "relation-claim": 1, "placement-claim": 1 },
+    });
+    expect(band).toEqual({ rows: 2, sentences: 4, boardSentences: 2, checked: 0, byClass: {} });
+  });
+
+  it("skips a row whose coverage_json is null or malformed", () => {
+    const { chat, band } = computeCoverageRollup([
+      { coverage_json: null, kind: "chat" },
+      { coverage_json: "not json", kind: "nudge" },
+      { coverage_json: chatCoverage, kind: "chat" },
+    ]);
+    expect(chat.rows).toBe(1);
+    expect(band.rows).toBe(0);
   });
 });
