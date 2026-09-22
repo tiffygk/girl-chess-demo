@@ -104,7 +104,29 @@ signal.)
 worktree.** Concurrent builds collide on artifacts in a shared worktree even with disjoint
 sources. To run today's suite against another branch's committed code, mount that branch
 detached and read-only, open any db from a count-verified copy, import by absolute path, and
-tear the worktree down after -- never merge or hand-copy the code under test.
+tear the worktree down after -- never merge or hand-copy the code under test. Quiet-machine note (2026-09-21): "quiet" means no engine whose CPU time is growing, not "no extra PID": an idle walkthrough server's stockfish (21 s of CPU, total) cost two cells and ten-minute waits under a PID-list check; `tsc -b` is allowed during a latency run, `vitest` over the tree is not.
+
+**12. Instrument health before the first model call (the pre-flight).** The 2026-09-20 A/B
+ran 690 answers before anyone noticed the harness's `run.ts` builds contexts from before the
+change under test (per-ply analysis without `side`, no `verified` hint, `chat()` called
+directly so the manager's verified search never ran); the AFTER arm answered on an emptier
+fact list than live and its correctness axes were unusable. Before any before/after run:
+(a) diff the fact-list shape the AFTER code reads (`ChatContext`, `ChatPerPlyInput`, hint
+`verified`) against what `run.ts` builds, and route through the manager where the change
+lives; (b) for every suite constant that names a fixture as "proven" (fh.ts's
+`GAME_160_PROVEN_FORCED_IDS`), open the fixture's own entry in `fixtures.ts` and read its
+ruling text, a constant is a claim; (c) `npx tsc -b` on every changed tool, it is single-core
+and allowed even while a latency driver runs (only `vitest` over the tree is not, see rule
+11); (d) check units across the pooler's fields (ttfp in seconds beside ttfw in milliseconds
+shipped in the 2026-09-20 summary). The durable form is a repo test
+(`tools/coach-eval/preflight.test.ts`, queued 2026-09-21) that fails when a built context lacks
+a field the fact list reads or a "proven" constant names a fixture whose entry says otherwise.
+
+**13. Score per run dir with your own writer.** `npm run rca-eval -- <suite> --run-dir <dir>`
+writes one `<date>-<suite>.json` per suite per day (clobbered on every call) with per-eval
+verdicts only. Pooling 30 run dirs needs per-row verdicts beside each dir: call the suites'
+exported row functions (`auditFhRows`, `checkNmRows`, `checkLaRows`) from a scorer that writes
+`<dir>/<suite>.json`, as `tools/coach-eval/score-ab.ts` does (2026-09-20).
 
 ## Quick reference
 
