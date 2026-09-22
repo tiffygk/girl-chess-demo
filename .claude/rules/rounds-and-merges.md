@@ -33,6 +33,6 @@ Context economy:
 
 The built-in Explore and Plan agents do not load CLAUDE.md or these rules; restate ports, read-only, and the owner-db rule in every brief to them.
 
-Merge shape: one pull request per wave, body per `.github/pull_request_template.md`, the review posted on the PR, the `gate` check green, merge commit, branch deleted. Commit trailer: `Co-Authored-By: Claude <model> <noreply@anthropic.com>` plus `Claude-Session: <session URL>`. Tags are pushed by name, never `--tags`. Rollback is `git revert -m 1 <merge sha>` through its own PR.
+Merge shape: one pull request per wave, body per `.github/pull_request_template.md`, the review posted on the PR, the `gate` check green, merge commit, branch deleted. Commit trailer: `Co-Authored-By: Claude <model> <noreply@anthropic.com>` plus `Claude-Session: <session URL>`. Tags are pushed by name, never `--tags`. Rollback is `git revert -m 1 <merge sha>` through its own PR. Branch protection also requires the head to be current with main, and main moves under parallel sessions: if `gh pr merge` says the head is not up to date, merge `origin/main` into the branch (a merge commit, never a rebase), re-run the gate on the union, push, wait for the CI check, then merge (PR #32, 2026-09-21).
 
 History: docs/changelog.md#incidents-that-made-the-rules-moved-from-claudemd-2026-09-06
