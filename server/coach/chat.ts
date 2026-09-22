@@ -2504,7 +2504,13 @@ export async function chat(
     // backend; this is the one JSON.stringify(facts) in the whole function.
     factsJson: JSON.stringify(facts),
     prompt: attemptPrompt,
-    output: attemptOutput,
+    // Game 198 fixes (2026-09-21), Task B3: this used to always store
+    // attemptOutput -- the last REJECTED attempt's raw text -- even on a
+    // template-fallback row, so a reader of the row (trace 363) could not
+    // tell what she actually saw from what the model tried and lost. A
+    // template row now stores the template text (`text`, the same value
+    // returned below); the rejected attempt(s) still live in attempts_json.
+    output: source === "model" ? attemptOutput : text,
     source,
     backend: backend.name,
     validated: source === "model",
@@ -2529,7 +2535,14 @@ export async function chat(
     // Task 6 (game192-fixes round, RC4): NULL when there's only one attempt
     // to record -- no information is lost then, because the row's own
     // `output` above IS that attempt.
-    attemptsJson: attempts.length > 1 ? JSON.stringify(attempts) : null,
+    //
+    // Game 198 fixes (2026-09-21), Task B3: that "no information lost"
+    // reasoning breaks for a template-fallback row now that `output` above
+    // stores the template, not the attempt -- a single-attempt template row
+    // would otherwise lose the rejected text entirely (trace 363: a reader
+    // of the row could not tell what she saw). A template row always keeps
+    // its attempt(s), even when there is only one.
+    attemptsJson: attempts.length > 1 || source === "template" ? JSON.stringify(attempts) : null,
   });
 
   return failureCause ? { text, source, cause: failureCause, traceId } : { text, source, traceId };
