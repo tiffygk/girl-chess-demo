@@ -2115,7 +2115,7 @@ export function buildChatPromptParts(
 // SAN token carries no prefix at all (chess notation never contains ":"),
 // so it's keyed under "" below and is the only kind that still gets the
 // original "isn't a move from this game" wording.
-const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
+export const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
   "": "isn't a move from this game.",
   // Game 198 fixes (2026-09-21), Task B2, cause 1: the old wording
   // ("restate only what the fact list proves") turned a true after-move
