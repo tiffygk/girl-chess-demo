@@ -515,6 +515,11 @@ function lineOccupancies(facts: ChatFactList): OccupancyEntry[][] {
     const sans = [facts.candidateLine.san, ...(facts.candidateLine.replySan ? [facts.candidateLine.replySan] : [])];
     boards.push(...occupanciesAlongLine(live, sans, 2));
   }
+  // Game 198 fixes (2026-09-21), wave B fix: the move she has staged on the
+  // board but not confirmed is the board most of her questions are about
+  // (traces 329, 342, 369 were all rejected for claims true after it).
+  const pending = facts.context?.pendingMove?.san;
+  if (pending) boards.push(...occupanciesAlongLine(live, [pending], 1));
   return boards;
 }
 
