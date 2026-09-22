@@ -72,6 +72,21 @@ the fixture. Open the fixture entry before scoring a row. A hand-audit count goe
 only with a per-row table in the results note (row, quote, verdict); a secondary tally
 without one ("overclaimed 3 of 6") failed the gate's reconciliation and was dropped.
 
+**10. Axes come from her complaints, not from the instruments you have.** Before choosing what
+the eval scores, classify every thumbs-down note on the record (game 198, 2026-09-21: all 14 notes
+since the cut named a capture, a line of sight, a considered move's after-board, or the coach not
+following her; none named a piece on the wrong square). Every class gets an instrument, or the page
+prints it UNMEASURED beside the headline. A validator pass rate ("no mechanical failure", 304 → 294 on
+the 2026-09-20 dashboard) is labelled as the validator's classes passing, never as correctness: it
+cannot move when the coach fails the way she reports.
+
+**11. The live validator's classes, as of 2026-09-21** (`VIOLATION_KIND_GUIDANCE` in
+`server/coach/chat.ts`; re-check there before citing): placement-claim, side-claim, defense-claim,
+mate-claim, voice-notation, voice-word, voice-number. Nothing checks capture legality or line of
+sight. The Game 198 fixes plan adds relation-claim (Wave C) and a test that enumerates the classes
+(Task C2b, `server/coach/violationClasses.test.ts`); once it lands, that test is the source and this
+list changes with it.
+
 ## Quick reference
 
 | Axis | How | Never |
