@@ -13,9 +13,20 @@ import { describe, it, expect, vi } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { preflightFacts, preflightKnownBad, scoreResults, seedGamesForRows, replayRow, type ReplayResult, type StoredRow } from "./replay-trace";
+import {
+  preflightFacts,
+  preflightKnownBad,
+  scoreResults,
+  seedGamesForRows,
+  replayRow,
+  loadReplayRows,
+  runReplay,
+  type ReplayResult,
+  type StoredRow,
+} from "./replay-trace";
 import { seedScratchDb } from "./rca-eval/lib/scenarioDb";
 import { assembleChatFactList } from "../server/coach/chat";
+import { openDb, createSession, createGame, insertAdviceTrace, insertChatMessage } from "../server/store/db";
 import type { CoachBackend } from "../server/coach/backends/types";
 
 // Sanctioned exception to the no-mocks convention, same precedent as
@@ -116,6 +127,72 @@ describe("seedGamesForRows", () => {
     const result = await replayRow(row, "default", 1, backend);
     expect(result.id).toBe(row.id);
     expect(result.attempts.length).toBeGreaterThan(0);
+  });
+});
+
+describe("loadReplayRows / runReplay skip-and-report", () => {
+  // Fix round (2026-09-22), reviewer finding on brief-T: the old runReplay
+  // mapped `args.ids` straight through `readStoredRow`, which THROWS on an
+  // id with no `chat_messages` row -- so a batch containing one bad id
+  // (the 307/308/309/363 shape) crashed the whole run and never replayed
+  // its OTHER ids either. Builds a real fixture db (via openDb, real
+  // schema) with one GOOD id (advice_traces + a chat_messages pair) and
+  // one BAD id (advice_traces with no matching chat_messages row), then
+  // proves loadReplayRows skips only the bad one and runReplay completes
+  // the batch, replays the good id, and reports the bad one as skipped.
+  function buildFixtureDb(): { dbPath: string; goodId: number; badId: number } {
+    const dbPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "gc-replay-fixture-")), "fixture.db");
+    openDb(dbPath);
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "mallow");
+    const facts = JSON.stringify(assembleChatFactList([{ ply: 1, san: "e4" }], { mode: "live" }));
+
+    // Good id: a coach-reply advice_traces row, a chat_messages coach row
+    // carrying its id as trace_id, and a preceding user chat_messages row
+    // -- readStoredRow's full recovery path.
+    const goodId = insertAdviceTrace({
+      gameId, ply: 1, kind: "chat", factsJson: facts, prompt: "p", output: "o",
+      source: "model", backend: "fake", validated: true, regenCount: 0, latencyMs: 100,
+    });
+    insertChatMessage({ gameId, role: "user", text: "what's my best move?" });
+    insertChatMessage({ gameId, role: "coach", text: "o", traceId: goodId });
+
+    // Bad id: an advice_traces row with NO chat_messages row at all --
+    // the exact orphaned-attempt shape (307/308/309/363) readStoredRow
+    // cannot recover a question for.
+    const badId = insertAdviceTrace({
+      gameId, ply: 1, kind: "chat", factsJson: facts, prompt: "p", output: "o",
+      source: "model", backend: "fake", validated: true, regenCount: 0, latencyMs: 100,
+    });
+
+    return { dbPath, goodId, badId };
+  }
+
+  it("loadReplayRows skips the bad id with its reason, keeps the good id's row", () => {
+    const { dbPath, goodId, badId } = buildFixtureDb();
+    const { rows, skipped } = loadReplayRows(dbPath, [goodId, badId]);
+    expect(rows.map((r) => r.id)).toEqual([goodId]);
+    expect(skipped).toEqual([{ id: badId, reason: expect.stringMatching(/no chat_messages row with trace_id/) }]);
+  });
+
+  it("runReplay completes a batch with one bad id: replays the good one, reports the bad one as skipped (never throws)", async () => {
+    const { dbPath, goodId, badId } = buildFixtureDb();
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "gc-replay-out-"));
+    const backend = fakeBackend(async () => "the pawn on e4 is a solid start.");
+
+    // Red on the pre-fix code: the old runReplay's `args.ids.map(readStoredRow)`
+    // throws `no chat_messages row with trace_id <badId>` here and this
+    // await never resolves -- proven by running this exact test against
+    // that code before the fix (it rejected instead of completing).
+    await expect(
+      runReplay({ db: dbPath, ids: [goodId, badId], arms: ["default"], reps: 1, out: outDir }, backend)
+    ).resolves.toBeUndefined();
+
+    expect(fs.existsSync(path.join(outDir, `${goodId}-default-1.json`))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, `${badId}-default-1.json`))).toBe(false);
+
+    const skippedJson = JSON.parse(fs.readFileSync(path.join(outDir, "skipped.json"), "utf8"));
+    expect(skippedJson).toEqual([{ id: badId, reason: expect.stringMatching(/no chat_messages row with trace_id/) }]);
   });
 });
 

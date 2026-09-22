@@ -236,6 +236,11 @@ export interface StoredRow {
   question: string;
 }
 
+export interface SkippedRow {
+  id: number;
+  reason: string;
+}
+
 // Reads a stored chat row's facts_json plus the user question that
 // produced it. The question is not `prompt` (that column holds the fully
 // assembled model prompt, not the raw text she typed) -- it comes from
@@ -267,6 +272,34 @@ function readStoredRow(dbPath: string, id: number): StoredRow {
   } finally {
     db.close();
   }
+}
+
+// Fix round (2026-09-22), reviewer finding on brief-T: `readStoredRow`
+// throws on an id it can't recover a question for (no `advice_traces` row,
+// no `chat_messages` row carrying the trace id, or no preceding user
+// message -- the 307/308/309/363 shape from the failed run, orphaned
+// attempts from a rapid multi-message burst). The brief's own rule --
+// "keep skipping them, but report them as skipped with the reason ...
+// never silently" -- was met for those FOUR pre-identified ids by leaving
+// the throw uncaught and letting the id-selection step drop them before
+// calling this tool at all. It was NOT met for the general case: mapping
+// `args.ids` straight through `readStoredRow` (the old runReplay) let ONE
+// bad id in a batch crash the whole run, with nothing about the OTHER ids
+// in that batch ever getting replayed or reported. This function is the
+// per-id skip: each id is read independently, a bad one is caught and
+// recorded in `skipped` with the thrown message as its reason, and every
+// other id in the batch still gets its row.
+export function loadReplayRows(dbPath: string, ids: number[]): { rows: StoredRow[]; skipped: SkippedRow[] } {
+  const rows: StoredRow[] = [];
+  const skipped: SkippedRow[] = [];
+  for (const id of ids) {
+    try {
+      rows.push(readStoredRow(dbPath, id));
+    } catch (err) {
+      skipped.push({ id, reason: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return { rows, skipped };
 }
 
 interface CliArgs {
@@ -371,11 +404,32 @@ export async function replayRow(
   };
 }
 
-async function runReplay(args: CliArgs): Promise<void> {
-  const rows = args.ids.map((id) => readStoredRow(args.db, id));
+// `backend` is an optional last param, defaulting to `agentSdkBackend` --
+// every existing call site (the CLI's `main()`) omits it and gets today's
+// behavior. A test supplies a fake `CoachBackend` here (chat.test.ts's own
+// no-live-model-calls-in-tests convention) so it can run this function for
+// real, including its skip-and-report path, without a model call.
+export async function runReplay(args: CliArgs, backend: CoachBackend = agentSdkBackend): Promise<void> {
+  // Fix round (2026-09-22), reviewer finding on brief-T: this used to be
+  // `args.ids.map((id) => readStoredRow(args.db, id))`, which throws on
+  // the FIRST bad id and crashes the whole run -- so a batch containing
+  // one of the four orphaned ids (307/308/309/363) never replayed any of
+  // its OTHER ids either, and nothing was ever reported for the ids that
+  // never got a chance to run. `loadReplayRows` reads each id
+  // independently: a bad id is skipped and recorded with its reason, every
+  // other id in the batch still replays.
+  const { rows, skipped } = loadReplayRows(args.db, args.ids);
   runPreflight(rows.map((r) => ({ factsJson: r.factsJson })));
 
   fs.mkdirSync(args.out, { recursive: true });
+  if (skipped.length > 0) {
+    for (const s of skipped) {
+      console.error(`[replay-trace] skipped id ${s.id}: ${s.reason}`);
+    }
+    fs.writeFileSync(path.join(args.out, "skipped.json"), JSON.stringify(skipped, null, 2));
+  }
+  if (rows.length === 0) return;
+
   // Opens a fresh scratch db via openDb() (scenarioDb.ts's own isolation
   // contract) -- every chat() call below, including its insertAdviceTrace
   // write, lands here, never in --db or the owner's real db.
@@ -385,7 +439,7 @@ async function runReplay(args: CliArgs): Promise<void> {
   for (const row of rows) {
     for (const arm of args.arms) {
       for (let rep = 1; rep <= args.reps; rep++) {
-        const replayResult = await replayRow(row, arm, rep, agentSdkBackend);
+        const replayResult = await replayRow(row, arm, rep, backend);
         fs.writeFileSync(
           path.join(args.out, `${row.id}-${arm}-${rep}.json`),
           JSON.stringify(replayResult, null, 2)
