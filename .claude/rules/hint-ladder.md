@@ -16,3 +16,14 @@ a regen is never a style fix.
 
 the persona ban list in the prompt is a request to the model, not an enforced
 guarantee; do not cite it as one.
+
+the four player-facing text surfaces, by place and author:
+
+| surface | where | author | code |
+|---|---|---|---|
+| hint ladder ("help?", "more?") | under the board, while a move is pending | code | server/annotator/hint.ts, src/game/hintFlow.ts |
+| coach band ("cookie is looking…", then one line) | under the ladder; fires on the second ladder press for a nudge or warning verdict | model, Claude Sonnet 5 | narrate() in server/coach/index.ts, `.coach-hint-band` in src/game/GamePage.tsx |
+| coach chat | sidebar (right rail wide, under the band narrow) | model, Claude Sonnet 5 | server/coach/chat.ts, src/game/CoachChat.tsx |
+| post-game analysis | debrief | code, templates filled from a replay of the moves | server/annotator/*, src/review/* |
+
+origin of the surfaces rule: docs/changelog.md, 2026-09-21 entry.

@@ -89,8 +89,9 @@ import {
 } from "./explore";
 import {
   COACH_BACKEND_KEY,
-  COACH_BACKEND_OPTIONS,
   readCoachBackendPref,
+  readDevFlag,
+  visibleCoachBackendOptions,
   type CoachBackendPref,
 } from "./coachBackendPref";
 
@@ -153,10 +154,12 @@ const CHECK_VISIBILITY_MS = 450;
 const JUDGE_MIN_MS = 900;
 
 // How long the "end the game?" button stays morphed into its outcome copy
-// before it reverts on its own — an in-world confirm step instead of a
+// before it reverts on its own, an in-world confirm step instead of a
 // modal. Wave C: was resign/draw-specific; now the single adjudicated
-// end-game button's arm-then-confirm window.
-const CONFIRM_MS = 3000;
+// end-game button's arm-then-confirm window. Owner ruling 2026-09-21: was
+// 3 s until then; it moved to 6 s because four normal-speed clicks never
+// landed for a stranger in the 2026-09-20 clone test.
+const CONFIRM_MS = 6000;
 
 // A5: how long the "can't castle right now" (etc.) input hint stays in the
 // status line before reverting to whatever `status` currently holds.
@@ -2628,7 +2631,7 @@ export function GamePage() {
               <div className="settings-divider" aria-hidden="true"></div>
               <span className="settings-section-head">coach voice</span>
               <div className="settings-radio-group" role="radiogroup" aria-label="coach voice">
-                {COACH_BACKEND_OPTIONS.map((opt) => (
+                {visibleCoachBackendOptions(readDevFlag()).map((opt) => (
                   <label key={opt.value} className="settings-switch">
                     <input
                       type="radio"
