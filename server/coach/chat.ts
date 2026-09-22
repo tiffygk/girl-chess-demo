@@ -25,7 +25,7 @@ import { checkDefenseClaims } from "./defenseClaims";
 import { checkPlacementClaims, type OccupancyEntry } from "./placementClaims";
 import { checkRelationClaims } from "./relationClaims";
 import { checkMateClaims } from "./mateClaims";
-import { computeClaimCoverage } from "./claimCoverage";
+import { computeClaimCoverage, ALL_CHECKER_CLASSES } from "./claimCoverage";
 import { insertAdviceTrace, getLatestRejectedChatTrace } from "../store/db";
 import { isOffTopic, mentionedPlies, thinkingForIntent, type ChatIntent } from "./intent";
 import { normalizeVoice } from "./textNormalize";
@@ -1160,6 +1160,51 @@ const VOICE_SIGNED_NUMBER_RE = /[+-]\d+(?:\.\d+)?/g;
 // the letters immediately following it).
 const VOICE_CP_NUMBER_RE = /\b\d+(?:\.\d+)?\s*(?:cp|centipawns?)\b/gi;
 
+// Game 198 follow-up round (2026-09-22), brief-6b: two more live voice
+// tells, both mechanical (precision over recall, same discipline as the
+// three checks above).
+//
+// Self-correction: "wait," at a CLAUSE start (sentence start, or right
+// after a comma, semicolon, or dash), never mid-clause -- "she plays Nf3,
+// actually, that's forcing" or a sentence opening "wait, ..." must not
+// pass. The alternation's non-capturing branch is either "^" (true start
+// of the returned text) or one of the clause-boundary characters followed
+// by optional whitespace.
+//
+// Fix round (2026-09-22, reviewer MAJOR): "actually," was dropped from
+// this pattern. It flagged ordinary honest emphasis -- "actually, the
+// knight is fine", "she plays Nf3. Actually, that is the strongest
+// reply." -- neither of which second-guesses anything; each would have
+// cost her a regen or a template fallback for a clean sentence. Rerunning
+// the corpus (all 377 advice_traces rows, not just the 168 chat/model
+// scope) confirmed the controller's data point: every real self-correction
+// found (trace 249, 251, 362) uses "wait,"; "actually," never caught a
+// real one, and the code-appended correction (checkOpponentQualityClaims,
+// below) itself says "actually," honestly and would have been the very
+// thing this check exists to distinguish FROM. "wait," alone still covers
+// the "\n\n" paragraph-break case that append uses as its own clause
+// boundary, so the ordering proof (checkOpponentQualityClaims runs after
+// validateChat, never fed back through it) is unaffected by this narrowing.
+const VOICE_SELF_CORRECTION_RE = /(?:^|[.!?,;–—-]\s*)(wait,)/gi;
+
+// Label leak: an internal fact-list KEY NAME reaching prose, rather than
+// the plain-English fact it names. Two shapes, found by running this
+// pattern over all 168 stored model chat rows before this change shipped
+// (brief-6b's corpus step):
+//   1. `attackedBy`/`defendedBy`/`perPly`, matched AS WRITTEN (camelCase,
+//      case-sensitive -- there is no lowercase English collision to guard
+//      against, unlike "contested" below).
+//   2. `contested` used AS THE KEY, not the ordinary adjective: the corpus
+//      run's own two real hits (trace 134, game 160; trace 366, game 198)
+//      both read "the contested list" -- naming the fact list's own
+//      `contested` field as a noun, not describing a square. "d5 is a
+//      contested square" (the adjective, singular) must never flag; that
+//      shape is common, honest chess prose. "contested squares:" or
+//      "contested:" (colon-led list framing, per the brief's own examples)
+//      flags too, though neither shape appeared in the corpus run itself.
+const VOICE_LABEL_LEAK_KEY_RE = /\b(attackedBy|defendedBy|perPly)\b/g;
+const VOICE_LABEL_LEAK_CONTESTED_RE = /\bcontested\s+list\b|\bcontested(?:\s+squares)?\s*:/gi;
+
 // Round 3 Task 13 (item 5/E, trust floor): a small, precision-over-recall
 // detector for "did she explicitly ask for the number" -- deliberately
 // narrow, the same discipline every other checker in this file follows: a
@@ -1211,6 +1256,16 @@ function checkVoice(text: string, _opts: { userAskedForNumber?: boolean } = {}):
   }
   for (const m of text.matchAll(VOICE_SIGNED_NUMBER_RE)) {
     violations.push(`voice-number: ${m[0]}`);
+  }
+
+  for (const m of text.matchAll(VOICE_SELF_CORRECTION_RE)) {
+    violations.push(`voice-self-correction: ${m[1].toLowerCase()}`);
+  }
+  for (const m of text.matchAll(VOICE_LABEL_LEAK_KEY_RE)) {
+    violations.push(`voice-label-leak: ${m[0]}`);
+  }
+  for (const m of text.matchAll(VOICE_LABEL_LEAK_CONTESTED_RE)) {
+    violations.push(`voice-label-leak: ${m[0].trim()}`);
   }
 
   return violations;
@@ -2152,6 +2207,12 @@ export const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
   "voice-word":
     "is a banned word -- for engine say \"our chess brain\"; for a move, say what it does: developing, regrouping, a retreat, a waiting move, a preventing move.",
   "voice-number": "never state a number for the position.",
+  // Game 198 follow-up round (2026-09-22), brief-6b (fix round: "actually,"
+  // dropped, see VOICE_SELF_CORRECTION_RE's comment).
+  "voice-self-correction":
+    "second-guesses itself mid-reply (\"wait,\"). state the corrected fact plainly and drop the aside.",
+  "voice-label-leak":
+    "names an internal fact-list field instead of the plain fact. say it in plain words (\"the knight defends it\", not \"defendedBy\").",
 };
 
 export function correctiveSuffix(violations: readonly string[]): string {
@@ -2619,7 +2680,12 @@ export async function chat(
   // template only ever names board facts the persona template itself
   // wrote, so its coverage is cheap and still worth recording for the
   // rollup).
-  const coverageJson = JSON.stringify(computeClaimCoverage(text, facts));
+  // Game 198 follow-up round (2026-09-22, brief-4.md, B3/step 4):
+  // validateChat runs all four checkers (checkPlacementClaims,
+  // checkRelationClaims, checkMateClaims, checkDefenseClaims), so chat
+  // passes ALL_CHECKER_CLASSES -- this call's behaviour is byte-identical
+  // to before the checkedClasses parameter existed.
+  const coverageJson = JSON.stringify(computeClaimCoverage(text, facts, ALL_CHECKER_CLASSES));
 
   // kind is always literally "chat" for this surface -- not caller
   // configurable via trace.kind, even though NarrateTraceContext's shape

@@ -39,10 +39,10 @@ Both open the db `{readonly: true}`, never `openDb()` (that runs `migrateSchema`
 
 ## Trace record
 
-`advice_traces` carries two columns beyond the prior schema: `thinking_pref` (the thinking-effort setting the trace ran under, nullable for older rows) and `coverage_json` (sentence-level claim coverage against the fact list, nullable).
+`advice_traces` carries two columns beyond the prior schema: `thinking_pref` (the thinking-effort setting the trace ran under, nullable for older rows) and `coverage_json` (sentence-level claim coverage against the fact list, nullable). `coverage_json` is written on both routes (game 198 follow-up round, 2026-09-22): a chat row's `checked` counts all four checkers (`validateChat` runs placement, relation, mate, and defense); a band row's (`kind` `nudge`/`warning`) counts `checkDefenseClaims` only, since `validateNarration` runs no placement, relation, or mate check. Compare `checked`/`unchecked` counts only within the same route -- `tools/dossier.ts --coverage --since` splits its rollup by route for this reason.
 
 ## What this does not do
 
-`commit`/`loadedCommit` is not proof the process loaded that code, only that git HEAD is at that commit; only a process you started after the merge, with a boot time you recorded, proves freshness. `coverage_json` is a sentence-level heuristic, not a proof of correctness; a covered sentence can still be true-but-misleading.
+`commit`/`loadedCommit` is not proof the process loaded that code, only that git HEAD is at that commit; only a process you started after the merge, with a boot time you recorded, proves freshness. `coverage_json` is a sentence-level heuristic, not a proof of correctness; a covered sentence can still be true-but-misleading. It is also route-scoped, not a claim about every checker: a band row's `checked` says only that `checkDefenseClaims` looked, not that any placement/relation/mate claim in that reply was checked at all.
 
 See docs/changelog.md for the round that added this.

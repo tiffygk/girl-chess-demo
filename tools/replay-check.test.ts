@@ -20,11 +20,15 @@ import {
   REGEN_RATE_MAX,
   countDbSnapshot,
   checkDbIntact,
+  buildTurningLines,
   type DbCountSnapshot,
 } from "./replay-check";
 import { detectMissedWins } from "../server/annotator/missedWins";
 import { detectUnconverted } from "../server/annotator/unconverted";
 import type { MoveEval } from "../server/annotator/turningPoints";
+import { openDb, createSession, createGame, recordMove, attachEval } from "../server/store/db";
+import { followedBest } from "../src/review/followedBest";
+import type { SummaryMove } from "../src/game/api";
 
 // A legal 8-ply knight shuffle that repeats the start position three times,
 // with evals pinning white at winprob ~1.0. Stored evals are side-to-move
@@ -428,5 +432,49 @@ describe("F5: db isolation is verified by counting, never hashing", () => {
     const before: DbCountSnapshot = { games: 152, moves: 1368, integrity: "ok" };
     const afterCorrupt: DbCountSnapshot = { games: 152, moves: 1368, integrity: "corruption found" };
     expect(checkDbIntact(before, afterCorrupt)).toMatch(/integrity_check returned/);
+  });
+
+  // Game 198 follow-up (2026-09-22), cause 4 mirror fix: buildTurningLines
+  // (tools/replay-check.ts) must set TurningLine.equalMate the same way
+  // manager.ts's getTurningLines does, so followedBest reads a mate tie as
+  // followed rather than a miss. Red proof (run once, restored after):
+  // deleting the `line.equalMate = true` assignment this test depends on
+  // makes this test fail with `followed: false` -- the fix is what makes
+  // it go green, not an unrelated pv/bestSan mismatch.
+  it("buildTurningLines sets equalMate on a mate tie, and followedBest reads it as followed", () => {
+    openDb(":memory:");
+    const sessionId = createSession();
+    const gameId = createGame(sessionId, "maia-1500", "w");
+
+    // 1.e4 e5 2.Nf3 Nc6 3.Bb5 -- an ordinary 5-ply opening. The mate-tie
+    // arithmetic is pure stored-data math (keepsMateSchedule never checks
+    // the board), so the contrived eval_mate values below don't need to
+    // reflect a real forced mate; they only need to match the shape
+    // manager.ts's getTurningLines compares.
+    const sans = ["e4", "e5", "Nf3", "Nc6", "Bb5"];
+    const gameSans: SummaryMove[] = sans.map((san, i) => ({ ply: i + 1, san }));
+    sans.forEach((san, i) => {
+      recordMove({
+        gameId, ply: i + 1, san, uci: "e2e4", fenAfter: "-",
+        timeSpentMs: 0, side: i % 2 === 0 ? "her" : "mallow",
+      });
+    });
+    // Seed ply 4 (after Nc6, white to move): stored mate in 1, best move
+    // d2d4 (legal, differs from the played Bb5).
+    attachEval(gameId, 4, { cp: null, mate: 1, bestMove: "d2d4", pv: ["d2d4"] });
+    // Played ply 5 (Bb5): stored mate in 0 -- schedule kept per
+    // keepsMateSchedule (n=1, a=0 -> true).
+    attachEval(gameId, 5, { cp: null, mate: 0, bestMove: "", pv: [] });
+
+    const tps = [{ rank: 1 as const, ply: 5, san: "Bb5" }];
+    const lines = buildTurningLines(gameId, tps, gameSans);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].bestSan).toBe("d4");
+    expect(lines[0].equalMate).toBe(true);
+
+    const fb = followedBest(lines[0], gameSans);
+    expect(fb?.playedSan).toBe("Bb5");
+    expect(fb?.bestSan).toBe("d4");
+    expect(fb?.followed).toBe(true);
   });
 });
