@@ -7,6 +7,7 @@ import type { CoachBackend } from "./backends/types";
 import { validateNarration } from "./validate";
 import { recordAdviceTrace } from "./traces";
 import { normalizeVoice } from "./textNormalize";
+import { coachThinkingMode } from "./backends/agent-sdk";
 
 // F17 + F18 + F14 + F40: the coach's fact-list assembly, render-only
 // validation, and narration loop. This file never imports an evaluator or
@@ -523,13 +524,19 @@ export async function narrate(
   // budgetMs. So the real thinking level that produced this row's output
   // is whatever agent-sdk.ts's resolveThinkingMode(undefined) falls back
   // to for an omitted pref: GC_COACH_THINKING when it's "disabled"/"low",
-  // else the unbounded default. Mirrored here rather than imported because
-  // that resolver is private to agent-sdk.ts and backend-agnostic callers
-  // (ollama.ts/claude-cli.ts ignore thinking entirely) shouldn't reach
-  // into one backend's internals; this stays a value-vocabulary mirror,
-  // not a behavior change to agent-sdk.ts's own resolution.
-  const envThinking = process.env.GC_COACH_THINKING;
-  const thinkingPref = envThinking === "disabled" || envThinking === "low" ? envThinking : "default";
+  // else the unbounded default.
+  // Followup (2026-09-22 telemetry close-out): this used to be a
+  // HAND-MIRRORED copy of agent-sdk.ts's env check, invisible to any test
+  // if that resolver's logic ever changed -- exactly the "check never
+  // connected to its producer" class this repo has hit before. Now it
+  // calls agent-sdk.ts's own coachThinkingMode() (exported for this
+  // purpose) directly, so there is one source of the env->mode mapping;
+  // only the persistence vocabulary (undefined -> the "default" string,
+  // the column's NULL convention) is decided here, matching the shape
+  // agent-sdk.ts's resolveThinkingMode(undefined) would fall back to.
+  // See index.thinkingPrefDrift.test.ts for the drift guard.
+  const resolvedThinking = coachThinkingMode();
+  const thinkingPref = resolvedThinking ?? "default";
 
   const traceId = recordAdviceTrace({
     gameId: trace.gameId,
