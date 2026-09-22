@@ -1,0 +1,56 @@
+
+> girl-chess@0.0.0 gate
+> tsx tools/gate.ts
+
+[gate] eight checks: database, in-play guard, tests, types, lint, truth-check, replay-check, publish-scan. about 2 to 4 minutes.
+[gate] database... (main worktree (live db, source of truth): 197 games, 3230 moves, integrity ok) ok
+[gate] in-play guard... ok
+[gate] tests... FAIL (exit 1)
+
+ RUN  v4.1.10 /Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/wt-quiet
+
+ ❯ src/review/debriefBullets.test.ts (100 tests | 1 failed) 563ms
+     × makes both no-finding fallbacks unreachable when a missed win exists 14ms
+
+ Test Files  1 failed | 175 passed (176)
+      Tests  1 failed | 2701 passed (2702)
+   Start at  18:16:15
+   Duration  94.76s (transform 6.44s, setup 0ms, import 17.36s, tests 231.14s, environment 11ms)
+
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository: /nonexistent/path/for/this/fixture
+fatal: not a git repository: /nonexistent/path/for/this/fixture
+fatal: not a git repository: /nonexistent/path/for/this/fixture
+fatal: not a git repository: /nonexistent/path/for/this/fixture
+fatal: not a git repository: /nonexistent/path/for/this/fixture
+fatal: not a git repository: /nonexistent/path/for/this/fixture
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/review/debriefBullets.test.ts > missed-win bullets > makes both no-finding fallbacks unreachable when a missed win exists
+AssertionError: expected 'you had checkmate on the board 5 time…' to be 'you had checkmate on the board 5 time…' // Object.is equality
+
+Expected: "you had checkmate on the board 5 times and played past it. when you are winning big, look at every check you have and count her king's escape squares before you pick a quieter move."
+Received: "you had checkmate on the board 5 times and played past it. when you are winning big, look at every check you have and count her king's escape squares before you pick a slower move."
+
+ ❯ src/review/debriefBullets.test.ts:1355:21
+    1353|     expect(texts).not.toContain("no repeat pattern showed up");
+    1354|     const wn = bullets.find((b) => b.section === "watch next time")!;
+    1355|     expect(wn.text).toBe(
+       |                     ^
+    1356|       "you had checkmate on the board 5 times and played past it. when…
+    1357|     );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+[gate] types... ok
+[gate] lint... ok
+[gate] truth-check... ok
+[gate] replay-check... ok
+[gate] publish-scan... ok
+
+GATE: FAIL
+  - tests: exit 1
+
+Do not report this branch as green. Do not merge.

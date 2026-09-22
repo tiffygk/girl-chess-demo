@@ -1022,7 +1022,7 @@ function checkSideAttributionClaims(text: string, facts: ChatFactList): string[]
 // counting language, the same class of jargon as engine/eval/cp. She reads
 // a game in move-number pairs (the `move` field perPlyForModel/focusForModel
 // now carry alongside ply), never in raw plies.
-const VOICE_BANNED_WORDS_RE = /\b(engine|evals?|evaluations?|centipawns?|cp|ply)\b/gi;
+const VOICE_BANNED_WORDS_RE = /\b(engine|evals?|evaluations?|centipawns?|cp|ply|quiet(?:ly|er|est)?)\b/gi;
 // A signed integer/decimal ("+50", "-3.4") -- a stated eval number for the
 // position. Deliberately requires the leading sign: an unsigned integer
 // ("mate in 3", "move 12") is a ply/mate count, not a position eval, and
@@ -1995,7 +1995,8 @@ const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
   "defense-claim": "isn't a defense the position supports -- drop the defense claim.",
   "mate-claim": "doesn't match the analysis -- drop the mate claim.",
   "voice-notation": "say the piece and where it goes in plain words, not notation.",
-  "voice-word": "never say engine -- say \"our chess brain\".",
+  "voice-word":
+    "is a banned word -- for engine say \"our chess brain\"; for a move, say what it does: developing, regrouping, a retreat, a waiting move, a prophylactic move.",
   "voice-number": "never state a number for the position.",
 };
 
