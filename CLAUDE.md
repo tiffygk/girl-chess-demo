@@ -1,6 +1,8 @@
-## ACTIVE WORK -- start here (updated 2026-08-05, trimmed for length — full history in `docs/changelog.md`)
+## ACTIVE WORK -- start here (updated 2026-09-21, trimmed for length — full history in `docs/changelog.md`)
 
-**Read `6 handoffs/HANDOFF — Next model (2026-08-05).md` FIRST** (written for a fresh context — current
+**Newest handoff (2026-09-21): vault `6 handoffs/HANDOFF — Game 198 fixes round (2026-09-21).md`. Read it FIRST.** The game 198 coach investigation is closed (four root causes, six next steps in the vault map's "Game 198" section); its fixes plan is written at `.superpowers/sdd/rounds/2026-09-21-game198-fixes/plan.md` and NOT started until the owner says so. Merged tonight: the "quiet" ban and move-word vocabulary (PR #33, #35), the retro rules (PR #36: hook #18 refuses `git add -A`, `.claude/rules/docs-pages.md`). Main 66f3f91 at handoff. The 2026-08-05 paragraph below is history.
+
+**Read `6 handoffs/HANDOFF — Next model (2026-08-05).md`** (historical now) (written for a fresh context — current
 state, the play answer, and the one greenlit build). **Everything through 2026-08-05 is SHIPPED to `main`
 and gate-green (code tip `4cb86c0`, docs `316dfb4`).** The round-3
 continuation queue and the day's work are all merged: the coach general-theory router fix; the
