@@ -1160,6 +1160,43 @@ const VOICE_SIGNED_NUMBER_RE = /[+-]\d+(?:\.\d+)?/g;
 // the letters immediately following it).
 const VOICE_CP_NUMBER_RE = /\b\d+(?:\.\d+)?\s*(?:cp|centipawns?)\b/gi;
 
+// Game 198 follow-up round (2026-09-22), brief-6b: two more live voice
+// tells, both mechanical (precision over recall, same discipline as the
+// three checks above).
+//
+// Self-correction: "wait," or "actually," at a CLAUSE start (sentence
+// start, or right after a comma, semicolon, or dash), never mid-clause --
+// "that is actually a strong reply" must pass; "she plays Nf3, actually,
+// that's forcing" or a sentence opening "wait, ..." must not. The
+// alternation's non-capturing branch is either "^" (true start of the
+// returned text) or one of the clause-boundary characters followed by
+// optional whitespace -- a preceding sentence's closing "." plus the "\n\n"
+// paragraph break chat.ts's own checkOpponentQualityClaims appends before
+// its correction (see that function, and the comment on validateChat's
+// call site below) is exactly this second branch, which is why that
+// correction is applied strictly AFTER validateChat runs, never fed back
+// through it (chat.ts's chat(), the `if (modelText !== null)` block after
+// the model/regen loop).
+const VOICE_SELF_CORRECTION_RE = /(?:^|[.!?,;–—-]\s*)(wait,|actually,)/gi;
+
+// Label leak: an internal fact-list KEY NAME reaching prose, rather than
+// the plain-English fact it names. Two shapes, found by running this
+// pattern over all 168 stored model chat rows before this change shipped
+// (brief-6b's corpus step):
+//   1. `attackedBy`/`defendedBy`/`perPly`, matched AS WRITTEN (camelCase,
+//      case-sensitive -- there is no lowercase English collision to guard
+//      against, unlike "contested" below).
+//   2. `contested` used AS THE KEY, not the ordinary adjective: the corpus
+//      run's own two real hits (trace 134, game 160; trace 366, game 198)
+//      both read "the contested list" -- naming the fact list's own
+//      `contested` field as a noun, not describing a square. "d5 is a
+//      contested square" (the adjective, singular) must never flag; that
+//      shape is common, honest chess prose. "contested squares:" or
+//      "contested:" (colon-led list framing, per the brief's own examples)
+//      flags too, though neither shape appeared in the corpus run itself.
+const VOICE_LABEL_LEAK_KEY_RE = /\b(attackedBy|defendedBy|perPly)\b/g;
+const VOICE_LABEL_LEAK_CONTESTED_RE = /\bcontested\s+list\b|\bcontested(?:\s+squares)?\s*:/gi;
+
 // Round 3 Task 13 (item 5/E, trust floor): a small, precision-over-recall
 // detector for "did she explicitly ask for the number" -- deliberately
 // narrow, the same discipline every other checker in this file follows: a
@@ -1211,6 +1248,16 @@ function checkVoice(text: string, _opts: { userAskedForNumber?: boolean } = {}):
   }
   for (const m of text.matchAll(VOICE_SIGNED_NUMBER_RE)) {
     violations.push(`voice-number: ${m[0]}`);
+  }
+
+  for (const m of text.matchAll(VOICE_SELF_CORRECTION_RE)) {
+    violations.push(`voice-self-correction: ${m[1].toLowerCase()}`);
+  }
+  for (const m of text.matchAll(VOICE_LABEL_LEAK_KEY_RE)) {
+    violations.push(`voice-label-leak: ${m[0]}`);
+  }
+  for (const m of text.matchAll(VOICE_LABEL_LEAK_CONTESTED_RE)) {
+    violations.push(`voice-label-leak: ${m[0].trim()}`);
   }
 
   return violations;
@@ -2152,6 +2199,11 @@ export const VIOLATION_KIND_GUIDANCE: Record<string, string> = {
   "voice-word":
     "is a banned word -- for engine say \"our chess brain\"; for a move, say what it does: developing, regrouping, a retreat, a waiting move, a preventing move.",
   "voice-number": "never state a number for the position.",
+  // Game 198 follow-up round (2026-09-22), brief-6b.
+  "voice-self-correction":
+    "second-guesses itself mid-reply (\"wait,\"/\"actually,\"). state the corrected fact plainly and drop the aside.",
+  "voice-label-leak":
+    "names an internal fact-list field instead of the plain fact. say it in plain words (\"the knight defends it\", not \"defendedBy\").",
 };
 
 export function correctiveSuffix(violations: readonly string[]): string {

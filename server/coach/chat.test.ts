@@ -1459,6 +1459,83 @@ describe("coach/chat.ts (F16, this-game grounding)", () => {
     });
   });
 
+  // Game 198 follow-up round (2026-09-22), brief-6b: two more live voice
+  // tells found in her real games (trace 249/251/362 for self-correction,
+  // trace 134/366 for the label leak -- see server/coach/chat.ts's own
+  // comment above VOICE_SELF_CORRECTION_RE/VOICE_LABEL_LEAK_* for the
+  // corpus evidence). Same discipline as the Task 3a voice guard above:
+  // mechanical, precision over recall.
+  describe("validateChat — self-correction and label-leak voice tells (brief 6b)", () => {
+    function voiceFacts(): ChatFactList {
+      return assembleChatFactList([{ ply: 1, san: "e4" }, { ply: 2, san: "e5" }], { mode: "live" });
+    }
+
+    it("flags 'wait,' at a sentence start", () => {
+      const facts = voiceFacts();
+      const result = validateChat("wait, push to e4 and you're fine.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-self-correction"))).toBe(true);
+    });
+
+    it("does not flag the same fact without the self-correcting aside", () => {
+      const facts = voiceFacts();
+      const result = validateChat("push to e4 and you're fine.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("flags 'actually,' after a comma (a clause start mid-sentence)", () => {
+      const facts = voiceFacts();
+      const result = validateChat("she plays knight to f3, actually, that's forcing.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-self-correction"))).toBe(true);
+    });
+
+    it("does not flag 'actually' when no comma follows (not a self-correcting aside)", () => {
+      const facts = voiceFacts();
+      const result = validateChat("that is actually a strong reply for you.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    it("flags a fact-list key name leaking into prose ('defendedBy')", () => {
+      const facts = voiceFacts();
+      const result = validateChat("the knight's defendedBy count is high there.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-label-leak"))).toBe(true);
+    });
+
+    it("flags 'attackedBy' and 'perPly' leaking into prose", () => {
+      const facts = voiceFacts();
+      const r1 = validateChat("the pawn's attackedBy list includes your rook.", facts);
+      expect(r1.ok).toBe(false);
+      if (!r1.ok) expect(r1.violations.some((v) => v.startsWith("voice-label-leak"))).toBe(true);
+      const r2 = validateChat("your perPly notes show a swing here.", facts);
+      expect(r2.ok).toBe(false);
+      if (!r2.ok) expect(r2.violations.some((v) => v.startsWith("voice-label-leak"))).toBe(true);
+    });
+
+    it("does NOT flag 'a contested square' (the ordinary word, not the key)", () => {
+      const facts = voiceFacts();
+      const result = validateChat("d5 is a contested square right now.", facts);
+      expect(result.ok).toBe(true);
+    });
+
+    // The corpus's own two real hits (trace 134, 366) both read this way:
+    // the model names the fact list's own `contested` field as a noun.
+    it("flags 'the contested list' -- naming the field, not the board", () => {
+      const facts = voiceFacts();
+      const result = validateChat("check the contested list, c7 attacks your queen.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-label-leak"))).toBe(true);
+    });
+
+    it("flags 'contested:' used as key-shaped list framing", () => {
+      const facts = voiceFacts();
+      const result = validateChat("contested: d5, e4.", facts);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.startsWith("voice-label-leak"))).toBe(true);
+    });
+  });
+
   // Whole-branch review (2026-08-03, Critical finding 1): W2 originally
   // lifted the output number-ban whenever `userAskedForNumber` was true, on
   // the theory that "she asked for it, so let it through" -- but no true cp
