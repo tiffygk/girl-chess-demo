@@ -129,7 +129,12 @@ async function main() {
 
   const placementCell = newCell();
   const placementMissCell = newCell(); // M2: separate miss cell for placement
-  const relationInGrammarCell = newCell();
+  // Split into a false-alarm arm (n = label-true claims only) and a miss
+  // arm (n = label-false claims only), same discipline as the placement
+  // family's two cells -- a single mixed-denominator cell understates the
+  // miss rate among the claims that can actually be missed.
+  const relationFalseAlarmCell = newCell();
+  const relationMissCell = newCell();
   const relationSemanticCutCell = newCell();
   const relationOutOfScope = { n: 0 };
   const relationParaphrase = { n: 0, caught: 0 };
@@ -169,14 +174,18 @@ async function main() {
         continue;
       }
       const { relationFlagged } = runBoth(claim.text, facts);
-      relationInGrammarCell.n++;
-      if (claim.label && relationFlagged) {
-        relationInGrammarCell.falseAlarms++;
-        pushExample(relationInGrammarCell, claim.text, claim.label, `trace ${id}: true claim flagged as a violation`);
-      }
-      if (!claim.label && !relationFlagged) {
-        relationInGrammarCell.misses++;
-        pushExample(relationInGrammarCell, claim.text, claim.label, `trace ${id}: false claim NOT flagged (miss)`);
+      if (claim.label) {
+        relationFalseAlarmCell.n++;
+        if (relationFlagged) {
+          relationFalseAlarmCell.falseAlarms++;
+          pushExample(relationFalseAlarmCell, claim.text, claim.label, `trace ${id}: true claim flagged as a violation`);
+        }
+      } else {
+        relationMissCell.n++;
+        if (!relationFlagged) {
+          relationMissCell.misses++;
+          pushExample(relationMissCell, claim.text, claim.label, `trace ${id}: false claim NOT flagged (miss)`);
+        }
       }
       if (claim.semanticCut) {
         relationSemanticCutCell.n++;
@@ -286,7 +295,10 @@ async function main() {
     `| placement (miss arm, false claims only) | ${placementMissCell.n} | -- | -- | ${placementMissCell.misses} | ${pct(placementMissCell.misses, placementMissCell.n)} | -- | -- |`
   );
   lines.push(
-    `| relation, in-grammar | ${relationInGrammarCell.n} | ${relationInGrammarCell.falseAlarms} | ${pct(relationInGrammarCell.falseAlarms, relationInGrammarCell.n)} | ${relationInGrammarCell.misses} | ${pct(relationInGrammarCell.misses, relationInGrammarCell.n)} | -- | -- |`
+    `| relation, in-grammar (false-alarm arm) | ${relationFalseAlarmCell.n} | ${relationFalseAlarmCell.falseAlarms} | ${pct(relationFalseAlarmCell.falseAlarms, relationFalseAlarmCell.n)} | -- | -- | -- | -- |`
+  );
+  lines.push(
+    `| relation, in-grammar (miss arm, false claims only) | ${relationMissCell.n} | -- | -- | ${relationMissCell.misses} | ${pct(relationMissCell.misses, relationMissCell.n)} | -- | -- |`
   );
   lines.push(
     `| relation, semantic cut (attackers() vs legal capture disagree) | ${relationSemanticCutCell.n} | -- | -- | -- | -- | -- | ${relationSemanticCutCell.semanticCut} |`
@@ -322,7 +334,8 @@ async function main() {
   };
   dumpCell("placement false alarms / leniency", placementCell);
   dumpCell("placement misses", placementMissCell);
-  dumpCell("relation in-grammar", relationInGrammarCell);
+  dumpCell("relation in-grammar false alarms", relationFalseAlarmCell);
+  dumpCell("relation in-grammar misses", relationMissCell);
   dumpCell("relation semantic cut", relationSemanticCutCell);
   dumpCell("today's-board placement control", placementControlCell);
   dumpCell("today's-board relation control", relationControlCell);
@@ -334,10 +347,8 @@ async function main() {
   console.log(
     `[checker-sweep] placement false-alarm ${pct(placementCell.falseAlarms, placementCell.n)} (n=${placementCell.n}), ` +
       `placement miss ${pct(placementMissCell.misses, placementMissCell.n)} (n=${placementMissCell.n}), ` +
-      `relation false-alarm ${pct(relationInGrammarCell.falseAlarms, relationInGrammarCell.n)}, relation miss ${pct(
-        relationInGrammarCell.misses,
-        relationInGrammarCell.n
-      )} (n=${relationInGrammarCell.n})`
+      `relation false-alarm ${pct(relationFalseAlarmCell.falseAlarms, relationFalseAlarmCell.n)} (n=${relationFalseAlarmCell.n}), ` +
+      `relation miss ${pct(relationMissCell.misses, relationMissCell.n)} (n=${relationMissCell.n})`
   );
 }
 
