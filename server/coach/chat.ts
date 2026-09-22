@@ -18,7 +18,7 @@ import { toMoverCp } from "../annotator/classify";
 // stop: phaseParity.test.ts will fail.
 import { phasesForGame, type GamePhase } from "../../src/review/gamePhases";
 import type { ThreatFacts, RecommendationFacts, ThreatMotif } from "../annotator/motifs";
-import type { CoachBackend, CoachUsage } from "./backends/types";
+import type { CoachBackend, CoachUsage, ThinkingPref } from "./backends/types";
 import { getPersona, isTimeoutError, type NarrateTraceContext } from "./index";
 import { SAN_RE, isAllowedSanToken } from "./validate";
 import { checkDefenseClaims } from "./defenseClaims";
@@ -2182,6 +2182,16 @@ export async function chat(
     onUsage?: (usage: CoachUsage) => void;
     standingNotes?: string[];
     onBackendFailure?: (backendName: string) => void;
+    // Game 198 fixes (2026-09-21), Task D2: MEASUREMENT ONLY -- overrides
+    // attempt 0's thinkingPref for the replay tool (Task D3), which needs
+    // to ask "what would this row have looked like at a different thinking
+    // level" without touching thinkingForIntent(intent)'s live/review
+    // derivation. Additive/optional, every existing call site (chat.test.ts
+    // and its siblings, manager.ts) omits it and gets exactly today's
+    // behavior. A regen (attempt 1) is unaffected -- it always escalates to
+    // "default" regardless of this override, same as every other attempt-1
+    // branch in this loop.
+    thinkingOverride?: ThinkingPref;
   }
 ): Promise<{
   text: string;
@@ -2292,7 +2302,17 @@ export async function chat(
   // order -- what the row's own `output` column can never hold once a regen
   // overwrites it. See EXPECTED_COLUMNS.advice_traces' `attempts_json`
   // comment in server/store/db.ts for the shape and the NULL convention.
-  const attempts: { output: string; violations: string[]; validated: boolean }[] = [];
+  // Game 198 fixes (2026-09-21), Task D1: each entry also carries the
+  // thinking level IT ran at -- a rejected attempt 0's level would
+  // otherwise be lost once the row's own thinking_pref reads the winning
+  // (regen) attempt's level.
+  const attempts: { output: string; violations: string[]; validated: boolean; thinking: string }[] = [];
+  // Game 198 fixes (2026-09-21), Task D1: the winning attempt's thinking
+  // level, set right after thinkingPref is computed each iteration --
+  // whatever the LAST iteration set is what actually produced the row's
+  // `output` (attempt 0 on a clean first try, attempt 1 on a regen), so
+  // this is exactly the value insertAdviceTrace's thinkingPref needs below.
+  let lastThinkingPref: string | null = null;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt === 1) {
@@ -2340,7 +2360,9 @@ export async function chat(
     // it out. CHAT_REVIEW_BUDGET_MS's 180s is a timeout ceiling, not a
     // think-harder directive -- there is no mode gate here; review chat
     // uses the exact same thinkingForIntent(intent) attempt-0 pref as live.
-    const thinkingPref = attempt === 0 ? thinkingForIntent(intent) : "default";
+    const thinkingPref =
+      attempt === 0 ? (opts?.thinkingOverride ?? thinkingForIntent(intent)) : "default";
+    lastThinkingPref = thinkingPref;
     // Task 1c: fires right before the backend is actually called -- a REAL
     // pipeline event, not a guess. Attempt 0 fires this once; a regen
     // (attempt 1) fires it again, same as onRedraft just above.
@@ -2384,7 +2406,7 @@ export async function chat(
       // for BOTH attempt 0 and a regen's attempt 1 (whichever one actually
       // threw non-timeout), never for a timeout on either attempt.
       if (failureCause === "backend-down") opts?.onBackendFailure?.(backend.name);
-      attempts.push({ output: attemptOutput, violations: [], validated: false });
+      attempts.push({ output: attemptOutput, violations: [], validated: false, thinking: thinkingPref });
       // Wave 3, item 4 regression (live-eval): an attempt-0 TIMEOUT must not
       // throw away the reserved half of the budget. The cap means "attempt 0
       // may not consume more than half", NOT "a slow answer dies at half" --
@@ -2429,12 +2451,12 @@ export async function chat(
       // replay). A rejected attempt never reaches this branch, so its buffer
       // is discarded unread.
       if (opts?.onDelta) for (const d of attemptDeltas) opts.onDelta(d);
-      attempts.push({ output: attemptOutput, violations: [], validated: true });
+      attempts.push({ output: attemptOutput, violations: [], validated: true, thinking: thinkingPref });
       break;
     }
     sawValidationFailure = true;
     const violations: string[] = "violations" in result ? [...result.violations] : [];
-    attempts.push({ output: attemptOutput, violations, validated: false });
+    attempts.push({ output: attemptOutput, violations, validated: false, thinking: thinkingPref });
     if (attempt === 0) {
       regenCount = 1;
       const suffixViolations = violations.length > 0 ? violations : ["the previous answer"];
@@ -2550,6 +2572,11 @@ export async function chat(
     // of the row could not tell what she saw). A template row always keeps
     // its attempt(s), even when there is only one.
     attemptsJson: attempts.length > 1 || source === "template" ? JSON.stringify(attempts) : null,
+    // Game 198 fixes (2026-09-21), Task D1: the level that produced this
+    // row's own `output` -- whichever iteration last set lastThinkingPref
+    // (attempt 0 on a clean first try, attempt 1 on a regen). NULL only on
+    // the off-topic early return above, which never enters this loop.
+    thinkingPref: lastThinkingPref,
   });
 
   return failureCause ? { text, source, cause: failureCause, traceId } : { text, source, traceId };
