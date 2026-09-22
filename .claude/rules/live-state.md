@@ -2,6 +2,8 @@
 
 Purpose: this repo now exposes live game/coach state as structured data, not just as pixels on the board. Hit `/api/agent/manifest` first, or read this file, before vision-reading a screenshot to answer "what's the game state right now."
 
+Debugging a coach-vision error (the coach stating something false about the board) has its own runbook: the `debug-coach-vision` project skill uses the surfaces below (dossier, `coverage_json`, the claim checkers) to localize it to a fact-gap, a validator-gap, or a phrasing-gap. Reach for that skill, not vision, when the coach mis-describes the board.
+
 ## Endpoints
 
 | endpoint | returns | note |

@@ -8,8 +8,10 @@ Build rounds: every feature/fix/feedback round runs through `/build-round` (`.cl
 Fable writes the plan under `superpowers:writing-plans`; the owner approves; then a Fable window controls execution end to end under `superpowers:subagent-driven-development`, Sonnet subagents for logic waves and Fable subagents for visual/UX-UI waves (`frontend-design:frontend-design`, ported to the component library for owner approval before `src/`), then a Sonnet review under `superpowers:test-driven-development`, then a Fable visual-gate subagent.
 The ledger under `.superpowers/sdd/rounds/` carries state between windows and every subagent.
 
-Worktree rule: one worktree, one writer, for the whole time either agent is live. Commit as you go rather than accumulating one large dirty tree; point reviewers at a named commit, never the working tree.
+Worktree rule: one worktree, one writer, for the whole time either agent is live. Commit as you go rather than accumulating one large dirty tree; point reviewers at a named commit, never the working tree. A round's build branch is checked out in a worktree, never in the owner's main checkout: her live `npm run dev` runs from the main checkout under tsx watch, so checking out a round branch there hot-reloads agent WIP into her running game. Nearly bit 2026-09-22 when she started a game while a follow-up's uncommitted coach edits sat in the main-checkout tree (they happened to be behavior-preserving). Docs-only or `.claude/`-only edits are the safe exception, since tsx watch does not reload from them.
 See docs/changelog.md#worktree-rule-2026-07-30
+
+Stop-hook note: this repo has a Stop hook that auto-commits any CLAUDE.md working-tree change as its own commit (message `docs: auto-commit CLAUDE.md working-tree update (Stop hook)`). Expect a CLAUDE.md edit to land as a separate commit and to be absent from your own staged diff; do not spend turns diagnosing why (it cost several on 2026-09-22). Do not fight it with a soft-reset mid-round, which only races the hook; build your commit on top.
 
 Playtest freshness: a playtest is evidence only if the served process is verified to be the branch tip immediately before she plays. The only cheap proof is temporal: start it yourself after the merge.
 See docs/changelog.md#playtest-freshness-rule-2026-08-01
