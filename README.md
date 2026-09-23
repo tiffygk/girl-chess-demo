@@ -57,7 +57,7 @@ Two guardrails: every coach reply is checked before it reaches you, and the debr
 
 ## How it's built
 
-I designed and built this 0-to-1 as a product manager's first vibed project ever, via Claude Code: spec, plan, execute, adversarial review, gate. A live playtest and evals drove each increment.
+I designed and built this 0-to-1 as a product manager's first vibed project ever, via Claude Code: spec, plan, execute, adversarial review, gate. The spec came first: [the PRD-lite](docs/prd-lite.md) names three hypotheses and the metric that would kill each one. A live playtest and evals drove each increment.
 
 <details>
 <summary>Developer detail</summary>
