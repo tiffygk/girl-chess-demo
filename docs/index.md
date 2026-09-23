@@ -45,7 +45,7 @@ Everything below is that spec turned into a shipped, gated build.
 1. **[One increment, plan to gate](increment-3.95.md)**: increment 3.95 end to end. The plan an AI agent wrote from playtest feedback, broken into 11 tasks, and the live gate it had to pass before merging.
 2. **[Where the review earned its keep](where-the-review-earned-its-keep.md)**: three bugs the adversarial review caught in one increment. A coach calling a loss a win, a security hole, and a regression, all before they shipped.
 3. **[Build-plan red team](build-plan-red-team.md)**: before increment 4, a three-agent panel (two critics, one defender separating real problems from nitpicks) attacked the plan and found my own north star metric didn't work. The finding is included, unsoftened.
-4. **[The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html)**: every front-end component that shipped, each one beside the alternatives it beat and the reason it won. The archive tab keeps the roads not taken. It is the working file I design against, not a writeup made afterwards, so it carries the shorthand of a real one; pruned on 2026-09-08 to what shipped, its log runs through 2026-09-09.
+4. **[The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html)**: every front-end component as it ships, grouped by where you meet it in the game and by who it belongs to: you, mallow, the coach, or the menu. The archive tab keeps the options that lost. It is the working file I design against, updated 2026-09-22.
 
 ## Decisions, measured
 
@@ -123,7 +123,7 @@ The rest of this repository is the app: `server/` (game engine, coach, analysis)
 - [The build plan's red team](build-plan-red-team.md): the plan reviewed against itself before the build.
 - [Where the review earned its keep](where-the-review-earned-its-keep.md): three real catches by the review process.
 - [Changelog](changelog.md): the full work log, newest first.
-- [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): every piece of the interface, shown as it was reviewed before it went into the game.
+- [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): every piece of the interface as it ships, grouped by where you meet it in the game.
 - [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence, and where the deterministic code ends and the model begins.
 - [The coach eval v3 dashboard](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html): Sonnet graded against Opus with the key sealed until after every grade, and which model it recommended.
 - [The coach quality dashboard](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html): why the coach's answers felt slow, and where a slow answer's time actually goes.
