@@ -28,7 +28,7 @@ The move-4 turning point replayed: solid arrows for what happened, dashed for wh
 
 I directed an AI coding agent through a structured build process instead of writing code by hand. The adversarial review caught a security hole and an honesty bug before either shipped. A later measurement pass caught something the review couldn't: the coach's advice was sometimes wrong not because the model was weak, but because it was never given the facts it needed. See **[decisions, measured](technical-decisions.md)** for the finding, the fix, and the harness that re-runs the model comparison.
 
-Shipped as of 2026-09-09: increment 3.95 and the rounds since, each checked before it merged. Open games survive a server restart; past games are listed by day, with a back button that leaves a game without ending it. Opponents run to 1900, and a fresh clone gets `npm run doctor`. Increment 4 (spaced-repetition drills, a progress dashboard, "it remembers") is roadmap, not built. It's included anyway: red-teaming your own plan before you build it is part of the process this repo is meant to show.
+Shipped as of 2026-09-22: increment 3.95 and the rounds since, each checked before it merged. Open games survive a server restart; past games are listed by day, with a back button that leaves a game without ending it. Opponents run to 1900, and a fresh clone gets `npm run doctor`. Increment 4 (spaced-repetition drills, a progress dashboard, "it remembers") is roadmap, not built. It's included anyway: red-teaming your own plan before you build it is part of the process this repo is meant to show.
 
 ## Start here: the product spec
 
@@ -49,12 +49,14 @@ Everything below is that spec turned into a shipped, gated build.
 
 ## Decisions, measured
 
-Three live decisions, weighed in the open, all shipped and merged: **[technical-decisions.md →](technical-decisions.md)**
+Five live decisions, weighed in the open, all shipped and merged: **[technical-decisions.md →](technical-decisions.md)**
 1. **The coach's advice was sometimes wrong, and it wasn't the model.** The cause was a fact gap. The coach was reasoning about the position from facts it never had. Giving it those facts fixed both numbers in the July 2026 eval: placement errors went from 7.5% to 0, and explanation answers from 13-15 seconds to about 4. Both held for a smaller model and a larger one, so model tier became a downstream decision. The committed harness (`tools/coach-eval/`) re-runs the model comparison. The placement number comes from that July eval, which the harness does not repeat.
 2. **The coach was too slow.** The trace-driven diagnosis, three options, and why I warmed the free path (an in-process Agent SDK backend) instead of paying for a metered API.
 3. **The coach gave me bad advice about a defended piece.** Why the fix was a computed fact, not a bigger model or an extra engine call.
+4. **The coach kept calling moves "quiet".** Why a real chess term came out of the coach's voice, and why the ban now runs on every chat reply instead of living only in the prompt.
+5. **7 in 8 of the board check's rejections were wrong.** How I fixed the check's precision instead of deleting it, proven on 201 stored coach conversations instead of waiting for new games.
 
-A fourth, from 2026-09-08, lives in pull requests #15 to #17, not that page. **The chat could have contradicted its own hints.** I measured first: 142 chat replies paired with the hint ladder's facts for the same position; none recommended a different move. Now the chat reads that same verified search during play, for the position or any move you ask about but haven't made yet.
+One more, from 2026-09-08, lives in pull requests #15 to #17, not that page. **The chat could have contradicted its own hints.** I measured first: 142 chat replies paired with the hint ladder's facts for the same position; none recommended a different move. Now the chat reads that same verified search during play, for the position or any move you ask about but haven't made yet.
 
 ## How the tutor is kept honest
 
@@ -111,11 +113,11 @@ Then [technical-decisions.md](technical-decisions.md) and this doc, for anything
 
 The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). Every merge is gated against the 51 committed games (`npm run gate`). A fresh clone runs `setup.sh` once for lc0, the pinned Stockfish 19, and the nine opponent files, then `npm run doctor` to say what is missing; the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) has the steps. [The hint ladder and the coach](hint-ladder-and-coach.md) walks the three coach text surfaces (ladder, band, chat) cited straight to the code. The [changelog](changelog.md) is the full work log, newest first.
 
-## Every page on this site
+## Sample documentation
 
 - [The product spec](prd-lite.md): who the tutor is for, what it promises, and how success is measured.
 - [The hint ladder and the coach](hint-ladder-and-coach.md): how a hint is checked before it is shown, and how the chat stays on the same facts.
-- [Technical decisions](technical-decisions.md): three decisions, the evidence behind each, and what each cost.
+- [Technical decisions](technical-decisions.md): five decisions, the evidence behind each, and what each gave up or left open.
 - [How the tutor is kept honest](evaluation.md): the checks every merge runs against the committed games.
 - [Increment 3.95](increment-3.95.md): one increment followed from plan to gate.
 - [The build plan's red team](build-plan-red-team.md): the plan reviewed against itself before the build.
