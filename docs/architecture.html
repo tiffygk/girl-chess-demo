@@ -48,41 +48,149 @@
   .thesis .body{color:var(--ink2);font-size:14.5px;margin-top:6px}
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px;margin-bottom:24px}
   .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:15px 17px;box-shadow:var(--shadow)}
-  .kpi .l{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+  .kpi .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
   .kpi .v{font-size:26px;font-weight:750;margin:5px 0 2px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
   .kpi .d{font-size:12.5px;color:var(--ink2)}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
     padding:22px 24px 20px;box-shadow:var(--shadow);margin-bottom:20px}
-  .panel .num{font-size:11.5px;font-weight:700;color:var(--accent);letter-spacing:.05em}
+  .panel .num{font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.05em}
   .panel h2{font-size:18px;font-weight:700;margin:3px 0 8px;letter-spacing:-.01em}
   .panel p{font-size:14.5px;color:var(--ink2);margin-bottom:10px}
   .panel p:last-child{margin-bottom:0}
   .panel p strong,.panel li strong{color:var(--ink);font-weight:650}
   .panel code{background:var(--line2);padding:1px 5px;border-radius:4px;font-size:12.5px;
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .chartbox{width:100%;overflow-x:auto;margin:6px 0 4px}
+  .fig{max-width:560px;margin:14px 0 0}
+  .fig.wide{max-width:none}
+  .chartbox{width:100%}
   svg{display:block;max-width:100%;height:auto;font-family:inherit}
+  .chartbox>svg{width:100%}
   svg text{fill:var(--ink2)}
   .axislbl{font-size:11.5px;fill:var(--muted)}
   .vallbl{font-size:12px;font-weight:650;fill:var(--ink)}
+  .sub2{font-size:11.5px;fill:var(--ink2)}
   .caxis{stroke:var(--line);stroke-width:1}
   .grid{stroke:var(--line2);stroke-width:1}
-  .legend{display:flex;flex-wrap:wrap;gap:12px 18px;margin:10px 2px 4px;font-size:13px;color:var(--ink2)}
-  .legend .it{display:flex;align-items:center;gap:7px}
-  .sw{width:13px;height:13px;border-radius:3px;flex:none}
+  .cn{display:none}
+  .an{display:none}
+  @media (max-width:699.98px){.cw{display:none!important}.cn{display:block}}
+  @media (max-width:1079.98px){.aw{display:none!important}.an{display:block}}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:12px;font-size:14px;line-height:1.35;color:var(--ink2)}
+  .legend .it{display:flex;align-items:center;gap:8px}
+  .legend.col{flex-direction:column;gap:6px}
+  .legend svg{flex:none;display:block}
+  .cap{margin-top:14px;border-left:3px solid var(--accent);padding:1px 0 1px 12px}
+  .panel .cap p{margin:0}
+  .cap .h{font-size:15px;font-weight:600;line-height:1.45;color:var(--ink)}
+  .panel .cap .s,.panel .cap .l{font-size:14px;line-height:1.5;color:var(--ink2);margin-top:5px}
+  .cap b{color:var(--ink);font-weight:650}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  /* architecture, stacked */
+  .ar-k{font-size:12.5px;font-weight:700;letter-spacing:.05em;color:var(--ink2);margin:0 0 8px}
+  .ar-b{background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 12px;margin-bottom:8px}
+  .ar-b.lib{background:var(--panel);border:1.5px dashed var(--muted)}
+  .ar-b b,.ar-p4>b{display:block;font-size:15px;font-weight:650;color:var(--ink);line-height:1.35}
+  .ar-b span{display:block;font-size:14px;color:var(--ink2);line-height:1.45;margin-top:2px}
+  .ar-x{display:flex;justify-content:space-between;gap:12px;margin:10px 4px 8px}
+  .ar-x span{display:flex;align-items:center;gap:7px}
+  .ar-x b{font-size:14px;font-weight:650;color:var(--ink2)}
+  .ar-line{border-top:2px dashed var(--nondet);margin:0 0 10px}
+  .ar-p4{border:2px solid var(--nondet);border-radius:9px;padding:12px 14px}
+  .panel .ar-p4 p{font-size:14px;color:var(--ink2);line-height:1.45;margin:6px 0 0}
+  .panel .ar-note{font-size:14px;color:var(--ink2);margin-top:10px}
+  /* timeline, phone */
+  .tl{list-style:none}
+  .tl li{display:grid;grid-template-columns:56px 24px minmax(0,1fr);column-gap:6px;position:relative;padding-bottom:12px}
+  .tl .d{font-size:13px;font-weight:650;color:var(--ink2);text-align:right;line-height:1.4}
+  .tl .m{position:relative;display:flex;justify-content:center;padding-top:2px}
+  .tl .m::before{content:"";position:absolute;left:50%;top:0;bottom:-14px;width:2px;margin-left:-1px;background:var(--line)}
+  .tl li:first-child .m::before{top:9px}
+  .tl li:last-child .m::before{bottom:auto;height:9px}
+  .tl li.brk .m::before{display:none}
+  .tl .m svg{position:relative;background:var(--panel)}
+  .tl .t{font-size:15px;color:var(--ink);line-height:1.4}
+  .tl li.brk{padding-bottom:10px}
+  /* matrix, phone */
+  .mx{font-size:14px}
+  .mx-r{display:grid;grid-template-columns:minmax(0,1fr) 58px 58px 78px;border-top:1px solid var(--line2)}
+  .mx-r.last{border-bottom:1px solid var(--line2)}
+  .mx-hd{border-top:0}
+  .mx-hd span{font-size:12.5px;font-weight:700;color:var(--ink);text-align:center;line-height:1.25;padding:8px 2px;align-self:end}
+  .mx-r .c3{background:var(--line2)}
+  .mx-hd .c3{border-radius:7px 7px 0 0;align-self:stretch;display:flex;align-items:flex-end;justify-content:center}
+  .mx-r.last .c3{border-radius:0 0 7px 7px}
+  .mx .lab{padding:10px 6px 10px 0}
+  .mx .lab b{display:block;font-size:15px;font-weight:650;color:var(--ink);line-height:1.3}
+  .mx .lab i{display:block;font-size:13px;color:var(--ink2);margin-top:1px}
+  .mx .lab>span{display:block;font-size:13.5px;color:var(--ink2);line-height:1.4;margin-top:3px}
+  .mx .mk{display:flex;justify-content:center;padding-top:22px;position:relative}
+  /* board check, phone */
+  .bc-ax{position:relative;height:18px;margin:0 7px 4px;font-size:13px;color:var(--ink2)}
+  .bc-ax span{position:absolute;top:0;transform:translateX(-50%)}
+  .bc-ax span:first-child{transform:none}
+  .bc-ax span:last-child{transform:translateX(-100%)}
+  .bc-g{font-size:12.5px;font-weight:700;letter-spacing:.04em;color:var(--ink2);margin:10px 0 4px}
+  .bc-r{padding:6px 0 10px}
+  .bc-top{display:flex;justify-content:space-between;gap:10px}
+  .bc-top b{display:block;font-size:15px;font-weight:650;color:var(--ink);line-height:1.3}
+  .bc-top span span,.bc-v span{display:block;font-size:13.5px;color:var(--ink2);line-height:1.35}
+  .bc-v{text-align:right;flex:none}
+  .bc-trk{position:relative;height:16px;margin:8px 7px 0;background:
+     linear-gradient(var(--line2),var(--line2)) 0 0/1px 100% no-repeat,
+     linear-gradient(var(--line2),var(--line2)) 50% 0/1px 100% no-repeat,
+     linear-gradient(var(--line2),var(--line2)) 100% 0/1px 100% no-repeat}
+  .bc-trk i{position:absolute;top:50%}
+  .bc-trk .ln{height:2px;margin-top:-1px;background:var(--muted)}
+  .bc-trk .dot{width:15px;height:15px;margin:-7.5px 0 0 -7.5px;border-radius:50%;border:2px solid var(--panel)}
+  .bc-trk .dot.b{background:var(--muted)}
+  .bc-trk .dot.a{background:var(--s1)}
+  /* harness, phone */
+  .hs{list-style:none}
+  .hs li{display:grid;grid-template-columns:30px minmax(0,1fr);column-gap:10px;align-items:center;position:relative;margin-bottom:22px}
+  .hs li:last-child{margin-bottom:0}
+  .hs li:not(:last-child)::after{content:"";position:absolute;left:calc(40px + 50% - 20px);bottom:-18px;border:6px solid transparent;border-top:8px solid var(--accent);border-bottom:0}
+  .hs .no{width:26px;height:26px;border-radius:50%;border:2px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--ink)}
+  .hs .card{background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 12px}
+  .hs .card b{display:block;font-size:15px;font-weight:650;color:var(--ink);line-height:1.35}
+  .hs .card span{display:block;font-size:14px;color:var(--ink2);line-height:1.45;margin-top:2px}
+  /* horizontal bars, phone */
+  .hb-t{font-size:13px;font-weight:650;color:var(--ink2);margin-bottom:6px}
+  .hb-g{padding:6px 0 8px;border-top:1px solid var(--line2)}
+  .hb-gl{font-size:14px;font-weight:650;color:var(--ink);margin-bottom:4px}
+  .hb-r{display:grid;grid-template-columns:128px minmax(0,1fr);align-items:center;column-gap:8px;min-height:24px}
+  .hb-s{font-size:13px;color:var(--ink2)}
+  .hb-trk{display:flex;align-items:center;gap:6px}
+  .hb-trk i{display:block;height:14px;border-radius:0 4px 4px 0;min-width:0}
+  .hb-trk b{font-size:13.5px;font-weight:650;color:var(--ink)}
+  .hb-note{font-size:13px;font-weight:650;color:var(--ink);margin-top:6px}
+  /* equal mates, text */
+  .panel .textfig .lead{font-size:15px;color:var(--ink);line-height:1.5;margin:0}
+  .textfig ul.plain{margin:8px 0 0 20px;font-size:15px;color:var(--ink);line-height:1.6}
+  /* page text added with these charts */
+  .panel p.spec{font-size:14px;font-style:italic;color:var(--ink2);margin:-2px 0 12px}
+  .panel h3.subh{font-size:15.5px;font-weight:700;color:var(--ink);margin:22px 0 6px}
+  .kfoot{font-size:12px;color:var(--muted);margin:-12px 0 24px;max-width:90ch}
+  .kfoot code{background:var(--line2);padding:1px 5px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .concl.stack{flex-direction:column;gap:8px}
+  .panel a{color:var(--accent);text-underline-offset:2px}
+  .panel a:hover{color:var(--ink)}
+  .panel h3.ctitle{font-size:15px;font-weight:650;color:var(--ink);margin:20px 0 0}
+  .panel h3.ctitle+.fig{margin-top:8px}
+  table.dt.kv th:first-child,table.dt.kv td:first-child{width:210px}
+  @media (max-width:699.98px){table.dt.kv th:first-child,table.dt.kv td:first-child{width:42%}}
   .concl{margin-top:14px;background:var(--line2);border-radius:10px;padding:13px 16px;
     display:flex;gap:11px;align-items:flex-start}
-  .concl .tag{font-size:10.5px;font-weight:800;color:#fff;background:var(--accent);border-radius:5px;
+  .concl .tag{font-size:12px;font-weight:800;color:#fff;background:var(--accent);border-radius:5px;
     padding:3px 7px;letter-spacing:.04em;flex:none;margin-top:2px}
   .concl p{font-size:14px;color:var(--ink);margin:0}
   .quote{border-left:3px solid var(--s2);padding:10px 14px;background:var(--line2);
     border-radius:0 8px 8px 0;margin:12px 0}
   .quote p{font-size:14px;font-style:italic;color:var(--ink);margin:0}
-  .quote .m{font-size:11.5px;color:var(--muted);margin-top:6px;font-style:normal}
+  .quote .m{font-size:12px;color:var(--muted);margin-top:6px;font-style:normal}
   table.dt{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:10px}
   table.dt th,table.dt td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
-  table.dt th{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700}
-  table.dt td.n{text-align:right;font-variant-numeric:tabular-nums}
+  table.dt th{font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700}
+  table.dt td.n,table.dt th.n{text-align:right;font-variant-numeric:tabular-nums}
   table.dt code{font-size:12px}
   .tbtn{margin-top:12px;border:1px solid var(--line);background:transparent;color:var(--ink2);
     border-radius:7px;padding:5px 11px;font-size:12.5px;cursor:pointer}
@@ -99,8 +207,11 @@
   .fcard li{padding:2.5px 0}
   .fcard li code{font-size:12px;color:var(--ink)}
   .foot{font-size:12px;color:var(--muted);margin-top:12px}
-  .two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-  @media (max-width:820px){.two{grid-template-columns:1fr}}
+  @media (max-width:699.98px){
+    body{padding:20px 16px 48px}
+    .panel{padding:18px 16px 16px}
+    table.dt th,table.dt td{padding:8px 6px}
+  }
 </style>
 </head>
 <body>
@@ -109,93 +220,43 @@
 <header class="top">
   <div>
     <h1>Girl Chess: architecture</h1>
-    <div class="sub">A personal chess tutor I built for myself. I play an engine opponent called mallow; a coach called cookie explains my games afterwards. One nondeterministic component in the whole system; everything else is arithmetic over stored facts.</div>
+    <div class="sub">A personal chess tutor I built for myself. I play an engine opponent called mallow; cookie, the coach, answers my questions during and after the game. One part of the system is not deterministic; everything else is arithmetic over stored facts.</div>
   </div>
   <button class="themebtn" id="tbtn">Dark</button>
 </header>
 
 <div class="thesis">
-  <div class="lead">The model never computes chess. It only puts already-computed facts into words.</div>
-  <div class="body">Every wrong answer this coach ever gave was a fact we already had and had not handed over. Not one of them was fixed by a bigger model.</div>
+  <div class="lead">The model is never asked to compute chess. It puts facts the code already computed into words, and checks compare what it says against those facts.</div>
+  <div class="body">Each wrong answer I traced came from a fact the coach was not handed or a check that did not run. None was fixed by a bigger model.</div>
 </div>
 
 <div class="kpis">
-  <div class="kpi"><div class="l">False piece placements</div><div class="v">0%</div><div class="d">was 7.5%, same models</div></div>
-  <div class="kpi"><div class="l">Tests</div><div class="v">2,158</div><div class="d">139 files, 30,628 test lines against 36,106 app</div></div>
-  <div class="kpi"><div class="l">Nondeterministic parts</div><div class="v">1</div><div class="d">of the whole system</div></div>
+  <div class="kpi"><div class="l">False piece placements</div><div class="v">0%</div><div class="d">was 7.5%, same models, July 2026 eval</div></div>
+  <div class="kpi"><div class="l">Tests</div><div class="v">2,903</div><div class="d">194 files; 45,419 test lines against 48,737 app¹</div></div>
+  <div class="kpi"><div class="l">Parts that are not deterministic</div><div class="v">1</div><div class="d">of the whole system</div></div>
   <div class="kpi"><div class="l">Cost to run</div><div class="v">$0</div><div class="d">on an existing subscription</div></div>
 </div>
+<p class="kfoot">¹ Line counts sum every tracked <code>.ts</code> and <code>.tsx</code> file at the published commit, split into test and app lines. An earlier version counted differently, so its figures are not comparable.</p>
 
 <!-- ============ 1 ============ -->
 <div class="panel">
   <div class="num">01</div>
   <h2>The determinism boundary</h2>
-  <p>One nondeterministic component in the entire system. Everything else is arithmetic over stored facts. <strong>chess.js</strong> decides legality. <strong>Stockfish</strong> decides truth: how much better a position is, whether a forced mate exists, and the best line. <strong>Maia</strong> decides what a human of a given rating would actually play. <strong>The annotator</strong> decides what mattered: verdict tiers, turning points, conversion failures, game phase. <strong>Claude</strong> only puts it into words.</p>
+  <p>One part of the entire system is not deterministic. Everything else is arithmetic over stored facts. <strong>chess.js</strong> decides legality. <strong>Stockfish</strong> decides truth: how much better a position is, whether a forced mate exists, and the best line. <strong>Maia</strong> decides what a human of a given rating would actually play. <strong>The annotator</strong> decides what mattered: verdict tiers, turning points, conversion failures, game phase. <strong>Claude</strong> only puts it into words.</p>
+  <p class="spec">From the spec: code computes every chess fact, award and schedule; the model only phrases them.</p>
+  <p>Four texts reach me, and where each appears does not say who wrote it. The hint ladder under the board and the debrief after the game are written by code, from templates filled with stored facts. The coach writes two things: its chat replies and the one-line note under the hint ladder. Those are the only sentences a model composes.</p>
 
-  <div class="chartbox">
-  <svg viewBox="0 0 940 400" role="img" aria-label="Architecture diagram. Five deterministic layers on the left, one nondeterministic component on the right, separated by a boundary. A typed fact list crosses to the right; phrases only come back.">
-    <defs>
-      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M0,1 L9,5 L0,9 z" fill="var(--det)"/>
-      </marker>
-      <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M0,1 L9,5 L0,9 z" fill="var(--nondet)"/>
-      </marker>
-    </defs>
+  <figure class="fig wide">
+<div class="chartbox"><svg class="aw" viewBox="0 0 940 396" role="img" aria-label="Architecture diagram. On the left, five deterministic parts: the board, the chess.js rules library (drawn dashed, as a library we use, not one of our components), the engines, the annotator and the store; Stockfish scores every move in 350 ms. Across a boundary on the right is the coach, the only part that is not deterministic; it writes its chat replies and the note under the hint ladder. A list of facts crosses to the coach; sentences come back, never facts. Its words are checked before you see them, which checks run depends on where it speaks, and a failed reply is retried once, then replaced by a canned reply."><defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="var(--det)"/></marker><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="var(--nondet)"/></marker></defs><text x="0" y="14" class="axislbl" style="font-weight:700;letter-spacing:.05em;fill:var(--ink2)">DETERMINISTIC: arithmetic over stored facts</text><text x="663" y="14" class="axislbl" style="font-weight:700;letter-spacing:.05em;fill:var(--ink2)">NOT DETERMINISTIC</text><rect x="0" y="28" width="600" height="52" rx="7" fill="var(--line2)" stroke="var(--line)"/><text x="16" y="50" class="vallbl" style="font-size:13.5px">P1 · the board</text><text x="16" y="68" class="sub2">Draws the board, takes your clicks, and animates and replays moves.</text><rect x="0" y="88" width="600" height="52" rx="7" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="6 4"/><text x="16" y="110" class="vallbl" style="font-size:13.5px">chess.js, the rules library: legal moves, check and mate</text><text x="16" y="128" class="sub2">Runs in the browser and on the server.</text><rect x="0" y="148" width="600" height="60" rx="7" fill="var(--line2)" stroke="var(--line)"/><text x="16" y="170" class="vallbl" style="font-size:13.5px">P2 · the engines</text><text x="16" y="188" class="sub2">Stockfish scores every move in 350 ms, and searches deeper when you ask for a hint.</text><text x="16" y="203" class="sub2">Maia plays as mallow, and picks its moves with some randomness so games vary.</text><rect x="0" y="216" width="600" height="60" rx="7" fill="var(--line2)" stroke="var(--line)"/><text x="16" y="238" class="vallbl" style="font-size:13.5px">P3 · the annotator</text><text x="16" y="256" class="sub2">Turns engine scores into verdicts, turning points and game phases.</text><text x="16" y="271" class="sub2">It makes no model calls; a code search confirms it.</text><rect x="0" y="284" width="600" height="52" rx="7" fill="var(--line2)" stroke="var(--line)"/><text x="16" y="306" class="vallbl" style="font-size:13.5px">PS · the store</text><text x="16" y="324" class="sub2">SQLite keeps every game, move, engine score, turning point and coach reply.</text><line x1="640" y1="24" x2="640" y2="366" stroke="var(--nondet)" stroke-width="2" stroke-dasharray="7 5"/><rect x="677" y="40" width="261" height="252" rx="9" fill="var(--panel)" stroke="var(--nondet)" stroke-width="2"/><text x="694" y="68" class="vallbl" style="font-size:14px">P4 · the coach</text><text x="694" y="90" class="sub2">Writes its chat replies and the</text><text x="694" y="106" class="sub2">note under the hint ladder,</text><text x="694" y="122" class="sub2">from facts it is handed.</text><text x="694" y="144" class="sub2">The only part that is not</text><text x="694" y="160" class="sub2">deterministic.</text><text x="694" y="182" class="sub2">Claude, through the Agent SDK.</text><text x="694" y="204" class="sub2">Its words are checked before you</text><text x="694" y="220" class="sub2">see them; which checks run depends</text><text x="694" y="236" class="sub2">on where it speaks (see §06).</text><text x="694" y="258" class="sub2">A failed reply is retried once,</text><text x="694" y="274" class="sub2">then replaced by a canned reply.</text><path d="M604 200 H676" stroke="var(--det)" stroke-width="2" fill="none" marker-end="url(#ar)"/><rect x="592" y="174" width="96" height="16" rx="3" fill="var(--panel)"/><text x="640" y="186" class="sub2" text-anchor="middle" style="font-weight:650">a list of facts</text><path d="M808 292 V330 H604" stroke="var(--nondet)" stroke-width="2" fill="none" marker-end="url(#ar2)"/><rect x="648" y="336" width="172" height="16" rx="3" fill="var(--panel)"/><text x="652" y="348" class="sub2" style="font-weight:650">sentences back, never facts</text><text x="0" y="386" class="sub2">The engines feed the annotator, which feeds the store. The coach reads facts and writes sentences back; it never writes a fact.</text></svg>
+<div class="ar an" role="img" aria-label="Architecture diagram. On the left, five deterministic parts: the board, the chess.js rules library (drawn dashed, as a library we use, not one of our components), the engines, the annotator and the store; Stockfish scores every move in 350 ms. Across a boundary on the right is the coach, the only part that is not deterministic; it writes its chat replies and the note under the hint ladder. A list of facts crosses to the coach; sentences come back, never facts. Its words are checked before you see them, which checks run depends on where it speaks, and a failed reply is retried once, then replaced by a canned reply."><div class="ar-k">DETERMINISTIC: arithmetic over stored facts</div><div class="ar-b"><b>P1 · the board</b><span>Draws the board, takes your clicks, and animates and replays moves.</span></div><div class="ar-b lib"><b>chess.js, the rules library: legal moves, check and mate</b><span>Runs in the browser and on the server.</span></div><div class="ar-b"><b>P2 · the engines</b><span>Stockfish scores every move in 350 ms, and searches deeper when you ask for a hint. Maia plays as mallow, and picks its moves with some randomness so games vary.</span></div><div class="ar-b"><b>P3 · the annotator</b><span>Turns engine scores into verdicts, turning points and game phases. It makes no model calls; a code search confirms it.</span></div><div class="ar-b"><b>PS · the store</b><span>SQLite keeps every game, move, engine score, turning point and coach reply.</span></div><div class="ar-x"><span><svg viewBox="0 0 14 22" width="14" height="22" aria-hidden="true"><path d="M7 1 V16" stroke="var(--det)" stroke-width="2"/><path d="M2,14 L7,21 L12,14 z" fill="var(--det)"/></svg><b>a list of facts</b></span><span><svg viewBox="0 0 14 22" width="14" height="22" aria-hidden="true"><path d="M7 6 V21" stroke="var(--nondet)" stroke-width="2"/><path d="M2,8 L7,1 L12,8 z" fill="var(--nondet)"/></svg><b>sentences back, never facts</b></span></div><div class="ar-line"></div><div class="ar-k">NOT DETERMINISTIC</div><div class="ar-p4"><b>P4 · the coach</b><p>Writes its chat replies and the note under the hint ladder, from facts it is handed.</p><p>The only part that is not deterministic.</p><p>Claude, through the Agent SDK.</p><p>Its words are checked before you see them; which checks run depends on where it speaks (see §06).</p><p>A failed reply is retried once, then replaced by a canned reply.</p></div><p class="ar-note">The engines feed the annotator, which feeds the store. The coach reads facts and writes sentences back; it never writes a fact.</p></div></div>
+<div class="legend"><div class="it"><svg viewBox="0 0 28 16" width="28" height="16" aria-hidden="true"><rect x="1" y="1.5" width="26" height="13" rx="3" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/></svg><span>dashed: a library we use, not one of our components</span></div></div>
+<figcaption class="cap">
+<p class="h">One part is not deterministic: the coach, which writes its chat replies and the note under the hint ladder. Everything else is arithmetic over stored&nbsp;facts.</p>
+<p class="s">From the code: only two functions call a model, both in the coach, and a search of the annotator and the debrief finds no model&nbsp;call.</p>
+</figcaption>
+  </figure>
 
-    <text x="0" y="14" class="axislbl" style="font-weight:700;letter-spacing:.05em">DETERMINISTIC -- arithmetic over stored facts</text>
-    <text x="663" y="14" class="axislbl" style="font-weight:700;letter-spacing:.05em">NONDETERMINISTIC</text>
-
-    <!-- layers -->
-    <g>
-      <rect x="0" y="28" width="600" height="52" rx="7" fill="var(--line2)" stroke="var(--line)"/>
-      <text x="16" y="50" class="vallbl" style="font-size:13.5px">P1 · React board</text>
-      <text x="16" y="68" class="axislbl">click to move, animation, replay · <tspan style="font-family:ui-monospace,Menlo,monospace">src/board</tspan></text>
-
-      <rect x="0" y="88" width="600" height="52" rx="7" fill="var(--line2)" stroke="var(--line)"/>
-      <text x="16" y="110" class="vallbl" style="font-size:13.5px">Rules · chess.js</text>
-      <text x="16" y="128" class="axislbl">legality, SAN, FEN, attack and defend maps · runs on client AND server</text>
-
-      <rect x="0" y="148" width="600" height="60" rx="7" fill="var(--line2)" stroke="var(--line)"/>
-      <text x="16" y="170" class="vallbl" style="font-size:13.5px">P2 · Engines, over UCI</text>
-      <text x="16" y="188" class="axislbl">Stockfish: cp, mate, best, pv (350ms judge / 1500ms hint)</text>
-      <text x="16" y="203" class="axislbl">Maia = mallow: one node, temperature 1.0</text>
-
-      <rect x="0" y="216" width="600" height="60" rx="7" fill="var(--line2)" stroke="var(--line)"/>
-      <text x="16" y="238" class="vallbl" style="font-size:13.5px">P3 · Annotator</text>
-      <text x="16" y="256" class="axislbl">verdict tiers, turning points, conversion, game phase</text>
-      <text x="16" y="271" class="axislbl">zero model calls, verified by grep</text>
-
-      <rect x="0" y="284" width="600" height="52" rx="7" fill="var(--line2)" stroke="var(--line)"/>
-      <text x="16" y="306" class="vallbl" style="font-size:13.5px">PS · Store</text>
-      <text x="16" y="324" class="axislbl">SQLite: games, moves, evals, traces, turning points</text>
-    </g>
-
-    <!-- boundary -->
-    <line x1="640" y1="24" x2="640" y2="380" stroke="var(--nondet)" stroke-width="2" stroke-dasharray="7 5"/>
-
-    <!-- claude -->
-    <rect x="676" y="128" width="264" height="128" rx="9" fill="var(--panel)" stroke="var(--nondet)" stroke-width="2"/>
-    <text x="694" y="156" class="vallbl" style="font-size:14px;fill:var(--nondet)">P4 · cookie</text>
-    <text x="694" y="178" class="axislbl">Claude, via the Agent SDK</text>
-    <text x="694" y="197" class="axislbl">the ONLY component that can</text>
-    <text x="694" y="212" class="axislbl">invent a sentence</text>
-    <text x="694" y="236" class="axislbl">7 validators · 1 regen · template</text>
-
-    <!-- crossing arrows -->
-    <path d="M604 254 H676" stroke="var(--det)" stroke-width="2" fill="none" marker-end="url(#ar)"/>
-    <rect x="592" y="228" width="96" height="16" rx="3" fill="var(--panel)"/>
-    <text x="640" y="240" class="axislbl" text-anchor="middle" style="fill:var(--det);font-weight:650">typed fact list</text>
-
-    <path d="M808 260 V312 H604" stroke="var(--nondet)" stroke-width="2" fill="none" marker-end="url(#ar2)"/>
-    <rect x="648" y="318" width="164" height="16" rx="3" fill="var(--panel)"/>
-    <text x="652" y="330" class="axislbl" style="fill:var(--nondet);font-weight:650">phrases only, never facts</text>
-
-    <text x="0" y="366" class="axislbl">P2 feeds P3 feeds PS. The model reads a fact list and writes back prose. It never writes a fact.</text>
-  </svg>
-  </div>
-
-  <div class="concl"><span class="tag">SO</span><p>A false line in a debrief is our own template contradicting our own data. <code>server/annotator/</code> and <code>src/review/</code> make zero model calls, so nothing there can hallucinate. I verified that by grep. Where the model does write, seven checks catch it before you see it.</p></div>
+  <div class="concl"><span class="tag">SO</span><p>A false line in a debrief is my own template contradicting my own data. <code>server/annotator/</code> and <code>src/review/</code> make zero model calls, so nothing there can invent a fact; a code search confirms it. Where the coach does write, its words are checked before I see them, and which checks run depends on where: §06 shows each check against board chat, general strategy chat and the coach's note under the hint ladder.</p></div>
 </div>
 
 <!-- ============ 2 ============ -->
@@ -215,19 +276,22 @@
     <div class="fcard"><h3>Move</h3><ul>
       <li><code>gameSans</code> every move played</li>
       <li><code>allowedSans</code> what may be named</li>
-      <li><code>side</code> on each ply, read off the row, never guessed from its position in the list</li>
+      <li><code>side</code> whose move it was, written on the row when the move is made, never worked out from its place in the list</li>
     </ul></div>
     <div class="fcard"><h3>Engine</h3><ul>
       <li><code>perPlyAnalysis</code> eval, best, line, phase</li>
-      <li><code>hintFindings</code> the verified shelf</li>
+      <li><code>hintFindings</code> what the hint search already found and verified for this position</li>
       <li><code>read</code> the eval, as words</li>
       <li><code>gap</code> played versus best, in words</li>
+      <li><code>contestedAfterBest</code> which squares are attacked and defended once the best move is played. Added after game 198, when the coach described attacks on the board before the move it was explaining.</li>
+      <li><code>candidateLine</code> a move I name in chat but have not played gets its own checked engine line, instead of a guess</li>
     </ul></div>
     <div class="fcard ui"><h3>UI state -- what I am looking at</h3><ul>
       <li><code>pendingMove</code> the piece I picked up</li>
       <li><code>hintFocus</code> the open hint, verbatim</li>
       <li><code>turningPointFocus</code> the card I clicked</li>
       <li><code>highlightedPlies</code> moves I flagged</li>
+      <li><code>recentHints</code> the deep hints I was shown this game, oldest first, at most eight, so the coach no longer guesses which ones I saw</li>
     </ul></div>
     <div class="fcard"><h3>Turning points</h3><ul>
       <li><code>turningPoints</code> ply, move, label</li>
@@ -247,66 +311,32 @@
 <!-- ============ 3 ============ -->
 <div class="panel">
   <div class="num">03</div>
-  <h2>Facts we added after being wrong</h2>
-  <p>The fact list grew every time the coach got something wrong. Every entry below is a fact the code already held and had not handed over.</p>
+  <h2>Facts and checks added after being wrong</h2>
+  <p>Every time the coach or the game review got something wrong, I added one of two things: a fact the code already held and had not handed over, or a check on what the coach said. The timeline shows both, from the first hint search in July to the voice check on September 22; its caption carries the counts.</p>
 
-  <div class="chartbox">
-  <svg viewBox="0 0 940 240" role="img" aria-label="Timeline of facts added to the model's context after specific failures, July 17 to August 3 2026.">
-    <line x1="40" y1="196" x2="908" y2="196" class="caxis"/>
-    <g class="axislbl">
-      <text x="40" y="220">Jul 17</text><text x="212" y="220">Jul 21</text><text x="384" y="220">Jul 22</text>
-      <text x="556" y="220">Jul 28</text><text x="728" y="220">Aug 2</text><text x="880" y="220">Aug 3</text>
-    </g>
-    <g stroke="var(--line2)" stroke-width="1">
-      <line x1="40" y1="118" x2="40" y2="196"/><line x1="212" y1="118" x2="212" y2="196"/>
-      <line x1="384" y1="118" x2="384" y2="196"/><line x1="556" y1="118" x2="556" y2="196"/>
-      <line x1="728" y1="118" x2="728" y2="196"/><line x1="880" y1="118" x2="880" y2="196"/>
-    </g>
+  <figure class="fig">
+<div class="chartbox"><svg class="cw" viewBox="0 30 460 876" role="img" aria-label="Timeline of facts handed to the coach and checks added, each after something came out wrong, Jul 17 to Sep 22. Checks began in July: on Jul 18 the coach’s note under the hint ladder could name only the squares and moves it was given; on Jul 22 came checks on where pieces stand, which pieces are protected, whose piece it is and whether it sounds like a coach; on Jul 28 a check on how many moves it takes to mate; on Jul 29, 19 rules that check the game review against its own data. Facts added: Jul 17, hints get their own deeper search; Jul 21, whose turn it is; Jul 22, six facts about the board and the engine’s reading; Jul 28, whose move each one was, what the engine expects next and the moves I highlighted; Aug 2 and Aug 3, what the hint already found and whether it was fully checked; on Aug 3 also a correction when it calls mallow’s move a mistake but the engine rated that move best or solid; Aug 29, the hints I was shown; Sep 8, a checked line for a move I name in chat. On Sep 21, after game 198, came a fact on squares attacked and defended after the best move, a check on what can capture or attack what, and a wider check on where pieces stand. On Sep 22 the sounds-like-a-coach check began catching self-corrections and leaked internal labels."><line x1="72" y1="40" x2="72" y2="619" stroke="var(--line)" stroke-width="2"/><line x1="72" y1="641" x2="72" y2="890" stroke="var(--line)" stroke-width="2"/><path d="M66 627 l12 -6 M66 635 l12 -6" stroke="var(--muted)" stroke-width="1.5" fill="none"/><g><title>Jul 17: a fact handed to the coach</title><circle cx="72" cy="52" r="6" fill="var(--s1)"/></g><g><title>Jul 18: a check added</title><circle cx="72" cy="99" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></g><g><title>Jul 21: a fact handed to the coach</title><circle cx="72" cy="163" r="6" fill="var(--s1)"/></g><g><title>Jul 22: a fact handed to the coach</title><circle cx="72" cy="193" r="6" fill="var(--s1)"/></g><g><title>same day: a check added</title><circle cx="72" cy="274" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></g><g><title>Jul 28: a fact handed to the coach</title><circle cx="72" cy="338" r="6" fill="var(--s1)"/></g><g><title>same day: a check added</title><circle cx="72" cy="402" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></g><g><title>Jul 29: a check added</title><circle cx="72" cy="432" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></g><g><title>Aug 2: a fact handed to the coach</title><circle cx="72" cy="479" r="6" fill="var(--s1)"/></g><g><title>Aug 3: a fact handed to the coach</title><circle cx="72" cy="543" r="6" fill="var(--s1)"/></g><g><title>same day: a check added</title><circle cx="72" cy="590" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></g><g><title>Aug 29: a fact handed to the coach</title><circle cx="72" cy="655" r="6" fill="var(--s1)"/></g><g><title>Sep 8: a fact handed to the coach</title><circle cx="72" cy="702" r="6" fill="var(--s1)"/></g><g><title>Sep 21: a fact handed to the coach</title><circle cx="72" cy="749" r="6" fill="var(--s1)"/></g><g><title>same day: a check added</title><circle cx="72" cy="796" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></g><g><title>same day: a check added</title><circle cx="72" cy="826" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></g><g><title>Sep 22: a check added</title><circle cx="72" cy="873" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></g><text x="56" y="56" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Jul 17</text><text x="88" y="56.5" style="font-size:13px;fill:var(--ink)">hints get their own deeper engine search, apart</text><text x="88" y="73.5" style="font-size:13px;fill:var(--ink)">from the quick check on every move</text><text x="56" y="103" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Jul 18</text><text x="88" y="103.5" style="font-size:13px;fill:var(--ink)">a check that the coach’s note under the hint</text><text x="88" y="120.5" style="font-size:13px;fill:var(--ink)">ladder names only the squares and moves it</text><text x="88" y="137.5" style="font-size:13px;fill:var(--ink)">was given</text><text x="56" y="167" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Jul 21</text><text x="88" y="167.5" style="font-size:13px;fill:var(--ink)">whose turn it is</text><text x="56" y="197" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Jul 22</text><text x="88" y="197.5" style="font-size:13px;fill:var(--ink)">six facts: which pieces defend which, where every</text><text x="88" y="214.5" style="font-size:13px;fill:var(--ink)">piece stands, the move I am holding, the exact</text><text x="88" y="231.5" style="font-size:13px;fill:var(--ink)">position, the engine’s reading of each move, and</text><text x="88" y="248.5" style="font-size:13px;fill:var(--ink)">how good the position is, in words</text><text x="88" y="278.5" style="font-size:13px;fill:var(--ink)">checks on where pieces stand, which pieces are</text><text x="88" y="295.5" style="font-size:13px;fill:var(--ink)">protected, whose piece it is, and whether it</text><text x="88" y="312.5" style="font-size:13px;fill:var(--ink)">sounds like a coach</text><text x="56" y="342" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Jul 28</text><text x="88" y="342.5" style="font-size:13px;fill:var(--ink)">each move marked as mine or mallow’s, what the</text><text x="88" y="359.5" style="font-size:13px;fill:var(--ink)">engine expects to happen next, and the moves I</text><text x="88" y="376.5" style="font-size:13px;fill:var(--ink)">highlighted to study later</text><text x="88" y="406.5" style="font-size:13px;fill:var(--ink)">a check on how many moves it takes to mate</text><text x="56" y="436" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Jul 29</text><text x="88" y="436.5" style="font-size:13px;fill:var(--ink)">19 rules check the game review against its own</text><text x="88" y="453.5" style="font-size:13px;fill:var(--ink)">data before I see it</text><text x="56" y="483" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Aug 2</text><text x="88" y="483.5" style="font-size:13px;fill:var(--ink)">what the hint already found for this position,</text><text x="88" y="500.5" style="font-size:13px;fill:var(--ink)">whether taking back a piece is safe, and how much</text><text x="88" y="517.5" style="font-size:13px;fill:var(--ink)">worse my move was than the best, in words</text><text x="56" y="547" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Aug 3</text><text x="88" y="547.5" style="font-size:13px;fill:var(--ink)">whether the hint’s move was fully checked or</text><text x="88" y="564.5" style="font-size:13px;fill:var(--ink)">only a quick first read</text><text x="88" y="594.5" style="font-size:13px;fill:var(--ink)">a correction when it calls mallow’s move a mistake</text><text x="88" y="611.5" style="font-size:13px;fill:var(--ink)">but the engine rated that move best or solid</text><text x="56" y="659" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Aug 29</text><text x="88" y="659.5" style="font-size:13px;fill:var(--ink)">the hints I was shown this game, so it no longer</text><text x="88" y="676.5" style="font-size:13px;fill:var(--ink)">guesses which ones I saw</text><text x="56" y="706" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Sep 8</text><text x="88" y="706.5" style="font-size:13px;fill:var(--ink)">a move I name in chat but have not played gets</text><text x="88" y="723.5" style="font-size:13px;fill:var(--ink)">its own checked engine line</text><text x="56" y="753" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Sep 21</text><text x="88" y="753.5" style="font-size:13px;fill:var(--ink)">after game 198: which squares are attacked and</text><text x="88" y="770.5" style="font-size:13px;fill:var(--ink)">defended once the best move is played</text><text x="88" y="800.5" style="font-size:13px;fill:var(--ink)">a check on what can capture or attack what</text><text x="88" y="830.5" style="font-size:13px;fill:var(--ink)">the check on where pieces stand now reads every</text><text x="88" y="847.5" style="font-size:13px;fill:var(--ink)">board I was shown, not only the current one</text><text x="56" y="877" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink2)" data-minx="0">Sep 22</text><text x="88" y="877.5" style="font-size:13px;fill:var(--ink)">the sounds-like-a-coach check also catches</text><text x="88" y="894.5" style="font-size:13px;fill:var(--ink)">self-corrections and leaked internal labels</text></svg>
+<ol class="tl cn" aria-label="Timeline of facts handed to the coach and checks added, each after something came out wrong, Jul 17 to Sep 22. Checks began in July: on Jul 18 the coach’s note under the hint ladder could name only the squares and moves it was given; on Jul 22 came checks on where pieces stand, which pieces are protected, whose piece it is and whether it sounds like a coach; on Jul 28 a check on how many moves it takes to mate; on Jul 29, 19 rules that check the game review against its own data. Facts added: Jul 17, hints get their own deeper search; Jul 21, whose turn it is; Jul 22, six facts about the board and the engine’s reading; Jul 28, whose move each one was, what the engine expects next and the moves I highlighted; Aug 2 and Aug 3, what the hint already found and whether it was fully checked; on Aug 3 also a correction when it calls mallow’s move a mistake but the engine rated that move best or solid; Aug 29, the hints I was shown; Sep 8, a checked line for a move I name in chat. On Sep 21, after game 198, came a fact on squares attacked and defended after the best move, a check on what can capture or attack what, and a wider check on where pieces stand. On Sep 22 the sounds-like-a-coach check began catching self-corrections and leaked internal labels."><li class="fact"><span class="d">Jul 17</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="var(--s1)"/></svg></span><span class="t">hints get their own deeper engine search, apart from the quick check on every move</span></li><li class="check"><span class="d">Jul 18</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></svg></span><span class="t">a check that the coach’s note under the hint ladder names only the squares and moves it was given</span></li><li class="fact"><span class="d">Jul 21</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="var(--s1)"/></svg></span><span class="t">whose turn it is</span></li><li class="fact"><span class="d">Jul 22</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="var(--s1)"/></svg></span><span class="t">six facts: which pieces defend which, where every piece stands, the move I am holding, the exact position, the engine’s reading of each move, and how good the position is, in words</span></li><li class="check"><span class="d"></span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></svg></span><span class="t">checks on where pieces stand, which pieces are protected, whose piece it is, and whether it sounds like a coach</span></li><li class="fact"><span class="d">Jul 28</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="var(--s1)"/></svg></span><span class="t">each move marked as mine or mallow’s, what the engine expects to happen next, and the moves I highlighted to study later</span></li><li class="check"><span class="d"></span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></svg></span><span class="t">a check on how many moves it takes to mate</span></li><li class="check"><span class="d">Jul 29</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></svg></span><span class="t">19 rules check the game review against its own data before I see it</span></li><li class="fact"><span class="d">Aug 2</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="var(--s1)"/></svg></span><span class="t">what the hint already found for this position, whether taking back a piece is safe, and how much worse my move was than the best, in words</span></li><li class="fact"><span class="d">Aug 3</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="var(--s1)"/></svg></span><span class="t">whether the hint’s move was fully checked or only a quick first read</span></li><li class="check"><span class="d"></span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></svg></span><span class="t">a correction when it calls mallow’s move a mistake but the engine rated that move best or solid</span></li><li class="brk" aria-hidden="true"><span></span><span class="m"><svg viewBox="0 0 16 14" width="16" height="14"><path d="M2 8 l12 -6 M2 13 l12 -6" stroke="var(--muted)" stroke-width="1.5" fill="none"/></svg></span><span></span></li><li class="fact"><span class="d">Aug 29</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="var(--s1)"/></svg></span><span class="t">the hints I was shown this game, so it no longer guesses which ones I saw</span></li><li class="fact"><span class="d">Sep 8</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="var(--s1)"/></svg></span><span class="t">a move I name in chat but have not played gets its own checked engine line</span></li><li class="fact"><span class="d">Sep 21</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="var(--s1)"/></svg></span><span class="t">after game 198: which squares are attacked and defended once the best move is played</span></li><li class="check"><span class="d"></span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></svg></span><span class="t">a check on what can capture or attack what</span></li><li class="check"><span class="d"></span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></svg></span><span class="t">the check on where pieces stand now reads every board I was shown, not only the current one</span></li><li class="check"><span class="d">Sep 22</span><span class="m"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></svg></span><span class="t">the sounds-like-a-coach check also catches self-corrections and leaked internal labels</span></li></ol></div>
+<div class="legend"><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="var(--s1)"/></svg><span>a fact handed to the coach</span></div><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="var(--panel)" stroke="var(--s3)" stroke-width="2.5"/></svg><span>a check added</span></div></div>
+<figcaption class="cap">
+<p class="h">Checks started in July, alongside the facts: from Jul 17 to Sep 22 I made 17 additions, 9 to the facts the coach is handed and 8 checks, each after something came out&nbsp;wrong.</p>
+<p class="s">Each date is the day the change first reached the code, read from the project’s history; game 198 added the three Sep 21&nbsp;entries.</p>
+</figcaption>
+  </figure>
 
-    <g>
-      <circle cx="40" cy="196" r="5.5" fill="var(--s1)"/>
-      <text x="24" y="163" class="vallbl" style="font-size:11.5px">hints get</text>
-      <text x="24" y="176" class="vallbl" style="font-size:11.5px">own search</text>
-
-      <circle cx="212" cy="196" r="5.5" fill="var(--s1)"/>
-      <text x="182" y="163" class="vallbl" style="font-size:11.5px">whose turn</text>
-      <text x="182" y="176" class="vallbl" style="font-size:11.5px">it is</text>
-
-      <circle cx="384" cy="196" r="7" fill="var(--s2)"/>
-      <text x="330" y="150" class="vallbl" style="font-size:11.5px">defenders · occupancy</text>
-      <text x="330" y="163" class="vallbl" style="font-size:11.5px">pending move · the fen</text>
-      <text x="330" y="176" class="vallbl" style="font-size:11.5px">per-ply · eval in words</text>
-      <text x="330" y="132" class="axislbl" style="font-size:11px">six facts in one week</text>
-
-      <circle cx="556" cy="196" r="5.5" fill="var(--s1)"/>
-      <text x="524" y="176" class="vallbl" style="font-size:11.5px">side on every ply</text>
-      <text x="524" y="163" class="vallbl" style="font-size:11.5px">forward lines</text>
-      <text x="524" y="150" class="vallbl" style="font-size:11.5px">flagged moves</text>
-
-      <circle cx="728" cy="196" r="7" fill="var(--s3)"/>
-      <text x="690" y="176" class="vallbl" style="font-size:11.5px">the fact shelf</text>
-      <text x="690" y="163" class="vallbl" style="font-size:11.5px">recapture holds</text>
-      <text x="690" y="150" class="vallbl" style="font-size:11.5px">gap in words</text>
-
-      <circle cx="880" cy="196" r="5.5" fill="var(--s1)"/>
-      <text x="838" y="163" class="vallbl" style="font-size:11.5px">provenance</text>
-      <text x="838" y="176" class="vallbl" style="font-size:11.5px">on the shelf</text>
-    </g>
-    <text x="40" y="104" class="axislbl">Each marker is a fact added to the model's context because of one specific thing it got wrong.</text>
-  </svg>
-  </div>
-
-  <button class="tbtn" onclick="var t=document.getElementById('t1');t.classList.toggle('hid');this.textContent=t.classList.contains('hid')?'Show the three worst':'Hide'">Show the three worst</button>
+  <button class="tbtn" onclick="var t=document.getElementById('t1');t.classList.toggle('hid');this.textContent=t.classList.contains('hid')?'Show the worst ones':'Hide'">Show the worst ones</button>
   <table class="dt hid" id="t1">
-    <thead><tr><th>Date</th><th>What it said</th><th>Missing fact</th></tr></thead>
+    <thead><tr><th>Date</th><th>What it said</th><th>Missing fact or check</th></tr></thead>
     <tbody>
       <tr><td>Jul 21</td><td>Described my own pending move as mallow's, and told me I'd win my own queen for free.</td><td>Whose turn it is</td></tr>
       <tr><td>Jul 22</td><td>Said my pawn on e4 did not guard f5. It does. That exact trade happened a few moves later.</td><td>The attacked-and-defended map</td></tr>
       <tr><td>Jul 22</td><td>7.5% of its statements about where pieces sat were false. Nothing checked them.</td><td>Occupancy, and a checker</td></tr>
+      <tr><td>Sep 21</td><td>Threw out 14 true answers in one game, because the check compared where a piece would stand after the move to the board from before it.</td><td>The check reads every board the coach was shown, not only the current one</td></tr>
+      <tr><td>Sep 21</td><td>Described a rook attacking a square it had no line to. Nothing checked attacks or captures.</td><td>A check on what can capture or attack what</td></tr>
     </tbody>
   </table>
 
-  <div class="concl"><span class="tag">SO</span><p>None of this needed a bigger model. It needed the facts we already had. When we fixed the fact gap, placement errors went 7.5% to zero and explanation latency went 13-15s to about 4s. Both numbers moved for the small model and the large one at the same time.</p></div>
+  <div class="concl"><span class="tag">SO</span><p>None of the July additions needed a bigger model. They needed the facts the code already had. Closing that gap took placement errors from 7.5% to zero and explanation latency from 13-15 seconds to about 4. Both numbers moved for the small model and the large one at the same time. The September additions were different in kind: a check that read too narrow a board, and a class of claim nothing checked. §06 shows where those checks now run; the next section shows how each fix was proven on past games before I played another.</p></div>
 </div>
 
 <!-- ============ 4 ============ -->
@@ -314,6 +344,7 @@
   <div class="num">04</div>
   <h2>Two surfaces, one brain</h2>
   <p>The worst bug here was plumbing, not the model. Two surfaces search the same position. <strong>The judge</strong> runs a 350ms evaluation on every move I consider, and that is what holds the sub-two-second verdict. <strong>The hint</strong> runs a 1500ms multi-line search plus a 500ms verification pass, escalating to 3000ms. Rare, and I have to ask for it.</p>
+  <p class="spec">From the spec: a chat answer is grounded in engine facts, and thumbs-down captures why it missed.</p>
 
   <table class="dt">
     <thead><tr><th>Time</th><th>Game 167, move 19, 2026-08-02 -- every row from the database</th></tr></thead>
@@ -341,6 +372,7 @@
   <div class="num">05</div>
   <h2>Routing: this board, or chess in general</h2>
   <p>Before any model call, code decides: this position, or chess in general? A board question gets everything. A general question gets a fact list of four items and no position at all.</p>
+  <p class="spec">From the spec: when I do not understand why a move was wrong, I ask in plain English and get an answer at my level.</p>
 
   <p>It began as a thumbs-down: <em>"will only answer about moves i already did, not general chess questions for strategy next game."</em> The refusal was coming from a line in the prompt, not from any check. So the decision moved into code, before the call. Deterministic, and that was my explicit choice, because <strong>model self-routing was the failure I had already hit.</strong></p>
 
@@ -355,124 +387,117 @@
 <div class="panel">
   <div class="num">06</div>
   <h2>What the model is not allowed to say</h2>
-  <p>Seven checks. Six run before any reply renders, and any one of them fails the reply.</p>
-  <table class="dt">
-    <thead><tr><th>Check</th><th>Catches</th><th>Grounded against</th></tr></thead>
-    <tbody>
-      <tr><td>SAN membership</td><td>a move that was never played, is not legal, and is not in context</td><td><code>allowedSans</code></td></tr>
-      <tr><td>Placement</td><td>"your rook is on d4" when it is not</td><td><code>occupancy</code></td></tr>
-      <tr><td>Defense</td><td>"hanging" or "guards" against the real position</td><td>chess.js attackers</td></tr>
-      <tr><td>Side attribution</td><td>my pending move credited to mallow</td><td><code>toMove</code></td></tr>
-      <tr><td>Mate distance</td><td>"mate in 3" against the stored reading</td><td><code>evalMate</code>, the shelf</td></tr>
-      <tr><td>Voice</td><td>raw notation, the word "engine", any signed number</td><td>prose shape</td></tr>
-      <tr><td>Opponent quality</td><td>calling mallow's move a blunder when it matched the engine's own top choice</td><td><code>matchedBest</code></td></tr>
-    </tbody>
-  </table>
-  <p style="margin-top:12px">A violation triggers one corrective regeneration. A second failure falls back to a persona-file template. Never a string that failed its own check, and never a blocked game.</p>
-  <div class="concl"><span class="tag">ECONOMICS</span><p>The prose checks cost 0.013ms and 0.070ms. A regeneration is a second full model call, roughly +20 seconds, at a rate of 7.7%. <strong>So adding a validator is free, and cutting the regeneration rate is the only lever worth pulling.</strong> That is why the seventh check is a deterministic 0ms correction instead of a seventh regen trigger.</p></div>
+  <p>Nine checks, and which ones run depends on where the coach writes: board chat, general strategy chat, or the coach's note under the hint ladder. The chart below lists each one. Each check has a plain name, the name it carries in the code, and the one rule it enforces.</p>
+  <p class="spec">From the spec's ship gates: zero invented moves; a failed fact-check pauses the coach, never the game.</p>
+
+  <h3 class="ctitle">Which checks run where</h3>
+  <figure class="fig">
+<div class="chartbox"><svg class="cw" viewBox="0 0 460 683" role="img" aria-label="Which checks run where, across three places the coach, writes: board chat, general strategy chat, and the coach’s note under the hint ladder. Board chat runs the checks on where pieces stand, which pieces are protected, whose piece it is, what can capture or attack what, how many moves to mate, sounding like a coach, and allowed moves, plus the correction for mallow’s move quality; it does not limit which squares it names. General strategy chat runs the where-pieces-stand check only when the reply is about the board, plus protection, whose piece, capture and attack, sounding like a coach, and the correction; it does not run mate distance, allowed moves or allowed squares. The coach’s note runs the protection check and the allowed moves and allowed squares lists, and its square list covers where pieces stand; it does not run whose piece, capture and attack, mate distance, sounding like a coach, or the correction."><rect x="364" y="4" width="92" height="675" rx="7" fill="var(--line2)"/><text x="256" y="16" text-anchor="middle" style="font-size:11.5px;font-weight:700;fill:var(--ink)">board</text><text x="256" y="30" text-anchor="middle" style="font-size:11.5px;font-weight:700;fill:var(--ink)">chat</text><text x="324" y="16" text-anchor="middle" style="font-size:11.5px;font-weight:700;fill:var(--ink)">general</text><text x="324" y="30" text-anchor="middle" style="font-size:11.5px;font-weight:700;fill:var(--ink)">strategy</text><text x="324" y="44" text-anchor="middle" style="font-size:11.5px;font-weight:700;fill:var(--ink)">chat</text><text x="410" y="16" text-anchor="middle" style="font-size:11.5px;font-weight:700;fill:var(--ink)">the coach’s</text><text x="410" y="30" text-anchor="middle" style="font-size:11.5px;font-weight:700;fill:var(--ink)">note under the</text><text x="410" y="44" text-anchor="middle" style="font-size:11.5px;font-weight:700;fill:var(--ink)">hint ladder</text><line x1="0" y1="62" x2="456" y2="62" class="grid"/><text x="0" y="76" style="font-size:13px;font-weight:650;fill:var(--ink)">where pieces stand</text><text x="0" y="91" style="font-size:11px;font-style:italic;fill:var(--ink2)">placement check</text><text x="0" y="107" style="font-size:11.5px;fill:var(--ink2)">Where it says a piece stands must</text><text x="0" y="121" style="font-size:11.5px;fill:var(--ink2)">match the board.</text><g><title>where pieces stand, board chat: runs; a failure blocks the reply</title><circle cx="256" cy="86" r="7" fill="var(--s1)"/></g><g><title>where pieces stand, general strategy chat: runs when the reply is about the board</title><circle cx="324" cy="86" r="6.25" fill="var(--panel)" stroke="var(--s1)" stroke-width="1.5"/><path d="M324,79.75 A6.25,6.25 0 0 0 324,92.25 Z" fill="var(--s1)"/></g><g><title>where pieces stand, the coach’s note: covered by the square list: the note can only name squares from its facts</title><rect x="403.5" y="79.5" width="13" height="13" rx="2" fill="var(--panel)" stroke="var(--s1)" stroke-width="2"/><rect x="407.5" y="83.5" width="5" height="5" fill="var(--s1)"/></g><line x1="0" y1="129" x2="456" y2="129" class="grid"/><text x="0" y="143" style="font-size:13px;font-weight:650;fill:var(--ink)">which pieces are protected</text><text x="0" y="158" style="font-size:11px;font-style:italic;fill:var(--ink2)">defence check</text><text x="0" y="174" style="font-size:11.5px;fill:var(--ink2)">A piece it calls guarded or hanging</text><text x="0" y="188" style="font-size:11.5px;fill:var(--ink2)">must be guarded or hanging.</text><g><title>which pieces are protected, board chat: runs; a failure blocks the reply</title><circle cx="256" cy="153" r="7" fill="var(--s1)"/></g><g><title>which pieces are protected, general strategy chat: runs; a failure blocks the reply</title><circle cx="324" cy="153" r="7" fill="var(--s1)"/></g><g><title>which pieces are protected, the coach’s note: runs; a failure blocks the reply</title><circle cx="410" cy="153" r="7" fill="var(--s1)"/></g><line x1="0" y1="196" x2="456" y2="196" class="grid"/><text x="0" y="210" style="font-size:13px;font-weight:650;fill:var(--ink)">whose piece it is</text><text x="0" y="225" style="font-size:11px;font-style:italic;fill:var(--ink2)">side check</text><text x="0" y="241" style="font-size:11.5px;fill:var(--ink2)">A move it credits to me or to mallow</text><text x="0" y="255" style="font-size:11.5px;fill:var(--ink2)">must be that side’s move.</text><g><title>whose piece it is, board chat: runs; a failure blocks the reply</title><circle cx="256" cy="220" r="7" fill="var(--s1)"/></g><g><title>whose piece it is, general strategy chat: runs; a failure blocks the reply</title><circle cx="324" cy="220" r="7" fill="var(--s1)"/></g><g><title>whose piece it is, the coach’s note: does not run</title><circle cx="410" cy="220" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></g><line x1="0" y1="263" x2="456" y2="263" class="grid"/><text x="0" y="277" style="font-size:13px;font-weight:650;fill:var(--ink)">what can capture or attack what</text><text x="0" y="292" style="font-size:11px;font-style:italic;fill:var(--ink2)">relation check</text><text x="0" y="308" style="font-size:11.5px;fill:var(--ink2)">A capture or attack it describes must</text><text x="0" y="322" style="font-size:11.5px;fill:var(--ink2)">be possible on the board.</text><g><title>what can capture or attack what, board chat: runs; a failure blocks the reply</title><circle cx="256" cy="287" r="7" fill="var(--s1)"/></g><g><title>what can capture or attack what, general strategy chat: runs; a failure blocks the reply</title><circle cx="324" cy="287" r="7" fill="var(--s1)"/></g><g><title>what can capture or attack what, the coach’s note: does not run</title><circle cx="410" cy="287" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></g><line x1="0" y1="330" x2="456" y2="330" class="grid"/><text x="0" y="344" style="font-size:13px;font-weight:650;fill:var(--ink)">how many moves to mate</text><text x="0" y="359" style="font-size:11px;font-style:italic;fill:var(--ink2)">mate-distance check</text><text x="0" y="375" style="font-size:11.5px;fill:var(--ink2)">A “mate in 3” must match the engine’s</text><text x="0" y="389" style="font-size:11.5px;fill:var(--ink2)">count.</text><g><title>how many moves to mate, board chat: runs; a failure blocks the reply</title><circle cx="256" cy="354" r="7" fill="var(--s1)"/></g><g><title>how many moves to mate, general strategy chat: does not run</title><circle cx="324" cy="354" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></g><g><title>how many moves to mate, the coach’s note: does not run</title><circle cx="410" cy="354" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></g><line x1="0" y1="397" x2="456" y2="397" class="grid"/><text x="0" y="411" style="font-size:13px;font-weight:650;fill:var(--ink)">sounds like a coach</text><text x="0" y="426" style="font-size:11px;font-style:italic;fill:var(--ink2)">voice check</text><text x="0" y="442" style="font-size:11.5px;fill:var(--ink2)">No chess notation, banned words, raw</text><text x="0" y="456" style="font-size:11.5px;fill:var(--ink2)">engine numbers, self-corrections or</text><text x="0" y="470" style="font-size:11.5px;fill:var(--ink2)">internal labels.</text><g><title>sounds like a coach, board chat: runs; a failure blocks the reply</title><circle cx="256" cy="421" r="7" fill="var(--s1)"/></g><g><title>sounds like a coach, general strategy chat: runs; a failure blocks the reply</title><circle cx="324" cy="421" r="7" fill="var(--s1)"/></g><g><title>sounds like a coach, the coach’s note: does not run</title><circle cx="410" cy="421" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></g><line x1="0" y1="478" x2="456" y2="478" class="grid"/><text x="0" y="492" style="font-size:13px;font-weight:650;fill:var(--ink)">fair about mallow’s move quality</text><text x="0" y="507" style="font-size:11px;font-style:italic;fill:var(--ink2)">opponent-quality correction</text><text x="0" y="523" style="font-size:11.5px;fill:var(--ink2)">Fixes an unfair word about mallow’s</text><text x="0" y="537" style="font-size:11.5px;fill:var(--ink2)">move; never blocks a reply.</text><g><title>fair about mallow’s move quality, board chat: corrects the wording in place, never blocks</title><rect x="250.5" y="496.5" width="11" height="11" transform="rotate(45 256 502)" fill="var(--s3)"/></g><g><title>fair about mallow’s move quality, general strategy chat: corrects the wording in place, never blocks</title><rect x="318.5" y="496.5" width="11" height="11" transform="rotate(45 324 502)" fill="var(--s3)"/></g><g><title>fair about mallow’s move quality, the coach’s note: does not run</title><circle cx="410" cy="502" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></g><line x1="0" y1="545" x2="456" y2="545" class="grid"/><text x="0" y="559" style="font-size:13px;font-weight:650;fill:var(--ink)">only names moves it was given</text><text x="0" y="574" style="font-size:11px;font-style:italic;fill:var(--ink2)">allowed moves</text><text x="0" y="590" style="font-size:11.5px;fill:var(--ink2)">Every move it names must be played,</text><text x="0" y="604" style="font-size:11.5px;fill:var(--ink2)">legal, or in its facts.</text><g><title>only names moves it was given, board chat: runs; a failure blocks the reply</title><circle cx="256" cy="569" r="7" fill="var(--s1)"/></g><g><title>only names moves it was given, general strategy chat: does not run</title><circle cx="324" cy="569" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></g><g><title>only names moves it was given, the coach’s note: runs; a failure blocks the reply</title><circle cx="410" cy="569" r="7" fill="var(--s1)"/></g><line x1="0" y1="612" x2="456" y2="612" class="grid"/><text x="0" y="626" style="font-size:13px;font-weight:650;fill:var(--ink)">only names squares it was given</text><text x="0" y="641" style="font-size:11px;font-style:italic;fill:var(--ink2)">allowed squares</text><text x="0" y="657" style="font-size:11.5px;fill:var(--ink2)">Every square it names must come from</text><text x="0" y="671" style="font-size:11.5px;fill:var(--ink2)">its facts.</text><g><title>only names squares it was given, board chat: does not run</title><circle cx="256" cy="636" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></g><g><title>only names squares it was given, general strategy chat: does not run</title><circle cx="324" cy="636" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></g><g><title>only names squares it was given, the coach’s note: runs; a failure blocks the reply</title><circle cx="410" cy="636" r="7" fill="var(--s1)"/></g><line x1="0" y1="679" x2="456" y2="679" class="grid"/></svg>
+<div class="mx cn" role="table" aria-label="Which checks run where, across three places the coach, writes: board chat, general strategy chat, and the coach’s note under the hint ladder. Board chat runs the checks on where pieces stand, which pieces are protected, whose piece it is, what can capture or attack what, how many moves to mate, sounding like a coach, and allowed moves, plus the correction for mallow’s move quality; it does not limit which squares it names. General strategy chat runs the where-pieces-stand check only when the reply is about the board, plus protection, whose piece, capture and attack, sounding like a coach, and the correction; it does not run mate distance, allowed moves or allowed squares. The coach’s note runs the protection check and the allowed moves and allowed squares lists, and its square list covers where pieces stand; it does not run whose piece, capture and attack, mate distance, sounding like a coach, or the correction."><div class="mx-r mx-hd" role="row"><span role="columnheader"></span><span role="columnheader" class="c1">board chat</span><span role="columnheader" class="c2">general strategy chat</span><span role="columnheader" class="c3">the coach’s note under the hint ladder</span></div><div class="mx-r" role="row"><span class="lab" role="rowheader"><b>where pieces stand</b><i>placement check</i><span>Where it says a piece stands must match the board.</span></span><span class="mk c1" role="cell" title="board chat: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">board chat: runs; a failure blocks the reply</span></span><span class="mk c2" role="cell" title="general strategy chat: runs when the reply is about the board"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="var(--panel)" stroke="var(--s1)" stroke-width="1.5"/><path d="M8,1.75 A6.25,6.25 0 0 0 8,14.25 Z" fill="var(--s1)"/></svg><span class="sr">general strategy chat: runs when the reply is about the board</span></span><span class="mk c3" role="cell" title="the coach’s note: covered by the square list: the note can only name squares from its facts"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="2" fill="var(--panel)" stroke="var(--s1)" stroke-width="2"/><rect x="5.5" y="5.5" width="5" height="5" fill="var(--s1)"/></svg><span class="sr">the coach’s note: covered by the square list: the note can only name squares from its facts</span></span></div><div class="mx-r" role="row"><span class="lab" role="rowheader"><b>which pieces are protected</b><i>defence check</i><span>A piece it calls guarded or hanging must be guarded or hanging.</span></span><span class="mk c1" role="cell" title="board chat: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">board chat: runs; a failure blocks the reply</span></span><span class="mk c2" role="cell" title="general strategy chat: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">general strategy chat: runs; a failure blocks the reply</span></span><span class="mk c3" role="cell" title="the coach’s note: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">the coach’s note: runs; a failure blocks the reply</span></span></div><div class="mx-r" role="row"><span class="lab" role="rowheader"><b>whose piece it is</b><i>side check</i><span>A move it credits to me or to mallow must be that side’s move.</span></span><span class="mk c1" role="cell" title="board chat: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">board chat: runs; a failure blocks the reply</span></span><span class="mk c2" role="cell" title="general strategy chat: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">general strategy chat: runs; a failure blocks the reply</span></span><span class="mk c3" role="cell" title="the coach’s note: does not run"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></svg><span class="sr">the coach’s note: does not run</span></span></div><div class="mx-r" role="row"><span class="lab" role="rowheader"><b>what can capture or attack what</b><i>relation check</i><span>A capture or attack it describes must be possible on the board.</span></span><span class="mk c1" role="cell" title="board chat: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">board chat: runs; a failure blocks the reply</span></span><span class="mk c2" role="cell" title="general strategy chat: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">general strategy chat: runs; a failure blocks the reply</span></span><span class="mk c3" role="cell" title="the coach’s note: does not run"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></svg><span class="sr">the coach’s note: does not run</span></span></div><div class="mx-r" role="row"><span class="lab" role="rowheader"><b>how many moves to mate</b><i>mate-distance check</i><span>A “mate in 3” must match the engine’s count.</span></span><span class="mk c1" role="cell" title="board chat: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">board chat: runs; a failure blocks the reply</span></span><span class="mk c2" role="cell" title="general strategy chat: does not run"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></svg><span class="sr">general strategy chat: does not run</span></span><span class="mk c3" role="cell" title="the coach’s note: does not run"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></svg><span class="sr">the coach’s note: does not run</span></span></div><div class="mx-r" role="row"><span class="lab" role="rowheader"><b>sounds like a coach</b><i>voice check</i><span>No chess notation, banned words, raw engine numbers, self-corrections or internal labels.</span></span><span class="mk c1" role="cell" title="board chat: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">board chat: runs; a failure blocks the reply</span></span><span class="mk c2" role="cell" title="general strategy chat: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">general strategy chat: runs; a failure blocks the reply</span></span><span class="mk c3" role="cell" title="the coach’s note: does not run"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></svg><span class="sr">the coach’s note: does not run</span></span></div><div class="mx-r" role="row"><span class="lab" role="rowheader"><b>fair about mallow’s move quality</b><i>opponent-quality correction</i><span>Fixes an unfair word about mallow’s move; never blocks a reply.</span></span><span class="mk c1" role="cell" title="board chat: corrects the wording in place, never blocks"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" transform="rotate(45 8 8)" fill="var(--s3)"/></svg><span class="sr">board chat: corrects the wording in place, never blocks</span></span><span class="mk c2" role="cell" title="general strategy chat: corrects the wording in place, never blocks"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" transform="rotate(45 8 8)" fill="var(--s3)"/></svg><span class="sr">general strategy chat: corrects the wording in place, never blocks</span></span><span class="mk c3" role="cell" title="the coach’s note: does not run"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></svg><span class="sr">the coach’s note: does not run</span></span></div><div class="mx-r" role="row"><span class="lab" role="rowheader"><b>only names moves it was given</b><i>allowed moves</i><span>Every move it names must be played, legal, or in its facts.</span></span><span class="mk c1" role="cell" title="board chat: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">board chat: runs; a failure blocks the reply</span></span><span class="mk c2" role="cell" title="general strategy chat: does not run"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></svg><span class="sr">general strategy chat: does not run</span></span><span class="mk c3" role="cell" title="the coach’s note: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">the coach’s note: runs; a failure blocks the reply</span></span></div><div class="mx-r last" role="row"><span class="lab" role="rowheader"><b>only names squares it was given</b><i>allowed squares</i><span>Every square it names must come from its facts.</span></span><span class="mk c1" role="cell" title="board chat: does not run"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></svg><span class="sr">board chat: does not run</span></span><span class="mk c2" role="cell" title="general strategy chat: does not run"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></svg><span class="sr">general strategy chat: does not run</span></span><span class="mk c3" role="cell" title="the coach’s note: runs; a failure blocks the reply"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span class="sr">the coach’s note: runs; a failure blocks the reply</span></span></div></div></div>
+<div class="legend col"><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--s1)"/></svg><span>runs; a failure blocks the reply</span></div><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="var(--panel)" stroke="var(--s1)" stroke-width="1.5"/><path d="M8,1.75 A6.25,6.25 0 0 0 8,14.25 Z" fill="var(--s1)"/></svg><span>runs when the reply is about the board</span></div><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="2" fill="var(--panel)" stroke="var(--s1)" stroke-width="2"/><rect x="5.5" y="5.5" width="5" height="5" fill="var(--s1)"/></svg><span>covered by the square list: the note can only name squares from its facts</span></div><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" transform="rotate(45 8 8)" fill="var(--s3)"/></svg><span>corrects the wording in place, never blocks</span></div><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--muted)" stroke-width="1.5"/></svg><span>does not run</span></div></div>
+<figcaption class="cap">
+<p class="h">Board chat runs 8 of these 9 checks, general strategy chat runs 6, and the coach’s note under the hint ladder runs 3, with its square list covering where pieces&nbsp;stand.</p>
+<p class="s">Each of the 27 marks was read from the code. All but two checks date from July: the correction for mallow’s move quality came on Aug 3, and the check on what can capture or attack what on Sep&nbsp;21.</p>
+<p class="l">The coach’s note does not check whose piece it is, what can capture or attack what, mate distance, whether it sounds like a coach, or mallow’s move&nbsp;quality.</p>
+</figcaption>
+  </figure>
+
+  <p style="margin-top:16px">One check is new since this page was first written, and two were widened. Since September 21 a capture or attack the coach describes must be possible on the board. The check on where pieces stand now reads every board the coach was shown, up to four moves down the line it is explaining, instead of the current board alone. Since September 22 the voice check also catches a reply that corrects itself mid-sentence or leaks an internal label from its fact list. A separate rule bans "quiet" for a move, because it reads as a language-model tic (<a href="technical-decisions.html#when-real-chess-terms-sound-like-ai-isms-banning-quietly-and-quiet-move-while-teaching-chess-vocabulary">the fourth technical decision</a>).</p>
+  <p>The coach's note under the hint ladder runs three checks: the moves it names, the squares it names, and which pieces are protected. The square list is stricter than anything chat runs: every square it names must come from the facts it was handed (the threat and the recommended move). So a note cannot place a piece on a square it was not told about, even without the placement check. What it does not yet check is in the chart's last caption line.</p>
+  <p>A failed check triggers one corrective retry. A second failure falls back to a canned reply from the persona file. Never a sentence that failed its own check, and never a blocked game.</p>
+  <div class="concl"><span class="tag">ECONOMICS</span><p>The prose checks are cheap: 0.013 ms and 0.070 ms when I timed them in July. A retry is a second full model call, roughly 20 seconds more. Across the 290 model-written replies stored between July 18 and September 22, 9.66% needed one. <strong>So adding a check is free, and cutting the retry rate is the only lever worth pulling.</strong> That is why the correction for mallow's move quality fixes the wording in place at no cost instead of triggering a retry. The placement fix in the next section mattered for the same reason: in game 198, 14 of the check's 16 rejections threw out true answers.</p></div>
 </div>
 
 <!-- ============ 7 ============ -->
-<div class="panel">
+<div class="panel" id="proving-fixes">
   <div class="num">07</div>
-  <h2>How we set thinking and effort</h2>
-  <p>Two independent controls, not one parameter. <code>thinking: {type:"disabled"}</code> turns adaptive thinking off. A separate top-level <code>effort: "low"</code> caps it while leaving it on. Three arms, 119 fixed questions, three repetitions each, 357 samples per arm.</p>
+  <h2>Proving a fix on past games</h2>
+  <p>I do not wait for new games to find out whether a fix worked. A fix runs against every position already stored, before and after the change, and then I break it on purpose to prove the harness can tell the difference.</p>
+  <p class="spec">From the spec: a red flag is something to fix, not a feature to cut, and diagnosis starts from my thumbs-down notes and the traces.</p>
+  <p>In game 198 the check on where pieces stand rejected 16 coach answers. 14 were true statements about the position after the move being explained; the check had compared them to the board before it. The easy fix was to delete the check. I kept it and taught it which boards the coach was talking about, and it still catches the 2 answers that were wrong.</p>
 
-  <div class="legend">
-    <div class="it"><span class="sw" style="background:var(--s1)"></span>default (unbounded)</div>
-    <div class="it"><span class="sw" style="background:var(--s2)"></span>low -- shipped</div>
-    <div class="it"><span class="sw" style="background:var(--s3)"></span>disabled</div>
-  </div>
+  <h3 class="ctitle">The testing harness: checking a fix on past games</h3>
+  <figure class="fig">
+<div class="chartbox"><svg class="cw" viewBox="0 0 460 366" role="img" aria-label="The testing harness, in four steps. One: positions from 201 of my coach conversations, and 34 equally fast mates from my games. Two: 4,772 true and 2,243 false statements about those positions, each labelled by reading the board. Three: the same statements run through the check before and after the fix; true statements wrongly rejected after a move went from 65 to 0. Four: the bug is put back on purpose, the harness must catch it, and taking it out again must pass."><defs><marker id="arp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="var(--accent)"/></marker></defs><rect x="36" y="4" width="424" height="70" rx="7" fill="var(--line2)" stroke="var(--line)"/><circle cx="14" cy="39" r="12" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/><text x="14" y="44" text-anchor="middle" style="font-size:13px;font-weight:700;fill:var(--ink)">1</text><text x="50" y="27" style="font-size:13.5px;font-weight:650;fill:var(--ink)">Positions from past games</text><text x="50" y="46" style="font-size:12px;fill:var(--ink2)">positions from 201 of my coach conversations,</text><text x="50" y="62" style="font-size:12px;fill:var(--ink2)">and 34 equally fast mates from my games</text><path d="M248 76 V94" stroke="var(--accent)" stroke-width="2" fill="none" marker-end="url(#arp)"/><rect x="36" y="100" width="424" height="70" rx="7" fill="var(--line2)" stroke="var(--line)"/><circle cx="14" cy="135" r="12" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/><text x="14" y="140" text-anchor="middle" style="font-size:13px;font-weight:700;fill:var(--ink)">2</text><text x="50" y="123" style="font-size:13.5px;font-weight:650;fill:var(--ink)">Statements labelled from the board</text><text x="50" y="142" style="font-size:12px;fill:var(--ink2)">4,772 true and 2,243 false statements about those</text><text x="50" y="158" style="font-size:12px;fill:var(--ink2)">positions, each labelled by reading the board</text><path d="M248 172 V190" stroke="var(--accent)" stroke-width="2" fill="none" marker-end="url(#arp)"/><rect x="36" y="196" width="424" height="70" rx="7" fill="var(--line2)" stroke="var(--line)"/><circle cx="14" cy="231" r="12" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/><text x="14" y="236" text-anchor="middle" style="font-size:13px;font-weight:700;fill:var(--ink)">3</text><text x="50" y="219" style="font-size:13.5px;font-weight:650;fill:var(--ink)">The check, before and after the fix</text><text x="50" y="238" style="font-size:12px;fill:var(--ink2)">the same statements run through both versions: true</text><text x="50" y="254" style="font-size:12px;fill:var(--ink2)">statements wrongly rejected after a move went from 65 to 0</text><path d="M248 268 V286" stroke="var(--accent)" stroke-width="2" fill="none" marker-end="url(#arp)"/><rect x="36" y="292" width="424" height="70" rx="7" fill="var(--line2)" stroke="var(--line)"/><circle cx="14" cy="327" r="12" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/><text x="14" y="332" text-anchor="middle" style="font-size:13px;font-weight:700;fill:var(--ink)">4</text><text x="50" y="315" style="font-size:13.5px;font-weight:650;fill:var(--ink)">The bug put back on purpose</text><text x="50" y="334" style="font-size:12px;fill:var(--ink2)">reintroduce the bug: the harness must catch it,</text><text x="50" y="350" style="font-size:12px;fill:var(--ink2)">and taking it out again must pass</text></svg>
+<ol class="hs cn" aria-label="The testing harness, in four steps. One: positions from 201 of my coach conversations, and 34 equally fast mates from my games. Two: 4,772 true and 2,243 false statements about those positions, each labelled by reading the board. Three: the same statements run through the check before and after the fix; true statements wrongly rejected after a move went from 65 to 0. Four: the bug is put back on purpose, the harness must catch it, and taking it out again must pass."><li><span class="no">1</span><span class="card"><b>Positions from past games</b><span>positions from 201 of my coach conversations, and 34 equally fast mates from my games</span></span></li><li><span class="no">2</span><span class="card"><b>Statements labelled from the board</b><span>4,772 true and 2,243 false statements about those positions, each labelled by reading the board</span></span></li><li><span class="no">3</span><span class="card"><b>The check, before and after the fix</b><span>the same statements run through both versions: true statements wrongly rejected after a move went from 65 to 0</span></span></li><li><span class="no">4</span><span class="card"><b>The bug put back on purpose</b><span>reintroduce the bug: the harness must catch it, and taking it out again must pass</span></span></li></ol></div>
+<figcaption class="cap">
+<p class="h">A fix is checked on saved games in four steps before I play again, and the last step puts the bug back on purpose to prove the harness catches&nbsp;it.</p>
+<p class="s">The 201 coach conversations and 34 equally fast mates come from my games; the 4,772 true and 2,243 false statements about them are&nbsp;generated.</p>
+<p class="l"><b>Limit:</b> the labels follow the check’s own rules, so a pass shows the check does what it was built to do, not that those rules are&nbsp;complete.</p>
+</figcaption>
+  </figure>
 
-  <div class="two">
-    <div class="chartbox">
-    <svg viewBox="0 0 460 260" role="img" aria-label="Latency by arm. Default 14.5 seconds median and 47.4 at p90; low 6.2 and 11.8; disabled 5.6 and 10.5.">
-      <text x="0" y="14" class="axislbl" style="font-weight:650">Latency, seconds</text>
-      <g class="grid">
-        <line x1="44" y1="200" x2="450" y2="200"/><line x1="44" y1="160" x2="450" y2="160"/>
-        <line x1="44" y1="120" x2="450" y2="120"/><line x1="44" y1="80" x2="450" y2="80"/><line x1="44" y1="40" x2="450" y2="40"/>
-      </g>
-      <g class="axislbl">
-        <text x="16" y="204">0</text><text x="10" y="164">12.5</text><text x="16" y="124">25</text>
-        <text x="10" y="84">37.5</text><text x="16" y="44">50</text>
-      </g>
-      <line x1="44" y1="200" x2="450" y2="200" class="caxis"/>
-      <!-- p50 group -->
-      <g>
-        <rect x="72"  y="153.6" width="30" height="46.4" rx="4" fill="var(--s1)"/>
-        <rect x="106" y="180.4" width="30" height="19.6" rx="4" fill="var(--s2)"/>
-        <rect x="140" y="182.2" width="30" height="17.8" rx="4" fill="var(--s3)"/>
-        <text x="87"  y="148" class="vallbl" text-anchor="middle">14.5</text>
-        <text x="121" y="175" class="vallbl" text-anchor="middle">6.2</text>
-        <text x="155" y="177" class="vallbl" text-anchor="middle">5.6</text>
-        <text x="121" y="220" class="axislbl" text-anchor="middle">median</text>
-      </g>
-      <!-- p90 group -->
-      <g>
-        <rect x="268" y="48.3"  width="30" height="151.7" rx="4" fill="var(--s1)"/>
-        <rect x="302" y="162.2" width="30" height="37.8" rx="4" fill="var(--s2)"/>
-        <rect x="336" y="166.4" width="30" height="33.6" rx="4" fill="var(--s3)"/>
-        <text x="283" y="42"  class="vallbl" text-anchor="middle">47.4</text>
-        <text x="317" y="157" class="vallbl" text-anchor="middle">11.8</text>
-        <text x="351" y="161" class="vallbl" text-anchor="middle">10.5</text>
-        <text x="317" y="220" class="axislbl" text-anchor="middle">p90</text>
-      </g>
-    </svg>
-    </div>
+  <h3 class="ctitle" style="margin-top:28px">The check on where pieces stand, before and after the fix</h3>
+  <figure class="fig">
+<div class="chartbox"><svg class="cw" viewBox="0 0 460 256" role="img" aria-label="The check on where pieces stand, before and after the fix. True statements about the board after a move, wrongly rejected: 45% before (65 of 144), 0% after. All true statements wrongly rejected: 1.4% before (65 of 4,772), 0% after. False statements caught, of 2,243 generated: 100% before and after. Rejections that were right, in game 198: 2 of 16 before, 2 of 2 after."><line x1="200" y1="30" x2="200" y2="252" class="grid"/><text x="200" y="22" class="axislbl" text-anchor="middle" style="fill:var(--ink2)">0</text><line x1="270" y1="30" x2="270" y2="252" class="grid"/><text x="270" y="22" class="axislbl" text-anchor="middle" style="fill:var(--ink2)">50%</text><line x1="340" y1="30" x2="340" y2="252" class="grid"/><text x="340" y="22" class="axislbl" text-anchor="middle" style="fill:var(--ink2)">100%</text><text x="0" y="50" style="font-size:11.5px;font-weight:700;letter-spacing:.04em;fill:var(--ink2)">LOWER IS BETTER</text><text x="0" y="160" style="font-size:11.5px;font-weight:700;letter-spacing:.04em;fill:var(--ink2)">HIGHER IS BETTER</text><text x="0" y="76" style="font-size:13px;font-weight:650;fill:var(--ink)">Wrongly rejected</text><text x="0" y="92" style="font-size:11.5px;fill:var(--ink2)">true statements after a move</text><line x1="263.196" y1="82" x2="200" y2="82" stroke="var(--muted)" stroke-width="2"/><g><title>Wrongly rejected, true statements after a move: before the fix</title><circle cx="263.196" cy="82" r="5.5" fill="var(--muted)" stroke="var(--panel)" stroke-width="2"/></g><g><title>Wrongly rejected, true statements after a move: after the fix, 45% → 0%</title><circle cx="200" cy="82" r="5.5" fill="var(--s1)" stroke="var(--panel)" stroke-width="2"/></g><text x="458" y="76" text-anchor="end" style="font-size:13px;font-weight:650;fill:var(--ink)" data-minx="350">45% → 0%</text><text x="458" y="92" text-anchor="end" style="font-size:11.5px;fill:var(--ink2)" data-minx="350">65 of 144 before</text><text x="0" y="120" style="font-size:13px;font-weight:650;fill:var(--ink)">Wrongly rejected</text><text x="0" y="136" style="font-size:11.5px;fill:var(--ink2)">all true statements</text><line x1="201.904" y1="126" x2="200" y2="126" stroke="var(--muted)" stroke-width="2"/><g><title>Wrongly rejected, all true statements: before the fix</title><circle cx="201.904" cy="126" r="5.5" fill="var(--muted)" stroke="var(--panel)" stroke-width="2"/></g><g><title>Wrongly rejected, all true statements: after the fix, 1.4% → 0%</title><circle cx="200" cy="126" r="5.5" fill="var(--s1)" stroke="var(--panel)" stroke-width="2"/></g><text x="458" y="120" text-anchor="end" style="font-size:13px;font-weight:650;fill:var(--ink)" data-minx="350">1.4% → 0%</text><text x="458" y="136" text-anchor="end" style="font-size:11.5px;fill:var(--ink2)" data-minx="350">65 of 4,772 before</text><text x="0" y="186" style="font-size:13px;font-weight:650;fill:var(--ink)">False statements caught</text><text x="0" y="202" style="font-size:11.5px;fill:var(--ink2)">generated false statements</text><line x1="340" y1="192" x2="340" y2="192" stroke="var(--muted)" stroke-width="2"/><g><title>False statements caught, generated false statements: before the fix</title><circle cx="340" cy="192" r="5.5" fill="var(--muted)" stroke="var(--panel)" stroke-width="2"/></g><g><title>False statements caught, generated false statements: after the fix, 100% → 100%</title><circle cx="340" cy="192" r="5.5" fill="var(--s1)" stroke="var(--panel)" stroke-width="2"/></g><text x="458" y="186" text-anchor="end" style="font-size:13px;font-weight:650;fill:var(--ink)" data-minx="350">100% → 100%</text><text x="458" y="202" text-anchor="end" style="font-size:11.5px;fill:var(--ink2)" data-minx="350">of 2,243 generated</text><text x="0" y="230" style="font-size:13px;font-weight:650;fill:var(--ink)">Rejections that were right</text><text x="0" y="246" style="font-size:11.5px;fill:var(--ink2)">game 198’s rejected answers</text><line x1="217.5" y1="236" x2="340" y2="236" stroke="var(--muted)" stroke-width="2"/><g><title>Rejections that were right, game 198’s rejected answers: before the fix</title><circle cx="217.5" cy="236" r="5.5" fill="var(--muted)" stroke="var(--panel)" stroke-width="2"/></g><g><title>Rejections that were right, game 198’s rejected answers: after the fix, 2 of 16 → 2 of 2</title><circle cx="340" cy="236" r="5.5" fill="var(--s1)" stroke="var(--panel)" stroke-width="2"/></g><text x="458" y="230" text-anchor="end" style="font-size:13px;font-weight:650;fill:var(--ink)" data-minx="350">2 of 16 → 2 of 2</text><text x="458" y="246" text-anchor="end" style="font-size:11.5px;fill:var(--ink2)" data-minx="350">game 198</text></svg>
+<div class="bc cn" role="img" aria-label="The check on where pieces stand, before and after the fix. True statements about the board after a move, wrongly rejected: 45% before (65 of 144), 0% after. All true statements wrongly rejected: 1.4% before (65 of 4,772), 0% after. False statements caught, of 2,243 generated: 100% before and after. Rejections that were right, in game 198: 2 of 16 before, 2 of 2 after."><div class="bc-ax"><span style="left:0%">0</span><span style="left:50%">50%</span><span style="left:100%">100%</span></div><div class="bc-g">LOWER IS BETTER</div><div class="bc-r"><div class="bc-top"><span><b>Wrongly rejected</b><span>true statements after a move</span></span><span class="bc-v"><b>45% → 0%</b><span>65 of 144 before</span></span></div><div class="bc-trk"><i class="ln" style="left:0%;width:45.14%"></i><i class="dot b" style="left:45.14%"></i><i class="dot a" style="left:0%"></i></div></div><div class="bc-r"><div class="bc-top"><span><b>Wrongly rejected</b><span>all true statements</span></span><span class="bc-v"><b>1.4% → 0%</b><span>65 of 4,772 before</span></span></div><div class="bc-trk"><i class="ln" style="left:0%;width:1.36%"></i><i class="dot b" style="left:1.36%"></i><i class="dot a" style="left:0%"></i></div></div><div class="bc-g">HIGHER IS BETTER</div><div class="bc-r"><div class="bc-top"><span><b>False statements caught</b><span>generated false statements</span></span><span class="bc-v"><b>100% → 100%</b><span>of 2,243 generated</span></span></div><div class="bc-trk"><i class="ln" style="left:100%;width:0%"></i><i class="dot b" style="left:100%"></i><i class="dot a" style="left:100%"></i></div></div><div class="bc-r"><div class="bc-top"><span><b>Rejections that were right</b><span>game 198’s rejected answers</span></span><span class="bc-v"><b>2 of 16 → 2 of 2</b><span>game 198</span></span></div><div class="bc-trk"><i class="ln" style="left:12.5%;width:87.5%"></i><i class="dot b" style="left:12.5%"></i><i class="dot a" style="left:100%"></i></div></div></div></div>
+<div class="legend"><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="var(--muted)"/></svg><span>before the fix</span></div><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="var(--s1)"/></svg><span>after the fix</span></div></div>
+<figcaption class="cap">
+<p class="h">After the fix, the check on where pieces stand wrongly rejected 0 of 144 true statements about the board after a move, down from 65, and still caught all 2,243 false&nbsp;ones.</p>
+<p class="s">Positions come from 201 of my conversations with the coach; the statements about them are generated and labelled true or false by reading each board. The last row is the 16 answers the check rejected in game&nbsp;198.</p>
+<p class="l"><b>Limit:</b> the labels follow the check’s own rules, so this shows the check does what it was built to do, not that those rules are&nbsp;complete.</p>
+</figcaption>
+  </figure>
+  <button class="tbtn" data-show="Show as a table" data-hide="Hide the table" onclick="var t=document.getElementById('tb');t.classList.toggle('hid');this.textContent=t.classList.contains('hid')?this.dataset.show:this.dataset.hide">Show as a table</button>
+<table class="dt hid" id="tb"><thead><tr><th>measure</th><th>what it counts</th><th>measured on</th><th class="n">before</th><th class="n">after</th></tr></thead><tbody>
+<tr><td>false positive rate</td><td>true statements wrongly rejected</td><td>144 generated statements about the board after a move</td><td class="n">45% (65 of 144)</td><td class="n">0%</td></tr>
+<tr><td>false positive rate</td><td>true statements wrongly rejected</td><td>4,772 generated true statements</td><td class="n">1.4% (65 of 4,772)</td><td class="n">0%</td></tr>
+<tr><td>recall</td><td>false statements caught</td><td>2,243 generated false statements</td><td class="n">100%</td><td class="n">100%</td></tr>
+<tr><td>precision</td><td>rejections that were right</td><td>game 198’s rejected answers</td><td class="n">2 of 16</td><td class="n">2 of 2</td></tr>
+</tbody></table>
 
-    <div class="chartbox">
-    <svg viewBox="0 0 460 260" role="img" aria-label="Template fallback rate by difficulty. On the hardest bucket, tactical and mate questions, default is 18.7 percent, low is 13.3 percent, disabled is 22.7 percent.">
-      <text x="0" y="14" class="axislbl" style="font-weight:650">Fell back to a canned reply, % -- by question difficulty</text>
-      <g class="grid">
-        <line x1="44" y1="200" x2="450" y2="200"/><line x1="44" y1="168" x2="450" y2="168"/>
-        <line x1="44" y1="136" x2="450" y2="136"/><line x1="44" y1="104" x2="450" y2="104"/>
-        <line x1="44" y1="72" x2="450" y2="72"/><line x1="44" y1="40" x2="450" y2="40"/>
-      </g>
-      <g class="axislbl">
-        <text x="22" y="204">0</text><text x="22" y="172">5</text><text x="16" y="140">10</text>
-        <text x="16" y="108">15</text><text x="16" y="76">20</text><text x="16" y="44">25</text>
-      </g>
-      <line x1="44" y1="200" x2="450" y2="200" class="caxis"/>
-      <g>
-        <rect x="64"  y="200"   width="24" height="0"    rx="4" fill="var(--s1)"/>
-        <rect x="91"  y="184.6" width="24" height="15.4" rx="4" fill="var(--s2)"/>
-        <rect x="118" y="139.2" width="24" height="60.8" rx="4" fill="var(--s3)"/>
-        <text x="76"  y="194" class="vallbl" text-anchor="middle" style="font-size:11px">0</text>
-        <text x="103" y="179" class="vallbl" text-anchor="middle" style="font-size:11px">2.4</text>
-        <text x="130" y="134" class="vallbl" text-anchor="middle" style="font-size:11px">9.5</text>
-        <text x="103" y="220" class="axislbl" text-anchor="middle">direct fact</text>
-      </g>
-      <g>
-        <rect x="196" y="175.7" width="24" height="24.3" rx="4" fill="var(--s1)"/>
-        <rect x="223" y="154.6" width="24" height="45.4" rx="4" fill="var(--s2)"/>
-        <rect x="250" y="152"   width="24" height="48"   rx="4" fill="var(--s3)"/>
-        <text x="208" y="170" class="vallbl" text-anchor="middle" style="font-size:11px">3.8</text>
-        <text x="235" y="149" class="vallbl" text-anchor="middle" style="font-size:11px">7.1</text>
-        <text x="262" y="146" class="vallbl" text-anchor="middle" style="font-size:11px">7.5</text>
-        <text x="235" y="220" class="axislbl" text-anchor="middle">needs a line</text>
-      </g>
-      <g>
-        <rect x="328" y="80.3"  width="24" height="119.7" rx="4" fill="var(--s1)"/>
-        <rect x="355" y="114.9" width="24" height="85.1"  rx="4" fill="var(--s2)"/>
-        <rect x="382" y="54.7"  width="24" height="145.3" rx="4" fill="var(--s3)"/>
-        <text x="340" y="74"  class="vallbl" text-anchor="middle" style="font-size:11px">18.7</text>
-        <text x="367" y="109" class="vallbl" text-anchor="middle" style="font-size:11px">13.3</text>
-        <text x="394" y="49"  class="vallbl" text-anchor="middle" style="font-size:11px">22.7</text>
-        <text x="367" y="220" class="axislbl" text-anchor="middle">tactical / mate</text>
-      </g>
-      <text x="367" y="236" class="axislbl" text-anchor="middle" style="fill:var(--s2);font-weight:650">low wins where it counts</text>
-    </svg>
-    </div>
-  </div>
+  <p style="margin-top:16px">A check only ever seen passing proves nothing. So I broke the fix on purpose: pulling the move lines back out brought the after-move rejections straight back, and restoring them cleared them again. Four such breaks ran, each built to move one named cell of the results and nothing else.</p>
 
-  <p style="margin-top:8px">So why <code>low</code>? Difficulty, not the average. On the hardest bucket it beats both. It beats <code>disabled</code> in every bucket at a speed cost inside the noise, and beats <code>default</code> on tactical questions while running 2.3x faster on a fifth of the tokens. A blinded human read of 26 questions, columns randomized and the key held separately, gave the bounded arms 18 of 25 non-tie picks.</p>
+  <h3 class="subh">Equal mates now count as the best move</h3>
+  <p>The same method proved a second fix. In game 198 my move mated as fast as the engine's stored best move, and the review still marked it as a miss, because it compared the two by name rather than by how fast they mate. The fix treats an equally fast mate as the best move everywhere the review judges a move.</p>
+  <figure class="fig">
+<div class="textfig"><p class="lead">When my move mates as fast as the engine’s best, all four places that judge a move now count it as the best move, on all 34 such moves in my&nbsp;games:</p><ul class="plain"><li>the turning point in the debrief</li><li>the “you found the best move” line</li><li>the highlighted-moves drawer</li><li>the review arrows</li></ul></div>
+<figcaption class="cap">
+<p class="s">Measured on the 34 moves in my games that mate as fast as the engine’s best; the drawer lists only highlighted moves, so it counts the 3 of them I&nbsp;highlighted.</p>
+</figcaption>
+  </figure>
+  <p style="margin-top:16px">The judge's own nudge about a faster mate got the matching rule. It fires only when the mate I held before my move was 8 moves away or fewer, and it counts both mates from the same point. Before that, 17 of the 60 stored faster-mate nudges had printed the same number twice ("mate in N was there, now it's mate in N" with the same N); 8 of them from one position.</p>
 
-  <div class="concl"><span class="tag">NOTE</span><p>The plan going in said apply this to live chat only. The branch review called the missing gate a bug. <strong>The eval overturned both,</strong> and it shipped everywhere including postgame review, where <code>low</code> scored 21% fallback against default's 29%.</p></div>
+  <div class="concl stack"><span class="tag">WHAT IT CANNOT CATCH YET</span><p>The placement check now accepts a claim that is true on any board the coach was shown, up to four moves down a line. A claim about the current board that only becomes true a few moves later would pass, and the "false statements caught" figures above are measured against that rule. Nothing yet measures how often the coach writes one in play.</p></div>
 </div>
 
 <!-- ============ 8 ============ -->
 <div class="panel">
   <div class="num">08</div>
+  <h2>How we set thinking and effort</h2>
+  <p>Two independent controls, not one parameter. <code>thinking: {type:"disabled"}</code> turns adaptive thinking off. A separate top-level <code>effort: "low"</code> caps it while leaving it on. Three arms, 119 fixed questions, three repetitions each, 357 samples per arm.</p>
+
+  <h3 class="ctitle">Latency by arm</h3>
+  <figure class="fig">
+<div class="chartbox"><svg class="cw" viewBox="0 0 460 236" role="img" aria-label="Latency by arm. Default 14.5 seconds median and 47.4 at p90; low 6.2 and 11.8; disabled 5.6 and 10.5."><text x="0" y="14" class="axislbl" style="font-weight:650;fill:var(--ink2)">Latency, seconds</text><line x1="44" y1="200" x2="450" y2="200" class="grid"/><text x="38" y="204" class="axislbl" text-anchor="end">0</text><line x1="44" y1="160" x2="450" y2="160" class="grid"/><text x="38" y="164" class="axislbl" text-anchor="end">12.5</text><line x1="44" y1="120" x2="450" y2="120" class="grid"/><text x="38" y="124" class="axislbl" text-anchor="end">25</text><line x1="44" y1="80" x2="450" y2="80" class="grid"/><text x="38" y="84" class="axislbl" text-anchor="end">37.5</text><line x1="44" y1="40" x2="450" y2="40" class="grid"/><text x="38" y="44" class="axislbl" text-anchor="end">50</text><line x1="44" y1="200" x2="450" y2="200" class="caxis"/><path d="M84,200 V157.6 Q84,153.6 88,153.6 H104 Q108,153.6 108,157.6 V200 Z" fill="var(--s1)"><title>median, default (unbounded): 14.5</title></path><text x="96" y="147.6" class="vallbl" text-anchor="middle">14.5</text><path d="M110,200 V184.2 Q110,180.2 114,180.2 H130 Q134,180.2 134,184.2 V200 Z" fill="var(--s2)"><title>median, low, shipped: 6.2</title></path><text x="122" y="174.2" class="vallbl" text-anchor="middle">6.2</text><path d="M136,200 V186.1 Q136,182.1 140,182.1 H156 Q160,182.1 160,186.1 V200 Z" fill="var(--s3)"><title>median, disabled: 5.6</title></path><text x="148" y="176.1" class="vallbl" text-anchor="middle">5.6</text><text x="122" y="220" class="axislbl" text-anchor="middle" style="fill:var(--ink2)">median</text><path d="M282,200 V52.3 Q282,48.3 286,48.3 H302 Q306,48.3 306,52.3 V200 Z" fill="var(--s1)"><title>p90, default (unbounded): 47.4</title></path><text x="294" y="42.3" class="vallbl" text-anchor="middle">47.4</text><path d="M308,200 V166.2 Q308,162.2 312,162.2 H328 Q332,162.2 332,166.2 V200 Z" fill="var(--s2)"><title>p90, low, shipped: 11.8</title></path><text x="320" y="156.2" class="vallbl" text-anchor="middle">11.8</text><path d="M334,200 V170.4 Q334,166.4 338,166.4 H354 Q358,166.4 358,170.4 V200 Z" fill="var(--s3)"><title>p90, disabled: 10.5</title></path><text x="346" y="160.4" class="vallbl" text-anchor="middle">10.5</text><text x="320" y="220" class="axislbl" text-anchor="middle" style="fill:var(--ink2)">p90</text></svg>
+<div class="hb cn" role="img" aria-label="Latency by arm. Default 14.5 seconds median and 47.4 at p90; low 6.2 and 11.8; disabled 5.6 and 10.5."><div class="hb-t">Latency, seconds</div><div class="hb-g"><div class="hb-gl">median</div><div class="hb-r"><span class="hb-s">default (unbounded)</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.2900);background:var(--s1)"></i><b>14.5</b></span></div><div class="hb-r"><span class="hb-s">low, shipped</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.1240);background:var(--s2)"></i><b>6.2</b></span></div><div class="hb-r"><span class="hb-s">disabled</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.1120);background:var(--s3)"></i><b>5.6</b></span></div></div><div class="hb-g"><div class="hb-gl">p90</div><div class="hb-r"><span class="hb-s">default (unbounded)</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.9480);background:var(--s1)"></i><b>47.4</b></span></div><div class="hb-r"><span class="hb-s">low, shipped</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.2360);background:var(--s2)"></i><b>11.8</b></span></div><div class="hb-r"><span class="hb-s">disabled</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.2100);background:var(--s3)"></i><b>10.5</b></span></div></div></div></div>
+<div class="legend"><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="var(--s1)"/></svg><span>default (unbounded)</span></div><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="var(--s2)"/></svg><span>low, shipped</span></div><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="var(--s3)"/></svg><span>disabled</span></div></div>
+<figcaption class="cap">
+<p class="h">Capping the coach at low thinking cut its median reply from 14.5 to 6.2 seconds and its p90 from 47.4 to&nbsp;11.8.</p>
+<p class="s">From the Aug 3 eval: 119 questions asked 3 times each, 357 replies per setting; p90 is the time nine in ten replies&nbsp;beat.</p>
+<p class="l"><b>Limit:</b> disabled was faster still, 5.6 seconds at the median, but fell back to a canned reply most often on the hardest questions, 22.7% of the&nbsp;time.</p>
+</figcaption>
+  </figure>
+  <h3 class="ctitle" style="margin-top:28px">Fallback by difficulty</h3>
+  <figure class="fig">
+<div class="chartbox"><svg class="cw" viewBox="0 0 460 250" role="img" aria-label="Share of replies that fell back to a canned reply, by question difficulty. Direct fact: default 0 percent, low 2.4, disabled 9.5. Needs a line: default 3.8, low 7.1, disabled 7.5. Tactical and mate, the hardest bucket: default 18.7, low 13.3, disabled 22.7."><text x="0" y="14" class="axislbl" style="font-weight:650;fill:var(--ink2)">Fell back to a canned reply, %, by question difficulty</text><line x1="44" y1="200" x2="450" y2="200" class="grid"/><text x="38" y="204" class="axislbl" text-anchor="end">0</text><line x1="44" y1="168" x2="450" y2="168" class="grid"/><text x="38" y="172" class="axislbl" text-anchor="end">5</text><line x1="44" y1="136" x2="450" y2="136" class="grid"/><text x="38" y="140" class="axislbl" text-anchor="end">10</text><line x1="44" y1="104" x2="450" y2="104" class="grid"/><text x="38" y="108" class="axislbl" text-anchor="end">15</text><line x1="44" y1="72" x2="450" y2="72" class="grid"/><text x="38" y="76" class="axislbl" text-anchor="end">20</text><line x1="44" y1="40" x2="450" y2="40" class="grid"/><text x="38" y="44" class="axislbl" text-anchor="end">25</text><line x1="44" y1="200" x2="450" y2="200" class="caxis"/><text x="76" y="194.0" class="vallbl" text-anchor="middle">0</text><path d="M90,200 V188.6 Q90,184.6 94,184.6 H110 Q114,184.6 114,188.6 V200 Z" fill="var(--s2)"><title>direct fact, low, shipped: 2.4</title></path><text x="102" y="178.6" class="vallbl" text-anchor="middle">2.4</text><path d="M116,200 V143.2 Q116,139.2 120,139.2 H136 Q140,139.2 140,143.2 V200 Z" fill="var(--s3)"><title>direct fact, disabled: 9.5</title></path><text x="128" y="133.2" class="vallbl" text-anchor="middle">9.5</text><text x="102" y="220" class="axislbl" text-anchor="middle" style="fill:var(--ink2)">direct fact</text><path d="M196,200 V179.7 Q196,175.7 200,175.7 H216 Q220,175.7 220,179.7 V200 Z" fill="var(--s1)"><title>needs a line, default (unbounded): 3.8</title></path><text x="208" y="169.7" class="vallbl" text-anchor="middle">3.8</text><path d="M222,200 V158.6 Q222,154.6 226,154.6 H242 Q246,154.6 246,158.6 V200 Z" fill="var(--s2)"><title>needs a line, low, shipped: 7.1</title></path><text x="234" y="148.6" class="vallbl" text-anchor="middle">7.1</text><path d="M248,200 V156.0 Q248,152.0 252,152.0 H268 Q272,152.0 272,156.0 V200 Z" fill="var(--s3)"><title>needs a line, disabled: 7.5</title></path><text x="260" y="146.0" class="vallbl" text-anchor="middle">7.5</text><text x="234" y="220" class="axislbl" text-anchor="middle" style="fill:var(--ink2)">needs a line</text><path d="M328,200 V84.3 Q328,80.3 332,80.3 H348 Q352,80.3 352,84.3 V200 Z" fill="var(--s1)"><title>tactical / mate, default (unbounded): 18.7</title></path><text x="340" y="74.3" class="vallbl" text-anchor="middle">18.7</text><path d="M354,200 V118.9 Q354,114.9 358,114.9 H374 Q378,114.9 378,118.9 V200 Z" fill="var(--s2)"><title>tactical / mate, low, shipped: 13.3</title></path><text x="366" y="108.9" class="vallbl" text-anchor="middle">13.3</text><path d="M380,200 V58.7 Q380,54.7 384,54.7 H400 Q404,54.7 404,58.7 V200 Z" fill="var(--s3)"><title>tactical / mate, disabled: 22.7</title></path><text x="392" y="48.7" class="vallbl" text-anchor="middle">22.7</text><text x="366" y="220" class="axislbl" text-anchor="middle" style="fill:var(--ink2)">tactical / mate</text><text x="458" y="240" text-anchor="end" style="font-size:12px;font-weight:650;fill:var(--ink)" data-minx="0">low is lowest on the hardest bucket</text></svg>
+<div class="hb cn" role="img" aria-label="Share of replies that fell back to a canned reply, by question difficulty. Direct fact: default 0 percent, low 2.4, disabled 9.5. Needs a line: default 3.8, low 7.1, disabled 7.5. Tactical and mate, the hardest bucket: default 18.7, low 13.3, disabled 22.7."><div class="hb-t">Fell back to a canned reply, %, by question difficulty</div><div class="hb-g"><div class="hb-gl">direct fact</div><div class="hb-r"><span class="hb-s">default (unbounded)</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.0000);background:var(--s1)"></i><b>0</b></span></div><div class="hb-r"><span class="hb-s">low, shipped</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.0960);background:var(--s2)"></i><b>2.4</b></span></div><div class="hb-r"><span class="hb-s">disabled</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.3800);background:var(--s3)"></i><b>9.5</b></span></div></div><div class="hb-g"><div class="hb-gl">needs a line</div><div class="hb-r"><span class="hb-s">default (unbounded)</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.1520);background:var(--s1)"></i><b>3.8</b></span></div><div class="hb-r"><span class="hb-s">low, shipped</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.2840);background:var(--s2)"></i><b>7.1</b></span></div><div class="hb-r"><span class="hb-s">disabled</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.3000);background:var(--s3)"></i><b>7.5</b></span></div></div><div class="hb-g"><div class="hb-gl">tactical / mate</div><div class="hb-r"><span class="hb-s">default (unbounded)</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.7480);background:var(--s1)"></i><b>18.7</b></span></div><div class="hb-r"><span class="hb-s">low, shipped</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.5320);background:var(--s2)"></i><b>13.3</b></span></div><div class="hb-r"><span class="hb-s">disabled</span><span class="hb-trk"><i style="width:calc((100% - 46px) * 0.9080);background:var(--s3)"></i><b>22.7</b></span></div></div><div class="hb-note">low is lowest on the hardest bucket</div></div></div>
+<div class="legend"><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="var(--s1)"/></svg><span>default (unbounded)</span></div><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="var(--s2)"/></svg><span>low, shipped</span></div><div class="it"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="var(--s3)"/></svg><span>disabled</span></div></div>
+<figcaption class="cap">
+<p class="h">On the hardest questions, low fell back to a canned reply least: 13.3%, against 18.7% for default and 22.7% for&nbsp;disabled.</p>
+<p class="s">From the same Aug 3 eval: the 357 replies per setting, sorted into three buckets by how hard the question&nbsp;was.</p>
+<p class="l"><b>Limit:</b> on direct fact questions low fell back 2.4% of the time, where default never&nbsp;did.</p>
+</figcaption>
+  </figure>
+
+  <p style="margin-top:16px">So why <code>low</code>? Difficulty, not the average. On the hardest bucket it beats both. It beats <code>disabled</code> in every bucket at a speed cost inside the noise, and beats <code>default</code> on tactical questions while running 2.3x faster on a fifth of the tokens. A blinded human read of 26 questions, columns randomized and the key held separately, gave the bounded arms 18 of 25 non-tie picks.</p>
+
+  <div class="concl"><span class="tag">NOTE</span><p>The plan going in said apply this to live chat only. The branch review called the missing gate a bug. <strong>The eval overturned both,</strong> and it shipped everywhere including postgame review, where <code>low</code> scored 21% fallback against default's 29%.</p></div>
+</div>
+
+<!-- ============ 9 ============ -->
+<div class="panel">
+  <div class="num">09</div>
   <h2>Finding that root cause took four passes</h2>
   <p>Twelve days, four investigations. The first three each found a real cause, shipped a real fix, watched the median improve, and filed the rest under model variance.</p>
   <table class="dt">
@@ -489,49 +514,79 @@
   <div class="concl"><span class="tag">LESSON</span><p>A fix that measurably helps is the most dangerous stopping point. It validates the pass without validating the diagnosis.</p></div>
 </div>
 
-<!-- ============ 9 ============ -->
-<div class="panel">
-  <div class="num">09</div>
-  <h2>Two engines, because truth and human-likeness are different jobs</h2>
-  <p>Stockfish evaluates. Maia opposes, playing like a human of a given rating. A game instead of a wall.</p>
-  <p>Two details cost real debugging. Maia runs at <code>Temperature = 1.0</code>. At the engine default of 0 it always plays its single most likely move, which makes it play <strong>stronger</strong> than its rating band. Real 1100-rated players sample the mistakes too. And we send <code>ucinewgame</code> before every query, because the sampling randomness is not reseeded per move. A warmed instance once returned the same move 40 times out of 40.</p>
-  <p>Search budgets split on purpose. The judge gets 350ms, run twice, which is what holds the sub-two-second verdict. A hint gets 1500ms plus a 500ms verification pass, because hints served from the judge's shallow eval failed playtest.</p>
-</div>
-
 <!-- ============ 10 ============ -->
 <div class="panel">
   <div class="num">10</div>
-  <h2>The interface that made the coach swappable</h2>
-  <p><code>CoachBackend</code> is an interface with four members, one optional. It was designed before there was a performance problem to solve.</p>
-  <p>Then telemetry showed 13 of 14 live nudges missing their own 15-second budget. That budget had to cover process startup, and startup ate most of every call. The fix was a second implementation of the same interface. Nothing downstream changed. Narration went 9s to 3.6s, chat 9-13s to 7s.</p>
-  <p>Every growth since has been an additive optional parameter, so the other three backends needed zero edits each time.</p>
+  <h2>Two engines, because truth and human-likeness are different jobs</h2>
+  <p>Stockfish evaluates. Maia opposes, playing like a human of a given rating. A game instead of a wall.</p>
+  <p class="spec">From the spec: opponents that play human-like at every level up to Maia's 1900 cap.</p>
+  <p>Two details cost real debugging. Maia runs at <code>Temperature = 1.0</code>. At the engine default of 0 it always plays its single most likely move, which makes it play <strong>stronger</strong> than its rating band. Real 1100-rated players sample the mistakes too. And we send <code>ucinewgame</code> before every query, because the sampling randomness is not reseeded per move. A warmed instance once returned the same move 40 times out of 40.</p>
+  <p>Search budgets split on purpose. The judge gets 350ms, run twice, which is what holds the sub-two-second verdict. A hint gets 1500ms plus a 500ms verification pass, because hints served from the judge's shallow eval failed playtest.</p>
 </div>
 
 <!-- ============ 11 ============ -->
 <div class="panel">
   <div class="num">11</div>
+  <h2>The interface that made the coach swappable</h2>
+  <p><code>CoachBackend</code> is an interface with four members, one optional. It was designed before there was a performance problem to solve.</p>
+  <p class="spec">From the spec: the game never depends on a subscription to run; a local model sits behind the same interface.</p>
+  <p>Then telemetry showed 13 of 14 live nudges missing their own 15-second budget. That budget had to cover process startup, and startup ate most of every call. The fix was a second implementation of the same interface. Nothing downstream changed. Narration went 9s to 3.6s, chat 9-13s to 7s.</p>
+  <p>Every growth since has been an additive optional parameter, so the other three backends needed zero edits each time.</p>
+</div>
+
+<!-- ============ 12 ============ -->
+<div class="panel">
+  <div class="num">12</div>
   <h2>One SQLite file, ten tables, no ORM</h2>
-  <p>190 games, 2,961 moves, integrity verified by counting rows.</p>
+  <p>199 games, 3,287 moves, integrity verified by counting rows.</p>
+  <p class="spec">From the spec's guardrails: trace completeness 100%.</p>
   <table class="dt">
     <thead><tr><th>Table</th><th class="n">Rows</th><th>What it records</th></tr></thead>
     <tbody>
-      <tr><td><code>sessions</code></td><td class="n">875</td><td>one per sitting</td></tr>
-      <tr><td><code>games</code></td><td class="n">190</td><td>opponent, result, which colour I played (<code>player_color</code>)</td></tr>
-      <tr><td><code>moves</code></td><td class="n">2,961</td><td>both sides, with the engine's eval attached and whose move it was (<code>side</code>)</td></tr>
-      <tr><td><code>verdicts</code></td><td class="n">3,653</td><td>every judged move, including retracted ones</td></tr>
-      <tr><td><code>advice_traces</code></td><td class="n">284</td><td>every coach call, prompt and output</td></tr>
-      <tr><td><code>turning_points</code></td><td class="n">139</td><td>what actually swung each game</td></tr>
-      <tr><td><code>chat_messages</code></td><td class="n">255</td><td>my questions, and only validated replies</td></tr>
-      <tr><td><code>game_events</code></td><td class="n">1,414</td><td>hints and overrides</td></tr>
-      <tr><td><code>mode_timers</code></td><td class="n">254</td><td>screen time</td></tr>
-      <tr><td><code>coach_notes</code></td><td class="n">4</td><td>the only cross-game memory</td></tr>
+      <tr><td><code>sessions</code></td><td class="n">1,438</td><td>one per sitting</td></tr>
+      <tr><td><code>games</code></td><td class="n">199</td><td>opponent, result, which colour I played (<code>player_color</code>)</td></tr>
+      <tr><td><code>moves</code></td><td class="n">3,287</td><td>both sides, with the engine's eval attached and whose move it was (<code>side</code>)</td></tr>
+      <tr><td><code>verdicts</code></td><td class="n">4,078</td><td>every judged move, including retracted ones</td></tr>
+      <tr><td><code>advice_traces</code></td><td class="n">377</td><td>every coach call: prompt, output, the thinking setting it ran under, and which of its sentences a check looked at</td></tr>
+      <tr><td><code>turning_points</code></td><td class="n">165</td><td>what actually swung each game</td></tr>
+      <tr><td><code>chat_messages</code></td><td class="n">377</td><td>my questions, and only replies that passed their checks</td></tr>
+      <tr><td><code>game_events</code></td><td class="n">1,606</td><td>hints and overrides</td></tr>
+      <tr><td><code>mode_timers</code></td><td class="n">426</td><td>screen time</td></tr>
+      <tr><td><code>coach_notes</code></td><td class="n">6</td><td>the only cross-game memory</td></tr>
     </tbody>
   </table>
-  <p style="margin-top:12px"><strong>Verdicts outnumber moves</strong>, because every move I considered and retracted was judged and recorded too. <strong>Chat stores only validated coach replies</strong>, so the gap between my 138 messages and cookie's 117 is literally the count of answers that failed a check and got pulled. And <strong>there is no migration folder and no version number</strong>. The code carries a declared list of every column each table should have. At startup it diffs that against the live database and adds what is missing.</p>
+  <p style="margin-top:12px"><strong>Verdicts outnumber moves</strong>: every move I considered and retracted was judged and recorded too. Of the chat messages, 201 are mine and 176 are the coach's. <strong>There is no migration folder and no version number</strong>: the code declares every column each table should have, diffs that against the live database at startup, and adds what is missing.</p>
   <p><strong>Whose move it was is recorded, not computed.</strong> The party that made a move (me or mallow) is written onto its row the moment the move is made, read straight off the chess engine's own move object; nothing downstream ever derives whose move it was from a ply number.</p>
 </div>
 
-<p class="foot">Girl Chess. Built 0-to-1 by directing Claude Code. Counts verified read-only against the live database, 2026-08-26. They are a snapshot: I still play into this database, so the live figures move with every game.</p>
+<!-- ============ 13 ============ -->
+<div class="panel" id="agent-telemetry">
+  <div class="num">13</div>
+  <h2>What an agent can read while I play</h2>
+  <p>An agent debugging the coach reads the game's state as data, from three endpoints, four command-line tools and the page itself, without a screenshot.</p>
+  <p class="spec">From the spec: a red flag is diagnosed from the traces, not cut.</p>
+  <table class="dt kv">
+    <thead><tr><th>Endpoint</th><th>What it lets you see</th></tr></thead>
+    <tbody>
+      <tr><td><code>/api/health</code></td><td>whether the server is up, and when the process started, the one reliable sign of which code it is running</td></tr>
+      <tr><td><code>/api/game/:id/state</code></td><td>the live board, the move count, whose turn it is, the result, the last verdict, and whether the coach has been switched off for that game</td></tr>
+      <tr><td><code>/api/agent/manifest</code></td><td>this table, as JSON, so a tool reads the vocabulary rather than this page</td></tr>
+    </tbody>
+  </table>
+  <table class="dt kv" style="margin-top:18px">
+    <thead><tr><th>Command</th><th>What it lets you see</th></tr></thead>
+    <tbody>
+      <tr><td><code>npm run dossier</code></td><td>everything the coach saw and said for one reply, on one screen; with a date, how many sentences a check looked at across every reply since then</td></tr>
+      <tr><td><code>npm run tail</code></td><td>a read-only live feed of moves and coach calls as I play</td></tr>
+      <tr><td><code>npm run scoreboard</code></td><td>for one game: how many coach replies were model-written or canned, how many needed a retry, my thumbs, the thinking setting, and how many sentences no check looked at</td></tr>
+      <tr><td><code>tools/replay-trace.ts</code></td><td>one stored coach reply run again through today's checks, to see whether it would still be rejected</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:14px">Nine attributes on the page's own elements carry the live state: the board, whose turn it is, whether a move is pending, which arrows are drawn, the hint level and whether the hint is showing, the coach reply in view, whether the game is over, and how many turning-point cards there are.</p>
+  <p>Every coach call now records two more things: the thinking setting it ran under, and a sentence-by-sentence record of which claims a check looked at. Rows from before the thinking column have none, so July and September retries can't be compared on it. Which claims get counted depends on where the coach spoke: a chat reply's "checked" count covers every check it ran; a note's covers only the defence check, the only claim check a note runs. Compare the two counts within one place, never across.</p>
+</div>
+
+<p class="foot">Girl Chess. Built 0-to-1 by directing Claude Code. Counts verified read-only against the live database, 2026-09-22. They are a snapshot: I still play into this database, so the live figures move with every game.</p>
 
 </div>
 <script>
