@@ -40,7 +40,8 @@ import {
   type ChatFactList,
 } from "../server/coach/chat";
 import { agentSdkBackend } from "../server/coach/backends/agent-sdk";
-import type { CoachUsage, ThinkingPref } from "../server/coach/backends/types";
+import type { CoachBackend, CoachUsage, ThinkingPref } from "../server/coach/backends/types";
+import { getAdviceTraceById } from "../server/store/db";
 
 // ---------------------------------------------------------------------
 // Preflight (plan step 1 / step 5's "the eval must be able to detect its
@@ -210,21 +211,34 @@ function renderScoreTable(table: Record<string, ArmStats>): string {
 }
 
 // ---------------------------------------------------------------------
-// The replay run itself (plan step 5) -- NOT exercised by this round's
-// tests, and not run by this session. Reads a --db copy readonly, never
-// data/girlchess.db; writes every chat() call to a scratch db this tool
-// opens itself (seedScratchDb, borrowed from tools/rca-eval/lib/
-// scenarioDb.ts) so nothing lands in the copy either. `chat()`'s own
-// insertAdviceTrace call still writes rows -- to that scratch db, which
-// is exactly the isolation this tool needs and never the owner's data.
+// The replay run itself (plan step 5). Fix round (2026-09-22, brief-T fix
+// 1): this WAS "not exercised by this round's tests, and not run by this
+// session" -- its first real run threw `FOREIGN KEY constraint failed`
+// on the first id (seedGamesForRows below fixes that) and, once that was
+// fixed, a second latent bug surfaced in readAttemptsForTrace's `require`
+// call (fixed to a static import). Now exercised end to end: the
+// seedGamesForRows/replayRow tests below prove a real (id, arm, rep)
+// replay completes and writes one trace, and a smoke run of one real id
+// against a copy of the owner's db (brief-T's report) confirms it outside
+// the test suite too. Reads a --db copy readonly, never data/girlchess.db;
+// writes every chat() call to a scratch db this tool opens itself
+// (seedScratchDb, borrowed from tools/rca-eval/lib/scenarioDb.ts) so
+// nothing lands in the copy either. `chat()`'s own insertAdviceTrace call
+// still writes rows -- to that scratch db, which is exactly the isolation
+// this tool needs and never the owner's data.
 // ---------------------------------------------------------------------
 
-interface StoredRow {
+export interface StoredRow {
   id: number;
   gameId: number;
   ply: number;
   factsJson: string;
   question: string;
+}
+
+export interface SkippedRow {
+  id: number;
+  reason: string;
 }
 
 // Reads a stored chat row's facts_json plus the user question that
@@ -260,6 +274,34 @@ function readStoredRow(dbPath: string, id: number): StoredRow {
   }
 }
 
+// Fix round (2026-09-22), reviewer finding on brief-T: `readStoredRow`
+// throws on an id it can't recover a question for (no `advice_traces` row,
+// no `chat_messages` row carrying the trace id, or no preceding user
+// message -- the 307/308/309/363 shape from the failed run, orphaned
+// attempts from a rapid multi-message burst). The brief's own rule --
+// "keep skipping them, but report them as skipped with the reason ...
+// never silently" -- was met for those FOUR pre-identified ids by leaving
+// the throw uncaught and letting the id-selection step drop them before
+// calling this tool at all. It was NOT met for the general case: mapping
+// `args.ids` straight through `readStoredRow` (the old runReplay) let ONE
+// bad id in a batch crash the whole run, with nothing about the OTHER ids
+// in that batch ever getting replayed or reported. This function is the
+// per-id skip: each id is read independently, a bad one is caught and
+// recorded in `skipped` with the thrown message as its reason, and every
+// other id in the batch still gets its row.
+export function loadReplayRows(dbPath: string, ids: number[]): { rows: StoredRow[]; skipped: SkippedRow[] } {
+  const rows: StoredRow[] = [];
+  const skipped: SkippedRow[] = [];
+  for (const id of ids) {
+    try {
+      rows.push(readStoredRow(dbPath, id));
+    } catch (err) {
+      skipped.push({ id, reason: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return { rows, skipped };
+}
+
 interface CliArgs {
   db: string;
   ids: number[];
@@ -290,50 +332,114 @@ function parseCliArgs(argv: string[]): CliArgs {
   };
 }
 
-async function runReplay(args: CliArgs): Promise<void> {
-  const rows = args.ids.map((id) => readStoredRow(args.db, id));
+// Fix round (2026-09-22), brief-T fix 1: `chat()`'s own `insertAdviceTrace`
+// call writes a row whose `game_id` REFERENCES games(id) (server/store/db.ts
+// -- this build defaults `PRAGMA foreign_keys = ON`, see tools/import-game.ts's
+// own comment). seedScratchDb's fresh db has real schema but zero games
+// rows, so that write threw `FOREIGN KEY constraint failed` on the FIRST
+// replayed id, every time -- the tool had never been run end to end before
+// this fix (see the file header). This seeds one minimal games row per
+// distinct game_id the replayed rows carry, with that EXACT id (a raw
+// INSERT, not createGame -- createGame auto-increments from 1 and cannot
+// target a specific real game_id like 193/196/197/198). Opened as a
+// SEPARATE Database handle on the same scratch path (scenarioDb.ts's own
+// doctorMoveCount does the same for the same reason: openDb()'s exported
+// helpers have no "insert with an explicit id" API), closed immediately
+// after, before any chat() call reopens/uses the shared handle.
+export function seedGamesForRows(scratchDbPath: string, gameIds: number[]): void {
+  const raw = new Database(scratchDbPath);
+  try {
+    const insert = raw.prepare("INSERT OR IGNORE INTO games(id, opponent) VALUES (?, 'mallow')");
+    const distinct = [...new Set(gameIds)];
+    const tx = raw.transaction((ids: number[]) => {
+      for (const id of ids) insert.run(id);
+    });
+    tx(distinct);
+  } finally {
+    raw.close();
+  }
+}
+
+// One (id, arm, rep) replay call -- extracted so a test can inject a fake
+// CoachBackend (chat.ts's own no-live-model-calls-in-tests convention,
+// server/coach/chat.test.ts's fakeBackend) instead of agentSdkBackend, and
+// so the scratch-db seeding above can be proven necessary by removing it
+// and watching this same call throw the FK error again.
+export async function replayRow(
+  row: StoredRow,
+  arm: ThinkingPref,
+  rep: number,
+  backend: CoachBackend
+): Promise<ReplayResult> {
+  const facts = JSON.parse(row.factsJson) as ChatFactList;
+  const start = Date.now();
+  let usage: CoachUsage | null = null;
+  const result = await chat(
+    row.question,
+    [],
+    facts,
+    backend,
+    { gameId: row.gameId, ply: row.ply, kind: "chat" },
+    {
+      thinkingOverride: arm,
+      onUsage: (u) => {
+        usage = u;
+      },
+    }
+  );
+  const latencyMs = Date.now() - start;
+  return {
+    id: row.id,
+    arm,
+    rep,
+    source: result.source,
+    latencyMs,
+    outputTokens: usage ? (usage as CoachUsage).outputTokens : null,
+    // The attempts_json this row's OWN chat() call just wrote is the real
+    // per-attempt record (output/violations/validated/thinking) -- re-derived
+    // here from the trace this call itself inserted, rather than
+    // reconstructed by hand, so it can never drift from what chat.ts
+    // actually persisted.
+    attempts: readAttemptsForTrace(result.traceId),
+  };
+}
+
+// `backend` is an optional last param, defaulting to `agentSdkBackend` --
+// every existing call site (the CLI's `main()`) omits it and gets today's
+// behavior. A test supplies a fake `CoachBackend` here (chat.test.ts's own
+// no-live-model-calls-in-tests convention) so it can run this function for
+// real, including its skip-and-report path, without a model call.
+export async function runReplay(args: CliArgs, backend: CoachBackend = agentSdkBackend): Promise<void> {
+  // Fix round (2026-09-22), reviewer finding on brief-T: this used to be
+  // `args.ids.map((id) => readStoredRow(args.db, id))`, which throws on
+  // the FIRST bad id and crashes the whole run -- so a batch containing
+  // one of the four orphaned ids (307/308/309/363) never replayed any of
+  // its OTHER ids either, and nothing was ever reported for the ids that
+  // never got a chance to run. `loadReplayRows` reads each id
+  // independently: a bad id is skipped and recorded with its reason, every
+  // other id in the batch still replays.
+  const { rows, skipped } = loadReplayRows(args.db, args.ids);
   runPreflight(rows.map((r) => ({ factsJson: r.factsJson })));
 
   fs.mkdirSync(args.out, { recursive: true });
+  if (skipped.length > 0) {
+    for (const s of skipped) {
+      console.error(`[replay-trace] skipped id ${s.id}: ${s.reason}`);
+    }
+    fs.writeFileSync(path.join(args.out, "skipped.json"), JSON.stringify(skipped, null, 2));
+  }
+  if (rows.length === 0) return;
+
   // Opens a fresh scratch db via openDb() (scenarioDb.ts's own isolation
   // contract) -- every chat() call below, including its insertAdviceTrace
   // write, lands here, never in --db or the owner's real db.
-  seedScratchDb("replay-trace");
+  const scratchPath = seedScratchDb("replay-trace");
+  seedGamesForRows(scratchPath, rows.map((r) => r.gameId));
 
   for (const row of rows) {
-    const facts = JSON.parse(row.factsJson) as ChatFactList;
     for (const arm of args.arms) {
       for (let rep = 1; rep <= args.reps; rep++) {
-        const start = Date.now();
-        let usage: CoachUsage | null = null;
-        const result = await chat(
-          row.question,
-          [],
-          facts,
-          agentSdkBackend,
-          { gameId: row.gameId, ply: row.ply, kind: "chat" },
-          {
-            thinkingOverride: arm,
-            onUsage: (u) => {
-              usage = u;
-            },
-          }
-        );
-        const latencyMs = Date.now() - start;
-        const replayResult: ReplayResult = {
-          id: row.id,
-          arm,
-          rep,
-          source: result.source,
-          latencyMs,
-          outputTokens: usage ? (usage as CoachUsage).outputTokens : null,
-          // The attempts_json this row's OWN chat() call just wrote is the
-          // real per-attempt record (output/violations/validated/thinking)
-          // -- re-derived here from the trace this call itself inserted,
-          // rather than reconstructed by hand, so it can never drift from
-          // what chat.ts actually persisted.
-          attempts: readAttemptsForTrace(result.traceId),
-        };
+        const replayResult = await replayRow(row, arm, rep, backend);
         fs.writeFileSync(
           path.join(args.out, `${row.id}-${arm}-${rep}.json`),
           JSON.stringify(replayResult, null, 2)
@@ -347,7 +453,13 @@ function readAttemptsForTrace(traceId: number): ReplayAttempt[] {
   // Reads back from whichever db openDb() currently has open (the scratch
   // db seedScratchDb pointed it at above) -- never the owner's db, and
   // never the --db copy this tool opened readonly for the stored rows.
-  const { getAdviceTraceById } = require("../server/store/db") as typeof import("../server/store/db");
+  // Fix round (2026-09-22), brief-T fix 1: this was a `require()` call,
+  // which this tool's own module (ESM, `import`/`export` throughout) has
+  // no CJS `require` binding for -- it threw `Cannot find module` the
+  // first time this function actually ran (never exercised before this
+  // fix). A static import at module top, like every other db accessor
+  // this file already uses, works because openDb()'s module-level
+  // singleton is what changes underneath it, not the import binding.
   const row = getAdviceTraceById(traceId);
   if (!row) return [];
   if (row.attempts_json) return JSON.parse(row.attempts_json) as ReplayAttempt[];

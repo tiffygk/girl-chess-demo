@@ -305,15 +305,31 @@ export function generateRelationClaims(
   const squares = [...liveOcc.keys()].slice(0, squareCap);
   const claims: RelationClaim[] = [];
 
+  // Fix round (2026-09-22), brief-T fix 2: a denial claim ("<piece> can't
+  // reach <square>") is TRUE when no capture exists, the opposite sense of
+  // the positive claim's paraphrases -- so a denial must paraphrase as a
+  // denial (negated text), never the bare positive form, or the recall
+  // table compares the paraphrase's truth against the wrong polarity.
   const paraphrasesFor = (
     aKind: string,
     a: string,
-    b: string
-  ): { verb: "could capture" | "is aiming at" | "can be taken by"; text: string }[] => [
-    { verb: "could capture", text: `the ${KIND_WORD[aKind]} on ${a} could capture the piece on ${b}` },
-    { verb: "is aiming at", text: `the ${KIND_WORD[aKind]} on ${a} is aiming at ${b}` },
-    { verb: "can be taken by", text: `the piece on ${b} can be taken by the ${KIND_WORD[aKind]} on ${a}` },
-  ];
+    b: string,
+    polarity: "positive" | "denial"
+  ): { verb: "could capture" | "is aiming at" | "can be taken by"; text: string }[] => {
+    const kind = KIND_WORD[aKind];
+    if (polarity === "denial") {
+      return [
+        { verb: "could capture", text: `the ${kind} on ${a} could not capture the piece on ${b}` },
+        { verb: "is aiming at", text: `the ${kind} on ${a} is not aiming at ${b}` },
+        { verb: "can be taken by", text: `the piece on ${b} can't be taken by the ${kind} on ${a}` },
+      ];
+    }
+    return [
+      { verb: "could capture", text: `the ${kind} on ${a} could capture the piece on ${b}` },
+      { verb: "is aiming at", text: `the ${kind} on ${a} is aiming at ${b}` },
+      { verb: "can be taken by", text: `the piece on ${b} can be taken by the ${kind} on ${a}` },
+    ];
+  };
 
   for (const a of squares) {
     const aKind = liveOcc.get(a)!;
@@ -349,7 +365,7 @@ export function generateRelationClaims(
         attackersLabel,
         legalCaptureLabel: adjudicated ? legalCaptureLabel : null,
         semanticCut,
-        paraphrases: paraphrasesFor(aKind, a, b),
+        paraphrases: paraphrasesFor(aKind, a, b, "positive"),
       });
 
       // --- denial claim: "<piece> on a can't reach b" ---
@@ -374,7 +390,7 @@ export function generateRelationClaims(
           polarity: "denial",
           label: null,
           scopeReason: "non-mover denial (relationClaims.ts:110,:136): unadjudicable on every board offered",
-          paraphrases: paraphrasesFor(aKind, a, b),
+          paraphrases: paraphrasesFor(aKind, a, b, "denial"),
         });
       } else {
         claims.push({
@@ -382,7 +398,7 @@ export function generateRelationClaims(
           claimKey: `den>${a}>${b}`,
           polarity: "denial",
           label: denialTrueSomewhere,
-          paraphrases: paraphrasesFor(aKind, a, b),
+          paraphrases: paraphrasesFor(aKind, a, b, "denial"),
         });
       }
     }
