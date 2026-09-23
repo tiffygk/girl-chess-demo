@@ -248,14 +248,22 @@ async function main() {
         );
       }
 
-      // paraphrases: recall table only, never scored as pass/fail
+      // paraphrases: recall table only, never scored as pass/fail. Fix
+      // round (2026-09-22), brief-T fix 2: n must count only false claims
+      // (recall over false claims is the only quantity "caught" can ever
+      // measure) -- counting every in-scope claim, true and false, in n
+      // understated recall by folding in true claims that can never be
+      // "caught". generate.ts's paraphrasesFor now emits a negated,
+      // denial-shaped paraphrase for a denial claim, so a denial's
+      // paraphrase truth value matches its own label.
       for (const p of claim.paraphrases) {
+        if (claim.label) continue;
         const { relationFlagged: pFlagged } = runBoth(p.text, facts);
         const bucket = paraphraseByVerb[p.verb];
         bucket.n++;
         // "caught" = the checker flagged a claim that is actually FALSE --
         // the only case where an out-of-grammar catch would matter.
-        if (!claim.label && pFlagged) bucket.caught++;
+        if (pFlagged) bucket.caught++;
       }
     }
   }
