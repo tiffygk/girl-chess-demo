@@ -1,6 +1,6 @@
 # Technical decisions
 
-Four decisions from building this chess coach. In each one the obvious fix was the wrong one. I measured before I believed it. The first three shipped on 2026-07-22, the fourth on 2026-09-21.
+Five decisions from building this chess coach. In each one the obvious fix was the wrong one. I measured before I believed it. The first three shipped on 2026-07-22, the fourth on 2026-09-21, the fifth on 2026-09-22.
 
 ## The coach gave wrong answers, and a bigger model was not the fix
 
@@ -139,3 +139,41 @@ Two debrief strings changed under the lint: "fifty quiet moves" became "fifty mo
 The coach can no longer say "quiet move", a term real chess books use, and its prompt is one paragraph longer. Code checks only that the banned word is gone. It does not check that the coach picked the right word for a move. I judge that reply by reply, the same way I judge any other claim it makes.
 
 Where this lives: the vocabulary in `server/coach/personas/coach.md`, the live check and the retry instruction in `server/coach/chat.ts`, the template lint in `src/review/templateVoice.test.ts`, the harness copy of the banned list in `server/coach/voiceRules.ts`.
+
+## 7 in 8 rejections were wrong: fixing the board check's precision instead of deleting it
+
+The coach checks every claim about where a piece stands before you see it. It compared each claim to the current board only. When the coach described where a piece would stand after a move in the line it was explaining, the check called that false and threw the answer away. The easy fix was to delete the check. I kept it and taught it which boards the coach was talking about.
+
+For the player: fewer thrown-out coach answers, each of which cost a 20-second retry or a canned template.
+
+### The evidence
+
+In game 198 the check rejected 16 coach answers. 14 were true statements about the position after a move. The other 2 were wrong, and the check still catches both.
+
+I did not want to wait for new games to prove the fix. I took the positions from 201 stored coach conversations and generated true and false statements about each, labelled by the rules engine. Then I ran them through the check before and after the change.
+
+**How well the board check judged the coach's claims.** A statement is one claim the coach makes about where a piece stands, such as "your knight is on f3". A rejection is the check refusing a coach answer because it judged a statement in it false.
+
+<table>
+<thead><tr><th style="background:#6c5ce7;color:#ffffff;text-align:left;padding:6px 10px">measure</th><th style="background:#6c5ce7;color:#ffffff;text-align:left;padding:6px 10px">what it counts</th><th style="background:#6c5ce7;color:#ffffff;text-align:left;padding:6px 10px">measured on</th><th style="background:#6c5ce7;color:#ffffff;text-align:left;padding:6px 10px">before the fix</th><th style="background:#6c5ce7;color:#ffffff;text-align:left;padding:6px 10px">after the fix</th></tr></thead>
+<tbody>
+<tr><td style="padding:6px 10px">precision</td><td style="padding:6px 10px">rejections that were actually wrong</td><td style="padding:6px 10px">game 198's 16 rejected answers</td><td style="padding:6px 10px">2 of 16 (12.5%)</td><td style="padding:6px 10px">2 of 2 (100%)</td></tr>
+<tr><td style="padding:6px 10px">recall</td><td style="padding:6px 10px">false statements the check caught</td><td style="padding:6px 10px">2,243 generated false statements</td><td style="padding:6px 10px">100%</td><td style="padding:6px 10px">100%</td></tr>
+<tr><td style="padding:6px 10px">false positive rate</td><td style="padding:6px 10px">true statements wrongly rejected</td><td style="padding:6px 10px">144 generated statements about the position after a move</td><td style="padding:6px 10px">45%</td><td style="padding:6px 10px">0%</td></tr>
+<tr><td style="padding:6px 10px">false positive rate</td><td style="padding:6px 10px">true statements wrongly rejected</td><td style="padding:6px 10px">4,772 generated true statements</td><td style="padding:6px 10px">1.4%</td><td style="padding:6px 10px">0%</td></tr>
+</tbody>
+</table>
+
+<sub>Precision comes from game 198's real rejections, since generated statements would inflate it: I chose how many false ones to make. Recall and the false positive rates come from the generated statements, because nobody has labelled every claim the coach made in play.</sub>
+
+A check that has only been seen passing proves nothing, so I broke the fix on purpose. With the move lines taken out, the after-move rejections came straight back.
+
+### What it cannot catch yet
+
+The check now accepts a claim that is true on any board the coach was shown, up to four moves down a line. So a claim about the current board that only becomes true a few moves later would pass, and the 100% recall above is measured against that rule. The sweep built 25 such statements to confirm the check lets them through. Nothing yet measures how often the coach writes one in play.
+
+The check also runs only on chat. The one-line coach notes under the board are not checked for piece positions at all.
+
+Next on the roadmap: record which board confirmed each claim in every coach reply, so the passes that only work a few moves ahead can be counted in real play, and decide whether the notes under the board get the same check.
+
+Where this lives: the placement check in `server/coach/placementClaims.ts`, the move lines it reads in `server/coach/chat.ts`, and the sweep in `tools/checker-sweep/`.
