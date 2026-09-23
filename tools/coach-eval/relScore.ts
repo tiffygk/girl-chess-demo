@@ -3,10 +3,16 @@
 // Brief-6a: the scorer for the `rel` fixture family (relFixtures.ts). Runs
 // each fixture through the PRODUCTION validators directly (validateChat or
 // checkRelationClaims, per the fixture's own `mode`) -- no model call, no
-// db re-query. Adds one new axis to this harness: the relation-claim rate,
-// broken out per fixture-expectation bucket the way other suites in this
-// harness already report per-arm rates (see score-ab.ts's per-arm cells in
-// wt-fu-sweep for the sibling pattern this mirrors).
+// db re-query. Adds one new axis to this harness: a relation-claim PASS
+// RATE per fixture-expectation bucket (met / n), the way other suites in
+// this harness already report per-arm rates (see score-ab.ts's per-arm
+// cells in wt-fu-sweep for the sibling pattern this mirrors). Fix-round
+// (2026-09-22, MAJOR 2): an earlier family-WIDE "relation-claim rate" (all
+// fixtures that fired / all fixtures scored) was removed -- it mixed
+// must-flag, must-pass, and unchecked fixtures into one number that moved
+// only with the fixture MIX, never with whether the checker got any one
+// bucket right. The per-bucket rate below is the only rate this scorer
+// reports now.
 import { checkRelationClaims, relationClaimSentences } from "../../server/coach/relationClaims";
 import { validateChat } from "../../server/coach/chat";
 import { REL_FIXTURES, type RelExpectation, type RelFixture } from "./relFixtures";
@@ -25,6 +31,10 @@ export interface RelFixtureResult {
   // outside the checker's vocabulary is visible too.
   relationSpanMatched: boolean;
   meetsExpectation: boolean;
+  // Carried through from the fixture (fix-round 2026-09-22, MINOR 3): a
+  // documented live risk that coexists with meetsExpectation === true (see
+  // REL4). Absent when the fixture carries none.
+  caveat?: string;
 }
 
 function runFixture(fixture: RelFixture): { violations: string[] } {
@@ -53,6 +63,13 @@ function meetsExpectation(expectation: RelExpectation, flaggedRelation: boolean)
       return !flaggedRelation;
     case "expected-unchecked":
       return !flaggedRelation;
+    case "regression-probe":
+      // fix-round (2026-09-22, MAJOR 1): this bucket's whole point is a
+      // fixture whose DOCUMENTED, expected result is "does not flag" at a
+      // horizon production never itself constructs (REL2). Meeting that
+      // expectation IS the finding -- it is not a must-flag miss, and must
+      // not be counted against the must-flag bucket's pass rate.
+      return !flaggedRelation;
     default: {
       const _exhaustive: never = expectation;
       throw new Error(`unhandled rel expectation: ${_exhaustive}`);
@@ -72,17 +89,27 @@ export function scoreRelFixture(fixture: RelFixture): RelFixtureResult {
     flaggedRelation,
     relationSpanMatched,
     meetsExpectation: meetsExpectation(fixture.expectation, flaggedRelation),
+    ...(fixture.caveat !== undefined ? { caveat: fixture.caveat } : {}),
   };
+}
+
+// fix-round (2026-09-22, MAJOR 2): the family-wide "relation-claim rate"
+// (fixtures that fired / all fixtures) is REMOVED -- it only reflected the
+// fixture mix (how many must-flag vs must-pass fixtures happen to be in the
+// set), not whether the checker is right. Replaced by a pass rate PER
+// EXPECTATION BUCKET (met / n), which answers a real question: of the
+// fixtures this bucket claims to cover, how many does production get right
+// today.
+export interface RelExpectationBucket {
+  n: number;
+  met: number;
+  // met / n; 0 when n === 0 (an empty bucket has no rate to report).
+  rate: number;
 }
 
 export interface RelFamilyScore {
   results: RelFixtureResult[];
-  // Family-wide relation-claim rate: fraction of ALL scored fixtures where
-  // a relation-claim violation actually fired (regardless of whether that
-  // was the fixture's own expectation -- this is a raw rate, not a pass
-  // rate; see byExpectation for pass/fail per bucket).
-  relationClaimRate: number;
-  byExpectation: Record<RelExpectation, { n: number; met: number }>;
+  byExpectation: Record<RelExpectation, RelExpectationBucket>;
 }
 
 const EXPECTATION_ORDER: RelExpectation[] = [
@@ -90,6 +117,7 @@ const EXPECTATION_ORDER: RelExpectation[] = [
   "must-pass",
   "expected-unchecked",
   "pinned-current-behaviour",
+  "regression-probe",
 ];
 
 export function scoreRelFamily(fixtures: RelFixture[] = REL_FIXTURES): RelFamilyScore {
@@ -97,10 +125,10 @@ export function scoreRelFamily(fixtures: RelFixture[] = REL_FIXTURES): RelFamily
   const byExpectation = Object.fromEntries(
     EXPECTATION_ORDER.map((exp) => {
       const rows = results.filter((r) => r.expectation === exp);
-      return [exp, { n: rows.length, met: rows.filter((r) => r.meetsExpectation).length }];
+      const n = rows.length;
+      const met = rows.filter((r) => r.meetsExpectation).length;
+      return [exp, { n, met, rate: n === 0 ? 0 : met / n }];
     })
-  ) as Record<RelExpectation, { n: number; met: number }>;
-  const relationClaimRate =
-    results.length === 0 ? 0 : results.filter((r) => r.flaggedRelation).length / results.length;
-  return { results, relationClaimRate, byExpectation };
+  ) as Record<RelExpectation, RelExpectationBucket>;
+  return { results, byExpectation };
 }
