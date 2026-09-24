@@ -224,7 +224,15 @@ export interface OffsiteResult {
 
 export async function offsiteBackup(
   destDir: string,
-  opts: { sourceDb?: string; mainWorktreeDb?: string; now?: Date; keep?: number; repoRoot?: string } = {}
+  opts: {
+    sourceDb?: string;
+    mainWorktreeDb?: string;
+    now?: Date;
+    keep?: number;
+    repoRoot?: string;
+    // test seam: the check the copy must pass before it gets its final name
+    verify?: typeof verifyBackup;
+  } = {}
 ): Promise<OffsiteResult> {
   const keep = opts.keep ?? 14;
   if (!Number.isInteger(keep) || keep < 1) {
@@ -253,6 +261,7 @@ export async function offsiteBackup(
   fs.mkdirSync(dest, { recursive: true });
   const finalPath = path.join(dest, path.basename(backup.dbPath));
   const tmpPath = path.join(dest, `.offsite-tmp-${process.pid}-${path.basename(backup.dbPath)}`);
+  let snapshot: DbCountSnapshot;
   try {
     // VACUUM INTO runs on a readonly handle and writes a complete,
     // consistent copy in rollback-journal mode, so nothing here ever opens
@@ -263,6 +272,10 @@ export async function offsiteBackup(
     } finally {
       src.close();
     }
+    // checked BEFORE it takes its dated name: a copy that fails never sits
+    // in the folder looking exactly like a good snapshot (review finding,
+    // 2026-09-24)
+    snapshot = (opts.verify ?? verifyBackup)(tmpPath, backup.snapshot).backupSnapshot;
     fs.renameSync(tmpPath, finalPath);
   } finally {
     for (const side of [tmpPath, `${tmpPath}-wal`, `${tmpPath}-shm`, `${tmpPath}-journal`]) {
@@ -270,10 +283,12 @@ export async function offsiteBackup(
     }
   }
 
-  const snapshot = verifyBackup(finalPath, backup.snapshot).backupSnapshot;
-
-  const snaps = fs.readdirSync(dest).filter((n) => OFFSITE_NAME.test(n)).sort();
-  const pruned = snaps.slice(0, Math.max(0, snaps.length - keep));
+  // the snapshot just written is never a pruning candidate: if the clock
+  // jumped backwards its name would sort oldest and it would be deleted
+  // seconds after being made (review finding, 2026-09-24)
+  const own = path.basename(finalPath);
+  const others = fs.readdirSync(dest).filter((n) => OFFSITE_NAME.test(n) && n !== own).sort();
+  const pruned = others.slice(0, Math.max(0, others.length - (keep - 1)));
   for (const name of pruned) fs.rmSync(path.join(dest, name));
 
   return { path: finalPath, snapshot, pruned };
