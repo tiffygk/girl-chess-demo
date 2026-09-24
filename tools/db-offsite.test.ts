@@ -93,4 +93,33 @@ describe("offsiteBackup", () => {
     const f = fixture();
     await expect(offsiteBackup(f.dest, { sourceDb: f.mainDb, mainWorktreeDb: f.mainDb, keep: 0 })).rejects.toThrow(/keep/);
   });
+  it("leaves nothing under a snapshot name when the copy fails its check", async () => {
+    const f = fixture();
+    await expect(
+      offsiteBackup(f.dest, {
+        sourceDb: f.mainDb,
+        mainWorktreeDb: f.mainDb,
+        verify: () => {
+          throw new Error("simulated bad copy");
+        },
+      })
+    ).rejects.toThrow(/simulated bad copy/);
+    expect(fs.readdirSync(f.dest)).toEqual([]);
+  });
+
+  it("never prunes the snapshot it just wrote, even when the clock has jumped backwards", async () => {
+    const f = fixture();
+    const base = Date.UTC(2026, 0, 1);
+    for (let i = 0; i < 14; i++) fs.writeFileSync(path.join(f.dest, stampName(new Date(base + i * 86_400_000))), "old");
+    const out = await offsiteBackup(f.dest, {
+      sourceDb: f.mainDb,
+      mainWorktreeDb: f.mainDb,
+      now: new Date(Date.UTC(2025, 0, 1)),
+      keep: 14,
+    });
+    const snaps = fs.readdirSync(f.dest).filter((n) => OFFSITE_NAME.test(n));
+    expect(snaps).toContain(path.basename(out.path));
+    expect(snaps).toHaveLength(14);
+    expect(out.pruned).toEqual([stampName(new Date(base))]);
+  });
 });
