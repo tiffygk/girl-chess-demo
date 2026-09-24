@@ -95,19 +95,18 @@ Two follow-ups on the same moment sit beside it, one rated down, one up. The 82 
 
 A working local app, not a hosted product. It runs on your own machine, and the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) covers what you need and what degrades if you skip a step.
 
-Five self-contained pages, no clone needed.
+Six pages, no clone needed.
 
 How it is built:
 1. [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence.
-2. [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): the working design file, item 4 above.
+2. [Technical decisions](technical-decisions.md): five decisions, the evidence behind each, and what each gave up or left open.
+3. [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): the working design file, item 4 above.
 
 Three evaluations, in the order they happened. Each answers the question the one before it left open:
 
-3. [Sonnet against Opus](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html) (2026-07-23): which model to run, graded blind with the key sealed. It carries its own correction where later work moved one of its numbers.
-4. [Why the answers feel slow](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html) (2026-08-02): the latency investigation. It ends on a question it could not close, and says so.
-5. [Three thinking budgets, one pick](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html) (2026-08-03): the three-repeat run that closed it. Shipped the next day.
-
-Then [technical-decisions.md](technical-decisions.md) and this doc, for anything that needs receipts.
+4. [Sonnet against Opus](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html) (2026-07-23): which model to run, graded blind with the key sealed. It carries its own correction where later work moved one of its numbers.
+5. [Why the answers feel slow](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html) (2026-08-02): the latency investigation. It ends on a question it could not close, and says so.
+6. [Three thinking budgets, one pick](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html) (2026-08-03): the three-repeat run that closed it. Shipped the next day.
 
 ## Code
 
