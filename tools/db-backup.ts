@@ -203,6 +203,82 @@ export function restoreCheck(backupPath: string, liveDbPath: string): RestoreChe
   return { backupSnapshot, liveSnapshot };
 }
 
+// OFFSITE COPY (2026-09-24, owner-approved plan "Daily db backup to the
+// vault"). data/backups/ lives inside the repo, and the repo may leave
+// iCloud, so a snapshot that stays there never leaves this Mac. offsite
+// takes a normal verified backup, then writes a second copy into a folder
+// OUTSIDE the repo (the vault's `7 backups/`, which iCloud syncs) and keeps
+// the newest `keep` of them. The copy is written in rollback-journal mode
+// (VACUUM INTO), because a WAL-mode file grows -wal/-shm sidecars the
+// moment anything opens it and iCloud would sync those as loose files. It
+// is written under a temp name and renamed into place, so iCloud never sees
+// a half-written snapshot. Pruning only ever touches names matching
+// OFFSITE_NAME: anything else in the folder is left alone.
+export const OFFSITE_NAME = /^girlchess-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.db$/;
+
+export interface OffsiteResult {
+  path: string;
+  snapshot: DbCountSnapshot;
+  pruned: string[];
+}
+
+export async function offsiteBackup(
+  destDir: string,
+  opts: { sourceDb?: string; mainWorktreeDb?: string; now?: Date; keep?: number; repoRoot?: string } = {}
+): Promise<OffsiteResult> {
+  const keep = opts.keep ?? 14;
+  if (!Number.isInteger(keep) || keep < 1) {
+    throw new Error(`offsite keep must be a whole number of at least 1, got ${keep} -- refusing to prune`);
+  }
+  const dest = path.resolve(destDir);
+  assertNotInAgentWorktree(dest);
+  const repoRoot = opts.repoRoot ?? REPO_ROOT;
+  const mainDb = opts.mainWorktreeDb ?? deriveMainWorktreeDbFromGit(repoRoot);
+  if (mainDb) {
+    const dataDir = path.resolve(path.dirname(mainDb));
+    if (dest === dataDir || dest.startsWith(dataDir + path.sep)) {
+      throw new Error(
+        `refusing an offsite destination inside the repo's data dir (${dataDir}): the point of ` +
+          `offsite is a copy that lives OUTSIDE the repo. Destination was: ${dest}`
+      );
+    }
+  }
+
+  const backup = await backupLiveDb(repoRoot, {
+    sourceDb: opts.sourceDb,
+    mainWorktreeDb: opts.mainWorktreeDb,
+    now: opts.now,
+  });
+
+  fs.mkdirSync(dest, { recursive: true });
+  const finalPath = path.join(dest, path.basename(backup.dbPath));
+  const tmpPath = path.join(dest, `.offsite-tmp-${process.pid}-${path.basename(backup.dbPath)}`);
+  try {
+    // VACUUM INTO runs on a readonly handle and writes a complete,
+    // consistent copy in rollback-journal mode, so nothing here ever opens
+    // a db for writing (the static check in db-backup.test.ts holds).
+    const src = new Database(backup.dbPath, { readonly: true });
+    try {
+      src.prepare("VACUUM INTO ?").run(tmpPath);
+    } finally {
+      src.close();
+    }
+    fs.renameSync(tmpPath, finalPath);
+  } finally {
+    for (const side of [tmpPath, `${tmpPath}-wal`, `${tmpPath}-shm`, `${tmpPath}-journal`]) {
+      fs.rmSync(side, { force: true });
+    }
+  }
+
+  const snapshot = verifyBackup(finalPath, backup.snapshot).backupSnapshot;
+
+  const snaps = fs.readdirSync(dest).filter((n) => OFFSITE_NAME.test(n)).sort();
+  const pruned = snaps.slice(0, Math.max(0, snaps.length - keep));
+  for (const name of pruned) fs.rmSync(path.join(dest, name));
+
+  return { path: finalPath, snapshot, pruned };
+}
+
 async function main() {
   const [, , cmd, arg] = process.argv;
 
@@ -248,7 +324,22 @@ async function main() {
     return;
   }
 
-  console.error("usage: npx tsx tools/db-backup.ts <backup | verify <path> | restore-check <path>>");
+  if (cmd === "offsite") {
+    if (!arg) {
+      console.error("usage: npx tsx tools/db-backup.ts offsite <dir outside the repo>");
+      process.exit(2);
+      return;
+    }
+    const result = await offsiteBackup(arg);
+    console.log(`[db-backup] offsite wrote ${result.path}`);
+    console.log(
+      `[db-backup] offsite OK: ${result.snapshot.games} games, ${result.snapshot.moves} moves, ` +
+        `integrity ${result.snapshot.integrity}; pruned ${result.pruned.length} older snapshot(s)`
+    );
+    return;
+  }
+
+  console.error("usage: npx tsx tools/db-backup.ts <backup | verify <path> | restore-check <path> | offsite <dir>>");
   process.exit(2);
 }
 
