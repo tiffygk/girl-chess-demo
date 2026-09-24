@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300" width="100%" role="img" aria-label="Two before and after comparisons. Wrong statements about where pieces stand fell from 7.5 percent to 0. The wait on an explanation question fell from 13 to 15 seconds to about 4 seconds.">
+<rect width="720" height="300" rx="8" fill="#ffffff"/>
 <style>
   .t { font: 14px/1.3 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f1f1f; }
   .t-muted { font: 12px/1.3 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #6b6b6b; }
@@ -24,7 +25,7 @@
 <text class="t" x="102" y="122" text-anchor="middle">7.5%</text>
 <text class="t-muted" x="102" y="268" text-anchor="middle">before</text>
 
-<rect class="bar-after" x="200" y="246" width="64" height="4"/>
+<line x1="200" y1="250" x2="264" y2="250" stroke="#6c5ce7" stroke-width="2"/>
 <text class="t" x="232" y="238" text-anchor="middle">0</text>
 <text class="t-muted" x="232" y="268" text-anchor="middle">after</text>
 

@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 275" width="100%" role="img" aria-label="Four rising steps showing that each press of the help button climbs one rung, from where to look, to narrower, to narrower still, to the move. At most three steps when she is on the right idea, at most four when she is not.">
+<rect width="720" height="275" rx="8" fill="#ffffff"/>
 <style>
   .t { font: 14px/1.3 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f1f1f; }
   .t-muted { font: 12px/1.3 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #6b6b6b; }
