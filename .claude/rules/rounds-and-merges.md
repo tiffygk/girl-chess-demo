@@ -29,7 +29,7 @@ See docs/changelog.md#durability-rule-2026-08-01
 Context economy:
 - Start sessions inside this repo so CLAUDE.md auto-loads.
 - The controller should not read large source files in its own context to write briefs; dispatch a Sonnet scout for a short interaction map, or read only the targeted section.
-- Subagent briefs must demand a short return (about 10 lines: what changed, test counts, deviations), with the full report written to `.superpowers/sdd/` per the ledger convention.
+- Subagent briefs must demand a short return (about 10 lines: what changed, test counts, deviations), then the full report as reply text, which the controller saves under `.superpowers/sdd/`; subagent report-file writes are blocked by policy (4 of 4 on 2026-09-23).
 - Research agents write their full findings to a file and return the path plus a summary, never the full document inline.
 - Keep CLAUDE.md lean and current: the budget and currency tests in tools/claudeMdBudget.test.ts enforce it.
 
