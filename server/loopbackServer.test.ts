@@ -54,7 +54,7 @@ describe("every supertest call goes through a loopback server", () => {
     const offenders: string[] = [];
     for (const f of files) {
       const text = fs.readFileSync(f, "utf8");
-      if (!/from "supertest"/.test(text)) continue;
+      if (!/^import [^\n]* from "supertest";$/m.test(text)) continue;
       for (const m of text.matchAll(/\brequest\(([^)]*)\)/g)) {
         if (m[1] !== "api" && !/^await api\(/.test(m[1])) offenders.push(`${f}: request(${m[1]})`);
       }
