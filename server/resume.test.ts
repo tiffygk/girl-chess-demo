@@ -2,11 +2,20 @@
 // express app -- a forgotten game (built with the raw store functions, the
 // way manager.test.ts's own "no in-memory entry" precedent does, never
 // gm.newGame) resumes, and an unknown id is refused with a reason.
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import request from "supertest";
 import { Chess } from "chess.js";
 import { app, ready, gm } from "./index";
 import { createSession, createGame, recordMove, finishGame } from "./store/db";
+import type { Server } from "http";
+import { startLoopback, closeServer } from "./loopbackServer";
+
+// supertest against 127.0.0.1 exactly; see loopbackServer.ts.
+let api: Server;
+beforeAll(async () => {
+  api = await startLoopback(app);
+});
+afterAll(() => closeServer(api));
 
 // Shared by the games-list tests below: creates a game and records `n`
 // alternating moves from the start position, returning the game id.
@@ -51,7 +60,7 @@ describe("POST /api/game/:id/resume", () => {
       });
     });
 
-    const res = await request(app).post(`/api/game/${id}/resume`).expect(200);
+    const res = await request(api).post(`/api/game/${id}/resume`).expect(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.yourTurn).toBe(true);
     expect(res.body.plies).toBe(2);
@@ -59,7 +68,7 @@ describe("POST /api/game/:id/resume", () => {
 
   it("an unknown id returns ok:false, reason:not_found", async () => {
     await ready;
-    const res = await request(app).post("/api/game/999999/resume").expect(200);
+    const res = await request(api).post("/api/game/999999/resume").expect(200);
     expect(res.body).toEqual({ ok: false, reason: "not_found" });
   });
 });
@@ -79,7 +88,7 @@ describe("GET /api/games", () => {
     const liveId = makeGameWithMoves("fallback-1600", 2);
     const stubId = createGame(createSession(), "maia-1100", "w"); // zero moves
 
-    const res = await request(app).get("/api/games").expect(200);
+    const res = await request(api).get("/api/games").expect(200);
     expect(res.body.ok).toBe(true);
     const games = res.body.games as any[];
     const ids = games.map((g) => g.id);
@@ -108,7 +117,7 @@ describe("GET /api/game/:id/status", () => {
   it("a live game with moves reports resumable:true", async () => {
     await ready;
     const liveId = makeGameWithMoves("maia-1200", 2);
-    const res = await request(app).get(`/api/game/${liveId}/status`).expect(200);
+    const res = await request(api).get(`/api/game/${liveId}/status`).expect(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.game.resumable).toBe(true);
     expect(res.body.game.gameNumber).toBe(liveId);
@@ -116,7 +125,7 @@ describe("GET /api/game/:id/status", () => {
 
   it("an unknown id returns ok:false, reason:not_found", async () => {
     await ready;
-    const res = await request(app).get("/api/game/999999/status").expect(200);
+    const res = await request(api).get("/api/game/999999/status").expect(200);
     expect(res.body).toEqual({ ok: false, reason: "not_found" });
   });
 });
@@ -138,7 +147,7 @@ describe("GET /api/game/:id/state", () => {
   it("reports fen/ply/side reconstructed from a non-resident game's moves", async () => {
     await ready;
     const id = makeGameWithMoves("maia-1100", 3); // e4 e5 Nf3 -- 3 plies, white to move
-    const res = await request(app).get(`/api/game/${id}/state`).expect(200);
+    const res = await request(api).get(`/api/game/${id}/state`).expect(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.gameId).toBe(id);
     expect(res.body.fen).toContain(" b "); // after 3 plies (e4 e5 Nf3) black is to move
@@ -151,7 +160,7 @@ describe("GET /api/game/:id/state", () => {
 
   it("an unknown id returns 404 with ok:false, reason:not_found", async () => {
     await ready;
-    const res = await request(app).get("/api/game/999999/state").expect(404);
+    const res = await request(api).get("/api/game/999999/state").expect(404);
     expect(res.body).toEqual({ ok: false, reason: "not_found" });
   });
 });

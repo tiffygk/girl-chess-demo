@@ -29,6 +29,16 @@ import { seedScratchDb, seedMinimalGame } from "../lib/scenarioDb";
 import { noBackend } from "../../../server/coach/backends/types";
 import type { EvalResult, SuiteResult } from "../lib/types";
 import { assertDenominator } from "../lib/assertRan";
+import type { Server, RequestListener } from "http";
+import { startLoopback, closeServer } from "../../../server/loopbackServer";
+
+// supertest against 127.0.0.1 exactly; see server/loopbackServer.ts.
+const servers: Server[] = [];
+async function api(handler: RequestListener): Promise<Server> {
+  const server = await startLoopback(handler);
+  servers.push(server);
+  return server;
+}
 
 interface DoneEnvelope {
   ok: boolean;
@@ -42,12 +52,12 @@ async function st01Template(): Promise<EvalResult> {
   seedScratchDb("st01-json");
   const jsonGame = seedMinimalGame().gameId;
   const app = createChatTestApp({ defaultBackend: noBackend });
-  const jsonRes = await request(app).post(`/api/game/${jsonGame}/chat`).send({ message: "what should i play?", backendPref: "template" });
+  const jsonRes = await request(await api(app)).post(`/api/game/${jsonGame}/chat`).send({ message: "what should i play?", backendPref: "template" });
 
   seedScratchDb("st01-stream");
   const streamGame = seedMinimalGame().gameId;
   const streamApp = createChatTestApp({ defaultBackend: noBackend });
-  const streamRes = await request(streamApp).post(`/api/game/${streamGame}/chat/stream`).send({ message: "what should i play?", backendPref: "template" });
+  const streamRes = await request(await api(streamApp)).post(`/api/game/${streamGame}/chat/stream`).send({ message: "what should i play?", backendPref: "template" });
   const frames = parseSseFrames(streamRes.text);
   const doneFrame = frames.find((f) => f.event === "done");
 
@@ -123,7 +133,7 @@ async function st02Model(live: boolean): Promise<EvalResult> {
   seedScratchDb("st02-live");
   const gameId = seedMinimalGame().gameId;
   const app = createChatTestApp({ defaultBackend: agentSdkBackend });
-  const streamRes = await request(app).post(`/api/game/${gameId}/chat/stream`).send({ message: "what should i play here?" });
+  const streamRes = await request(await api(app)).post(`/api/game/${gameId}/chat/stream`).send({ message: "what should i play here?" });
   const frames = parseSseFrames(streamRes.text);
   const deltas = frames.filter((f) => f.event === "delta").map((f) => (f.data as { text: string }).text);
   const doneFrame = frames.find((f) => f.event === "done");
@@ -134,7 +144,7 @@ async function st03ForcedTemplateStream(): Promise<EvalResult> {
   seedScratchDb("st03");
   const gameId = seedMinimalGame().gameId;
   const app = createChatTestApp({ defaultBackend: noBackend });
-  const streamRes = await request(app).post(`/api/game/${gameId}/chat/stream`).send({ message: "what should i play?", backendPref: "template" });
+  const streamRes = await request(await api(app)).post(`/api/game/${gameId}/chat/stream`).send({ message: "what should i play?", backendPref: "template" });
   const frames = parseSseFrames(streamRes.text);
   const terminal = frames.filter((f) => f.event === "done" || f.event === "error");
   const done = frames.find((f) => f.event === "done");
@@ -151,7 +161,7 @@ async function st03ForcedTemplateStream(): Promise<EvalResult> {
 
 async function st04MissingGame(): Promise<EvalResult> {
   const app = createChatTestApp({ defaultBackend: noBackend });
-  const streamRes = await request(app).post("/api/game/999999999/chat/stream").send({ message: "hello" });
+  const streamRes = await request(await api(app)).post("/api/game/999999999/chat/stream").send({ message: "hello" });
   const frames = parseSseFrames(streamRes.text);
   const pass = frames.length === 1 && frames[0].event === "error";
   return {
@@ -162,7 +172,12 @@ async function st04MissingGame(): Promise<EvalResult> {
 }
 
 export async function runStSuite(live: boolean): Promise<SuiteResult> {
-  const results: EvalResult[] = [await st01Template(), await st02Model(live), await st03ForcedTemplateStream(), await st04MissingGame()];
+  let results: EvalResult[];
+  try {
+    results = [await st01Template(), await st02Model(live), await st03ForcedTemplateStream(), await st04MissingGame()];
+  } finally {
+    await Promise.all(servers.splice(0).map(closeServer));
+  }
   return {
     suite: "ST",
     expectedCount: 4,

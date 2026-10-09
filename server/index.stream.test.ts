@@ -1,6 +1,15 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import request from "supertest";
 import { app, ready, gm } from "./index";
+import type { Server } from "http";
+import { startLoopback, closeServer } from "./loopbackServer";
+
+// supertest against 127.0.0.1 exactly; see loopbackServer.ts.
+let api: Server;
+beforeAll(async () => {
+  api = await startLoopback(app);
+});
+afterAll(() => closeServer(api));
 
 // B-stream (2026-07-27, coach-truth-speed round): POST /api/game/:id/chat/stream.
 // Same gm.setCoachBackendForTesting seam as index.test.ts's existing chat
@@ -47,12 +56,12 @@ describe("POST /api/game/:id/chat/stream (B-stream)", () => {
       },
     });
 
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
 
-    const r = await request(app).post(`/api/game/${g.body.gameId}/chat/stream`)
+    const r = await request(api).post(`/api/game/${g.body.gameId}/chat/stream`)
       .send({ message: "what did I just play?", context: { mode: "live" } })
       .expect(200);
 
@@ -93,12 +102,12 @@ describe("POST /api/game/:id/chat/stream (B-stream)", () => {
       },
     });
 
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
 
-    const r = await request(app).post(`/api/game/${g.body.gameId}/chat/stream`)
+    const r = await request(api).post(`/api/game/${g.body.gameId}/chat/stream`)
       .send({ message: "what did I just play?", context: { mode: "live" } })
       .expect(200);
 
@@ -127,12 +136,12 @@ describe("POST /api/game/:id/chat/stream (B-stream)", () => {
       },
     });
 
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
 
-    const r = await request(app).post(`/api/game/${g.body.gameId}/chat/stream`)
+    const r = await request(api).post(`/api/game/${g.body.gameId}/chat/stream`)
       .send({ message: "what did I just play?", context: { mode: "live" } })
       .expect(200);
 
@@ -158,21 +167,21 @@ describe("POST /api/game/:id/chat/stream (B-stream)", () => {
       },
     };
 
-    const s = await request(app).post("/api/session").expect(200);
-    const g1 = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    const g2 = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    await request(app).post(`/api/game/${g1.body.gameId}/move`)
+    const s = await request(api).post("/api/session").expect(200);
+    const g1 = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const g2 = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(api).post(`/api/game/${g1.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
-    await request(app).post(`/api/game/${g2.body.gameId}/move`)
+    await request(api).post(`/api/game/${g2.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
 
     gm.setCoachBackendForTesting(backend);
-    const jsonRes = await request(app).post(`/api/game/${g1.body.gameId}/chat`)
+    const jsonRes = await request(api).post(`/api/game/${g1.body.gameId}/chat`)
       .send({ message: "what did I just play?", context: { mode: "live" } })
       .expect(200);
 
     gm.setCoachBackendForTesting(backend);
-    const streamRes = await request(app).post(`/api/game/${g2.body.gameId}/chat/stream`)
+    const streamRes = await request(api).post(`/api/game/${g2.body.gameId}/chat/stream`)
       .send({ message: "what did I just play?", context: { mode: "live" } })
       .expect(200);
 
@@ -199,12 +208,12 @@ describe("POST /api/game/:id/chat/stream (B-stream)", () => {
       },
     });
 
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
 
-    const r = await request(app).post(`/api/game/${g.body.gameId}/chat/stream`)
+    const r = await request(api).post(`/api/game/${g.body.gameId}/chat/stream`)
       .send({ message: "what did I just play?", context: { mode: "live" } })
       .expect(200);
 
@@ -223,7 +232,7 @@ describe("POST /api/game/:id/chat/stream (B-stream)", () => {
 
   it("emits an error frame (not a thrown 500) for chat on a nonexistent game", async () => {
     await ready;
-    const r = await request(app).post("/api/game/999999/chat/stream")
+    const r = await request(api).post("/api/game/999999/chat/stream")
       .send({ message: "hello", context: { mode: "live" } })
       .expect(200);
 
