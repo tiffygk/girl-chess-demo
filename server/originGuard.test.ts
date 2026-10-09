@@ -1,7 +1,16 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { app, ready } from "./index";
 import { isLocalOrigin } from "./originGuard";
+import type { Server } from "http";
+import { startLoopback, closeServer } from "./loopbackServer";
+
+// supertest against 127.0.0.1 exactly; see loopbackServer.ts.
+let api: Server;
+beforeAll(async () => {
+  api = await startLoopback(app);
+});
+afterAll(() => closeServer(api));
 
 describe("isLocalOrigin", () => {
   it("allows a request with no Origin header (same-origin GET, curl, the Vite proxy)", () => {
@@ -22,19 +31,19 @@ describe("isLocalOrigin", () => {
 describe("originGuard on /api", () => {
   it("returns 403 for a body-less POST from a foreign origin before the route runs", async () => {
     await ready;
-    const r = await request(app).post("/api/game/1/resign").set("Origin", "https://evil.example");
+    const r = await request(api).post("/api/game/1/resign").set("Origin", "https://evil.example");
     expect(r.status).toBe(403);
     expect(r.body).toEqual({ ok: false, error: "forbidden_origin" });
   });
   it("lets the Vite dev origin through", async () => {
     await ready;
-    const r = await request(app).get("/api/health").set("Origin", "http://localhost:5173");
+    const r = await request(api).get("/api/health").set("Origin", "http://localhost:5173");
     expect(r.status).toBe(200);
     expect(r.body.ok).toBe(true);
   });
   it("lets a request with no Origin through", async () => {
     await ready;
-    const r = await request(app).get("/api/health");
+    const r = await request(api).get("/api/health");
     expect(r.status).toBe(200);
   });
 });

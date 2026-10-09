@@ -4,10 +4,19 @@
 // RED if any of the three endpoints or nine data-gc attribute names is
 // dropped (verified by deleting one entry from AGENT_MANIFEST and watching
 // the corresponding assertion fail, then reverting).
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { AGENT_MANIFEST } from "./agentManifest";
 import { app } from "./index";
+import type { Server } from "http";
+import { startLoopback, closeServer } from "./loopbackServer";
+
+// supertest against 127.0.0.1 exactly; see loopbackServer.ts.
+let api: Server;
+beforeAll(async () => {
+  api = await startLoopback(app);
+});
+afterAll(() => closeServer(api));
 
 describe("AGENT_MANIFEST", () => {
   it("lists all three telemetry endpoints", () => {
@@ -49,7 +58,7 @@ describe("AGENT_MANIFEST", () => {
 // search racing this file's redundant quit.
 describe("GET /api/agent/manifest", () => {
   it("serves AGENT_MANIFEST verbatim", async () => {
-    const res = await request(app).get("/api/agent/manifest").expect(200);
+    const res = await request(api).get("/api/agent/manifest").expect(200);
     expect(res.body).toEqual(AGENT_MANIFEST);
   });
 });
