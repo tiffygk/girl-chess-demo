@@ -38,6 +38,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { execFileSync } from "child_process";
 // Dynamic, not a static import: part 3 of this brief copies this one file
 // into a scratch worktree checked out at an old SHA (99d4231, before PR
 // #38) where server/annotator/mateTie.ts does not exist yet -- a static
@@ -95,14 +96,26 @@ interface Args {
   resultsDir: string;
 }
 
-// Hardcoded absolute paths, not resolved from import.meta.url: this file
-// is copied into scratch worktrees at other SHAs (part 3 of this brief),
-// where "relative to this file" would resolve inside the scratch worktree
-// instead of the one round folder every baseline's results belong in.
-const DEFAULT_DB_PATH =
-  "/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/data/girlchess.db";
-const DEFAULT_RESULTS_DIR =
-  "/Users/tiffany/Documents/Obsidian Vaults/girl chess game/girl-chess-agents/.superpowers/sdd/rounds/2026-09-22-game198-followup/results";
+// Resolved from git's common dir, not from import.meta.url: this file is
+// copied into scratch worktrees at other SHAs (part 3 of this brief), where
+// "relative to this file" would resolve inside the scratch worktree instead
+// of the main checkout's one round folder every baseline's results belong in.
+function mainCheckout(): string {
+  try {
+    return path.dirname(
+      execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+        encoding: "utf8",
+      }).trim(),
+    );
+  } catch {
+    return process.cwd();
+  }
+}
+const DEFAULT_DB_PATH = path.join(mainCheckout(), "data", "girlchess.db");
+const DEFAULT_RESULTS_DIR = path.join(
+  mainCheckout(),
+  ".superpowers/sdd/rounds/2026-09-22-game198-followup/results",
+);
 
 function parseArgs(argv: string[]): Args {
   let dbPath = DEFAULT_DB_PATH;
