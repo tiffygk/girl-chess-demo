@@ -1,6 +1,6 @@
 ---
 name: girl-chess-github-audit
-description: Use when pushing to, opening or editing a pull request on, or auditing this repo's public GitHub remote. Triggers on secret scan, fresh clone test, stranger clone, is this repo safe to push.
+description: Supplies this repo's values (gate, push wordlist, ports, demo-database rescan) to pr-audit and github-ready-audit. Use when pushing to, opening or editing a pull request on, or auditing this repo's public GitHub remote. Triggers on secret scan, fresh clone test, stranger clone, is this repo safe to push.
 ---
 
 # Girl Chess GitHub Audit
