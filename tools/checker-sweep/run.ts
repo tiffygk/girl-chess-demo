@@ -12,6 +12,7 @@
 //   [--control-sample N] [--out-dir <dir>]
 import fs from "fs";
 import path from "path";
+import { execFileSync } from "child_process";
 import Database from "better-sqlite3";
 import { validateChat, validateChatGeneral, type ChatFactList } from "../../server/coach/chat";
 import {
@@ -25,10 +26,24 @@ import {
   type RelationClaim,
 } from "./generate";
 
-const DEFAULT_DB =
-  "<repo>/data/girlchess.db";
-const DEFAULT_OUT_DIR =
-  "<repo>/.superpowers/sdd/rounds/2026-09-22-game198-followup/results";
+// The main checkout, found from git so the same answer comes back from any
+// linked worktree; the current directory if git cannot tell.
+function mainCheckout(): string {
+  try {
+    return path.dirname(
+      execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+        encoding: "utf8",
+      }).trim(),
+    );
+  } catch {
+    return process.cwd();
+  }
+}
+const DEFAULT_DB = path.join(mainCheckout(), "data", "girlchess.db");
+const DEFAULT_OUT_DIR = path.join(
+  mainCheckout(),
+  ".superpowers/sdd/rounds/2026-09-22-game198-followup/results",
+);
 
 interface Args {
   label: string;
