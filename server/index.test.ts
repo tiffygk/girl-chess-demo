@@ -1,9 +1,18 @@
-import { describe, it, expect, afterAll, vi } from "vitest";
+import { describe, it, expect, afterAll, vi, beforeAll } from "vitest";
 import request from "supertest";
 import { Chess } from "chess.js";
 import { app, ready, gm, snapElo } from "./index";
 import { getVerdicts, getGameEvents, getGame, getModeSeconds, getAllChatMessages, getAdviceTraces, insertAdviceTrace, getAllTableCounts, createSession as dbCreateSession, createGame as dbCreateGame, insertCoachNote } from "./store/db";
 import { CHAT_MAX_LEN } from "./coach/chat";
+import type { Server } from "http";
+import { startLoopback, closeServer } from "./loopbackServer";
+
+// supertest against 127.0.0.1 exactly; see loopbackServer.ts.
+let api: Server;
+beforeAll(async () => {
+  api = await startLoopback(app);
+});
+afterAll(() => closeServer(api));
 
 describe("api", () => {
   // Gate-determinism fix (2026-07-31): `gm` here is the module-level
@@ -16,9 +25,9 @@ describe("api", () => {
 
   it("creates a session, a game, and plays a move", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    const m = await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const m = await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 1500 }).expect(200);
     expect(m.body.ok).toBe(true);
     expect(m.body.reply.san).toBeTruthy();
@@ -26,17 +35,17 @@ describe("api", () => {
 
   it("returns ok:false for move on nonexistent game without crashing", async () => {
     await ready;
-    const m = await request(app).post("/api/game/999999/move")
+    const m = await request(api).post("/api/game/999999/move")
       .send({ from: "e2", to: "e4" }).expect(200);
     expect(m.body.ok).toBe(false);
   });
 
   it("returns ok:false and the pre-move server fen for an illegal move", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
     const fenBefore = g.body.fen;
-    const m = await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const m = await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e5" }).expect(200);
     expect(m.body.ok).toBe(false);
     expect(m.body.fen).toBe(fenBefore);
@@ -44,18 +53,18 @@ describe("api", () => {
 
   it("resigns a game via POST /api/game/:id/resign", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    const r = await request(app).post(`/api/game/${g.body.gameId}/resign`).send({}).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const r = await request(api).post(`/api/game/${g.body.gameId}/resign`).send({}).expect(200);
     expect(r.body.ok).toBe(true);
     expect(r.body.result).toBe("0-1");
   });
 
   it("offers a draw via POST /api/game/:id/draw-offer and accepts near startpos", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    const r = await request(app).post(`/api/game/${g.body.gameId}/draw-offer`).send({}).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const r = await request(api).post(`/api/game/${g.body.gameId}/draw-offer`).send({}).expect(200);
     expect(r.body.ok).toBe(true);
     expect(r.body.accepted).toBe(true);
     expect(r.body.result).toBe("1/2-1/2");
@@ -63,10 +72,10 @@ describe("api", () => {
 
   it("judges a legal move via POST /api/game/:id/judge without advancing the game", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    const j = await request(app).post(`/api/game/${g.body.gameId}/judge`)
+    const j = await request(api).post(`/api/game/${g.body.gameId}/judge`)
       .send({ from: "e2", to: "e4" }).expect(200);
     expect(j.body.ok).toBe(true);
     expect(j.body.verdict.tier).toBe("silent"); // e4 from startpos is a fine opening move
@@ -76,7 +85,7 @@ describe("api", () => {
 
     // Follow-up /move confirms judging didn't advance the game: e2-e4 is
     // still legal from the (unchanged) starting position.
-    const m = await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const m = await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
     expect(m.body.ok).toBe(true);
     expect(m.body.playerSan).toBe("e4");
@@ -84,10 +93,10 @@ describe("api", () => {
 
   it("returns ok:false for an illegal move via POST /api/game/:id/judge", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    const j = await request(app).post(`/api/game/${g.body.gameId}/judge`)
+    const j = await request(api).post(`/api/game/${g.body.gameId}/judge`)
       .send({ from: "e2", to: "e5" }).expect(200);
     expect(j.body.ok).toBe(false);
   });
@@ -97,12 +106,12 @@ describe("api", () => {
   // post-move one. Omitting it defaults to "guardian".
   it("accepts and stores the mode field on POST /api/game/:id/judge", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    await request(app).post(`/api/game/${g.body.gameId}/judge`)
+    await request(api).post(`/api/game/${g.body.gameId}/judge`)
       .send({ from: "e2", to: "e4", mode: "post" }).expect(200);
-    await request(app).post(`/api/game/${g.body.gameId}/judge`)
+    await request(api).post(`/api/game/${g.body.gameId}/judge`)
       .send({ from: "d2", to: "d4" }).expect(200);
 
     const rows = getVerdicts(g.body.gameId);
@@ -119,12 +128,12 @@ describe("api", () => {
   // (DEFAULT_ADVICE_LEVEL).
   it("threads strictness to the stored verdict row's advice_level column; omitted strictness stores standard", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    await request(app).post(`/api/game/${g.body.gameId}/judge`)
+    await request(api).post(`/api/game/${g.body.gameId}/judge`)
       .send({ from: "e2", to: "e4", strictness: "blunt" }).expect(200);
-    await request(app).post(`/api/game/${g.body.gameId}/judge`)
+    await request(api).post(`/api/game/${g.body.gameId}/judge`)
       .send({ from: "d2", to: "d4" }).expect(200);
 
     const rows = getVerdicts(g.body.gameId);
@@ -135,10 +144,10 @@ describe("api", () => {
 
   it("an unrecognized strictness value falls back to standard rather than erroring", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    const j = await request(app).post(`/api/game/${g.body.gameId}/judge`)
+    const j = await request(api).post(`/api/game/${g.body.gameId}/judge`)
       .send({ from: "e2", to: "e4", strictness: "not-a-real-level" }).expect(200);
     expect(j.body.ok).toBe(true);
 
@@ -158,10 +167,10 @@ describe("api", () => {
   // proof with a mocked evaluator).
   it("an Object.prototype-colliding strictness value ('constructor') stores advice_level 'standard', not the colliding string", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    const j = await request(app).post(`/api/game/${g.body.gameId}/judge`)
+    const j = await request(api).post(`/api/game/${g.body.gameId}/judge`)
       .send({ from: "e2", to: "e4", strictness: "constructor" }).expect(200);
     expect(j.body.ok).toBe(true);
 
@@ -171,11 +180,11 @@ describe("api", () => {
 
   it("judging then confirming through /move produces exactly one recorded player move (no double-apply)", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    await request(app).post(`/api/game/${g.body.gameId}/judge`).send({ from: "e2", to: "e4" }).expect(200);
-    const m = await request(app).post(`/api/game/${g.body.gameId}/move`)
+    await request(api).post(`/api/game/${g.body.gameId}/judge`).send({ from: "e2", to: "e4" }).expect(200);
+    const m = await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
     expect(m.body.ok).toBe(true);
     expect(m.body.playerSan).toBe("e4");
@@ -190,10 +199,10 @@ describe("api", () => {
   // through; the server's job is just to record it when told to.
   it("writes a game_events override row when /move carries override:true", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    const m = await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const m = await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500, override: true, deltaCp: 220, mateAgainst: false })
       .expect(200);
     expect(m.body.ok).toBe(true);
@@ -206,10 +215,10 @@ describe("api", () => {
 
   it("writes no game_events row for a normal /move (no override flag)", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    await request(app).post(`/api/game/${g.body.gameId}/move`)
+    await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
 
     const events = getGameEvents(g.body.gameId);
@@ -221,11 +230,11 @@ describe("api", () => {
   // the upsert, not overwrite.
   it("accumulates mode-timer seconds across two posts for the same (session, mode)", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
+    const s = await request(api).post("/api/session").expect(200);
     const sessionId = s.body.sessionId;
 
-    await request(app).post(`/api/session/${sessionId}/mode`).send({ mode: "game", seconds: 30 }).expect(200);
-    await request(app).post(`/api/session/${sessionId}/mode`).send({ mode: "game", seconds: 45 }).expect(200);
+    await request(api).post(`/api/session/${sessionId}/mode`).send({ mode: "game", seconds: 30 }).expect(200);
+    await request(api).post(`/api/session/${sessionId}/mode`).send({ mode: "game", seconds: 45 }).expect(200);
 
     expect(getModeSeconds(sessionId, "game")).toBe(75);
   });
@@ -237,7 +246,7 @@ describe("api", () => {
   // typed, recoverable signal -- never an unhandled FK-500.
   it("POST /api/session/:id/mode on a dead session returns a typed session_gone 404, not a 500", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const res = await request(app).post("/api/session/999999/mode").send({ mode: "game", seconds: 30 });
+    const res = await request(api).post("/api/session/999999/mode").send({ mode: "game", seconds: 30 });
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ ok: false, error: "session_gone" });
     // The repro this fixes: an unhandled FK error, not a clean typed response.
@@ -254,10 +263,10 @@ describe("api", () => {
   // lacking one).
   it("drives a game to a terminal state via resign, records the result, and further /move calls fail cleanly", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    const r = await request(app).post(`/api/game/${g.body.gameId}/resign`).send({}).expect(200);
+    const r = await request(api).post(`/api/game/${g.body.gameId}/resign`).send({}).expect(200);
     expect(r.body.ok).toBe(true);
     expect(r.body.result).toBe("0-1");
 
@@ -265,7 +274,7 @@ describe("api", () => {
     expect(row.result).toBe("0-1");
     expect(row.ended_at).toBeTruthy();
 
-    const m = await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const m = await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4" }).expect(200);
     expect(m.body.ok).toBe(false);
   });
@@ -273,27 +282,27 @@ describe("api", () => {
   // Wave C, task C-A: the single "end the game?" flow's endpoint.
   it("adjudicates from startpos as a draw via POST /api/game/:id/adjudicate (preview), without finishing the game", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    const preview = await request(app).post(`/api/game/${g.body.gameId}/adjudicate`)
+    const preview = await request(api).post(`/api/game/${g.body.gameId}/adjudicate`)
       .send({ execute: false }).expect(200);
     expect(preview.body.ok).toBe(true);
     expect(preview.body.outcome).toBe("draw");
     expect(preview.body.result).toBe("1/2-1/2");
     expect(preview.body.reason).toBe("draw-adjudicated");
 
-    const stillPlayable = await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const stillPlayable = await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4" }).expect(200);
     expect(stillPlayable.body.ok).toBe(true);
   }, 20000);
 
   it("adjudicate execute:true finishes the game, records result + end_reason, and further /move calls fail cleanly", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    const exec = await request(app).post(`/api/game/${g.body.gameId}/adjudicate`)
+    const exec = await request(api).post(`/api/game/${g.body.gameId}/adjudicate`)
       .send({ execute: true }).expect(200);
     expect(exec.body.ok).toBe(true);
     expect(exec.body.result).toBe("1/2-1/2");
@@ -302,24 +311,24 @@ describe("api", () => {
     expect(row.result).toBe("1/2-1/2");
     expect(row.end_reason).toBe("draw-adjudicated");
 
-    const m = await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const m = await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4" }).expect(200);
     expect(m.body.ok).toBe(false);
   }, 20000);
 
   it("returns ok:false for adjudicate on a nonexistent game", async () => {
     await ready;
-    const r = await request(app).post("/api/game/999999/adjudicate").send({ execute: false }).expect(200);
+    const r = await request(api).post("/api/game/999999/adjudicate").send({ execute: false }).expect(200);
     expect(r.body.ok).toBe(false);
   });
 
   // Wave C, task C-B: hint-escalation observability endpoint.
   it("logs a hint game_event via POST /api/game/:id/hint", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    const r = await request(app).post(`/api/game/${g.body.gameId}/hint`)
+    const r = await request(api).post(`/api/game/${g.body.gameId}/hint`)
       .send({ level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: g.body.fen }).expect(200);
     expect(r.body.ok).toBe(true);
 
@@ -337,16 +346,16 @@ describe("api", () => {
 
   it("returns ok:false for hint logging on a nonexistent game", async () => {
     await ready;
-    const r = await request(app).post("/api/game/999999/hint")
+    const r = await request(api).post("/api/game/999999/hint")
       .send({ level: 1, tier: "nudge", deltaCp: 80, bestUci: "e2e4", fen: "x" }).expect(200);
     expect(r.body.ok).toBe(false);
   });
 
   it("POST /api/game/:id/hint-facts returns deep hint facts", async () => {
     await ready;
-    const s = await request(app).post("/api/session").send({});
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 });
-    const res = await request(app).post(`/api/game/${g.body.gameId}/hint-facts`).send({});
+    const s = await request(api).post("/api/session").send({});
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 });
+    const res = await request(api).post(`/api/game/${g.body.gameId}/hint-facts`).send({});
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.facts.bestUci).toMatch(/^[a-h][1-8][a-h][1-8][nbrq]?$/);
@@ -355,17 +364,17 @@ describe("api", () => {
 
   it("snaps a non-band elo to the nearest maia weights band", async () => {
     await ready;
-    const s = await request(app).post("/api/session").send({});
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1234 });
+    const s = await request(api).post("/api/session").send({});
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1234 });
     expect(g.body.elo).toBe(1200);
   }, 30000);
 
   it("defaults garbage elo to 1100 and passes real bands through", async () => {
     await ready;
-    const s = await request(app).post("/api/session").send({});
-    const bad = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: "mallow" });
+    const s = await request(api).post("/api/session").send({});
+    const bad = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: "mallow" });
     expect(bad.body.elo).toBe(1100);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1500 });
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1500 });
     expect(g.body.elo).toBe(1500);
   }, 60000);
 
@@ -395,14 +404,14 @@ describe("api", () => {
   // "never fabricating a swing" holds even at the API boundary.
   it("computes and persists a game summary at game end, readable via GET /api/game/:id/summary", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    await request(app).post(`/api/game/${g.body.gameId}/move`)
+    await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
-    await request(app).post(`/api/game/${g.body.gameId}/resign`).send({}).expect(200);
+    await request(api).post(`/api/game/${g.body.gameId}/resign`).send({}).expect(200);
 
-    const summary = await request(app).get(`/api/game/${g.body.gameId}/summary`).expect(200);
+    const summary = await request(api).get(`/api/game/${g.body.gameId}/summary`).expect(200);
     expect(summary.body.ok).toBe(true);
     expect(Array.isArray(summary.body.turningPoints)).toBe(true);
     expect(Array.isArray(summary.body.classifications)).toBe(true);
@@ -434,28 +443,28 @@ describe("api", () => {
   // persists a per-move flag, readable straight back off /summary.
   it("highlights a move via POST /api/game/:id/move/:ply/highlight, reflected in the summary", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
 
-    const r = await request(app).post(`/api/game/${g.body.gameId}/move/1/highlight`)
+    const r = await request(api).post(`/api/game/${g.body.gameId}/move/1/highlight`)
       .send({ highlighted: true }).expect(200);
     expect(r.body).toEqual({ ok: true });
 
-    const summary = await request(app).get(`/api/game/${g.body.gameId}/summary`).expect(200);
+    const summary = await request(api).get(`/api/game/${g.body.gameId}/summary`).expect(200);
     expect(summary.body.moves.find((m: any) => m.ply === 1)?.highlighted).toBe(true);
   }, 20000);
 
   it("rejects a highlight request with a non-boolean `highlighted`", async () => {
     await ready;
-    const r = await request(app).post("/api/game/1/move/1/highlight").send({ highlighted: "yes" }).expect(400);
+    const r = await request(api).post("/api/game/1/move/1/highlight").send({ highlighted: "yes" }).expect(400);
     expect(r.body.error).toMatch(/boolean/);
   });
 
   it("returns an empty-but-ok summary for a nonexistent game (compute-on-read fallback)", async () => {
     await ready;
-    const r = await request(app).get("/api/game/999999/summary").expect(200);
+    const r = await request(api).get("/api/game/999999/summary").expect(200);
     expect(r.body).toEqual({ ok: true, turningPoints: [], classifications: [], moves: [], result: null });
   });
 
@@ -466,15 +475,15 @@ describe("api", () => {
   // purpose to prove the filter actually excludes it.
   it("lists finished games via GET /api/games, newest first, excluding unfinished games", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g1 = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    await request(app).post(`/api/game/${g1.body.gameId}/move`)
+    const s = await request(api).post("/api/session").expect(200);
+    const g1 = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(api).post(`/api/game/${g1.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
-    await request(app).post(`/api/game/${g1.body.gameId}/resign`).send({}).expect(200);
+    await request(api).post(`/api/game/${g1.body.gameId}/resign`).send({}).expect(200);
 
-    const g2 = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const g2 = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    const list = await request(app).get("/api/games").expect(200);
+    const list = await request(api).get("/api/games").expect(200);
     expect(list.body.ok).toBe(true);
     const ids = list.body.games.map((g: any) => g.id);
     expect(ids).toContain(g1.body.gameId);
@@ -504,23 +513,23 @@ describe("api", () => {
   // afterward, proving the refusal touched nothing.
   it("DELETE /api/game/:id refuses a live game with 409, and deletes a finished game so GET /api/games stops listing it", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
+    const s = await request(api).post("/api/session").expect(200);
 
-    const live = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    const refused = await request(app).delete(`/api/game/${live.body.gameId}`).expect(409);
+    const live = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const refused = await request(api).delete(`/api/game/${live.body.gameId}`).expect(409);
     expect(refused.body.ok).toBe(false);
 
-    const finished = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    await request(app).post(`/api/game/${finished.body.gameId}/resign`).send({}).expect(200);
+    const finished = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(api).post(`/api/game/${finished.body.gameId}/resign`).send({}).expect(200);
 
-    const del = await request(app).delete(`/api/game/${finished.body.gameId}`).expect(200);
+    const del = await request(api).delete(`/api/game/${finished.body.gameId}`).expect(200);
     expect(del.body.ok).toBe(true);
 
-    const list = await request(app).get("/api/games").expect(200);
+    const list = await request(api).get("/api/games").expect(200);
     expect(list.body.games.map((g: any) => g.id)).not.toContain(finished.body.gameId);
 
     // The refused delete left the still-live game fully untouched.
-    const stillLive = await request(app).post(`/api/game/${live.body.gameId}/move`).send({ from: "e2", to: "e4" }).expect(200);
+    const stillLive = await request(api).post(`/api/game/${live.body.gameId}/move`).send({ from: "e2", to: "e4" }).expect(200);
     expect(stillLive.body.ok).toBe(true);
   }, 30000);
 
@@ -530,7 +539,7 @@ describe("api", () => {
   // distinct reason:"not-found" for it.
   it("DELETE /api/game/:id answers 404 for an id that was never a game", async () => {
     await ready;
-    const del = await request(app).delete("/api/game/999999999").expect(404);
+    const del = await request(api).delete("/api/game/999999999").expect(404);
     expect(del.body).toEqual({ ok: false, reason: "not-found" });
   });
 
@@ -540,12 +549,12 @@ describe("api", () => {
   // HTTP level, not just refused with the old db-level 409.
   it("DELETE /api/game/:id deletes an unfinished game once it has no live in-memory entry", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    await request(app).post(`/api/game/${g.body.gameId}/move`).send({ from: "e2", to: "e4" }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(api).post(`/api/game/${g.body.gameId}/move`).send({ from: "e2", to: "e4" }).expect(200);
     (gm as any).games.delete(g.body.gameId);
 
-    const del = await request(app).delete(`/api/game/${g.body.gameId}`).expect(200);
+    const del = await request(api).delete(`/api/game/${g.body.gameId}`).expect(200);
     expect(del.body).toEqual({ ok: true });
   });
 
@@ -570,10 +579,10 @@ describe("api", () => {
       output: "the answer she panned", source: "model", backend: "claude-cli",
       validated: true, regenCount: 0, latencyMs: 5,
     });
-    await request(app).post(`/api/trace/${up}/rate`).send({ rating: 1, feedback: "loved it" }).expect(200);
-    await request(app).post(`/api/trace/${down}/rate`).send({ rating: -1 }).expect(200);
+    await request(api).post(`/api/trace/${up}/rate`).send({ rating: 1, feedback: "loved it" }).expect(200);
+    await request(api).post(`/api/trace/${down}/rate`).send({ rating: -1 }).expect(200);
 
-    const res = await request(app).get(`/api/traces/rated?rating=1&game=${G}`).expect(200);
+    const res = await request(api).get(`/api/traces/rated?rating=1&game=${G}`).expect(200);
     expect(res.body.ok).toBe(true);
     const ids = res.body.traces.map((t: any) => t.id);
     expect(ids).toContain(up);
@@ -587,7 +596,7 @@ describe("api", () => {
 
   it("GET /api/traces/rated rejects a rating that isn't 1 or -1", async () => {
     await ready;
-    const res = await request(app).get("/api/traces/rated?rating=2").expect(400);
+    const res = await request(api).get("/api/traces/rated?rating=2").expect(400);
     expect(res.body.ok).toBe(false);
   });
 
@@ -596,7 +605,7 @@ describe("api", () => {
   // with the sibling rating validation.
   it("GET /api/traces/rated rejects a non-numeric game param with 400", async () => {
     await ready;
-    const res = await request(app).get("/api/traces/rated?rating=1&game=abc").expect(400);
+    const res = await request(api).get("/api/traces/rated?rating=1&game=abc").expect(400);
     expect(res.body.ok).toBe(false);
   });
 
@@ -606,16 +615,16 @@ describe("api", () => {
     await ready;
     const id = insertCoachNote("from game 7: castle before move 10", 7);
 
-    const list = await request(app).get("/api/coach-notes").expect(200);
+    const list = await request(api).get("/api/coach-notes").expect(200);
     expect(list.body.ok).toBe(true);
     expect(list.body.notes.map((n: any) => n.id)).toContain(id);
     const row = list.body.notes.find((n: any) => n.id === id);
     expect(row).toMatchObject({ id, sourceGameId: 7, note: "from game 7: castle before move 10" });
 
-    const del = await request(app).delete(`/api/coach-notes/${id}`).expect(200);
+    const del = await request(api).delete(`/api/coach-notes/${id}`).expect(200);
     expect(del.body.ok).toBe(true);
 
-    const after = await request(app).get("/api/coach-notes").expect(200);
+    const after = await request(api).get("/api/coach-notes").expect(200);
     expect(after.body.notes.map((n: any) => n.id)).not.toContain(id);
   });
 
@@ -635,12 +644,12 @@ describe("api", () => {
         return "e4 opens things up nicely for you.";
       },
     });
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
-    await request(app).post(`/api/game/${g.body.gameId}/move`)
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    await request(api).post(`/api/game/${g.body.gameId}/move`)
       .send({ from: "e2", to: "e4", timeSpentMs: 500 }).expect(200);
 
-    const r = await request(app).post(`/api/game/${g.body.gameId}/chat`)
+    const r = await request(api).post(`/api/game/${g.body.gameId}/chat`)
       .send({ message: "what did I just play?", context: { mode: "live" } }).expect(200);
     expect(r.body.ok).toBe(true);
     expect(r.body.text.length).toBeGreaterThan(0);
@@ -666,10 +675,10 @@ describe("api", () => {
         return "should never be called for this test.";
       },
     });
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
 
-    const r = await request(app).post(`/api/game/${g.body.gameId}/chat`)
+    const r = await request(api).post(`/api/game/${g.body.gameId}/chat`)
       .send({ message: "x".repeat(CHAT_MAX_LEN + 1), context: { mode: "live" } }).expect(200);
     expect(r.body.ok).toBe(false);
     expect(r.body.error).toBe("too-long");
@@ -677,7 +686,7 @@ describe("api", () => {
 
   it("returns ok:false for chat on a nonexistent game without crashing", async () => {
     await ready;
-    const r = await request(app).post("/api/game/999999/chat")
+    const r = await request(api).post("/api/game/999999/chat")
       .send({ message: "hello", context: { mode: "live" } }).expect(200);
     expect(r.body.ok).toBe(false);
   });
@@ -705,11 +714,11 @@ describe("api", () => {
 
   it("rates a trace via POST /api/trace/:id/rate (happy path)", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
     const traceId = seedTrace(g.body.gameId);
 
-    const r = await request(app).post(`/api/trace/${traceId}/rate`)
+    const r = await request(api).post(`/api/trace/${traceId}/rate`)
       .send({ rating: -1, feedback: "too fast" }).expect(200);
     expect(r.body.ok).toBe(true);
 
@@ -720,7 +729,7 @@ describe("api", () => {
 
   it("returns ok:false for rating an unknown trace id", async () => {
     await ready;
-    const r = await request(app).post("/api/trace/999999/rate").send({ rating: 1 }).expect(200);
+    const r = await request(api).post("/api/trace/999999/rate").send({ rating: 1 }).expect(200);
     expect(r.body.ok).toBe(false);
   });
 
@@ -730,11 +739,11 @@ describe("api", () => {
   // return ok:false.
   it("rejects a malformed rating (0) without writing, leaving the trace unrated", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
     const traceId = seedTrace(g.body.gameId);
 
-    const r = await request(app).post(`/api/trace/${traceId}/rate`).send({ rating: 0 }).expect(200);
+    const r = await request(api).post(`/api/trace/${traceId}/rate`).send({ rating: 0 }).expect(200);
     expect(r.body.ok).toBe(false);
 
     const rows = getAdviceTraces(g.body.gameId);
@@ -743,11 +752,11 @@ describe("api", () => {
 
   it("rejects a missing rating without writing, leaving the trace unrated", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
     const traceId = seedTrace(g.body.gameId);
 
-    const r = await request(app).post(`/api/trace/${traceId}/rate`).send({}).expect(200);
+    const r = await request(api).post(`/api/trace/${traceId}/rate`).send({}).expect(200);
     expect(r.body.ok).toBe(false);
 
     const rows = getAdviceTraces(g.body.gameId);
@@ -756,12 +765,12 @@ describe("api", () => {
 
   it("overwrites a rating on re-rate via the route -- latest wins", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
     const traceId = seedTrace(g.body.gameId);
 
-    await request(app).post(`/api/trace/${traceId}/rate`).send({ rating: -1, feedback: "too fast" }).expect(200);
-    const r = await request(app).post(`/api/trace/${traceId}/rate`).send({ rating: 1 }).expect(200);
+    await request(api).post(`/api/trace/${traceId}/rate`).send({ rating: -1, feedback: "too fast" }).expect(200);
+    const r = await request(api).post(`/api/trace/${traceId}/rate`).send({ rating: 1 }).expect(200);
     expect(r.body.ok).toBe(true);
 
     const rows = getAdviceTraces(g.body.gameId);
@@ -771,11 +780,11 @@ describe("api", () => {
 
   it("stores feedback only when provided via the route", async () => {
     await ready;
-    const s = await request(app).post("/api/session").expect(200);
-    const g = await request(app).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
+    const s = await request(api).post("/api/session").expect(200);
+    const g = await request(api).post("/api/game").send({ sessionId: s.body.sessionId, elo: 1100 }).expect(200);
     const traceId = seedTrace(g.body.gameId);
 
-    await request(app).post(`/api/trace/${traceId}/rate`).send({ rating: 1 }).expect(200);
+    await request(api).post(`/api/trace/${traceId}/rate`).send({ rating: 1 }).expect(200);
     const rows = getAdviceTraces(g.body.gameId);
     expect(rows[0].rating).toBe(1);
     expect(rows[0].feedback_text).toBeNull();
@@ -792,7 +801,7 @@ describe("api", () => {
 
     it("returns a legal maia reply for a mid-game fen, verified independently via chess.js", async () => {
       await ready;
-      const r = await request(app).post("/api/explore/reply")
+      const r = await request(api).post("/api/explore/reply")
         .send({ fen: MID_GAME_FEN, elo: 1100 }).expect(200);
       expect(r.body.ok).toBe(true);
       expect(r.body.reply).toBeTruthy();
@@ -809,7 +818,7 @@ describe("api", () => {
     it("writes nothing to any table — every row count is identical before and after the call", async () => {
       await ready;
       const before = getAllTableCounts();
-      await request(app).post("/api/explore/reply")
+      await request(api).post("/api/explore/reply")
         .send({ fen: MID_GAME_FEN, elo: 1200 }).expect(200);
       const after = getAllTableCounts();
       expect(after).toEqual(before);
@@ -817,7 +826,7 @@ describe("api", () => {
 
     it("returns gameOver:true and no reply for an already-terminal fen", async () => {
       await ready;
-      const r = await request(app).post("/api/explore/reply")
+      const r = await request(api).post("/api/explore/reply")
         .send({ fen: CHECKMATE_FEN, elo: 1100 }).expect(200);
       expect(r.body.ok).toBe(true);
       expect(r.body.gameOver).toBe(true);

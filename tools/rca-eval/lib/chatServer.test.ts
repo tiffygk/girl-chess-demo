@@ -1,9 +1,20 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import { createChatTestApp, parseSseFrames } from "./chatServer";
 import { seedScratchDb, seedMinimalGame } from "./scenarioDb";
 import { noBackend } from "../../../server/coach/backends/types";
 import type { CoachBackend } from "../../../server/coach/backends/types";
+import type { Server, RequestListener } from "http";
+import { startLoopback, closeServer } from "../../../server/loopbackServer";
+
+// supertest against 127.0.0.1 exactly; see server/loopbackServer.ts.
+const servers: Server[] = [];
+async function api(handler: RequestListener): Promise<Server> {
+  const server = await startLoopback(handler);
+  servers.push(server);
+  return server;
+}
+afterAll(() => Promise.all(servers.map(closeServer)));
 
 // A fake, deterministic backend for the streaming self-test (ST-02's real
 // shape without a real model call) -- generateStream fires two deltas then
@@ -30,7 +41,7 @@ describe("createChatTestApp -- never listens on a port (supertest binds ephemera
     seedScratchDb("chatserver-json");
     const { gameId } = seedMinimalGame();
     const app = createChatTestApp({ defaultBackend: noBackend });
-    const res = await request(app).post(`/api/game/${gameId}/chat`).send({ message: "what should i play?", backendPref: "template" });
+    const res = await request(await api(app)).post(`/api/game/${gameId}/chat`).send({ message: "what should i play?", backendPref: "template" });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.source).toBe("template");
@@ -41,7 +52,7 @@ describe("createChatTestApp -- never listens on a port (supertest binds ephemera
     seedScratchDb("chatserver-stream");
     const { gameId } = seedMinimalGame();
     const app = createChatTestApp({ defaultBackend: fakeStreamingBackend });
-    const streamRes = await request(app).post(`/api/game/${gameId}/chat/stream`).send({ message: "what should i play?" });
+    const streamRes = await request(await api(app)).post(`/api/game/${gameId}/chat/stream`).send({ message: "what should i play?" });
     const frames = parseSseFrames(streamRes.text);
     expect(frames.map((f) => f.event)).toEqual(["delta", "delta", "done"]);
     expect((frames[2].data as { source: string }).source).toBe("model");
@@ -49,14 +60,14 @@ describe("createChatTestApp -- never listens on a port (supertest binds ephemera
 
   it("a missing game id yields a JSON 404, not a hang", async () => {
     const app = createChatTestApp({ defaultBackend: noBackend });
-    const res = await request(app).post("/api/game/999999/chat").send({ message: "hello" });
+    const res = await request(await api(app)).post("/api/game/999999/chat").send({ message: "hello" });
     expect(res.status).toBe(404);
     expect(res.body.ok).toBe(false);
   });
 
   it("a missing game id yields exactly one error frame on the stream route, not a hang", async () => {
     const app = createChatTestApp({ defaultBackend: noBackend });
-    const streamRes = await request(app).post("/api/game/999999/chat/stream").send({ message: "hello" });
+    const streamRes = await request(await api(app)).post("/api/game/999999/chat/stream").send({ message: "hello" });
     const frames = parseSseFrames(streamRes.text);
     expect(frames.length).toBe(1);
     expect(frames[0].event).toBe("error");
