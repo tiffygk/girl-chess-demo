@@ -30,7 +30,7 @@ I directed an AI coding agent through a structured build process instead of writ
 
 Shipped as of 2026-09-22, each round checked before it merged. Open games survive a server restart. Past games are listed by day, and a back button leaves a game without ending it. Opponents run to 1900, and a fresh clone gets `npm run doctor`. Increment 4 (spaced-repetition drills, a progress dashboard, "it remembers") is roadmap, not built.
 
-## Start here: the product spec
+## The product spec
 
 Before any code existed, I wrote the spec. **[PRD-lite: Girl Chess →](prd-lite.md)** names three hypotheses and the leading indicator for each.
 
@@ -93,7 +93,7 @@ Everything but the coach's words runs on your own machine. The [repository READM
 
 The rest of this repository is the app: `server/` (game engine, coach, analysis) and `src/` (React client). Every merge is gated (`npm run gate`): on every finished game in my history locally, on the 51 committed games in CI. A fresh clone runs `setup.sh` once for lc0, the pinned Stockfish 19, and the nine opponent files, then `npm run doctor` to say what is missing; the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) has the steps. [The hint ladder and the coach](hint-ladder-and-coach.md) explains the three text surfaces around a move (ladder, note, chat) and where each lives in the code.
 
-## Sample documentation
+## Documentation
 
 - [The product spec](prd-lite.md): who the tutor is for, what it promises, and how success is measured.
 - [The hint ladder and the coach](hint-ladder-and-coach.md): how a hint is checked before it is shown, and how the chat stays on the same facts.
