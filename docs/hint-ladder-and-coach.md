@@ -8,7 +8,7 @@ The ladder is short on purpose: at most three rungs when she is already on the r
 
 ![Four rising steps, from where to look to the move, capped at three rungs on the right idea and four on the wrong one](images/diagrams/hint-ladder-rungs.svg)
 
-The rung wording comes from fixed sentences chosen by code, not from a language model. That makes it instant, and it means a rung can never invent anything.
+The rung wording comes from fixed sentences chosen by code, not from a language model. That makes it instant. A rung can never invent anything.
 
 Below the ladder, a one-line band explains the position in the coach's voice. That line is a model call, with a fixed-sentence fallback if the model is slow.
 
@@ -20,11 +20,11 @@ Where this lives: `src/game/hintFlow.ts`, `server/annotator/hint.ts`.
 
 When she asks for help, the engine searches the position for 1.5 seconds and returns several candidate moves, not one. Code picks among them, preferring a quiet move over a trade when the gap is small, about a third of a pawn.
 
-The pick is then tested: code plays it on a copy of the board and searches again for half a second, confirming it does not lose more than half a pawn. A move that fails is replaced by the result of a deeper 3-second search. The move on the rung is one of those two, a move that passed the check or the deeper search's answer, and that is what "verified" means on this page.
+Code then tests the pick. It plays the move on a copy of the board and searches again for half a second, confirming the move does not lose more than half a pawn. A move that fails is replaced by the result of a deeper 3-second search. The move on the rung is either a move that passed the check or the deeper search's answer. That is what "verified" means on this page.
 
 ![A hint's path: a 1.5-second search returns candidates, code picks one, a half-second check confirms it, and only a verified move becomes the sentence on the rung](images/diagrams/one-hint-from-search-to-sentence.svg)
 
-Asking twice on the same position does not search twice; the app reuses the verified answer. Two short searches of the same position can land on different near-equal moves, which happened once, on 2026-08-28. The reuse rule is the fix.
+Asking twice on the same position does not search twice. The app reuses the verified answer. Two short searches of the same position can land on different near-equal moves. That happened once, on 2026-08-28, and the reuse rule is the fix.
 
 Where this lives: `server/annotator/hint.ts`, `server/game/manager.ts`.
 
@@ -46,7 +46,7 @@ Where this lives: `server/game/manager.ts`, `server/coach/chat.ts`, `server/coac
 
 ## What it still gets wrong
 
-One recorded defect is still open. Early in game 197, the chat said a pawn move to f3 "doesn't defend e4". That was wrong, because f3 sits diagonally next to e4. The reply was served before the verified-search rule above shipped, and the replay check names it as a known defect rather than counting it as fixed. The next round has to prove it gone.
+One recorded defect is still open. Early in game 197, the chat said a pawn move to f3 "doesn't defend e4". That was wrong, because f3 sits diagonally next to e4. The reply was served before the verified-search rule above shipped. The replay check names it as a known defect instead of counting it as fixed. The next round has to prove it gone.
 
 A second gap is narrower. The post-game review chat does not yet carry the hint's findings, so its answers rest on the stored analysis only.
 
@@ -54,7 +54,7 @@ Where this lives: `tools/replay-check.ts`.
 
 ## Latency, measured 2026-09-08
 
-These are measured on the owner's machine, over her own games.
+I measured these on my machine, over my own games.
 
 | call | p50 | p90 |
 | --- | --- | --- |
@@ -64,4 +64,4 @@ These are measured on the owner's machine, over her own games.
 | a chat regen | 33.5 s average (vs 8.2 s without) | n/a |
 | cheapest model call observed | 3.3 s | n/a |
 
-The standing ceiling for any change to a coach reply is one to two seconds.
+The standing limit for any change to a coach reply is one to two seconds.
