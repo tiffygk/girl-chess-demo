@@ -2,13 +2,11 @@
 
 Purpose: this repo now exposes live game/coach state as structured data, not just as pixels on the board. Hit `/api/agent/manifest` first, or read this file, before vision-reading a screenshot to answer "what's the game state right now."
 
-Debugging a coach-vision error (the coach stating something false about the board) has its own runbook: the `debug-coach-vision` project skill uses the surfaces below (dossier, `coverage_json`, the claim checkers) to localize it to a fact-gap, a validator-gap, or a phrasing-gap. Reach for that skill, not vision, when the coach mis-describes the board.
-
 ## Endpoints
 
 | endpoint | returns | note |
 |---|---|---|
-| `GET /api/health` | `ok`, `commit`, `loadedCommit`, `startedAt` | `startedAt` (process boot time) is the trustworthy freshness signal. `commit`/`loadedCommit` read git HEAD, not proof the running process loaded that code (see the playtest-freshness rule) |
+| `GET /api/health` | `ok`, `commit`, `loadedCommit`, `startedAt` | `startedAt` (process boot time) is the trustworthy freshness signal. `commit`/`loadedCommit` read git HEAD, not proof the running process loaded that code |
 | `GET /api/game/:id/state` | `fen`, `ply`, `sideToMove`, `result`, `lastVerdict`, `coachBreaker` | live state for one game |
 | `GET /api/agent/manifest` | this table, machine-readable | endpoints, trace tools, and the `data-gc-*` vocabulary in one JSON response |
 
@@ -17,7 +15,7 @@ Debugging a coach-vision error (the coach stating something false about the boar
 | command | what it does |
 |---|---|
 | `npm run dossier -- <traceId> [--json] [--coverage --since YYYY-MM-DD]` | everything the coach saw and said for one trace, one screen; `--coverage --since` aggregates claim coverage across traces from that date |
-| `npm run tail -- [--game <id>]` | readonly live tail of moves/advice_traces as she plays |
+| `npm run tail -- [--game <id>]` | readonly live tail of moves/advice_traces during a game |
 
 Both open the db `{readonly: true}`, never `openDb()` (that runs `migrateSchema`, a write) and never a heal-on-read path.
 
