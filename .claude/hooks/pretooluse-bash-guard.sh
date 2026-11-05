@@ -84,19 +84,17 @@ push_in_command_position=0
 push_segment=""
 prior_segments=""
 segments="$(printf '%s' "$cmd" | sed -E 's/(&&|\|\||[|;]|\()/\n/g')"
-while IFS= read -r seg; do
-  trimmed="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//')"
-  stripped="$(printf '%s' "$trimmed" | sed -E 's/^env([[:space:]]+(-u[[:space:]]+[A-Za-z_][A-Za-z0-9_]*|-[a-zA-Z]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*))*[[:space:]]+//')"
-  if printf '%s' "$stripped" | grep -qE "^${GIT_PUSH_TRIGGER}"; then
-    push_in_command_position=1
-    push_segment="$stripped"
-    break
+# One pass over all segments, not a loop with subprocesses per segment: a
+# command of 200,000 characters used to run past a minute here.
+stripped_segments="$(printf '%s\n' "$segments" | sed -E 's/^[[:space:]]+//; s/^env([[:space:]]+(-u[[:space:]]+[A-Za-z_][A-Za-z0-9_]*|-[a-zA-Z]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*))*[[:space:]]+//')"
+push_hit="$(printf '%s\n' "$stripped_segments" | grep -nE -m1 "^${GIT_PUSH_TRIGGER}")"
+if [ -n "$push_hit" ]; then
+  push_in_command_position=1
+  push_segment="${push_hit#*:}"
+  if [ "${push_hit%%:*}" -gt 1 ]; then
+    prior_segments="$(printf '%s\n' "$segments" | head -n "$((${push_hit%%:*} - 1))")"
   fi
-  prior_segments="${prior_segments}${seg}
-"
-done <<EOF
-$segments
-EOF
+fi
 
 if [ "$push_in_command_position" = "1" ]; then
   # Pull a path argument out of `git -C <path>` (from the full command --

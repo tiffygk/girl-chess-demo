@@ -177,5 +177,20 @@ describe("pretooluse-bash-guard #16 push resolution", { timeout: 30_000 }, () =>
     const d = decision(result.stdout);
     expect(d.permissionDecision).toBe("deny");
     expect(d.permissionDecisionReason).toContain("BLOCKED");
+    // A push in the first segment has no earlier segments to read: asking
+    // head for zero lines would print an error here on macOS.
+    expect(result.stderr).toBe("");
+  });
+
+  it("stays fast on a very long command and still finds the push at its end", () => {
+    // Spawning subprocesses for each segment makes this go RED on the time
+    // bound: 5,000 segments took far longer than this before the single pass.
+    const filler = "echo x; ".repeat(5_000);
+    const start = Date.now();
+    const result = runGuard(`cd ${repo}; ${filler}git push`, outsideRepo);
+    expect(Date.now() - start).toBeLessThan(5_000);
+    const d = decision(result.stdout);
+    expect(d.permissionDecision).toBe("deny");
+    expect(d.permissionDecisionReason).toContain("BLOCKED");
   });
 });
