@@ -18,7 +18,7 @@ Put the coach inside the game: warnings before mistakes, lessons after, drills b
 
 ## Personas
 
-- **Primary: the Pattern-Rich Beginner.** Strong at puzzles (~1400), beginner in full games. Can find a tactic when told one exists; can't yet notice when to look. Understands above the level she plays at. Octalysis-aware (gamification framework): wins must be earned, losses must be real, no hollow gamification, no monetization mechanics.
+- **Primary: the Pattern-Rich Beginner.** Strong at puzzles (~1400), beginner in full games. Can find a tactic when told one exists; can't yet notice when to look. Understands above the level she plays at. Gamification motivated: wins must be earned, losses must be real, no hollow gamification, no monetization mechanics.
 - **Secondary: the Guest Player.** Local second player of unknown strength, on a shared mouse. Zero setup. Handicaps flex either direction; coach toggles are per player.
 - **Tertiary: the Tinkerer-Cloner.** Shapes the code, never the scope: swappable engines, coach backends, skins, and persona files behind documented seams.
 
