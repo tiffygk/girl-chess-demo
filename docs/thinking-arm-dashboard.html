@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Girl Chess: OD-3b Thinking-Arm Dashboard (2026-08-03)</title>
+<title>Girl Chess: Thinking-Arm Dashboard (2026-08-03)</title>
 <style>
   :root{
     --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2430; --ink2:#54606e; --muted:#8a95a3;
@@ -112,7 +112,7 @@
 
   <header class="top">
     <div>
-      <h1>OD-3b: Three Thinking Budgets, One Pick</h1>
+      <h1>Three Thinking Budgets, One Pick</h1>
       <div class="sub">The decisive 3-arm run: the coach answered the same 119 questions three times each with normal thinking (<b>default</b>), a small bounded budget (<b>low</b>), and thinking turned off (<b>disabled</b>): 357 answers per arm, 1,071 total. "Failed" means the answer ended as a canned apology (a template) even after its one automatic retry.</div>
     </div>
     <button class="themebtn" id="themebtn" onclick="toggleTheme()">◐ Theme</button>
@@ -137,13 +137,13 @@
   <section class="panel">
     <div class="num">CHART 1 · THE HEADLINE</div>
     <h2>Where failures cluster: difficulty × thinking budget</h2>
-    <div class="q">One dot per (difficulty bucket, arm): its position is that cell's failure rate. Dot area reflects how many questions the bucket holds. The pattern to see: every arm slides right on the bottom row, <b>disabled</b> is rightmost almost everywhere, and <b>low</b> is leftmost where it counts.</div>
+    <div class="q">One dot per (difficulty bucket, arm): its position is that cell's failure rate. Dot area reflects how many questions the bucket holds. The pattern to see: every arm slides right on the bottom row, <b>disabled</b> is rightmost almost everywhere, and <b>low</b> is leftmost on the hard row.</div>
     <div class="legend" id="lg1"></div>
     <div class="chartbox" id="c1"></div>
     <button class="tbtn" onclick="tog('t1')">Show data table</button>
     <table class="dt" id="t1"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Failures concentrate on tactics-and-mate in every arm</b> (18.7% / 13.3% / 22.7%), well above each arm's own easier buckets. <b>disabled fails most everywhere</b>: it is the only arm that fails simple fact questions at a real rate (9.5%). And <b>low is best exactly on the hard row</b>: 13.3%, beating even default's unbounded thinking there.</p></div>
-    <div class="foot">Rates are final outcomes: every failed row got exactly one retry first. n per bucket: direct-fact 42, needs-line 240, tactical-or-mate 75 (per arm). Source: <code>2026-08-03-od3b-all-summary.json</code>.</div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Failures concentrate on tactics-and-mate in every arm</b> (18.7% / 13.3% / 22.7%), well above each arm's own easier buckets. <b>disabled fails most everywhere</b>: it is the only arm that fails simple fact questions often (9.5%). On the <b>hard row</b> low is lowest, 13.3% against default's 18.7%, four answers apart.</p></div>
+    <div class="foot">Rates are final outcomes: every failed row got exactly one retry first. n per bucket: direct-fact 42, needs-line 240, tactical-or-mate 75 (per arm).</div>
   </section>
 
   <!-- CHART 2 -->
@@ -168,13 +168,13 @@
     <div class="chartbox" id="c3"></div>
     <button class="tbtn" onclick="tog('t3')">Show data table</button>
     <table class="dt" id="t3"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>low sits in the sweet spot</b>: 0.6s slower than disabled at the median but 3.1 points fewer failures, and its tail stays under 12s. <b>default buys nothing you'd wait for</b>: 2.3× slower typical, a 47-second p90 tail, and it still isn't the best arm on the hardest questions. It keeps one job: the escalated retry, where its extra thinking room rescues about two-thirds of failed first drafts.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>low is the best trade</b>: 0.6s slower than disabled at the median but 3.1 points fewer failures, and its tail stays under 12s. <b>default buys nothing you'd wait for</b>: 2.3× slower typical, a 47-second p90 tail, and it still isn't the best arm on the hardest questions. It keeps one job: the escalated retry, where its extra thinking room rescues about two-thirds of failed first drafts.</p></div>
     <div class="foot">Latency is wall time to the final answer (nearest-rank percentiles). Failure rate is the arm's overall post-retry template rate, n=357 each.</div>
   </section>
 
   <footer class="pg">
-    Girl Chess: OD-3b Thinking-Arm Dashboard · built 2026-08-03 · numbers re-derived from the 9 raw run files, not copied from summaries.<br>
-    Source: <b>tools/coach-eval/runs/2026-08-03-od3b-all-summary.json</b> · narrative: "OD-3b Post-Shelf Eval Results (2026-08-03)".
+    Girl Chess: Thinking-Arm Dashboard · built 2026-08-03 · numbers re-derived from the 9 raw run files, not copied from summaries.<br>
+    Source: run files kept locally, not in this repo.
   </footer>
 </div>
 
@@ -298,7 +298,7 @@ const s1=v=>v.toFixed(1);
   for(let p=0;p<=100;p+=25){
     s.appendChild(el("line",{x1:L,y1:y(p),x2:W-R,y2:y(p),class:"grid"}));
     s.appendChild(el("text",{x:L-10,y:y(p)+4,"text-anchor":"end",class:"axislbl"},p+"%"));}
-  s.appendChild(el("text",{x:L,y:14,class:"axislbl","font-size":"12"},"share of all 90 failed answers (bars, split by arm) and running total (line) — one axis"));
+  s.appendChild(el("text",{x:L,y:14,class:"axislbl","font-size":"12"},"share of all 90 failed answers (bars, split by arm) and running total (line), one axis"));
   const colW=plotW/PARETO.length,barW=130;
   let cum=0;const pts=[];
   PARETO.forEach((b,i)=>{
@@ -365,7 +365,7 @@ const s1=v=>v.toFixed(1);
     s.appendChild(dot);
     // direct labels (positions tuned per point to avoid the p90 tails and top caption)
     const lab={default:[px,py+30],low:[px-14,py+44],disabled:[px,py+30]}[a.id];
-    s.appendChild(el("text",{x:lab[0],y:lab[1],"text-anchor":"middle",class:"vallbl","font-size":"13"},a.id+(a.id==="low"?" — the pick":"")));
+    s.appendChild(el("text",{x:lab[0],y:lab[1],"text-anchor":"middle",class:"vallbl","font-size":"13"},a.id+(a.id==="low"?" (the pick)":"")));
     s.appendChild(el("text",{x:lab[0],y:lab[1]+15,"text-anchor":"middle",class:"axislbl","font-size":"11.5"},s1(a.p50)+"s · "+s1(a.rate)+"% failed"));
   });
   $("c3").appendChild(s);

@@ -132,14 +132,14 @@
   <header class="top">
     <div>
       <h1>Coach Quality: Why the Answers Feel Slow</h1>
-      <div class="sub">A read on the chess coach's answer speed and reliability, in plain terms. Each chart makes one point and nothing else. Numbers are computed from the eval runs and your real games; sample sizes are shown on every chart.</div>
+      <div class="sub">A read on the chess coach's answer speed and reliability, in plain terms. Each chart makes one point and nothing else. Numbers are computed from the eval runs and my real games; sample sizes are shown on every chart.</div>
     </div>
     <button class="themebtn" id="themebtn" onclick="toggleTheme()">◐ Theme</button>
   </header>
 
   <div class="thesis">
     <div class="lead">The slow answers aren't the network or our code: the assistant is silently "thinking" before it replies.</div>
-    <div class="body">On hard questions it spends <b>20-50 seconds reasoning privately</b> before writing the first word. A <b>3-minute budget alone fixed the timeouts</b>: retries now rescue every stalled answer (10 of 10), proving retrying was never broken, just starved. Capping the thinking on top makes answers <b>~3× faster</b>, but costs correctness (<b>6.2% of first drafts failed fact-checks vs 0%</b>), so the verified-facts work should ship before or alongside it. One subjective quality read stays sealed.</div>
+    <div class="body">On hard questions it spends <b>20-50 seconds reasoning privately</b> before writing the first word. A <b>3-minute budget alone fixed the timeouts</b>: retries now rescue every stalled answer (10 of 10), proving retrying was never broken, just starved. Capping the thinking on top makes answers <b>~3× faster</b>, but costs correctness (<b>6.2% of answers failed fact-checks after retry vs 0%</b>), so the verified-facts work should ship before or alongside it. One subjective quality read stays sealed.</div>
   </div>
 
     <div style="background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:var(--radius);padding:13px 17px;margin:0 0 22px">
@@ -160,33 +160,33 @@
     <button class="tbtn" onclick="tog('t1')">Show data table</button>
     <table class="dt" id="t1"></table>
     <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The invisible thinking is the entire tail.</b> Starting up, reading the board, and writing the reply take about 4 seconds combined; the private thinking takes 16. On the hardest questions that one block stretches to 20-50 seconds while the other three stay flat.</p></div>
-    <div class="foot">Source: per-event timeline of one instrumented answer, corroborated by 26 controlled backend calls on your real questions (root-cause investigation, 2026-08-02).</div>
+    <div class="foot">Source: per-event timeline of one instrumented answer, corroborated by 26 controlled backend calls on my real questions (root-cause investigation, 2026-08-02).</div>
   </section>
 
   <!-- G2 -->
   <section class="panel">
     <div class="num">CHART 2</div>
-    <h2>How often she gets an answer vs. an apology</h2>
+    <h2>How often I get an answer vs. an apology</h2>
     <div class="q">Every question sorted into one of three outcomes, across four versions. The bars are share-of-questions, so they always add to 100%.</div>
     <div class="legend" id="lg2"></div>
     <div class="chartbox" id="c2"></div>
     <button class="tbtn" onclick="tog('t2')">Show data table</button>
     <table class="dt" id="t2"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Give-ups roughly doubled since July, and the change is failures, not slowness.</b> The share of fast answers fell and the "gave up" slice grew from ~8% to ~18% in testing and ~23% in your real play. The answers that used to arrive slowly now arrive not at all.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Give-ups roughly doubled since July, and the change is failures, not slowness.</b> The share of fast answers fell and the "gave up" slice grew from ~8% to ~18% in testing and ~23% in my real play. Answers that used to arrive slowly now don't arrive.</p></div>
     <div class="caveat"><b>⚠ One bar carries a caveat.</b> The pre-fix test ran on a machine that became busy partway through; only its board questions (shown here) are usable, and its give-up rate is directional, not certified. July and after-wave-1 are clean.</div>
-    <div class="foot">Testing bars: 65 board questions each (July = average of 3 repeats). Your real play: 91 chat questions from the wave-1 playtest save.</div>
+    <div class="foot">Testing bars: 65 board questions each (July = average of 3 repeats). My real play: 91 chat questions from the wave-1 playtest save.</div>
   </section>
 
   <!-- G3 -->
   <section class="panel">
     <div class="num">CHART 3</div>
     <h2>Do retries actually rescue answers?</h2>
-    <div class="q">You said <em>"I've never seen the regen work."</em> When an answer runs long, the system retries once. Here is what those retries produced: at the old 45-second limit, and at the new 3-minute budget.</div>
+    <div class="q">I said <em>"I've never seen the regen work."</em> When an answer runs long, the system retries once. Here is what those retries produced: at the old 45-second limit, and at the new 3-minute budget.</div>
     <div class="legend" id="lg3"></div>
     <div class="chartbox" id="c3"></div>
     <button class="tbtn" onclick="tog('t3')">Show data table</button>
     <table class="dt" id="t3"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Retrying was never broken: the 45-second limit starved it.</b> Give a retry room to finish and, at normal thinking, <b>every stalled answer was rescued (10 of 10)</b>, up from 9 of 21 at the old limit. The regen you never saw work now works.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Retrying was never broken: the 45-second limit starved it.</b> Give a retry room to finish and, at normal thinking, <b>every stalled answer was rescued (10 of 10)</b>, up from 9 of 21 at the old limit. The regen I never saw work now works.</p></div>
     <div class="concl"><span class="tag">SURPRISE</span><p><b>At a 3-minute budget even normal thinking had zero give-ups.</b> Raising the budget alone erased the timeout failures, so the thinking limit is a <b>speed</b> lever, not a rescue lever. (The two bounded arms show 4 give-ups each, but those are the fact-check failures of Chart 5, not timeouts.)</p></div>
     <div class="foot">Source: the three overnight 3-minute runs (65 questions each) vs the 45-second baseline. Retries counted as regens that fired; "rescued" = ended as a real answer, "starved" = ended as an apology.</div>
   </section>
@@ -195,17 +195,17 @@
   <section class="panel">
     <div class="num">CHART 4</div>
     <h2>Did our last round make it worse?</h2>
-    <div class="q">An honest before/after on the wave-1 change. Three speed measures, plus the one thing that genuinely changed.</div>
+    <div class="q">A before/after on the wave-1 change. Three speed measures, plus the one thing that changed.</div>
     <div class="legend" id="lg4"></div>
     <div class="chartbox" id="c4"></div>
     <button class="tbtn" onclick="tog('t4')">Show data table</button>
     <table class="dt" id="t4"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Wave-1 changed what you see, not how fast the answer arrives.</b> Give-ups, slow answers, and typical wait were unchanged. What it added: an <b>instant "thinking" signal</b> (visible in a fraction of a second) so the screen no longer looks frozen. The real regression came earlier, a 22.5-second cut-off added on 08-01 that turned slow-but-delivered answers into guaranteed give-ups.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Wave-1 changed what I see, not how fast the answer arrives.</b> Give-ups, slow answers, and typical wait were unchanged. What it added: an <b>instant "thinking" signal</b> (visible in a fraction of a second) so the screen no longer looks frozen. The regression came earlier, a 22.5-second cut-off added on 08-01 that turned slow-but-delivered answers into guaranteed give-ups.</p></div>
     <div class="foot">Source: the two 65-question runs before and after wave-1+caching. "Instant signal" = time to first on-screen response; "the answer" = time to the first real word.</div>
   </section>
 
   <!-- INCOMING -->
-  <div class="incoming"><span class="pill" style="background:var(--good);color:#04231a">RESULTS ARE IN</span><b>The decisive test finished overnight.</b> Three versions of the coach: normal, limited, and off thinking, each ran the full 65 questions at a 3-minute budget. Speed and fact-check failures below are now real, measured data. One piece remains sealed: the subjective blinded read of whether the faster answers still teach well.</div>
+  <div class="incoming"><span class="pill" style="background:var(--good);color:#04231a">RESULTS ARE IN</span><b>The decisive test finished overnight.</b> Three versions of the coach: normal, limited, and off thinking, each ran the full 65 questions at a 3-minute budget. Speed and fact-check failures below are now measured. One piece remains sealed: the subjective blinded read of whether the faster answers still teach well.</div>
 
   <!-- G5 -->
   <section class="panel">
@@ -216,18 +216,18 @@
     <div class="chartbox" id="c5"></div>
     <button class="tbtn" onclick="tog('t5')">Show data table</button>
     <table class="dt" id="t5"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The speed win is about 3× at the median, and it tames the 64-second tail to 15, but it has a real cost.</b> Bounding the thinking made roughly 1 in 16 first drafts (6.2%) fail the coach's fact-checks and turn into apologies, versus none at normal thinking. That argues for shipping the <b>verified-facts work before or alongside</b> the thinking limit, so the faster answers don't trade speed for being wrong.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The speed win is about 3× at the median, and it tames the 64-second tail to 15, but it has a cost.</b> Bounding the thinking made roughly 1 in 16 answers (6.2%) fail the coach's fact-checks after the retry and turn into apologies, versus none at normal thinking. That argues for shipping the <b>verified-facts work before or alongside</b> the thinking limit, so the faster answers don't trade speed for being wrong.</p></div>
     <div class="concl pend"><span class="tag">STILL SEALED</span><p>The subjective, blinded quality read (is a limited-thinking answer actually as helpful to learn from?) is built but its answer key is unopened. Until it is read, "cap the thinking" is a strong speed lead, not a shipping decision.</p></div>
-    <div class="foot">Source: the three overnight 3-minute runs, 65 questions each. Speed = wall time to the answer; fact-check failures = first drafts rejected by the coach's own validators. Subjective grade: <code>blinded worksheet built, key sealed</code>.</div>
+    <div class="foot">Source: the three overnight 3-minute runs, 65 questions each. Speed = wall time to the answer; fact-check failures = answers rejected by the coach's own validators after the retry. Subjective grade: <code>blinded worksheet built, key sealed</code>.</div>
   </section>
 
-  <!-- HER VOICE -->
+  <!-- MY VOICE -->
   <section class="panel">
-    <div class="num">IN HER WORDS</div>
+    <div class="num">IN MY WORDS</div>
     <h2>What the failures felt like</h2>
     <div class="q">Verbatim feedback attached to give-ups and slow answers in the wave-1 playtest, the human side of Chart 2.</div>
     <div class="quotes" id="quotes"></div>
-    <div class="foot">Source: your thumbs-down notes in the wave-1 playtest save (advice_traces).</div>
+    <div class="foot">Source: my thumbs-down notes in the wave-1 playtest save (advice_traces).</div>
   </section>
 
   <footer class="pg">
@@ -245,9 +245,9 @@ const DATA = {
   kpis:[
     {l:"Of a slow answer, this much is silent thinking", v:"80%", d:"16s of a measured 20s reply", cls:"hot"},
     {l:"Give-ups at the old 45-second limit", v:"18%", d:"the problem we set out to fix", cls:"hot"},
-    {l:"Retries rescued at a 3-minute budget", v:"10 of 10", d:"100% — up from 9 of 21 at 45s", cls:"cool"},
+    {l:"Retries rescued at a 3-minute budget", v:"10 of 10", d:"100%, up from 9 of 21 at 45s", cls:"cool"},
     {l:"Faster with thinking capped", v:"~3×", d:"median 13.5s → 4.7s; 64s tail → 15s", cls:"cool"},
-    {l:"Wrong first drafts when thinking is capped", v:"6.2%", d:"vs 0% at normal thinking — the cost", cls:"hot"}
+    {l:"Answers that failed fact-checks when thinking is capped", v:"6.2%", d:"vs 0% at normal thinking: the cost", cls:"hot"}
   ],
   // CHART 1 — stage anatomy of one instrumented 20.3s answer (seconds)
   stages:[
@@ -261,7 +261,7 @@ const DATA = {
     {v:"July (baseline)",     n:65, fast:44, slow:16, gaveup:5,  caveat:false, note:"avg of 3 repeats"},
     {v:"Pre-fix test",        n:65, fast:37, slow:16, gaveup:12, caveat:true,  note:"board questions only; give-up rate directional"},
     {v:"After wave-1",        n:65, fast:34, slow:19, gaveup:12, caveat:false, note:"clean"},
-    {v:"Her real play",       n:91, fast:43, slow:27, gaveup:21, caveat:false, note:"wave-1 playtest chats"}
+    {v:"My real play",       n:91, fast:43, slow:27, gaveup:21, caveat:false, note:"wave-1 playtest chats"}
   ],
   // CHART 3 — retries: 45s limit (before) vs 3-minute budget arms (overnight, verified from raw b180)
   retries:{
@@ -375,7 +375,7 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
       const val=o[col.key], frac=val/tot;
       const x0=x(acc),x1=x(acc+frac),w=Math.max(x1-x0-2,0.5);
       const r=el("rect",{x:x0,y:y,width:w,height:bh,rx:3,fill:col.c,class:"bar-seg"});
-      hov(r,o.v+" — "+col.k,`<b>${val}</b> of ${tot} questions · <b>${(100*frac).toFixed(0)}%</b>`);
+      hov(r,o.v+": "+col.k,`<b>${val}</b> of ${tot} questions · <b>${(100*frac).toFixed(0)}%</b>`);
       s.appendChild(r);
       if(frac>=0.10)s.appendChild(el("text",{x:(x0+x1)/2,y:y+bh/2+4,"text-anchor":"middle","font-size":"12",fill:"#fff","font-weight":"650"},Math.round(100*frac)+"%"));
       acc+=frac;
@@ -401,13 +401,13 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
     s.appendChild(el("text",{x:L-12,y:y+barH/2+1,"text-anchor":"end",class:"vallbl","font-size":"12.5"},row.k));
     const wr=Math.max(x(row.rescued)-L,0.5);
     const rr=el("rect",{x:L,y:y,width:wr,height:barH,rx:3,fill:"var(--good)",class:"bar-seg"});
-    hov(rr,row.k+" — rescued",`<b>${row.rescued}</b> of ${row.fired} retries finished in time → a real answer`);
+    hov(rr,row.k+": rescued",`<b>${row.rescued}</b> of ${row.fired} retries finished in time → a real answer`);
     s.appendChild(rr);
     if(row.rescued>0)s.appendChild(el("text",{x:L+wr/2,y:y+barH/2+4,"text-anchor":"middle","font-size":"12",fill:"#fff","font-weight":"650"},row.rescued));
     if(row.starved>0){
       const x1=x(row.rescued), ws=Math.max(x(row.fired)-x1,0.5);
       const rs=el("rect",{x:x1,y:y,width:ws,height:barH,rx:3,fill:"var(--bad)",class:"bar-seg"});
-      hov(rs,row.k+" — starved",`<b>${row.starved}</b> of ${row.fired} ran out of time → apology`);
+      hov(rs,row.k+": starved",`<b>${row.starved}</b> of ${row.fired} ran out of time → apology`);
       s.appendChild(rs);
       s.appendChild(el("text",{x:x1+ws/2,y:y+barH/2+4,"text-anchor":"middle","font-size":"12",fill:"#fff","font-weight":"650"},row.starved));
     }
@@ -433,7 +433,7 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
     [["Before wave-1",b.pre,"var(--n1)",0],["After wave-1",b.post,"var(--n2)",barH+4]].forEach(([lab,val,c,off])=>{
       const w=Math.max(x(val)-L,2);
       const r=el("rect",{x:L,y:y+off,width:w,height:barH,rx:4,fill:c,class:"bar-seg"});
-      hov(r,b.k+" — "+lab,`<b>${b.fmt=="s"?val.toFixed(1)+"s":val}</b>`);
+      hov(r,b.k+": "+lab,`<b>${b.fmt=="s"?val.toFixed(1)+"s":val}</b>`);
       s.appendChild(r);
       s.appendChild(el("text",{x:L+w+8,y:y+off+barH/2+4,class:"vallbl","font-size":"12.5"},b.fmt=="s"?val.toFixed(1)+"s":val));
       s.appendChild(el("text",{x:L+w+ (b.fmt=="s"?42:26),y:y+off+barH/2+4,class:"axislbl","font-size":"11"},lab));
@@ -449,7 +449,7 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
     <div style="flex:1;min-width:220px;background:rgba(0,158,115,.10);border:1px solid rgba(0,158,115,.4);border-radius:10px;padding:12px 15px">
       <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">What wave-1 actually added</div>
       <div style="font-size:20px;font-weight:750;margin-top:4px">Instant "thinking" signal</div>
-      <div style="font-size:13px;color:var(--ink2);margin-top:3px">On screen in <b>under 0.3 seconds</b> — the app no longer looks frozen while it works.</div>
+      <div style="font-size:13px;color:var(--ink2);margin-top:3px">On screen in <b>under 0.3 seconds</b>: the app no longer looks frozen while it works.</div>
     </div>
     <div style="flex:1;min-width:220px;background:var(--line2);border:1px solid var(--line);border-radius:10px;padding:12px 15px">
       <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">…but the answer itself</div>
@@ -458,7 +458,7 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
     </div>`;
   $("c4").appendChild(sig);
   legend($("lg4"),[{k:"Before wave-1",c:"var(--n1)"},{k:"After wave-1",c:"var(--n2)"}]);
-  table("t4",["Measure","Before","After"],B.map(b=>[b.k,b.fmt=="s"?b.pre.toFixed(1)+"s":b.pre,b.fmt=="s"?b.post.toFixed(1)+"s":b.post]).concat([["Instant on-screen signal","—","under 0.3s"],["Time to first real word","—","~12.0s"]]));
+  table("t4",["Measure","Before","After"],B.map(b=>[b.k,b.fmt=="s"?b.pre.toFixed(1)+"s":b.pre,b.fmt=="s"?b.post.toFixed(1)+"s":b.post]).concat([["Instant on-screen signal","n/a","under 0.3s"],["Time to first real word","n/a","~12.0s"]]));
 })();
 
 /* ============================ CHART 5 — fix cost: speed distribution + fact-check failures (both measured); subjective grade sealed ============================ */
@@ -469,17 +469,17 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
   const s=svg(W,H);
   const maxS=70, x=v=>L+plotW*v/maxS;
   for(let t=0;t<=70;t+=10){const gx=x(t);s.appendChild(el("line",{x1:gx,y1:top-8,x2:gx,y2:top+S.length*(barH+barGap)-8,class:"grid"}));s.appendChild(el("text",{x:gx,y:top+S.length*(barH+barGap)+8,"text-anchor":"middle",class:"axislbl"},t+"s"));}
-  s.appendChild(el("text",{x:L,y:14,class:"axislbl","font-size":"12"},"Speed across all 65 questions — solid = typical (median), lighter = out to p90, tick = slowest"));
+  s.appendChild(el("text",{x:L,y:14,class:"axislbl","font-size":"12"},"Speed across all 65 questions: solid = typical (median), lighter = out to p90, tick = slowest"));
   S.forEach((row,i)=>{
     const y=top+i*(barH+barGap);
     s.appendChild(el("text",{x:L-12,y:y+barH/2-2,"text-anchor":"end",class:"vallbl","font-size":"13"},row.k));
     s.appendChild(el("text",{x:L-12,y:y+barH/2+14,"text-anchor":"end",class:"axislbl","font-size":"10.5"},"n="+row.n));
     const xm=x(row.med), xp=x(row.p90), xx=x(row.max);
     const light=el("rect",{x:L,y:y,width:Math.max(xp-L,2),height:barH,rx:5,fill:row.c,opacity:".36",class:"bar-seg"});
-    hov(light,row.k+" — spread",`typical <b>${row.med}s</b> · p90 <b>${row.p90}s</b> · slowest <b>${row.max}s</b>`);
+    hov(light,row.k+": spread",`typical <b>${row.med}s</b> · p90 <b>${row.p90}s</b> · slowest <b>${row.max}s</b>`);
     s.appendChild(light);
     const solid=el("rect",{x:L,y:y,width:Math.max(xm-L,2),height:barH,rx:5,fill:row.c,class:"bar-seg"});
-    hov(solid,row.k+" — typical",`<b>${row.med}s</b> median`);
+    hov(solid,row.k+": typical",`<b>${row.med}s</b> median`);
     s.appendChild(solid);
     s.appendChild(el("text",{x:xm-8,y:y+barH/2+4,"text-anchor":"end","font-size":"12.5",fill:"#fff","font-weight":"700"},row.med+"s"));
     s.appendChild(el("line",{x1:xx,y1:y-3,x2:xx,y2:y+barH+3,stroke:row.c,"stroke-width":2}));
@@ -491,7 +491,7 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
   // QUALITY — measured fact-check failures + sealed subjective note
   const q=document.createElement("div");
   q.style.cssText="margin-top:18px;border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--line2)";
-  q.innerHTML=`<div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:800;margin-bottom:2px">The cost — first drafts that failed the coach's own fact-checks <span style="color:var(--ink2);font-weight:600;text-transform:none;letter-spacing:0">· measured, 65 questions each</span></div>
+  q.innerHTML=`<div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:800;margin-bottom:2px">The cost: answers that failed the coach's own fact-checks after the retry <span style="color:var(--ink2);font-weight:600;text-transform:none;letter-spacing:0">· measured, 65 questions each</span></div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px">
       ${Q.map(a=>`
         <div style="background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 12px 14px;text-align:center">
@@ -500,10 +500,10 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
             <div style="width:52px;height:${Math.max(a.failPct/6.2*54,3)}px;background:${a.failPct>0?'var(--bad)':'var(--good)'};border-radius:4px 4px 0 0"></div>
           </div>
           <div style="font-size:23px;font-weight:750;color:${a.failPct>0?'var(--bad)':'var(--good)'};margin-top:6px">${a.failPct}%</div>
-          <div style="font-size:11px;color:var(--muted)">${a.failN} of 65 wrong first drafts</div>
+          <div style="font-size:11px;color:var(--muted)">${a.failN} of 65 answers failed after the retry</div>
         </div>`).join("")}
     </div>
-    <div style="font-size:12.5px;color:var(--ink2);margin-top:13px"><b>Mechanical checks</b> (grounding, length, plain language) scored ≥95% and comparable across all three arms. But bounding the thinking made <b>about 1 in 16 first drafts fail the coach's fact-checks</b> — versus none at normal thinking; those became apologies. <span style="opacity:.9">The <b>subjective blinded read</b> — does the answer actually teach well? — is built but the answer key is still sealed, so that verdict stays <b>pending</b>.</span></div>`;
+    <div style="font-size:12.5px;color:var(--ink2);margin-top:13px"><b>Mechanical checks</b> (grounding, length, plain language) scored ≥95% and comparable across all three arms. But bounding the thinking made <b>about 1 in 16 answers fail the coach's fact-checks after the retry</b>, versus none at normal thinking; those became apologies. <span style="opacity:.9">The <b>subjective blinded read</b> (does the answer actually teach well?) is built but the answer key is still sealed, so that verdict stays <b>pending</b>.</span></div>`;
   $("c5").appendChild(q);
   table("t5",["Version","Median","p90","Slowest","Fact-check failures"],S.map((r,i)=>[r.k,r.med+"s",r.p90+"s",r.max+"s",Q[i].failPct+"% ("+Q[i].failN+"/65)"]));
 })();

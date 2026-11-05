@@ -1,4 +1,4 @@
-*The product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the metrics that would prove or kill each one. This is the original spec, edited. Parts of the implementation changed later; the [README](https://github.com/tiffygk/girl-chess-demo#readme) describes what runs today.*
+*The product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the leading indicator for each. This is the original spec, edited. Parts of the implementation changed later; the [README](https://github.com/tiffygk/girl-chess-demo#readme) describes what runs today.*
 
 ---
 
@@ -6,7 +6,7 @@
 
 **Girl Chess: tutor with benefits.** The name plays on "girl math": capturing a fun piece counts as much as positional advantage, and we make it make sense later. Wordmark gets stylized in the Sugar Glitch look (see Design notes); in prose it's Girl Chess.
 
-Personal product. Local, single user, no accounts, no monetization, $0 to run. North star: **every session teaches her something she can name.** Scope: single-player vs the computer, with a local guest mode (shared mouse). Implementation plan follows separately; v1 cutline gets drawn on this document after it's approved.
+Personal product. Local, single user, no accounts, no monetization, $0 to run. North star: **every session teaches her something she can name.** Scope: single-player vs the computer, with a local guest mode (shared mouse). The implementation plan follows separately. The v1 cutline gets drawn on this document after approval.
 
 ## Problem
 
@@ -14,11 +14,11 @@ The Pattern-Rich Beginner can only play chess against her partner, who is really
 
 ## Strategy line
 
-Put the coach inside the game: warnings before mistakes, lessons after, drills built from her own blunders, opponents that play human-like at every level up to Maia's 1900 cap.
+Put the coach inside the game: warnings before mistakes, lessons after, drills built from her own blunders, opponents that play human-like at every level up to the 1900 cap of the Maia chess model.
 
 ## Personas
 
-- **Primary: the Pattern-Rich Beginner.** Strong at puzzles (~1400), beginner in full games. Can find a tactic when told one exists; can't yet notice when to look. Understands above the level she plays at. Octalysis-aware: wins must be earned, losses must be real, no hollow gamification, no monetization mechanics.
+- **Primary: the Pattern-Rich Beginner.** Strong at puzzles (~1400), beginner in full games. Can find a tactic when told one exists; can't yet notice when to look. Understands above the level she plays at. Octalysis-aware (gamification framework): wins must be earned, losses must be real, no hollow gamification, no monetization mechanics.
 - **Secondary: the Guest Player.** Local second player of unknown strength, on a shared mouse. Zero setup. Handicaps flex either direction; coach toggles are per player.
 - **Tertiary: the Tinkerer-Cloner.** Shapes the code, never the scope: swappable engines, coach backends, skins, and persona files behind documented seams.
 
@@ -28,7 +28,7 @@ Put the coach inside the game: warnings before mistakes, lessons after, drills b
 - **H2:** We believe a chess game that is fun, delightful, personable, and a little surprising will bring her back again and again, even though the opponent is a robot. Leading indicator: 3+ days opened per week without any external prompt.
 - **H3:** We believe dynamically settable goals (opponent level, advice level, focus, time controls) will keep the game in flow, never too easy or too hard. Leading indicator: ladder progression without mid-game quits.
 
-Assumption, labeled: the +200-point comprehension gap (advice pitched above playing strength) is a starting number to playtest, not a known fact.
+The +200-point comprehension gap (advice pitched above playing strength) is an untested starting assumption to playtest.
 
 ## Magic moment and job stories
 
@@ -43,7 +43,7 @@ Job stories:
 
 ## Mini journey
 
-Trigger: a free evening, or a partner game coming up. Intake box sets time, opponent, and today's focus. Coach is on; pending-move verdicts land under 2 seconds. Post-game: top-3 turning points, rewind and take over, one Notebook entry. Return: drills from her own mistakes between games, then the re-test that closes the lesson loop. Aha moment: the coach's third eye (its danger signal) opens and she finds the threat herself. Biggest drop-off risk: skipping the debrief after a long game, so the debrief leads with turning points and fits in two minutes.
+Trigger: a free evening, or a partner game coming up. Intake box sets time, opponent, and today's focus. Coach is on; verdicts on a pending move land under 2 seconds. Post-game: top-3 turning points, rewind and take over, one Notebook entry. Return: drills from her own mistakes between games, then the re-test that closes the lesson loop. Aha moment: the coach's third eye (its danger signal) opens and she finds the threat herself. Biggest drop-off risk: skipping the debrief after a long game, so the debrief leads with turning points and fits in two minutes.
 
 Not Lichess or chess.com: they analyze after the fact with engine lines pitched at nobody, never warn mid-game, never re-test what you got wrong, and offer opponents as bare ratings. Not a chess course: lessons here come from her own games, at the moment they matter.
 
@@ -53,35 +53,35 @@ Not Lichess or chess.com: they analyze after the fact with engine lines pitched 
 - **Inputs:** 30+ min sessions, 3+ days/week, ladder ELO +10%/month (starting assumption), thumbs-up ≥90% on coach output.
 - **Ship gates:** coach verdicts under 2s at the 95th percentile, never blocking the confirm; zero invented moves (automated fact-check pauses the coach, not the game); hint escalations under 30%.
 - **Guardrails:** hint dependence flat or falling; override rate inside a 20-80% band; game duration flat within an opponent level; full-game share of session time stable week to week; trace completeness 100%.
-- **Eval, not kill:** a red flag means something to fix, not a feature to cut. Diagnosis starts from her thumbs-down annotations and traces in the Lab, the metrics dashboard.
+- **Eval, not kill:** a red flag means something to fix. Diagnosis starts from her thumbs-down annotations and traces in the Lab, the metrics dashboard.
 
 ## Implementation basis
 
-Every choice serves two masters: zero running cost, and code any future Claude session can maintain for a non-coding owner.
+Every choice serves two goals: zero running cost, and code any future Claude session can maintain for a non-coding owner.
 
 | Piece | Choice | Basis |
 |---|---|---|
 | App | Vite + React + chess.js + react-chessboard, thin Node server, SQLite + markdown | Most-popular libraries, for Claude maintainability |
 | Engines | Stockfish native; Maia weights on lc0, search disabled | Verified against CSSLab/maia-chess README |
 | Coach | claude CLI headless (Max plan) default; Ollama toggle | $0 either way |
-| Determinism | Code computes every chess fact, award, and schedule; the model only phrases | Render-only pattern stolen from Patzer (MIT) |
+| Determinism | Code computes every chess fact, award, and schedule; the model only phrases | Render-only pattern borrowed from Patzer (MIT) |
 
 ## Prioritization
 
-Why now: design is complete and the first partner rematch is the real deadline. This PRD covers all of v1; the cutline is a separate pass on this document once approved. Deferred with seams: Lichess import, Maia-2/3, per-game ask limits.
+Why now: design is complete and the first partner rematch is the deadline. This PRD covers all of v1; the cutline is a separate pass once approved. Deferred with seams: Lichess import, Maia-2/3, per-game ask limits.
 
 ## Risks and mitigations
 
 - **Advice pitched wrong.** Traces on every advice event; escalation and thumbs metrics; the annotation queue is the diagnosis. Test: escalation rate <30%.
 - **The coach builds dependence instead of skill.** Adaptive warnings quiet down as mistakes stop; hint-dependence guardrail is H1's falsification test.
-- **Model writes fiction.** Zero-tolerance fact-check on every move the coach names; failure pauses the coach surface only.
+- **Model invents chess facts.** Zero-tolerance fact-check on every move the coach names; failure pauses the coach surface only.
 - **Max plan lapses.** Ollama fallback behind the same interface; the game never depends on a subscription to run.
 - **Engine setup breaks on her Mac.** Pinned brew versions and a runbook in CLAUDE.md; Claude sessions do all maintenance.
 
 ## Design notes and day-one validation
 
-Sugar Glitch world: soft pastel candy UI that glitches, captures do the Vanellope, characters follow the Adventure Time rule (cute plus one wrong detail). Coach is an unnamed alien sim whose body language is the first warning tier. Opponents are characters per ladder rung. Body text semi-bold minimum. Prototype: `Sugar Glitch Demo.html` (interactive board, glitch captures, sound, sketches of the coach and Mallow, the Maia-1100 marshmallow).
+Sugar Glitch world: soft pastel candy UI that glitches, captures glitch like Vanellope (Wreck-It Ralph), characters follow the Adventure Time rule (cute plus one wrong detail). Coach is an unnamed alien sim whose body language is the first warning tier. Opponents are characters per ladder rung. Body text semi-bold minimum. Prototype: `Sugar Glitch Demo.html` (interactive board, glitch captures, sound, sketches of the coach and Mallow, the Maia-1100 marshmallow).
 
-Capability ledger: runs on current models; Ollama fallback works with quality loss; nothing external gates v1 beyond a one-time brew install of Stockfish and lc0.
+Capabilities: runs on current models; Ollama fallback works with quality loss; nothing external gates v1 beyond a one-time brew install of Stockfish and lc0.
 
 Day-one validation: H1 via repeat-mistake tracking and lesson-loop completions in traces; H2 via days/week plus her playtest ratings; H3 via mid-game quits and ladder pace.
