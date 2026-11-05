@@ -53,7 +53,7 @@ One more, from 2026-09-08, lives in pull requests #15 to #17. **The chat could h
 
 ## How the tutor is checked
 
-Each surface a player reads has its own check: **[evaluation.md →](evaluation.md)**. Four text surfaces, only two of them written by a model. Nineteen rules replay the post-game analysis against my games before any merge, sorted into the four ways generated text can lie. An August audit found the analysis telling me I had played inefficiently on moments the moves disproved: four claims false, two fair.
+Each surface a player reads has its own check: **[evaluation.md →](evaluation.md)**. Four text surfaces, only two of them written by a model. Nineteen rules replay the post-game analysis against my games before any merge, sorted into the four ways generated text can lie. An August audit found the analysis telling me I had played inefficiently on moments the moves contradicted: four claims false, two fair.
 
 Two guardrails: every coach reply is checked before it reaches you, and the debrief code is checked by those nineteen rules before it ships. On questions about the board, a claim about a move, placement, defence or checkmate that the facts don't support gets one retry, then a written fallback answer. That is the trade I chose, so nothing the checks can disprove reaches the player. Ten of the 113 committed chat replies ended in a fallback answer, after a failed check or a timeout.
 

@@ -18,7 +18,7 @@ Where this lives: `src/game/hintFlow.ts`, `server/annotator/hint.ts`.
 
 ## How a hint is checked before it is shown
 
-When the judge finds a threat, the engine searches the position for 1.5 seconds and returns several candidate moves, not one. Code picks among them, preferring another move over a trade when the gap is small, about a third of a pawn.
+When the judge flags a threat, the engine searches the position for 1.5 seconds and returns several candidate moves, not one. Code picks among them, preferring another move over a trade when the gap is small, about a third of a pawn.
 
 Code then tests the pick. It plays the move on a copy of the board and searches again for half a second, confirming the move does not lose more than half a pawn. A move that fails is replaced by the result of a deeper 3-second search. The move on the rung is either a move that passed the check or the deeper search's answer. That is what "verified" means on this page.
 
@@ -64,4 +64,4 @@ I measured these on my machine, over my own games.
 | a chat regen | 33.5 s average (vs 8.2 s without) | n/a |
 | cheapest model call observed | 3.3 s | n/a |
 
-A change may add one to two seconds to a coach reply at most.
+No change may add more than one to two seconds to a coach reply.
