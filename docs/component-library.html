@@ -1569,6 +1569,8 @@ body.gc-app { align-items: center; }
    override bites only at narrow widths, so the 1512px render is unchanged. */
 .cc-mock-frame { max-width: 100%; overflow-x: auto; }
 @media (max-width: 560px) {
+  .lib-table { display: block; overflow-x: auto; }
+  .lgd-rows { overflow-x: auto; }
   .cc-mock-frame { width: auto !important; height: auto !important; }
   .lib-cell { max-width: 100%; }
   .lib-code, .lib-label { max-width: 100%; overflow-wrap: break-word; }
