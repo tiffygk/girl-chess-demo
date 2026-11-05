@@ -71,7 +71,7 @@ I designed and built this 0-to-1 as a product manager's first vibed project ever
 
 The docs are published at [tiffygk.github.io/girl-chess-demo](https://tiffygk.github.io/girl-chess-demo/), so none of them need a clone to read.
 
-- [docs/index.md](docs/index.md) is the docs site's home page: the product spec, one increment plan-to-gate, three real review catches, and the coach-transport decision.
+- [docs/index.md](docs/index.md) is the docs site's home page: the product spec and the measured decisions.
 - [docs/evaluation.md](docs/evaluation.md) is how the tutor is kept honest.
 - The five interactive pages on the site: [component library](https://tiffygk.github.io/girl-chess-demo/component-library.html), [architecture](https://tiffygk.github.io/girl-chess-demo/architecture.html), [coach eval v3 dashboard](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html), [coach quality dashboard](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html), [thinking arm dashboard](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html).
 - [CLAUDE.md](CLAUDE.md) is the architecture map and runbook a future Claude session reads first.

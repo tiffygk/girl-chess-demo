@@ -111,9 +111,6 @@ The rest of this repository is the app: `server/` (game engine, coach, analysis)
 - [The hint ladder and the coach](hint-ladder-and-coach.md): how a hint is checked before it is shown, and how the chat stays on the same facts.
 - [Technical decisions](technical-decisions.md): five decisions, the evidence behind each, and what each gave up or left open.
 - [How the tutor is kept honest](evaluation.md): the checks every merge runs against the committed games.
-- [The build plan's red team](build-plan-red-team.md): the plan reviewed against itself before the build.
-- [Where the review earned its keep](where-the-review-earned-its-keep.md): three real catches by the review process.
-- [Changelog](changelog.md): the full work log, newest first.
 - [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): every piece of the interface as it ships, grouped by where you meet it in the game.
 - [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence, and where the deterministic code ends and the model begins.
 - [The coach eval v3 dashboard](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html): Sonnet graded against Opus with the key sealed until after every grade, and which model it recommended.
