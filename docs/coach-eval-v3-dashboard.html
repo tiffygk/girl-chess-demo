@@ -24,27 +24,6 @@
     --chip-fg:     #1c5cab;
     --shadow:      0 1px 2px rgba(20,20,15,0.06), 0 1px 12px rgba(20,20,15,0.04);
   }
-  @media (prefers-color-scheme: dark) {
-    :root:where(:not([data-theme="light"])) {
-      color-scheme: dark;
-      --page:        #0c0c0b;
-      --surface:     #1a1a19;
-      --surface-2:   #201f1d;
-      --text:        #f4f3ee;
-      --text-2:      #c3c2b7;
-      --muted:       #918f88;
-      --hair:        #2c2c2a;
-      --hair-strong: #3b3a37;
-      --series-sonnet: #3987e5;
-      --series-opus:   #d95926;
-      --good:        #0ca30c;
-      --critical:    #e06767;
-      --gap-fill:    rgba(57,135,229,0.14);
-      --chip-bg:     #16283f;
-      --chip-fg:     #86b6ef;
-      --shadow:      0 1px 2px rgba(0,0,0,0.4), 0 1px 14px rgba(0,0,0,0.35);
-    }
-  }
   :root[data-theme="dark"] {
     color-scheme: dark;
     --page:        #0c0c0b;
@@ -1095,8 +1074,7 @@ function renderMeta() {
   const label = document.getElementById("themeLabel");
   function current() {
     const attr = document.documentElement.getAttribute("data-theme");
-    if (attr) return attr;
-    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    return attr || "light";
   }
   function apply(mode) {
     document.documentElement.setAttribute("data-theme", mode);

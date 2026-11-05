@@ -21,15 +21,6 @@
     --s1:#3a8fd0; --s2:#b8830f; --s3:#189b79;
     --det:#3a8fd0; --nondet:#e07a45;
   }
-  @media (prefers-color-scheme:dark){
-    :root:not([data-theme="light"]){
-      --bg:#12161c; --panel:#1a2029; --ink:#e9edf2; --ink2:#aeb9c6; --muted:#7f8b99;
-      --line:#2a323d; --line2:#232b35; --shadow:0 1px 3px rgba(0,0,0,.4);
-      --accent:#5aa0dd;
-      --s1:#3a8fd0; --s2:#b8830f; --s3:#189b79;
-      --det:#3a8fd0; --nondet:#e07a45;
-    }
-  }
   *{margin:0;padding:0;box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -769,7 +760,7 @@
 (function(){
   var b=document.getElementById('tbtn');
   function cur(){var a=document.documentElement.getAttribute('data-theme');
-    if(a)return a;return window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';}
+    return a||'light';}
   function paint(){b.textContent=cur()==='dark'?'Light':'Dark';}
   b.addEventListener('click',function(){
     var n=cur()==='dark'?'light':'dark';
