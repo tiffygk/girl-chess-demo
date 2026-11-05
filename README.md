@@ -18,7 +18,7 @@ While a move is pending, the coach has two lines under the board. The hint ladde
 
 Girl Chess is meant to be played on a computer, not on a phone or a small screen.
 
-Move 2 of game 195. The knight is selected and sits ghosted on h3, not yet played. Before you confirm, the judge weighs the move and the hint tells you where to look; "more?" adds detail. "ask about this" opens the coach chat on that moment, so you can push back and get the reasoning, drawn from the same verified search as the hint.
+Move 2 of game 195. The knight is selected and sits ghosted on h3 until you confirm. Before you confirm, the judge weighs the move and the hint tells you where to look; "more?" adds detail. "ask about this" opens the coach chat on that moment, so you can push back and get the reasoning, drawn from the same verified search as the hint.
 
 ![Move 2 of game 195: a knight ghosted on h3 awaiting confirmation, the judge's hint with "ask about this" and "more?", the note under the board, and the coach chat with the hint pinned and a follow-up answered](docs/images/01-hint-and-chat-agree-knight-h3.png)
 
