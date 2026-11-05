@@ -1,4 +1,4 @@
-*The product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the metrics that would prove or kill each one. This is the original spec, edited. Parts of the implementation changed later; the [README](https://github.com/tiffygk/girl-chess-demo#readme) describes what runs today.*
+*The product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the leading indicator for each. This is the original spec, edited. Parts of the implementation changed later; the [README](https://github.com/tiffygk/girl-chess-demo#readme) describes what runs today.*
 
 ---
 

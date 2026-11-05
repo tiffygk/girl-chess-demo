@@ -254,7 +254,7 @@
       <p class="dek">Two AI models competed for one job: powering an in-game coaching assistant. The call is to keep the shipped model; this shows why, and the controls that make it trustworthy. The second tab covers how the evaluation was built, challenged, and hardened.</p>
       <div style="background:var(--surface-2);border:1px solid var(--hair);border-left:4px solid var(--critical);border-radius:10px;padding:14px 18px;margin-top:16px;max-width:78ch">
         <div style="font-size:11.5px;font-weight:800;letter-spacing:.05em;color:var(--critical);text-transform:uppercase">Read this first &middot; noted 2026-08-18</div>
-        <p style="font-size:14px;color:var(--text-2);margin-top:7px;max-width:none">This page records what was measured on 2026-07-23. Three things have changed since. The <b style="color:var(--text)">45-word length budget was retired on 07-28</b>; the cap is now 150 words and the sentence limit is gone. The <b style="color:var(--text)">45-second timeout is now 180 seconds</b>, so the threshold line on the latency chart sits four times too low. And the verdict rested on that length axis: <b style="color:var(--text)">a later run favours Opus on live-board p90 latency, yet Sonnet 5 still ships</b>. "The stakeholder" on this page is me.</p>
+        <p style="font-size:14px;color:var(--text-2);margin-top:7px;max-width:none">This page records what was measured on 2026-07-23. Three things have changed since. The <b style="color:var(--text)">45-word length budget was retired on 07-28</b>; the cap is now 150 words and the sentence limit is gone. The <b style="color:var(--text)">45-second timeout is now 180 seconds</b>, so the threshold line on the latency chart sits four times too low. And the verdict rested on that length axis. <b style="color:var(--text)">A later run favours Opus on live-board p90 latency, yet Sonnet 5 still ships</b>. "The stakeholder" on this page is me.</p>
       </div>
     </div>
     <button class="theme-toggle" id="themeToggle" aria-label="Toggle light and dark theme">
@@ -282,7 +282,7 @@
   <!-- SECTION 1 -->
   <section id="s1">
     <div class="sec-head"><span class="sec-num">01</span><h2>Headline recommendation</h2></div>
-    <p class="sec-sub">The winner was picked by a decision rule written down before any data existed, applied to the measures in a fixed priority order. The choice is a rule outcome.</p>
+    <p class="sec-sub">The winner was picked by a decision rule written down before any data existed, applied to the measures in a fixed priority order. A rule made the choice.</p>
     <div class="card">
       <div class="verdict-top">
         <div>
@@ -348,7 +348,7 @@
       <div class="chart-title">Replies inside the length budget (0-100%)</div>
       <div class="chart-holder" id="chart-length"></div>
       <div class="annotation">
-        <span class="an-label">Frame, and a fairness concern checked and cleared</span>
+        <span class="an-label">How to read this, and a fairness concern checked and cleared</span>
         Neither model is good at this yet: sonnet misses the budget almost half the time. But sonnet is decisively closer to the coach the spec describes, in every one of six runs. Separately, the stakeholder suspected that failed replies (timeouts served as canned fallbacks) were being counted against this score. That was verified directly in the scoring code and in the raw counts: failed replies never enter this measure. The concern did not reproduce, so nothing was changed, and the rule is printed below so the check stays visible.
       </div>
       <div class="verbatim">
@@ -404,7 +404,7 @@
       </div>
       <div class="annotation">
         <span class="an-label">Test artifact vs product finding, kept separate</span>
-        Part of the earlier failure rate was the test's fault: cold processes penalized whichever model was timed first, and warm-up roughly halved sonnet's measured failures (15.4% before controls, 8.2% after). What remains is a product finding, not explained away: even warm and alternated, sonnet serves the canned fallback on roughly 1 turn in 12, with zero hard errors. The pattern is always the same: its slowest replies ride the 45-second limit, on the same two hard open-ended questions in all three of its runs. This finding argues against the recommended model and is reported anyway; it lost only because the decision rule weights brevity above reliability. If that weighting ever flips, the options start here: a longer time limit, an automatic retry, or revisiting the model choice.
+        Part of the earlier failure rate was the test's fault: cold processes penalized whichever model was timed first, and warm-up roughly halved sonnet's measured failures (15.4% before controls, 8.2% after). What remains is a product finding, not explained away: even warm and alternated, sonnet serves the canned fallback on roughly 1 turn in 12, with zero hard errors. The pattern is usually the same: its slowest replies ride the 45-second limit, on the same two hard open-ended questions in all three of its runs. This finding argues against the recommended model and is reported anyway; it lost only because the decision rule weights brevity above reliability. If that weighting ever flips, the options start here: a longer time limit, an automatic retry, or revisiting the model choice.
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
@@ -1080,7 +1080,7 @@ function renderMeta() {
     ["Run order", "alternated which model went first (see strip above)"],
     ["Warm-up", LEDGER.warmupPerProcess + " discarded practice calls before each run, so neither model was timed cold"],
     ["Database", "real play history, cryptographically verified untouched after every run (sha256 " + LEDGER.dbSha + ")"],
-    ["Blinded read", "a side-by-side with model names hidden awaited the stakeholder's independent judgment when this page was built; that read came on 2026-07-28, and Sonnet 5 won"],
+    ["Blinded read", "a side-by-side with model names hidden awaited the stakeholder's independent judgment when this page was built; a later blinded read chose Sonnet 5"],
     ["Stop rule", "the scoring audit had a " + LEDGER.instrument.iterationCap + "-round cap; a failure to converge would be reported, not hidden"],
     ["Decision rule", "written down in the plan before any data existed"]
   ];
