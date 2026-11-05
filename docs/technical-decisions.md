@@ -6,7 +6,7 @@ Five decisions from building this chess coach. In each one the obvious fix was t
 
 The coach answers questions about your game while you play. It used to work out where your pieces were by reading back through the move list, and it got that wrong often enough to matter. Now it reads the position the app has already computed. Before you see an answer, a check rejects placement claims it can disprove.
 
-For the player, in the July 2026 eval: wrong statements about where pieces stand went from 7.5% to 0, and the wait on an explanation question from 13 to 15 seconds to about 4.
+For the player, in the July 2026 eval: wrong statements about where pieces stand went from 7.5% to 0, and the wait on an explanation question from 13 to 15 seconds to 4 to 7.
 
 ### The evidence
 
@@ -30,7 +30,7 @@ Where this lives: question routing in `server/coach/intent.ts`, the facts and th
 
 At the time the coach also commented during the game without being asked. Those live comments ran on a fifteen second budget. They missed it so often that most of what I saw was a canned template instead of a model answer. Moving the coach from the command-line tool to the Agent SDK fixed it without adding a bill.
 
-For the player: at ship, narration landed in about 3.6 seconds and chat in about 7.
+For the player: at ship, the note landed in about 3.6 seconds and chat in about 7.
 
 ### The evidence
 
@@ -92,11 +92,11 @@ A move that forces a reply is one of these.
 <tr><td style="padding:6px 10px">check</td><td style="padding:6px 10px">attacks her king</td></tr>
 <tr><td style="padding:6px 10px">capture</td><td style="padding:6px 10px">takes a piece or pawn</td></tr>
 <tr><td style="padding:6px 10px">en passant</td><td style="padding:6px 10px">a pawn takes a pawn that just passed it (a capture)</td></tr>
-<tr><td style="padding:6px 10px">trade</td><td style="padding:6px 10px">a capture she can take back; material stays level</td></tr>
+<tr><td style="padding:6px 10px">trade</td><td style="padding:6px 10px">a capture she can take back for equal value</td></tr>
 <tr><td style="padding:6px 10px">threat</td><td style="padding:6px 10px">attacks a piece or a square she has to answer</td></tr>
 <tr><td style="padding:6px 10px">pawn break</td><td style="padding:6px 10px">a pawn hits her pawn chain</td></tr>
 <tr><td style="padding:6px 10px">sacrifice</td><td style="padding:6px 10px">gives material for something bigger</td></tr>
-<tr><td style="padding:6px 10px">in-between move</td><td style="padding:6px 10px">answers a threat with a bigger threat first</td></tr>
+<tr><td style="padding:6px 10px">in-between move</td><td style="padding:6px 10px">before the expected reply, plays a threat she must answer first</td></tr>
 </tbody>
 </table>
 

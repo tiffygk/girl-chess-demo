@@ -1,4 +1,4 @@
-*The product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the leading indicator for each. This is the original spec, edited. Parts of the implementation changed later; the [README](https://github.com/tiffygk/girl-chess-demo#readme) describes what runs today.*
+*The product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the leading indicator for each. This is the original spec, edited. Parts of the implementation changed later, and the Notebook, guest mode and trophies were never built; the [README](https://github.com/tiffygk/girl-chess-demo#readme) describes what runs today.*
 
 ---
 
@@ -45,7 +45,7 @@ Job stories:
 
 Trigger: a free evening, or a partner game coming up. Intake box sets time, opponent, and today's focus. Coach is on; verdicts on a pending move land under 2 seconds. Post-game: top-3 turning points, rewind and take over, one Notebook entry. Return: drills from her own mistakes between games, then the re-test that closes the lesson loop. Aha moment: the coach's third eye (its danger signal) opens and she finds the threat herself. Biggest drop-off risk: skipping the debrief after a long game, so the debrief leads with turning points and fits in two minutes.
 
-Not Lichess or chess.com: they analyze after the fact with engine lines pitched at nobody, never warn mid-game, never re-test what you got wrong, and offer opponents as bare ratings. Not a chess course: lessons here come from her own games, at the moment they matter.
+Not Lichess or chess.com: they analyze after the fact with engine lines pitched at nobody, never warn mid-game, and offer opponents as bare ratings. Not a chess course: lessons here come from her own games, at the moment they matter.
 
 ## Success metrics
 
@@ -63,7 +63,7 @@ Every choice serves two goals: zero running cost, and code any future Claude ses
 |---|---|---|
 | App | Vite + React + chess.js + react-chessboard, thin Node server, SQLite + markdown | Most-popular libraries, for Claude maintainability |
 | Engines | Stockfish native; Maia weights on lc0, search disabled | Verified against CSSLab/maia-chess README |
-| Coach | claude CLI headless (Max plan) default; Ollama toggle | $0 either way |
+| Coach | claude CLI headless (Max plan) | $0 |
 | Determinism | Code computes every chess fact, award, and schedule; the model only phrases | Render-only pattern borrowed from Patzer (MIT) |
 
 ## Prioritization
@@ -75,13 +75,12 @@ Why now: design is complete and the first partner rematch is the deadline. This 
 - **Advice pitched wrong.** Traces on every advice event; escalation and thumbs metrics; the annotation queue is the diagnosis. Test: escalation rate <30%.
 - **The coach builds dependence instead of skill.** Adaptive warnings quiet down as mistakes stop; hint-dependence guardrail is H1's falsification test.
 - **Model invents chess facts.** Zero-tolerance fact-check on every move the coach names; failure pauses the coach surface only.
-- **Max plan lapses.** Ollama fallback behind the same interface; the game never depends on a subscription to run.
 - **Engine setup breaks on her Mac.** Pinned brew versions and a runbook in CLAUDE.md; Claude sessions do all maintenance.
 
 ## Design notes and day-one validation
 
 Sugar Glitch world: soft pastel candy UI that glitches, captures glitch like Vanellope (Wreck-It Ralph), characters follow the Adventure Time rule (cute plus one wrong detail). Coach is an unnamed alien sim whose body language is the first warning tier. Opponents are characters per ladder rung. Body text semi-bold minimum. Prototype: `Sugar Glitch Demo.html` (interactive board, glitch captures, sound, sketches of the coach and Mallow, the Maia-1100 marshmallow).
 
-Capabilities: runs on current models; Ollama fallback works with quality loss; nothing external gates v1 beyond a one-time brew install of Stockfish and lc0.
+Capabilities: runs on current models; nothing external gates v1 beyond a one-time brew install of Stockfish and lc0.
 
 Day-one validation: H1 via repeat-mistake tracking and lesson-loop completions in traces; H2 via days/week plus her playtest ratings; H3 via mid-game quits and ladder pace.

@@ -10,7 +10,7 @@ The ladder is short on purpose: at most three rungs when she is already on the r
 
 The rung wording comes from fixed sentences chosen by code, not from a language model. That makes it instant. A rung can never invent anything.
 
-Below the ladder, a one-line band explains the position in the coach's voice. That line is a model call, with a fixed-sentence fallback if the model is slow.
+Below the ladder, a one-line note explains the position in the coach's voice. That line is a model call, with a fixed-sentence fallback if the model is slow.
 
 The chat is the third surface, where she asks questions in her own words.
 
@@ -59,8 +59,8 @@ I measured these on my machine, over my own games.
 | call | p50 | p90 |
 | --- | --- | --- |
 | chat | 8.1 s | 21.0 s |
-| nudge (band) | 4.1 s | n/a |
-| warning (band) | 3.6 s | n/a |
+| nudge (note) | 4.1 s | n/a |
+| warning (note) | 3.6 s | n/a |
 | a chat regen | 33.5 s average (vs 8.2 s without) | n/a |
 | cheapest model call observed | 3.3 s | n/a |
 

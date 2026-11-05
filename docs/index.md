@@ -43,7 +43,7 @@ Below is what shipped. The second game of that arc needs the drills, which are n
 ## Decisions, measured
 
 Five decisions, all shipped and merged: **[technical-decisions.md →](technical-decisions.md)**
-1. **The coach's advice was sometimes wrong, and it wasn't the model.** The cause was a fact gap. The coach was reasoning about the position from facts it never had. Giving it those facts, with a placement check, fixed both numbers in the July 2026 eval: placement errors went from 7.5% to 0, and explanation answers from 13-15 seconds to about 4. Both held for a smaller model and a larger one, so model tier became a downstream decision. The committed harness (`tools/coach-eval/`) re-runs the model comparison. The placement number comes from that July eval, which the harness does not repeat.
+1. **The coach's advice was sometimes wrong, and it wasn't the model.** The cause was a fact gap. The coach was reasoning about the position from facts it never had. Giving it those facts, with a placement check, fixed both numbers in the July 2026 eval: placement errors went from 7.5% to 0, and explanation answers from 13-15 seconds to 4-7. Both held for a smaller model and a larger one, so model tier became a downstream decision. The committed harness (`tools/coach-eval/`) re-runs the model comparison. The placement number comes from that July eval, which the harness does not repeat.
 2. **The coach was too slow.** The trace-driven diagnosis, three options, and why I moved the free path to the Agent SDK instead of paying for a metered API.
 3. **The coach gave me bad advice about a defended piece.** Why the fix was a computed fact instead of a bigger model or an extra engine call.
 4. **The coach kept calling moves "quiet".** Why a chess term came out of the coach's voice, and why the ban now runs on every chat reply instead of living only in the prompt.
@@ -82,28 +82,16 @@ Game 148, asked from the debrief after the game, about my second move:
 >
 > no, after your pawn to g4 she played her pawn to a5. the pawn to d5 you're thinking of only shows up in our chess brain's line for the move it wanted instead: pawn to d4.
 
-Two follow-ups on the same moment sit beside it, one rated down, one up. The 82 thumbs in the database split 48 up, 34 down. These are `advice_traces` rows 63 and 107; my questions are in the `prompt` column.
+Two follow-ups on the same moment sit beside it, one rated down, one up. The 82 thumbs in the database split 48 up, 34 down: 59% up against the spec's 90% target. I rate mostly when something looks off. These are `advice_traces` rows 63 and 107; my questions are in the `prompt` column.
 
 ## Run it yourself
 
 Everything but the coach's words runs on your own machine. The [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) covers what you need and what degrades if you skip a step.
 
-Or read these six pages, no clone needed.
-
-How it is built:
-1. [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence.
-2. [Technical decisions](technical-decisions.md): five decisions, the evidence behind each, and what each gave up or left open.
-3. [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): the working design file.
-
-Three evaluations, in the order they happened. Each answers the question the one before it left open:
-
-4. [Sonnet against Opus](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html) (2026-07-23): which model to run, scored by an audited checker under a rule written before that run. Its top note says what later work changed.
-5. [Why the answers feel slow](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html) (2026-08-02): the latency investigation. It ends on a question it could not close, and says so.
-6. [Three thinking budgets, one pick](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html) (2026-08-03): the three-repeat run that closed it. Shipped the same day.
 
 ## Code
 
-The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). Every merge is gated (`npm run gate`): on every finished game in my history locally, on the 51 committed games in CI. A fresh clone runs `setup.sh` once for lc0, the pinned Stockfish 19, and the nine opponent files, then `npm run doctor` to say what is missing; the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) has the steps. [The hint ladder and the coach](hint-ladder-and-coach.md) explains the three text surfaces around a move (ladder, band, chat) and where each lives in the code.
+The rest of this repository is the app: `server/` (game engine, coach, analysis) and `src/` (React client). Every merge is gated (`npm run gate`): on every finished game in my history locally, on the 51 committed games in CI. A fresh clone runs `setup.sh` once for lc0, the pinned Stockfish 19, and the nine opponent files, then `npm run doctor` to say what is missing; the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) has the steps. [The hint ladder and the coach](hint-ladder-and-coach.md) explains the three text surfaces around a move (ladder, note, chat) and where each lives in the code.
 
 ## Sample documentation
 
