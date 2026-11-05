@@ -14,7 +14,7 @@ Before the change, 1 in 13 piece-placement statements were false, and nothing ch
 
 Both numbers held for Sonnet and Opus. The two models were tied on these two measures. A bigger model does not fill a gap in the facts. It reasons more fluently from the same missing information.
 
-Getting an honest measurement took two attempts. The first one leaned on a language model as the judge. Its "wrong" pile and its "accurate" pile disagreed with ground truth at almost the same rate, 13% versus 5%. No discriminating power, so I retired it. One of the mechanical checks was flattering itself too. It asked whether the coach knew about the move being considered, and its raw pass rate read about 70%, because it counted a square as known whenever a piece happened to be there already. A hand audit put the genuine rate near 4 in 14, and that is the number I reported.
+Getting an honest measurement took two attempts. The first one leaned on a language model as the judge. Rows it graded "wrong" held a placement error 13% of the time, and rows it graded "accurate" still held one 5% of the time. Too weak a gap on small samples to trust, so I retired it. One of the mechanical checks was flattering itself too. It asked whether the coach knew about the move being considered, and its raw pass rate read about 70%, because it counted a square as known whenever a piece happened to be there already. A hand audit put the genuine rate near 4 in 14, and that is the number I reported.
 
 The rebuilt measurement, baseline v2, runs the same fixed questions against both models: completeness 100% for both, length within budget 25% for Sonnet and 3% for Opus, jargon-free 53% and 15%, latency medians about 9.7 seconds for both.
 

@@ -1,6 +1,6 @@
 # Where the review earned its keep
 
-*Why this matters: this is the argument that adversarial review isn't overhead. It caught an honesty bug, a security hole, and a regression before any of them shipped, in one increment, one week.*
+*In one increment and one week, adversarial review caught an honesty bug, a security hole, and a regression before any of them shipped.*
 
 Every build round at Girl Chess runs a build agent, then a separate reviewer that reads the diff cold and pushes back. Three catches from increment 3.95 show what that second pass is actually for.
 

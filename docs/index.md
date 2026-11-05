@@ -4,7 +4,7 @@ A personal AI chess tutor I designed and built 0-to-1 by directing Claude Code.
 
 Girl Chess plays you at nine strengths, 1100 to 1900, with human-feeling opponents instead of raw Stockfish. It feels like playing a person, not a wall. After each game it finds the moments that actually swung the result, shows you the better move on the board, and explains what it would have opened up in plain English, not notation. A coach named **cookie** sits alongside the whole time, in its own lavender corner: it warns you before a bad move lands, answers questions about any hint or turning point through an inline chat, and won't keep a line the checks can disprove.
 
-I learned chess three months ago in my 30s. Most chess apps felt cold and masculine, so this one is feminine-first and approachable.
+I am learning chess in my 30s. Most chess apps felt cold and masculine, so this one is feminine-first and approachable.
 
 ## What playing it looks like
 
@@ -91,11 +91,11 @@ Game 148, asked from the debrief after the game, about my second move:
 
 Two follow-ups on the same moment sit beside it, one rated down, one up. The 82 thumbs in the database split 48 up, 34 down. These are `advice_traces` rows 63 and 107; my questions are in the `prompt` column.
 
-## Live demo
+## Run it yourself
 
 A working local app, not a hosted product. It runs on your own machine, and the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) covers what you need and what degrades if you skip a step.
 
-Six pages, no clone needed.
+Or read these six pages, no clone needed.
 
 How it is built:
 1. [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence.

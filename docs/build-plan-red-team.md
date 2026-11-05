@@ -1,10 +1,10 @@
-*Why this matters: I red-team my own plans before executing them. Condensed from the project ledger (`.superpowers/sdd/rounds/2026-07-21-build-plan-review/build-plan-review.md`): a three-agent adversarial panel reviewed the increment-4 build plan against the shipped codebase before any increment-4 code was written. The findings, including the one against my own north star metric, are unsoftened.*
+*I red-team my own plans before executing them. Condensed from the project ledger: a three-agent adversarial panel reviewed the increment-4 build plan against the shipped codebase before any increment-4 code was written. The findings, including the one against my own north star metric, are unsoftened.*
 
 ---
 
 # Girl Chess: build-plan adversarial review
 
-Run 2026-07-21. Three-agent panel: two red-team critics (one for the entire project, one for increment 4 onward) and one champion who defends the plan and separates real problems from nitpicks. Grounded against shipped code at `main 9b227b9`. Full panelist findings: `panel-critic-project.md`, `panel-critic-inc4.md`, `panel-champion.md`.
+Run 2026-07-21. Three-agent panel: two red-team critics (one for the entire project, one for increment 4 onward) and one champion who defends the plan and separates real problems from nitpicks. Grounded against the code shipped at the time.
 
 ## How to read this
 

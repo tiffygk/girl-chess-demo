@@ -46,13 +46,13 @@ This is a separate mechanism from the blinded A/B evals below. The evals chose a
 
 Stockfish drives the judge, which sorts each move into silent, nudge or warning on evaluation deltas and a mate test, with no model involved. lc0 plays the opponent using Maia weights, a trained weights file rather than a separate engine, across nine bands from 1100 to 1900.
 
-`npm run gate` is the merge check, a local script rather than CI: owner-db check, in-play guard, tests, types, lint, truth check, corpus replay, then one verdict line.
+`npm run gate` is the merge check, run locally and in GitHub Actions: owner-db check, in-play guard, tests, types, lint, truth check, corpus replay, then one verdict line.
 
 ## I tried an LLM grader and cut it
 
 `tools/coach-eval/` runs the real chat pipeline against pinned real-game fixtures. Each answer gets six mechanical scores, plus aggregate rates for retries, template fallbacks, timeouts and latency, reported per question category and never averaged. `decide.ts` turns those into a verdict, defaulting to "tie, keep the default."
 
-Quality grading stays human and blind. An LLM grader went in early and came out again: no discriminating power ([technical-decisions.md](technical-decisions.md)).
+Quality grading stays human and blind. An LLM grader went in early and came out again: too weak a signal to trust ([technical-decisions.md](technical-decisions.md)).
 
 Blinding cost one sibling JSON file and a fixed reading order, no tooling. The graded report labels the two models A and B, and omits latency, which would fingerprint the faster column. A re-render once swapped the columns and voided grades I had written, so assignment is drawn once per run. The graded subset caps at 30 rows: every eligible general question, then a seeded stratified draw for the rest. Criteria stay symmetric across A and B.
 
@@ -64,6 +64,6 @@ Sonnet against Opus: three repeats per model, columns blinded, key sealed until 
 
 Thinking budget: three arms, default, low and disabled, three repeats each, 357 rows per arm. Low answers first. It ran at under half of default's latency (p50 6.2s against 14.5s) and failed less on the hardest bucket (13.3% against 18.7% on tactical-or-mate questions). It failed more on the two easier buckets (2.4% against 0% on direct facts, 7.1% against 3.8% on questions that need a line). Default handles the retry: a first draft that fails validation or times out is regenerated at the SDK's own unbounded adaptive thinking, decided by the failure alone, never by the question type.
 
-## why this matters outside chess
+## the same rule outside chess
 
 Which of your surfaces produce output you could list before shipping? Those get replayed against reality before merge. The rest get a fallback written before you need it. Chess only makes ground truth cheap.

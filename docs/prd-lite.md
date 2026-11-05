@@ -1,4 +1,4 @@
-*Why this matters: shows the product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the metrics that would prove or kill each one. Edited from the original project spec; this page is the canonical version as of 2026-09-20.*
+*The product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the metrics that would prove or kill each one. This is the original spec, lightly edited. Parts of the implementation changed later; the [README](https://github.com/tiffygk/girl-chess-demo#readme) describes what runs today.*
 
 ---
 
@@ -10,15 +10,13 @@ Personal product. Local, single user, no accounts, no monetization, $0 to run. N
 
 ## Problem
 
-The Pattern-Rich Beginner can only play chess against her partner, who is really good and better at playing than teaching (from [[Chess Tutor Design Record]] §2). Online chess removes the social part and gives nothing back: no personalized tips, no help mid-game, nothing learned but losing. Opponents are just a rating number, noisy and silent on style. She can't match their strategy to hers or figure out what went wrong.
+The Pattern-Rich Beginner can only play chess against her partner, who is really good and better at playing than teaching. Online chess removes the social part and gives nothing back: no personalized tips, no help mid-game, nothing learned but losing. Opponents are just a rating number, noisy and silent on style. She can't match their strategy to hers or figure out what went wrong.
 
 ## Strategy line
 
-Put the coach inside the game: warnings before mistakes, lessons after, drills built from her own blunders, opponents that play human-like at every level up to Maia's 1900 cap (from [[Chess Tutor Design Record]] §1).
+Put the coach inside the game: warnings before mistakes, lessons after, drills built from her own blunders, opponents that play human-like at every level up to Maia's 1900 cap.
 
 ## Personas
-
-Full definitions in [[Chess Tutor Design Record]]. Compressed:
 
 - **Primary: the Pattern-Rich Beginner.** Strong at puzzles (~1400), beginner in full games. Can find a tactic when told one exists; can't yet notice when to look. Understands above the level she plays at. Octalysis-aware: wins must be earned, losses must be real, no hollow gamification, no monetization mechanics.
 - **Secondary: the Guest Player.** Local second player of unknown strength, on a shared mouse. Zero setup. Handicaps flex either direction; coach toggles are per player.
@@ -51,8 +49,6 @@ Not Lichess or chess.com: they analyze after the fact with engine lines pitched 
 
 ## Success metrics
 
-Full definitions, combo rules, layout, and cadence live in [[Metrics Dashboard Spec]] (the Lab). Summary:
-
 - **North star:** ≥1 named lesson (Notebook entry) per session.
 - **Inputs:** 30+ min sessions, 3+ days/week, ladder ELO +10%/month (starting assumption), thumbs-up ≥90% on coach output.
 - **Ship gates:** coach verdicts under 2s at the 95th percentile, never blocking the confirm; zero invented moves (automated fact-check pauses the coach, not the game); hint escalations under 30%.
@@ -65,9 +61,9 @@ Every choice serves two masters: zero running cost, and code any future Claude s
 
 | Piece | Choice | Basis |
 |---|---|---|
-| App | Vite + React + chess.js + react-chessboard, thin Node server, SQLite + markdown | Design Record §10; most-popular libraries for Claude maintainability |
+| App | Vite + React + chess.js + react-chessboard, thin Node server, SQLite + markdown | Most-popular libraries, for Claude maintainability |
 | Engines | Stockfish native; Maia weights on lc0, search disabled | Verified against CSSLab/maia-chess README |
-| Coach | claude CLI headless (Max plan) default; Ollama toggle | Design Record §10-11; $0 either way |
+| Coach | claude CLI headless (Max plan) default; Ollama toggle | $0 either way |
 | Determinism | Code computes every chess fact, award, and schedule; the model only phrases | Render-only pattern stolen from Patzer (MIT) |
 
 ## Prioritization
@@ -88,4 +84,4 @@ Sugar Glitch world: soft pastel candy UI that glitches, captures do the Vanellop
 
 Capability ledger: runs on current models; Ollama fallback works with quality loss; nothing external gates v1 beyond a one-time brew install of Stockfish and lc0.
 
-Day-one validation: H1 via repeat-mistake tracking and lesson-loop completions in traces; H2 via days/week plus her playtest ratings; H3 via mid-game quits and ladder pace. Octalysis pass on onboarding and scaffolding: pending her read of this spec.
+Day-one validation: H1 via repeat-mistake tracking and lesson-loop completions in traces; H2 via days/week plus her playtest ratings; H3 via mid-game quits and ladder pace.
