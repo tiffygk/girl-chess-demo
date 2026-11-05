@@ -28,7 +28,7 @@ The move-4 turning point replayed: solid arrows for what happened, dashed for wh
 
 I directed an AI coding agent through a structured build process instead of writing code by hand. A separate reviewer agent caught a security hole and an honesty bug before either shipped. A later measurement pass found what the review couldn't: the coach's advice was sometimes wrong because it was never given the facts it needed. See **[decisions, measured](technical-decisions.md)** for the finding, the fix, and the harness that re-runs the model comparison.
 
-Shipped as of 2026-09-22, each round checked before it merged: open games survive a server restart; past games are listed by day, with a back button that leaves a game without ending it. Opponents run to 1900, and a fresh clone gets `npm run doctor`. Increment 4 (spaced-repetition drills, a progress dashboard, "it remembers") is roadmap, not built.
+Shipped as of 2026-09-22, each round checked before it merged. Open games survive a server restart. Past games are listed by day, and a back button leaves a game without ending it. Opponents run to 1900, and a fresh clone gets `npm run doctor`. Increment 4 (spaced-repetition drills, a progress dashboard, "it remembers") is roadmap, not built.
 
 ## Start here: the product spec
 
@@ -103,7 +103,7 @@ Three evaluations, in the order they happened. Each answers the question the one
 
 ## Code
 
-The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). Every merge is gated (`npm run gate`): on every finished game in my history locally, on the 51 committed games in CI. A fresh clone runs `setup.sh` once for lc0, the pinned Stockfish 19, and the nine opponent files, then `npm run doctor` to say what is missing; the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) has the steps. [The hint ladder and the coach](hint-ladder-and-coach.md) explains the three text surfaces around a move (ladder, band, chat) and where each lives in the code. The [changelog](changelog.md) is the full work log, newest first.
+The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). Every merge is gated (`npm run gate`): on every finished game in my history locally, on the 51 committed games in CI. A fresh clone runs `setup.sh` once for lc0, the pinned Stockfish 19, and the nine opponent files, then `npm run doctor` to say what is missing; the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) has the steps. [The hint ladder and the coach](hint-ladder-and-coach.md) explains the three text surfaces around a move (ladder, band, chat) and where each lives in the code.
 
 ## Sample documentation
 

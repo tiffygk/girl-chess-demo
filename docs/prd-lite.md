@@ -10,7 +10,7 @@ Personal product. Local, single user, no accounts, no monetization, $0 to run. N
 
 ## Problem
 
-The Pattern-Rich Beginner can only play chess against her partner, who is really good and better at playing than teaching. Online chess removes the social part and gives nothing back: no personalized tips, no help mid-game, nothing learned but losing. Opponents are just a rating number, noisy and silent on style. She can't match their strategy to hers or figure out what went wrong.
+A novice often has chess partners they want to play against who are much better than them, leaving them with low pattern recognition or ways to improve other than to concede the game early. Online chess removes the social part and gives nothing back: no personalized tips, no help mid-game, nothing learned but losing. Opponents are just a rating number, noisy and silent on style. They can't match an opponent's strategy to their own or figure out what went wrong.
 
 ## Strategy line
 
