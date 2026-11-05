@@ -75,7 +75,7 @@ Why now: design is complete and the first partner rematch is the deadline. This 
 - **Advice pitched wrong.** Traces on every advice event; escalation and thumbs metrics; the annotation queue is the diagnosis. Test: escalation rate <30%.
 - **The coach builds dependence instead of skill.** Adaptive warnings quiet down as mistakes stop; hint-dependence guardrail is H1's falsification test.
 - **Model invents chess facts.** Zero-tolerance fact-check on every move the coach names; failure pauses the coach surface only.
-- **Engine setup breaks on her Mac.** Pinned brew versions and a runbook in CLAUDE.md; Claude sessions do all maintenance.
+- **Engine setup breaks on her Mac.** Pinned brew versions and a runbook; Claude sessions do all maintenance.
 
 ## Design notes and day-one validation
 
