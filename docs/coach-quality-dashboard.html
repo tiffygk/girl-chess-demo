@@ -173,8 +173,8 @@
     <button class="tbtn" onclick="tog('t2')">Show data table</button>
     <table class="dt" id="t2"></table>
     <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Give-ups roughly doubled since July, and the change is failures, not slowness.</b> The share of fast answers fell and the "gave up" slice grew from ~8% to ~18% in testing and ~23% in my real play. Answers that used to arrive slowly now don't arrive.</p></div>
-    <div class="caveat"><b>⚠ One bar carries a caveat.</b> The pre-fix test ran on a machine that became busy partway through; only its board questions (shown here) are usable, and its give-up rate is directional, not certified. July and after-wave-1 are clean.</div>
-    <div class="foot">Testing bars: 65 board questions each (July = average of 3 repeats). My real play: 91 chat questions from the wave-1 playtest save.</div>
+    <div class="caveat"><b>⚠ One bar carries a caveat.</b> The pre-fix test ran on a machine that became busy partway through; only its board questions (shown here) are usable, and its give-up rate is directional, not certified. July and after the first speed fixes are clean.</div>
+    <div class="foot">Testing bars: 65 board questions each (July = average of 3 repeats). My real play: 91 chat questions from the playtest save after the first speed fixes.</div>
   </section>
 
   <!-- G3 -->
@@ -195,13 +195,13 @@
   <section class="panel">
     <div class="num">CHART 4</div>
     <h2>Did our last round make it worse?</h2>
-    <div class="q">A before/after on the wave-1 change. Three speed measures, plus the one thing that changed.</div>
+    <div class="q">A before/after on the first speed fixes. Three speed measures, plus the one thing that changed.</div>
     <div class="legend" id="lg4"></div>
     <div class="chartbox" id="c4"></div>
     <button class="tbtn" onclick="tog('t4')">Show data table</button>
     <table class="dt" id="t4"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>Wave-1 changed what I see, not how fast the answer arrives.</b> Give-ups, slow answers, and typical wait were unchanged. What it added: an <b>instant "thinking" signal</b> (visible in a fraction of a second) so the screen no longer looks frozen. The regression came earlier, a 22.5-second cut-off added on 08-01 that turned slow-but-delivered answers into guaranteed give-ups.</p></div>
-    <div class="foot">Source: the two 65-question runs before and after wave-1+caching. "Instant signal" = time to first on-screen response; "the answer" = time to the first real word.</div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The first speed fixes changed what I see, not how fast the answer arrives.</b> Give-ups, slow answers, and typical wait were unchanged. What it added: an <b>instant "thinking" signal</b> (visible in a fraction of a second) so the screen no longer looks frozen. The regression came earlier, a 22.5-second cut-off added on 08-01 that turned slow-but-delivered answers into guaranteed give-ups.</p></div>
+    <div class="foot">Source: the two 65-question runs before and after the first speed fixes and caching. "Instant signal" = time to first on-screen response; "the answer" = time to the first real word. Noted 2026-11-05: "unchanged" covers typical wait moving from 10.9s to 13.2s, and time to the first real word has no before value.</div>
   </section>
 
   <!-- INCOMING -->
@@ -225,9 +225,9 @@
   <section class="panel">
     <div class="num">IN MY WORDS</div>
     <h2>What the failures felt like</h2>
-    <div class="q">Verbatim feedback attached to give-ups and slow answers in the wave-1 playtest, the human side of Chart 2.</div>
+    <div class="q">Verbatim feedback attached to give-ups and slow answers in the playtest after the first speed fixes, the human side of Chart 2.</div>
     <div class="quotes" id="quotes"></div>
-    <div class="foot">Source: my thumbs-down notes in the wave-1 playtest save (advice_traces).</div>
+    <div class="foot">Source: my thumbs-down notes in the playtest save after the first speed fixes (advice_traces).</div>
   </section>
 
   <footer class="pg">
@@ -260,8 +260,8 @@ const DATA = {
   outcomes:[
     {v:"July (baseline)",     n:65, fast:44, slow:16, gaveup:5,  caveat:false, note:"avg of 3 repeats"},
     {v:"Pre-fix test",        n:65, fast:37, slow:16, gaveup:12, caveat:true,  note:"board questions only; give-up rate directional"},
-    {v:"After wave-1",        n:65, fast:34, slow:19, gaveup:12, caveat:false, note:"clean"},
-    {v:"My real play",       n:91, fast:43, slow:27, gaveup:21, caveat:false, note:"wave-1 playtest chats"}
+    {v:"After first fixes",        n:65, fast:34, slow:19, gaveup:12, caveat:false, note:"clean"},
+    {v:"My real play",       n:91, fast:43, slow:27, gaveup:21, caveat:false, note:"playtest chats after the first fixes"}
   ],
   // CHART 3 — retries: 45s limit (before) vs 3-minute budget arms (overnight, verified from raw b180)
   retries:{
@@ -272,7 +272,7 @@ const DATA = {
       {k:"3-min · thinking off",     fired:14, rescued:10, starved:4}
     ]
   },
-  // CHART 4 — before/after wave-1
+  // CHART 4 — before/after the first fixes
   beforeAfter:[
     {k:"Gave up (count / 65)",  pre:12,   post:12,   fmt:"n",  same:true},
     {k:"Slow answers (count / 65)", pre:16, post:19, fmt:"n",  same:true},
@@ -430,7 +430,7 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
     const max=maxByRow[i], x=v=>L+plotW*v/max;
     s.appendChild(el("text",{x:L,y:y-6,class:"axislbl","font-size":"12.5"},b.k));
     const barH=22;
-    [["Before wave-1",b.pre,"var(--n1)",0],["After wave-1",b.post,"var(--n2)",barH+4]].forEach(([lab,val,c,off])=>{
+    [["Before first fixes",b.pre,"var(--n1)",0],["After first fixes",b.post,"var(--n2)",barH+4]].forEach(([lab,val,c,off])=>{
       const w=Math.max(x(val)-L,2);
       const r=el("rect",{x:L,y:y+off,width:w,height:barH,rx:4,fill:c,class:"bar-seg"});
       hov(r,b.k+": "+lab,`<b>${b.fmt=="s"?val.toFixed(1)+"s":val}</b>`);
@@ -447,7 +447,7 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
   sig.style.cssText="margin-top:14px;display:flex;gap:14px;flex-wrap:wrap";
   sig.innerHTML=`
     <div style="flex:1;min-width:220px;background:rgba(0,158,115,.10);border:1px solid rgba(0,158,115,.4);border-radius:10px;padding:12px 15px">
-      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">What wave-1 actually added</div>
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">What the first fixes added</div>
       <div style="font-size:20px;font-weight:750;margin-top:4px">Instant "thinking" signal</div>
       <div style="font-size:13px;color:var(--ink2);margin-top:3px">On screen in <b>under 0.3 seconds</b>: the app no longer looks frozen while it works.</div>
     </div>
@@ -457,7 +457,7 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
       <div style="font-size:13px;color:var(--ink2);margin-top:3px">Typical time to the first real word was unchanged. The signal is faster; the reply is not.</div>
     </div>`;
   $("c4").appendChild(sig);
-  legend($("lg4"),[{k:"Before wave-1",c:"var(--n1)"},{k:"After wave-1",c:"var(--n2)"}]);
+  legend($("lg4"),[{k:"Before first fixes",c:"var(--n1)"},{k:"After first fixes",c:"var(--n2)"}]);
   table("t4",["Measure","Before","After"],B.map(b=>[b.k,b.fmt=="s"?b.pre.toFixed(1)+"s":b.pre,b.fmt=="s"?b.post.toFixed(1)+"s":b.post]).concat([["Instant on-screen signal","n/a","under 0.3s"],["Time to first real word","n/a","~12.0s"]]));
 })();
 

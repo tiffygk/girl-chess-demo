@@ -15,7 +15,7 @@ The rule: check generated text differently depending on whether every possible o
 | per-move note | `server/coach/index.ts` `narrate()` | Claude Sonnet 5 via Agent SDK | every request, strict on squares | one corrective retry, then a template that states the facts |
 | post-game analysis | `src/review/` | code: templated from engine-derived turning points | replayed against the full game history before merge | gate exits non-zero, prints "Do not merge" |
 
-Chat buffers and flushes only after validation passes. No unvalidated chat sentence reaches the screen. A wrong answer is worse than no answer, so chat apologizes once the corrective retry fails. Narration's validator is stricter on squares: every square it names must be one the engine supplied. No analysis directory imports the coach; tests pin that boundary on `classify.ts`, `classifications.ts`, `turningPoints.ts` and `judgeMove`.
+Chat buffers and flushes only after validation passes. No unvalidated chat sentence reaches the screen. A wrong answer is worse than no answer, so chat apologizes once the corrective retry fails. The note's validator is stricter on squares: every square it names must be one the engine supplied. No analysis directory imports the coach; tests pin that boundary on `classify.ts`, `classifications.ts`, `turningPoints.ts` and `judgeMove`.
 
 ## four ways the analysis can lie
 

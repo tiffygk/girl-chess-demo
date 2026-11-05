@@ -331,7 +331,7 @@
       <div class="annotation">
         <span class="an-label">Why the earlier gap vanished, and the lesson it taught</span>
         An earlier comparison showed 85% vs 38% and looked like one model naturally "talks like an engine." The cause was the coach's own instruction text, which mentioned the engine. The models were quoting their instructions back. With that instruction text fixed, both models score 100%. The lesson this rerun cemented: fix the structure before comparing models. A broken prompt can make two models look different when they are not, and a bigger model cannot fix a broken prompt.
-        <div style="margin-top:8px;font-size:12px;color:var(--muted)">Technical detail: baseline ran against persona commit <code>ef8aa98</code> ("the engine's read"); current persona (<code>10619ce</code>) contains zero "engine" language, one un-branched prompt path, plus a runtime voice guard. The checker behind this number was hand-audited at 100% agreement (50/50 rows, both audit rounds).</div>
+        <div style="margin-top:8px;font-size:12px;color:var(--muted)">Technical detail: the baseline persona said "the engine's read"; the current persona contains zero "engine" language, one un-branched prompt path, plus a runtime voice guard. The checker behind this number was hand-audited at 100% agreement (50/50 rows, both audit rounds).</div>
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
@@ -588,7 +588,7 @@
   <!-- P8 -->
   <section id="p8">
     <div class="sec-head"><span class="sec-num">08</span><h2>Forward-looking recommendations</h2></div>
-    <p class="sec-sub">Action items adapted for a template rather than a team: what becomes default practice for every future evaluation.</p>
+    <p class="sec-sub">What becomes default practice for every future evaluation.</p>
     <div class="card">
       <ol class="rule-steps">
         <li><b>Repeats are the default, not a retrofit.</b> Every future comparison runs multiple repeats per system and reports a range, never a single point. A one-shot measurement cannot tell signal from noise, so it should not be possible to run one by accident.</li>
@@ -1079,7 +1079,7 @@ function renderMeta() {
     ["Context", "the coach saw the full game history, exactly as in the real product (wiring: " + SUMMARY.wiring + ")"],
     ["Run order", "alternated which model went first (see strip above)"],
     ["Warm-up", LEDGER.warmupPerProcess + " discarded practice calls before each run, so neither model was timed cold"],
-    ["Database", "real play history, cryptographically verified untouched after every run (sha256 " + LEDGER.dbSha + ")"],
+    ["Database", "play history, verified untouched after every run (sha256 " + LEDGER.dbSha + ")"],
     ["Blinded read", "a side-by-side with model names hidden awaited the stakeholder's independent judgment when this page was built; a later blinded read chose Sonnet 5"],
     ["Stop rule", "the scoring audit had a " + LEDGER.instrument.iterationCap + "-round cap; a failure to converge would be reported, not hidden"],
     ["Decision rule", "written down in the plan before any data existed"]
