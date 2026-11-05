@@ -1,6 +1,6 @@
 # how the tutor is checked
 
-Ten moments in my game history carried a claim that I had played inefficiently. Replaying the analysis against the moves contradicted six. Four of those six were false. Two were fair: each hid a second missed mate later in the same game, which my count never measured. Reporting six would have made my audit look better than it was.
+Ten moments in my game history carried a claim that I had played inefficiently. Replaying the analysis against the moves contradicted six. Four of those six were false. Two were fair: each hid a second missed mate later in the same game, which my count never measured. Calling all six false would have made my audit look better than it was.
 
 I directed the agent that built this tutor and pointed its checks at my own games first.
 
@@ -12,10 +12,10 @@ The rule: check generated text differently depending on whether every possible o
 |---|---|---|---|---|
 | hint ladder | `src/game/hintFlow.ts` | code: sentence variants and templates filled from engine facts | with the test suite | n/a, no model call in the path |
 | coach chat | `server/coach/chat.ts` | Claude Sonnet 5 via Agent SDK | every request, before display | one corrective retry, then a template apology |
-| per-move note | `server/coach/index.ts` `narrate()` | Claude Sonnet 5 via Agent SDK | every request, stricter validator | one corrective retry, then a template that states the facts |
+| per-move note | `server/coach/index.ts` `narrate()` | Claude Sonnet 5 via Agent SDK | every request, strict on squares | one corrective retry, then a template that states the facts |
 | post-game analysis | `src/review/` | code: templated from engine-derived turning points | replayed against the full game history before merge | gate exits non-zero, prints "Do not merge" |
 
-Chat buffers and flushes only after validation passes. No unvalidated chat sentence reaches the screen. A wrong answer is worse than no answer, so chat apologizes once the corrective retry fails. Narration's validator is stricter: every square it names must be one the engine supplied. No analysis directory imports the coach; tests pin that boundary on `classify.ts`, `classifications.ts`, `turningPoints.ts` and `judgeMove`.
+Chat buffers and flushes only after validation passes. No unvalidated chat sentence reaches the screen. A wrong answer is worse than no answer, so chat apologizes once the corrective retry fails. Narration's validator is stricter on squares: every square it names must be one the engine supplied. No analysis directory imports the coach; tests pin that boundary on `classify.ts`, `classifications.ts`, `turningPoints.ts` and `judgeMove`.
 
 ## four ways the analysis can lie
 

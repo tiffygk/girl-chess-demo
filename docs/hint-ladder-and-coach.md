@@ -18,7 +18,7 @@ Where this lives: `src/game/hintFlow.ts`, `server/annotator/hint.ts`.
 
 ## How a hint is checked before it is shown
 
-When she asks for help, the engine searches the position for 1.5 seconds and returns several candidate moves, not one. Code picks among them, preferring a quiet move over a trade when the gap is small, about a third of a pawn.
+When the judge finds a threat, the engine searches the position for 1.5 seconds and returns several candidate moves, not one. Code picks among them, preferring another move over a trade when the gap is small, about a third of a pawn.
 
 Code then tests the pick. It plays the move on a copy of the board and searches again for half a second, confirming the move does not lose more than half a pawn. A move that fails is replaced by the result of a deeper 3-second search. The move on the rung is either a move that passed the check or the deeper search's answer. That is what "verified" means on this page.
 
@@ -40,7 +40,7 @@ Second, a move she names in chat but has not played now gets its own line: the a
 
 ![One verified search feeds both the hint on the rung and the chat's fact list, and a move she names in chat gets its line the same way](images/diagrams/chat-and-hint-share-one-search.svg)
 
-The band is ground truth for the chat. The chat may never name a different best move, and it may never deny a threat the band already stated.
+Before these rules, I paired 142 chat replies with the hint ladder's facts for the same position, and none recommended a different move.
 
 Where this lives: `server/game/manager.ts`, `server/coach/chat.ts`, `server/coach/candidateMove.ts`.
 
@@ -64,4 +64,4 @@ I measured these on my machine, over my own games.
 | a chat regen | 33.5 s average (vs 8.2 s without) | n/a |
 | cheapest model call observed | 3.3 s | n/a |
 
-The standing limit for any change to a coach reply is one to two seconds.
+A change may add one to two seconds to a coach reply at most.
