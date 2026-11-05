@@ -86,7 +86,7 @@ Two follow-ups on the same moment sit beside it, one rated down, one up. The 82 
 
 ## Run it yourself
 
-A working local app: everything but the coach's words runs on your own machine. The [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) covers what you need and what degrades if you skip a step.
+Everything but the coach's words runs on your own machine. The [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) covers what you need and what degrades if you skip a step.
 
 Or read these six pages, no clone needed.
 
