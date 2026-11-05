@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Tier S SessionStart checks (girl-chess). Injects one additionalContext block
-# combining any warnings that apply. Blocks nothing. Proposal: "2 build/Girl Chess
-# — Skill-Deploy Hooks Proposal (2026-08-02).md" items #1, #2, #2b.
+# combining any warnings that apply. Blocks nothing.
 canon="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
 canon="${canon%/.git}"
 msgs=""

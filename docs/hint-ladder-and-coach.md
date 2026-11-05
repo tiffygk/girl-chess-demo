@@ -46,7 +46,7 @@ Where this lives: `server/game/manager.ts`, `server/coach/chat.ts`, `server/coac
 
 ## What it still gets wrong
 
-One recorded defect is still open. Early in game 197, the chat said a pawn move to f3 "doesn't defend e4". That was wrong, because f3 sits diagonally next to e4. The reply was served before the verified-search rule above shipped. The replay check names it as a known defect instead of counting it as fixed. The next round has to prove it gone.
+One recorded defect is still open. Early in game 197, the chat said a pawn move to f3 "doesn't defend e4". That was wrong, because f3 sits diagonally next to e4. The reply was served before the verified-search rule above shipped. The replay check names it as a known defect instead of counting it as fixed. No replay has proved it gone yet.
 
 A second gap is narrower. The post-game review chat does not yet carry the hint's findings, so its answers rest on the stored analysis only.
 

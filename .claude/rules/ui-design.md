@@ -29,7 +29,7 @@ UI module map (update when structure shifts):
 - `src/game/resolveClick.ts`: click to move, including castle by rook.
 - `src/game/resolvePendingClick.ts`: retarget/cancel/confirm state machine.
 - `src/game/moveFlow.ts`: the four-flow dispatch.
-- `src/game/hintFlow.ts`: the 0-5 why-hint ladder.
+- `src/game/hintFlow.ts`: the hint ladder (three presses on the right piece, four otherwise).
 - `src/board/squareMapping.ts`: pinned square to index mapping.
 - `src/game/replay.ts`: the end-of-game cinematic plan.
 - `src/game/captures.ts`: tray sort, material diff, rollback.

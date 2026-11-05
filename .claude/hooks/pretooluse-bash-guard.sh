@@ -9,7 +9,7 @@ ask()  { jq -n --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",per
 
 # #4 pattern-kill of servers (two live-stack incidents, same root cause)
 if printf '%s' "$cmd" | grep -qE '\b(pkill|killall)\b'; then
-  deny "NEVER pkill/killall in this project. A pattern kill cannot tell two identical-looking process stacks apart (2026-07-21 took down the owner's live 5173/3001 stack mid-demo; 2026-08-01 killed a sibling agent's in-flight subprocess whose flags matched). Kill only a PID you recorded when YOU spawned it, or report the process to the controller. NOTE: this guard matches the whole command string, so it also fires when you are merely WRITING this word into a file (a brief, a hook, a doc). That is deliberate -- narrowing it would trade a cheap visible block for a rare invisible miss. If that is your case, either write the file with the Write/Edit tool instead of a shell heredoc, or rephrase to 'pattern kill'. Do not try to smuggle the literal past this guard by splitting or encoding it."
+  deny "NEVER pkill/killall in this project. A pattern kill cannot tell two identical-looking process stacks apart (2026-07-21 took down a live 5173/3001 stack; 2026-08-01 killed a sibling agent's in-flight subprocess whose flags matched). Kill only a PID you recorded when YOU spawned it, or report the process to the controller. NOTE: this guard matches the whole command string, so it also fires when you are merely WRITING this word into a file (a brief, a hook, a doc). That is deliberate -- narrowing it would trade a cheap visible block for a rare invisible miss. If that is your case, either write the file with the Write/Edit tool instead of a shell heredoc, or rephrase to 'pattern kill'. Do not try to smuggle the literal past this guard by splitting or encoding it."
 fi
 
 # #3 agent-browser --full-page flag typo (litters a stray PNG)
@@ -19,12 +19,12 @@ fi
 
 # #5 hashing the real db as an integrity proxy (WAL moves the hash; log-only changes do not)
 if printf '%s' "$cmd" | grep -qE '(sha256sum|shasum|md5|openssl +dgst).*girlchess\.db'; then
-  ask "A file hash is the WRONG integrity instrument for girlchess.db: a SQLite WAL checkpoint moves the hash with zero data touched, and log-only changes leave it unmoved (this was presented to the owner as a safety proof on 2026-07-28 and walked back). Use tools/dbCountSnapshot.ts (games/moves counts + integrity_check, opened readonly). Confirm you want a hash, not a count."
+  ask "A file hash is the WRONG integrity instrument for girlchess.db: a SQLite WAL checkpoint moves the hash with zero data touched, and log-only changes leave it unmoved. Use tools/dbCountSnapshot.ts (games/moves counts + integrity_check, opened readonly). Confirm you want a hash, not a count."
 fi
 
 # #6 gate reminder, non-blocking (gate.ts checkInPlay is the real enforcement)
 if printf '%s' "$cmd" | grep -qE '\bnpm run gate\b' && ! printf '%s' "$cmd" | grep -q -- '--allow-live'; then
-  jq -n --arg m "Play rule: never run npm run gate while she is playing. tools/gate.ts checkInPlay hard-blocks if a game moved in the last 30min, but the standing rule is to ASK or WAIT anyway (broken twice: 07-29 starved her live game at +492, 07-30 five runs in one round). Confirm she is not mid-game before this runs." '{systemMessage:$m}'
+  jq -n --arg m "Play rule: never run npm run gate during a live game. tools/gate.ts checkInPlay hard-blocks if a game moved in the last 30min, but the standing rule is to ASK or WAIT anyway. Confirm no game is in progress before this runs." '{systemMessage:$m}'
 fi
 
 # #19 quiet-machine rule (2026-09-22): never start a gate while another gate or
@@ -40,14 +40,10 @@ if printf '%s' "$cmd" | grep -qE '\bnpm run gate\b'; then
 fi
 
 # #16 git push content scan against a LOCAL, gitignored pattern file (2026-08-26).
-# Three failures in one session: a sweep was reported clean, then a later commit
-# put the string back; a scrub script reintroduced it by grepping for it; and a
-# stale "remote is clean" check was trusted after more commits landed. All three
-# share a boundary -- the push -- so the check belongs there, not earlier.
-# NEVER put the guarded string in this file: it is tracked and public, and a
-# literal here would be the same bug in the guard's own body.
+# Scans commits about to be pushed against a local wordlist of private
+# identifiers. Never list them here: this file is public.
 #
-# Fixed 2026-09-20 (audience-scrub round, PR #23): resolve the repo from the
+# Fixed 2026-09-20 (PR #23): resolve the repo from the
 # COMMAND, not the hook's session cwd -- a session cwd outside any repo, or a
 # fresh worktree with no `.claude/hooks/.push-guard-patterns` symlink, both
 # made this guard fall through to the ask-and-continue branch below and never

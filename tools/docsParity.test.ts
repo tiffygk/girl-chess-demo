@@ -164,7 +164,7 @@ describe.skipIf(!insideGitWorkTree)("every docs/ page is linked from docs/index.
   // Reachable by direct URL only; the rule stays "every page is linked" for
   // everything else, and a name leaves this list when its page is listed.
   const UNLISTED_HTML: readonly string[] = [
-    "coach-correctness-dashboard.html", // owner ask 2026-09-21: "I don't really want someone to look at this yet"
+    "coach-correctness-dashboard.html", // unlisted on purpose: reachable by direct URL only
   ];
 
   it("every .html file in docs/ is linked by its full Pages URL (except the dated unlisted set)", () => {

@@ -1,4 +1,4 @@
-*The product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the leading indicator for each. This is the original spec, edited. Parts of the implementation changed later, and the Notebook, guest mode and trophies were never built; the [README](https://github.com/tiffygk/girl-chess-demo#readme) describes what runs today.*
+*The product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the leading indicator for each. This is the original spec, edited. Parts of the implementation changed later, and the Notebook, drills, the Lab, guest mode and trophies are not built; the [README](https://github.com/tiffygk/girl-chess-demo#readme) describes what runs today.*
 
 ---
 
@@ -6,7 +6,7 @@
 
 **Girl Chess: tutor with benefits.** The name plays on "girl math": capturing a fun piece counts as much as positional advantage, and we make it make sense later. Wordmark gets stylized in the Sugar Glitch look (see Design notes); in prose it's Girl Chess.
 
-Personal product. Local, single user, no accounts, no monetization, $0 to run. North star: **every session teaches her something she can name.** Scope: single-player vs the computer, with a local guest mode (shared mouse). The implementation plan follows separately. The v1 cutline gets drawn on this document after approval.
+Personal product. Local, single user, no accounts, no monetization, $0 to run. North star: **every session teaches her something she can name.** Scope: single-player vs the computer, with a local guest mode (shared mouse).
 
 ## Problem
 
@@ -68,7 +68,7 @@ Every choice serves two goals: zero running cost, and code any future Claude ses
 
 ## Prioritization
 
-Why now: design is complete and the first partner rematch is the deadline. This PRD covers all of v1; the cutline is a separate pass once approved. Deferred with seams: Lichess import, Maia-2/3, per-game ask limits.
+Why now: design is complete and the first partner rematch is the deadline. Deferred with seams: Lichess import, Maia-2/3, per-game ask limits.
 
 ## Risks and mitigations
 
@@ -79,7 +79,7 @@ Why now: design is complete and the first partner rematch is the deadline. This 
 
 ## Design notes and day-one validation
 
-Sugar Glitch world: soft pastel candy UI that glitches, captures glitch like Vanellope (Wreck-It Ralph), characters follow the Adventure Time rule (cute plus one wrong detail). Coach is an unnamed alien sim whose body language is the first warning tier. Opponents are characters per ladder rung. Body text semi-bold minimum. Prototype: `Sugar Glitch Demo.html` (interactive board, glitch captures, sound, sketches of the coach and Mallow, the Maia-1100 marshmallow).
+Sugar Glitch world: soft pastel candy UI that glitches, captures glitch like Vanellope (Wreck-It Ralph), characters follow the Adventure Time rule (cute plus one wrong detail). Coach is an unnamed alien sim whose body language is the first warning tier. Opponents are characters per ladder rung. Body text semi-bold minimum. Prototype: a standalone HTML demo (interactive board, glitch captures, sound, sketches of the coach and Mallow, the Maia-1100 marshmallow).
 
 Capabilities: runs on current models; nothing external gates v1 beyond a one-time brew install of Stockfish and lc0.
 
