@@ -177,6 +177,9 @@ describe("pretooluse-bash-guard #16 push resolution", { timeout: 30_000 }, () =>
     const d = decision(result.stdout);
     expect(d.permissionDecision).toBe("deny");
     expect(d.permissionDecisionReason).toContain("BLOCKED");
+    // A push in the first segment has no earlier segments to read: asking
+    // head for zero lines would print an error here on macOS.
+    expect(result.stderr).toBe("");
   });
 
   it("stays fast on a very long command and still finds the push at its end", () => {

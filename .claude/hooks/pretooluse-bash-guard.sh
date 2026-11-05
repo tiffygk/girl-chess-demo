@@ -91,7 +91,9 @@ push_hit="$(printf '%s\n' "$stripped_segments" | grep -nE -m1 "^${GIT_PUSH_TRIGG
 if [ -n "$push_hit" ]; then
   push_in_command_position=1
   push_segment="${push_hit#*:}"
-  prior_segments="$(printf '%s\n' "$segments" | head -n "$((${push_hit%%:*} - 1))")"
+  if [ "${push_hit%%:*}" -gt 1 ]; then
+    prior_segments="$(printf '%s\n' "$segments" | head -n "$((${push_hit%%:*} - 1))")"
+  fi
 fi
 
 if [ "$push_in_command_position" = "1" ]; then
