@@ -147,9 +147,17 @@ describe.skipIf(!insideGitWorkTree)("docs image parity", () => {
 });
 
 describe.skipIf(!insideGitWorkTree)("every docs/ page is linked from docs/index.md", () => {
+  // Markdown pages published on purpose without an index link (owner ruling, dated).
+  const UNLISTED_MD: readonly string[] = [
+    // owner ask 2026-11-05: remove these pages' links from the landing page
+    "increment-3.95.md",
+    "build-plan-red-team.md",
+    "where-the-review-earned-its-keep.md",
+  ];
+
   it("every .md file in docs/ (other than index.md) is linked by its relative path", () => {
     const index = indexText();
-    const mdFiles = docsMdFiles().filter((f) => f !== "index.md");
+    const mdFiles = docsMdFiles().filter((f) => f !== "index.md" && !UNLISTED_MD.includes(f));
     for (const f of mdFiles) {
       expect(index, `docs/index.md is missing a relative link to ${f}`).toContain(`(${f})`);
     }

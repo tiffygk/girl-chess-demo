@@ -4,7 +4,7 @@ A personal AI chess tutor I designed and built 0-to-1 by directing Claude Code.
 
 Girl Chess plays you at nine strengths, 1100 to 1900, with human-feeling opponents instead of raw Stockfish. It feels like playing a person, not a wall. After each game it finds the moments that actually swung the result, shows you the better move on the board, and explains what it would have opened up in plain English, not notation. A coach named **cookie** sits alongside the whole time, in its own lavender corner: it warns you before a bad move lands, answers questions about any hint or turning point through an inline chat, and won't keep a line the checks can disprove.
 
-I learned chess three months ago in my 30s. Most chess apps felt cold and masculine, so this one is feminine-first and approachable.
+I am learning chess in my 30s. Most chess apps felt cold and masculine, so this one is feminine-first and approachable.
 
 ## What playing it looks like
 
@@ -28,7 +28,7 @@ The move-4 turning point replayed: solid arrows for what happened, dashed for wh
 
 I directed an AI coding agent through a structured build process instead of writing code by hand. The adversarial review caught a security hole and an honesty bug before either shipped. A later measurement pass caught something the review couldn't: the coach's advice was sometimes wrong not because the model was weak, but because it was never given the facts it needed. See **[decisions, measured](technical-decisions.md)** for the finding, the fix, and the harness that re-runs the model comparison.
 
-Shipped as of 2026-09-22: increment 3.95 and the rounds since, each checked before it merged. Open games survive a server restart; past games are listed by day, with a back button that leaves a game without ending it. Opponents run to 1900, and a fresh clone gets `npm run doctor`. Increment 4 (spaced-repetition drills, a progress dashboard, "it remembers") is roadmap, not built. It's included anyway: red-teaming your own plan before you build it is part of the process this repo is meant to show.
+Shipped as of 2026-09-22, each round checked before it merged: open games survive a server restart; past games are listed by day, with a back button that leaves a game without ending it. Opponents run to 1900, and a fresh clone gets `npm run doctor`. Increment 4 (spaced-repetition drills, a progress dashboard, "it remembers") is roadmap, not built.
 
 ## Start here: the product spec
 
@@ -39,13 +39,6 @@ Before any code existed, I wrote the spec. **[PRD-lite: Girl Chess →](prd-lite
 > The magic moment is a two-game arc, the lesson loop. Game one: I'm about to walk into a tactic I'd normally miss. The coach's warning makes me stop. I spot the danger myself, avoid the critical error, ask what move type this is, get one answer at my level. I win. Game two: the coach quietly recreates the same situation. This time I beat it with no help.
 
 Everything below is that spec turned into a shipped, gated build.
-
-## The build process
-
-1. **[One increment, plan to gate](increment-3.95.md)**: increment 3.95 end to end. The plan an AI agent wrote from playtest feedback, broken into 11 tasks, and the live gate it had to pass before merging.
-2. **[Where the review earned its keep](where-the-review-earned-its-keep.md)**: three bugs the adversarial review caught in one increment. A coach calling a loss a win, a security hole, and a regression, all before they shipped.
-3. **[Build-plan red team](build-plan-red-team.md)**: before increment 4, a three-agent panel (two critics, one defender separating real problems from nitpicks) attacked the plan and found my own north star metric didn't work. The finding is included, unsoftened.
-4. **[The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html)**: every front-end component as it ships, grouped by where you meet it in the game and by who it belongs to: you, mallow, the coach, or the menu. The archive tab keeps the options that lost. It is the working file I design against, updated 2026-09-22.
 
 ## Decisions, measured
 
@@ -91,16 +84,16 @@ Game 148, asked from the debrief after the game, about my second move:
 
 Two follow-ups on the same moment sit beside it, one rated down, one up. The 82 thumbs in the database split 48 up, 34 down. These are `advice_traces` rows 63 and 107; my questions are in the `prompt` column.
 
-## Live demo
+## Run it yourself
 
 A working local app, not a hosted product. It runs on your own machine, and the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) covers what you need and what degrades if you skip a step.
 
-Six pages, no clone needed.
+Or read these six pages, no clone needed.
 
 How it is built:
 1. [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence.
 2. [Technical decisions](technical-decisions.md): five decisions, the evidence behind each, and what each gave up or left open.
-3. [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): the working design file, item 4 above.
+3. [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): the working design file.
 
 Three evaluations, in the order they happened. Each answers the question the one before it left open:
 
@@ -118,10 +111,6 @@ The rest of this repository is the app: `server/` (game engine, coach, analysis)
 - [The hint ladder and the coach](hint-ladder-and-coach.md): how a hint is checked before it is shown, and how the chat stays on the same facts.
 - [Technical decisions](technical-decisions.md): five decisions, the evidence behind each, and what each gave up or left open.
 - [How the tutor is kept honest](evaluation.md): the checks every merge runs against the committed games.
-- [Increment 3.95](increment-3.95.md): one increment followed from plan to gate.
-- [The build plan's red team](build-plan-red-team.md): the plan reviewed against itself before the build.
-- [Where the review earned its keep](where-the-review-earned-its-keep.md): three real catches by the review process.
-- [Changelog](changelog.md): the full work log, newest first.
 - [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): every piece of the interface as it ships, grouped by where you meet it in the game.
 - [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence, and where the deterministic code ends and the model begins.
 - [The coach eval v3 dashboard](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html): Sonnet graded against Opus with the key sealed until after every grade, and which model it recommended.

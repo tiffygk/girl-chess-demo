@@ -1,10 +1,10 @@
-*Why this matters: shows the actual planning-and-review discipline behind a single unit of work, not just the output. This is the plan an AI agent (Fable) wrote, the tasks it broke it into, and the live gate that had to pass before merge -- for increment 3.95, "Coach Live, Hardening & Playtest Feedback." Curated down to the plan and the final gate; the 11 individual task briefs/reports that executed this plan aren't included here (see `where-the-review-earned-its-keep.md` for three specific catches pulled from them).*
+*This is the plan an AI agent (Fable) wrote for increment 3.95, "Coach Live, Hardening & Playtest Feedback," the tasks it broke the work into, and the live gate that had to pass before merge. Curated down to the plan and the final gate; the 11 individual task briefs/reports that executed this plan aren't included here (see [where the review earned its keep](where-the-review-earned-its-keep.md) for three specific catches pulled from them).*
 
 ---
 
 # Increment 3.95 (revised): Coach Live, Hardening, + Playtest Feedback
 
-> Draft in progress (plan mode). Folds the 2026-07-20 playtest feedback into the existing 3.95 "Coach Live & Hardening" plan.
+> Folds the 2026-07-20 playtest feedback into the existing 3.95 "Coach Live & Hardening" plan.
 
 ## Owner playtest feedback (verbatim, 2026-07-20)
 
@@ -26,7 +26,7 @@
 2. **Hint-quality audit**: verify the hint engine returns the genuinely best move, not a plausible move that concedes an avoidable trade / only-marginal edge.
 3. **Chat attached to a hint or a replay moment** (context-scoped coach chat).
 4. **Hint ladder "why" step**: intermediate reasoning between "look at this piece" and "move here".
-5. **Stable playtest isolation** (added 2026-07-20, second message): keep a stable stack she can play while the build executes. Pin a stable stack at the current gated commit `a1a7e8f` in its own worktree, own ports, against her REAL db; do all execution on a separate branch/worktree with an ISOLATED db copy so neither her in-progress play nor her real history is disturbed. This is Task 0 / infrastructure, set up before any code task begins.
+5. **Stable playtest isolation** (added 2026-07-20, second message): keep a stable stack she can play while the build executes. Pin a stable stack at the current gated commit in its own worktree, own ports, against her REAL db; do all execution on a separate branch/worktree with an ISOLATED db copy so neither her in-progress play nor her real history is disturbed. This is Task 0 / infrastructure, set up before any code task begins.
 
 Note: this plan is authored by Fable (owner-directed); execution follows the standing model handoff (Fable architects/gates, Sonnet builds, Opus reviews).
 
@@ -40,7 +40,7 @@ Note: this plan is authored by Fable (owner-directed); execution follows the sta
 
 # Context
 
-The 3.9+3.91 build is live on `main` (`a1a7e8f`) and playtested well on setup, elo (mallow 1300), turning-point detection, and debrief copy. Four issues surfaced, plus an isolation need so the owner can keep playing while this executes. Exploration (three read-only agents, findings in this session) traced each to a precise seam; two are genuine bugs, not UX confusion.
+The 3.9+3.91 build is live on `main` and playtested well on setup, elo (mallow 1300), turning-point detection, and debrief copy. Four issues surfaced, plus an isolation need so the owner can keep playing while this executes. Exploration (three read-only agents, findings in this session) traced each to a precise seam; two are genuine bugs, not UX confusion.
 
 **Confirmed root causes (file:line):**
 1. **"Can't move my pieces in try-the-line" is a bug.** `GamePage.openExplore(ply)` (GamePage.tsx:1324-1334) seeds `fenAtPly(moves, ply)` = the position AFTER the turning-point move. Her mistakes are her moves = odd plies; that seed is black-to-move, and the board correctly blocks moving white pieces (`Board.tsx:754` `if (color !== turn) return`). Works on opponent (even-ply) cards, hence intermittent.
@@ -61,8 +61,8 @@ Never touch `data/girlchess.db` destructively; additive schema only via `EXPECTE
 **Goal:** the owner keeps playing an untouched stable build while execution proceeds.
 
 **Guarantee (binding for the whole round):** the owner's play session on ports 5173/3001 is never interrupted, rebuilt, restarted, or pointed at a changing database while this round executes. Every code edit, test run, dev-server start/stop, and the end-of-round live gate happen ONLY in the dev worktree on ports 5273/3101 against a COPY of the db. Tests use `:memory:`. The stable stack is touched again exactly once, at the end, as a deliberate owner-approved merge+restart handoff (which re-reads her real db, preserving any games she played meanwhile). If any step would require touching the main worktree or its ports/db before that handoff, STOP and surface it.
-- **Stable stack = the current running main-worktree stack**, pinned at `a1a7e8f`, on the default ports (web 5173 / api 3001), against her REAL `data/girlchess.db`. Do NOT check out, build, or restart anything in `~/girl-chess` during this round.
-- **Dev happens in a fresh worktree** `~/girl-chess-395` on a new branch `round/2026-07-20-inc-3.95` off `a1a7e8f`, with a **one-time COPY** of her real db into that worktree's `data/` (so debrief/turning-point features have game 127 to test against without touching her real history), on **non-colliding ports** (e.g. web 5273 / api 3101).
+- **Stable stack = the current running main-worktree stack**, pinned at the current gated commit, on the default ports (web 5173 / api 3001), against her REAL `data/girlchess.db`. Do NOT check out, build, or restart anything in `~/girl-chess` during this round.
+- **Dev happens in a fresh worktree** `~/girl-chess-395` on a new branch `round/2026-07-20-inc-3.95` off the same commit, with a **one-time COPY** of her real db into that worktree's `data/` (so debrief/turning-point features have game 127 to test against without touching her real history), on **non-colliding ports** (e.g. web 5273 / api 3101).
 - Wire alt ports for the dev stack (env-driven `PORT`/vite `--port` + the client API base). Verify (Task 0 acceptance): both stacks run simultaneously; `curl` the stable api (3001) and dev api (3101) independently; the stable stack's db mtime is unchanged by dev test runs.
 - Clean up the scratch `girl-chess-integration` worktree from the prior session (removable; its branch is folded into main).
 
@@ -70,7 +70,7 @@ Never touch `data/girlchess.db` destructively; additive schema only via `EXPECTE
 
 # Task 1: Coach live (prerequisite for chat) + stderr diagnostic
 
-Fold in 3.95's coach-backend fix (existing detail: `.superpowers/sdd/rounds/2026-07-20-next-phase/plan.md` Tasks 1-2). Keystone: `server/coach/backends/claude-cli.ts`: surface captured `stderr` on the timeout-rejection path (`runCli`), then spawn `claude` in a neutral cwd (`os.tmpdir()`) with a non-interactive permission flag so headless `-p` stops stalling (the gate found every server-spawned call goes offline; `claude -p` is ~5s standalone). Live-verify a real reply returns; keep graceful fallback. **Chat-attachment (Task 6) is only meaningfully testable once this lands.**
+Fold in 3.95's coach-backend fix. Keystone: `server/coach/backends/claude-cli.ts`: surface captured `stderr` on the timeout-rejection path (`runCli`), then spawn `claude` in a neutral cwd (`os.tmpdir()`) with a non-interactive permission flag so headless `-p` stops stalling (the gate found every server-spawned call goes offline; `claude -p` is ~5s standalone). Live-verify a real reply returns; keep graceful fallback. **Chat-attachment (Task 6) is only meaningfully testable once this lands.**
 
 # Task 2: PV eval-index fix (the linchpin)
 
@@ -119,11 +119,11 @@ Fold in 3.95's coach-backend fix (existing detail: `.superpowers/sdd/rounds/2026
 
 # Task 8: Fold in remaining 3.95 hardening
 
-From `.superpowers/sdd/rounds/2026-07-20-next-phase/plan.md` (keep its detail): templates-only stops showing the offline chip [OWNER-RULED: distinct `cause`]; per-pref backend cache self-heals via TTL; bound the ollama `available()` probe; review-mode rewind syncs capture trays/material (`src/board/captures.ts` + `Rewind.tsx`); turning-point backfill requires win-prob to HOLD ≥ .90; on-read historical turning-point backfill (additive/idempotent, data-rule-guarded). These are independent of the feedback work; sequence them after the feedback tasks or in parallel task-reviews.
+Carried over from the earlier plan: templates-only stops showing the offline chip [OWNER-RULED: distinct `cause`]; per-pref backend cache self-heals via TTL; bound the ollama `available()` probe; review-mode rewind syncs capture trays/material (`src/board/captures.ts` + `Rewind.tsx`); turning-point backfill requires win-prob to HOLD ≥ .90; on-read historical turning-point backfill (additive/idempotent, data-rule-guarded). These are independent of the feedback work; sequence them after the feedback tasks or in parallel task-reviews.
 
 # Task 9: Verify, ledger, docs, Increment 4 roadmap
 
-Full suite + tsc + oxlint; update CLAUDE.md (new hint constants `HINT_TRADE_MARGIN_CP`; the getTurningLines seed-ply semantics; per-moment chat; coach neutral-cwd spawn); progress.md round-closing entry + the confirmed owner rulings; carry forward the Increment 4 roadmap (F26 profile → F27/F33 drills+streaks → F28 → F37 → F41 → F13) from the existing next-phase plan. F19/F40 debrief-template ruling recorded.
+Full suite + tsc + oxlint; update CLAUDE.md (new hint constants `HINT_TRADE_MARGIN_CP`; the getTurningLines seed-ply semantics; per-moment chat; coach neutral-cwd spawn); progress.md round-closing entry + the confirmed owner rulings; carry forward the Increment 4 roadmap (F26 profile → F27/F33 drills+streaks → F28 → F37 → F41 → F13) from the earlier plan. F19/F40 debrief-template ruling recorded.
 
 ---
 
@@ -158,7 +158,7 @@ A clickable move list in SAN (grouped `1. e4 e5  2. Nf3 Nc6 ...`), player vs mal
 
 # Fable gate: increment 3.95 (2026-07-21)
 
-Run by Fable against the DEV stack (5273/3101, copy db), the owner's stable stack on 5173/3001 stayed up and untouched the entire round (isolation held, verified: stable /api/health OK, main on a1a7e8f throughout). Head 9b227b9.
+Run by Fable against the DEV stack (5273/3101, copy db), the owner's stable stack on 5173/3001 stayed up and untouched the entire round (isolation held, verified: stable /api/health OK, main unchanged throughout).
 
 ## Verdict: PASS. Ready to merge.
 
