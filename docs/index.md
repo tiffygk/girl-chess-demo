@@ -28,7 +28,7 @@ The move-4 turning point replayed: solid arrows for what happened, dashed for wh
 
 I directed an AI coding agent through a structured build process instead of writing code by hand. The adversarial review caught a security hole and an honesty bug before either shipped. A later measurement pass caught something the review couldn't: the coach's advice was sometimes wrong not because the model was weak, but because it was never given the facts it needed. See **[decisions, measured](technical-decisions.md)** for the finding, the fix, and the harness that re-runs the model comparison.
 
-Shipped as of 2026-09-22, each round checked before it merged: open games survive a server restart; past games are listed by day, with a back button that leaves a game without ending it. Opponents run to 1900, and a fresh clone gets `npm run doctor`. Increment 4 (spaced-repetition drills, a progress dashboard, "it remembers") is roadmap, not built. It's included anyway: red-teaming your own plan before you build it is part of the process this repo is meant to show.
+Shipped as of 2026-09-22, each round checked before it merged: open games survive a server restart; past games are listed by day, with a back button that leaves a game without ending it. Opponents run to 1900, and a fresh clone gets `npm run doctor`. Increment 4 (spaced-repetition drills, a progress dashboard, "it remembers") is roadmap, not built.
 
 ## Start here: the product spec
 
@@ -39,12 +39,6 @@ Before any code existed, I wrote the spec. **[PRD-lite: Girl Chess →](prd-lite
 > The magic moment is a two-game arc, the lesson loop. Game one: I'm about to walk into a tactic I'd normally miss. The coach's warning makes me stop. I spot the danger myself, avoid the critical error, ask what move type this is, get one answer at my level. I win. Game two: the coach quietly recreates the same situation. This time I beat it with no help.
 
 Everything below is that spec turned into a shipped, gated build.
-
-## The build process
-
-1. **[Where the review earned its keep](where-the-review-earned-its-keep.md)**: three bugs the adversarial review caught in one increment. A coach calling a loss a win, a security hole, and a regression, all before they shipped.
-2. **[Build-plan red team](build-plan-red-team.md)**: before increment 4, a three-agent panel (two critics, one defender separating real problems from nitpicks) attacked the plan and found my own north star metric didn't work. The finding is included, unsoftened.
-3. **[The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html)**: every front-end component as it ships, grouped by where you meet it in the game and by who it belongs to: you, mallow, the coach, or the menu. The archive tab keeps the options that lost. It is the working file I design against, updated 2026-09-22.
 
 ## Decisions, measured
 
@@ -99,7 +93,7 @@ Or read these six pages, no clone needed.
 How it is built:
 1. [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence.
 2. [Technical decisions](technical-decisions.md): five decisions, the evidence behind each, and what each gave up or left open.
-3. [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): the working design file, item 3 above.
+3. [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): the working design file.
 
 Three evaluations, in the order they happened. Each answers the question the one before it left open:
 
