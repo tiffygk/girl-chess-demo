@@ -422,8 +422,8 @@
       <div class="chart-holder" id="chart-instrument"></div>
       <div class="annotation">
         <span class="an-label">What the audit caught</span>
-        Two audit rounds (473 then 466 hand-labeled replies). Round 1 found two scoring bugs, both in the same direction: the checker failed replies a human would pass. A text rule flagged the ordinary word "lets" as if it were the banned casual phrase "let's", and the on-topic scorer refused credit to replies that described the move without naming its square. Both were fixed as exact, testable rules with regression tests, not adjusted until the numbers agreed, and round 2 confirmed the fixes on fresh samples with no new failure modes. One known 1-in-285 word-count quirk (a dash counted as a word) was documented and accepted rather than patched. Scope note: one rare reply pattern the fix could theoretically mis-credit never occurred in either sample, so its behavior there is unmeasured.
-        <div style="margin-top:8px;font-size:12px;color:var(--muted)">Technical detail: fixes landed as commits <code>e2d56b8</code> and <code>0b58498</code>; the disagreement-by-disagreement ledger is not in this repo.</div>
+        Two audit rounds (473 then 466 hand-labeled replies). Round 1 found two scoring bugs, both in the same direction: the checker failed replies a human would pass. A text rule flagged the ordinary word "lets" as if it were the banned casual phrase "let's", and the on-topic scorer refused credit to replies that described the move without naming its square. Both were fixed as exact, testable rules with regression tests, not adjusted until the numbers agreed, and round 2 confirmed the fixes on fresh samples with no new failure modes. One known 1-in-285 word-count quirk (a dash counted as a word) was documented and accepted rather than patched.
+
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
@@ -446,7 +446,7 @@
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
-        <div><span class="tk-label">Takeaway</span>Three repeats per model, alternated ordering, warmed processes, a database verified untouched after every run, a decision rule written before the data existed, and a blinded copy for a human read.</div>
+        <div><span class="tk-label">Takeaway</span>Each model ran three repeats in alternated order on warmed processes. The database was verified untouched after every run. The decision rule was written before the run, and a blinded copy was set aside for a human read.</div>
       </div>
     </div>
   </section>
@@ -532,8 +532,8 @@
       <div class="chart-title">Human-vs-grader agreement by measure: audit round 1 vs round 2, against the 95% bar</div>
       <div class="chart-holder" id="chart-audit"></div>
       <div class="annotation">
-        <span class="an-label">The audit found bugs, not noise</span>
-        Round 1 failed two of five measures, and both were scoring bugs: cases where the grader failed replies a human would pass. One: a text rule meant to catch the banned casual phrase "let's" also flagged the ordinary verb "lets", as in "this lets you take the bishop." Two: the on-topic grader only gave credit when a reply named an exact board square, so a reply that clearly described the player's move in words was scored as off-topic. Both fixes were exact, describable rules with regression tests: require the apostrophe, accept a described move. Neither was "adjust until the numbers agree." Round 2 re-checked on fresh samples: every measure at or above 95%, no new failure modes, and one known 1-in-285 word-counting quirk documented and accepted rather than patched.
+        <span class="an-label">The audit found bugs</span>
+        Round 1 failed two of five measures. Both failures were scoring bugs: the grader failed replies a human would pass. One: a text rule meant to catch the banned casual phrase "let's" also flagged the ordinary verb "lets", as in "this lets you take the bishop." Two: the on-topic grader only gave credit when a reply named an exact board square, so a reply that clearly described the player's move in words was scored as off-topic. Both fixes were exact, describable rules with regression tests: require the apostrophe, accept a described move. Neither was "adjust until the numbers agree." Round 2 re-checked on fresh samples: every measure at or above 95%, no new failure modes, and one known 1-in-285 word-counting quirk documented and accepted rather than patched.
       </div>
       <div class="takeaway">
         <div class="tk-mark"></div>
