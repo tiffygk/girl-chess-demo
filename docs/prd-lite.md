@@ -1,4 +1,4 @@
-*The product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the metrics that would prove or kill each one. This is the original spec, lightly edited. Parts of the implementation changed later; the [README](https://github.com/tiffygk/girl-chess-demo#readme) describes what runs today.*
+*The product thinking behind Girl Chess before any code existed: the problem, the persona, the hypotheses, the magic moment, and the metrics that would prove or kill each one. This is the original spec, edited. Parts of the implementation changed later; the [README](https://github.com/tiffygk/girl-chess-demo#readme) describes what runs today.*
 
 ---
 
@@ -53,7 +53,7 @@ Not Lichess or chess.com: they analyze after the fact with engine lines pitched 
 - **Inputs:** 30+ min sessions, 3+ days/week, ladder ELO +10%/month (starting assumption), thumbs-up ≥90% on coach output.
 - **Ship gates:** coach verdicts under 2s at the 95th percentile, never blocking the confirm; zero invented moves (automated fact-check pauses the coach, not the game); hint escalations under 30%.
 - **Guardrails:** hint dependence flat or falling; override rate inside a 20-80% band; game duration flat within an opponent level; full-game share of session time stable week to week; trace completeness 100%.
-- **Eval, not kill:** a red flag means something to fix, not a feature to cut. Diagnosis starts from her thumbs-down annotations and traces in the Lab.
+- **Eval, not kill:** a red flag means something to fix, not a feature to cut. Diagnosis starts from her thumbs-down annotations and traces in the Lab, the metrics dashboard.
 
 ## Implementation basis
 
