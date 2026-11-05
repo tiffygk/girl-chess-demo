@@ -1,4 +1,4 @@
-# every sentence a player reads gets checked
+# how the tutor is checked
 
 Ten moments in my game history carried a claim that I had played inefficiently. Replaying the analysis against the moves contradicted six. Four of those six were false. Two were fair: each hid a second missed mate later in the same game, which my count never measured. Reporting six would have made my audit look better than it was.
 
@@ -15,7 +15,7 @@ The rule: check generated text differently depending on whether every possible o
 | per-move note | `server/coach/index.ts` `narrate()` | Claude Sonnet 5 via Agent SDK | every request, stricter validator | one corrective retry, then a template that states the facts |
 | post-game analysis | `src/review/` | code: templated from engine-derived turning points | replayed against the full game history before merge | gate exits non-zero, prints "Do not merge" |
 
-Chat buffers and flushes only after validation passes. No unvalidated sentence reaches the screen. A wrong answer is worse than no answer, so chat apologizes once the corrective retry fails. Narration's validator is stricter: every square it names must be one the engine supplied. No analysis directory imports the coach; tests pin that boundary on `classify.ts`, `classifications.ts`, `turningPoints.ts` and `judgeMove`.
+Chat buffers and flushes only after validation passes. No unvalidated chat sentence reaches the screen. A wrong answer is worse than no answer, so chat apologizes once the corrective retry fails. Narration's validator is stricter: every square it names must be one the engine supplied. No analysis directory imports the coach; tests pin that boundary on `classify.ts`, `classifications.ts`, `turningPoints.ts` and `judgeMove`.
 
 ## four ways the analysis can lie
 
@@ -58,7 +58,7 @@ Blinding cost one sibling JSON file and a fixed reading order, no tooling. The g
 
 ## what the blinded evals decided
 
-The checks above keep answers true. The evals picked the model and its thinking budget. Twenty-one coach-eval runs are committed under `tools/coach-eval/runs/`, and 13 root-cause suite runs under `tools/rca-eval/runs/`.
+The checks above test answers against the facts. The evals picked the model and its thinking budget. I keep twenty-one coach-eval runs and 13 root-cause suite runs locally; one, `tools/coach-eval/runs/2026-07-23-v3/`, is committed.
 
 Sonnet against Opus: three repeats per model, columns blinded, key sealed until every grade was written. Sonnet 5 won.
 

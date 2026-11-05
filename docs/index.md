@@ -2,7 +2,7 @@
 
 A personal AI chess tutor I designed and built 0-to-1 by directing Claude Code.
 
-Girl Chess plays you at nine strengths, 1100 to 1900, with human-feeling opponents instead of raw Stockfish. It feels like playing a person, not a wall. After each game it finds the moments that actually swung the result, shows you the better move on the board, and explains what it would have opened up in plain English, not notation. A coach named **cookie** sits alongside the whole time, in its own lavender corner: it warns you before a bad move lands, answers questions about any hint or turning point through an inline chat, and won't keep a line the checks can disprove.
+Girl Chess plays you at nine strengths, 1100 to 1900, with human-feeling opponents instead of raw Stockfish. After each game it finds the moments that swung the result, shows you the better move on the board, and explains in plain English what it would have opened up. The app warns you before a bad move lands. A coach named **cookie** sits alongside the whole time, in its own lavender corner: it explains a warning when you ask, answers questions about any hint or turning point through an inline chat, and won't show a claim the checks can disprove.
 
 I am learning chess in my 30s. Most chess apps felt cold and masculine, so this one is feminine-first and approachable.
 
@@ -26,47 +26,47 @@ The move-4 turning point replayed: solid arrows for what happened, dashed for wh
 
 ## How it was built, and what shipped
 
-I directed an AI coding agent through a structured build process instead of writing code by hand. The adversarial review caught a security hole and an honesty bug before either shipped. A later measurement pass caught something the review couldn't: the coach's advice was sometimes wrong not because the model was weak, but because it was never given the facts it needed. See **[decisions, measured](technical-decisions.md)** for the finding, the fix, and the harness that re-runs the model comparison.
+I directed an AI coding agent through a structured build process instead of writing code by hand. The adversarial review caught a security hole and an honesty bug before either shipped. A later measurement pass found what the review couldn't: the coach's advice was sometimes wrong because it was never given the facts it needed. See **[decisions, measured](technical-decisions.md)** for the finding, the fix, and the harness that re-runs the model comparison.
 
 Shipped as of 2026-09-22, each round checked before it merged: open games survive a server restart; past games are listed by day, with a back button that leaves a game without ending it. Opponents run to 1900, and a fresh clone gets `npm run doctor`. Increment 4 (spaced-repetition drills, a progress dashboard, "it remembers") is roadmap, not built.
 
 ## Start here: the product spec
 
-Before any code existed, I wrote the spec. **[PRD-lite: Girl Chess →](prd-lite.md)** names three hypotheses and the metric that would kill each one.
+Before any code existed, I wrote the spec. **[PRD-lite: Girl Chess →](prd-lite.md)** names three hypotheses and the leading indicator for each.
 
 > North star: every session teaches me something I can name.
 >
 > The magic moment is a two-game arc, the lesson loop. Game one: I'm about to walk into a tactic I'd normally miss. The coach's warning makes me stop. I spot the danger myself, avoid the critical error, ask what move type this is, get one answer at my level. I win. Game two: the coach quietly recreates the same situation. This time I beat it with no help.
 
-Everything below is that spec turned into a shipped, gated build.
+Below is what shipped from that spec.
 
 ## Decisions, measured
 
-Five live decisions, weighed in the open, all shipped and merged: **[technical-decisions.md →](technical-decisions.md)**
-1. **The coach's advice was sometimes wrong, and it wasn't the model.** The cause was a fact gap. The coach was reasoning about the position from facts it never had. Giving it those facts fixed both numbers in the July 2026 eval: placement errors went from 7.5% to 0, and explanation answers from 13-15 seconds to about 4. Both held for a smaller model and a larger one, so model tier became a downstream decision. The committed harness (`tools/coach-eval/`) re-runs the model comparison. The placement number comes from that July eval, which the harness does not repeat.
-2. **The coach was too slow.** The trace-driven diagnosis, three options, and why I warmed the free path (an in-process Agent SDK backend) instead of paying for a metered API.
-3. **The coach gave me bad advice about a defended piece.** Why the fix was a computed fact, not a bigger model or an extra engine call.
-4. **The coach kept calling moves "quiet".** Why a real chess term came out of the coach's voice, and why the ban now runs on every chat reply instead of living only in the prompt.
-5. **7 in 8 of the board check's rejections were wrong.** How I fixed the check's precision instead of deleting it, proven on 201 stored coach conversations instead of waiting for new games.
+Five decisions, all shipped and merged: **[technical-decisions.md →](technical-decisions.md)**
+1. **The coach's advice was sometimes wrong, and it wasn't the model.** The cause was a fact gap. The coach was reasoning about the position from facts it never had. Giving it those facts, with a placement check, fixed both numbers in the July 2026 eval: placement errors went from 7.5% to 0, and explanation answers from 13-15 seconds to about 4. Both held for a smaller model and a larger one, so model tier became a downstream decision. The committed harness (`tools/coach-eval/`) re-runs the model comparison. The placement number comes from that July eval, which the harness does not repeat.
+2. **The coach was too slow.** The trace-driven diagnosis, three options, and why I moved the free path to the Agent SDK instead of paying for a metered API.
+3. **The coach gave me bad advice about a defended piece.** Why the fix was a computed fact instead of a bigger model or an extra engine call.
+4. **The coach kept calling moves "quiet".** Why a chess term came out of the coach's voice, and why the ban now runs on every chat reply instead of living only in the prompt.
+5. **7 in 8 of the board check's rejections were wrong.** How I fixed the check's precision instead of deleting it, proven on 201 stored coach exchanges instead of waiting for new games.
 
-One more, from 2026-09-08, lives in pull requests #15 to #17, not that page. **The chat could have contradicted its own hints.** I measured first: 142 chat replies paired with the hint ladder's facts for the same position; none recommended a different move. Now the chat reads that same verified search during play, for the position or any move you ask about but haven't made yet.
+One more, from 2026-09-08, lives in pull requests #15 to #17. **The chat could have contradicted its own hints.** I measured first: 142 chat replies in my live history, paired with the hint ladder's facts for the same position; none recommended a different move. Now the chat reads that same verified search during play, for the position or any move you ask about but haven't made yet.
 
-## How the tutor is kept honest
+## How the tutor is checked
 
-Every sentence a player reads gets checked, and the check differs by surface: **[evaluation.md →](evaluation.md)**. Four text surfaces, only two of them written by a model. Nineteen rules replay the post-game analysis against my real games before any merge, sorted into the four ways generated text can lie. The audit that prompted it found the analysis telling me I had played inefficiently on moments the moves disproved, and the corrected count is the one published.
+Each surface a player reads has its own check: **[evaluation.md →](evaluation.md)**. Four text surfaces, only two of them written by a model. Nineteen rules replay the post-game analysis against my games before any merge, sorted into the four ways generated text can lie. The audit that prompted it found the analysis telling me I had played inefficiently on moments the moves disproved, and the corrected count is the one published.
 
-Two guardrails: every coach reply is checked before it reaches you, and the debrief code is checked by those nineteen rules before it ships. On questions about the board, a claim about a move, placement, defence or checkmate that the facts don't support gets one retry, then a written fallback answer. The check overcorrects: ten of the 113 committed chat replies ended in a fallback answer. That is the trade I chose, so nothing the checks can disprove reaches the player.
+Two guardrails: every coach reply is checked before it reaches you, and the debrief code is checked by those nineteen rules before it ships. On questions about the board, a claim about a move, placement, defence or checkmate that the facts don't support gets one retry, then a written fallback answer. Ten of the 113 committed chat replies ended in a fallback answer, after a failed check or a timeout. That is the trade I chose, so nothing the checks can disprove reaches the player.
 
-Two instruments live in there, and they did different jobs. Keeping them apart is the point.
+Two instruments live in there, and they did different jobs.
 
-- **The accuracy fix:** seven surfaces were each deriving the same chess fact on their own, so one wrong idea had seven routes to the screen. Routing all seven through a single verified source and adding a regression check to the merge gate fixed it. Before, six of the ten "you could have won faster" claims I audited were contradicted by the moves. Now the rule that checks those claims counts about zero across every finished game. The audit, the population, the named source and the named check are traced in [evaluation.md](evaluation.md#the-sixty-percent-and-what-zero-counts).
+- **The accuracy fix:** seven surfaces were each deriving the same chess fact on their own, so one wrong idea had seven routes to the screen. Routing all seven through a single verified source and adding a regression check to the merge gate fixed it. Before, six of the ten "you could have won faster" claims I audited were contradicted by the moves. Now the rule that checks those claims counts about zero across every finished game; that is a rule count, and missed mates are measured only on the flagged move. The audit, the population, the named source and the named check are traced in [evaluation.md](evaluation.md#the-sixty-percent-and-what-zero-counts).
 - **The blinded A/B evals:** Sonnet against Opus, across thinking budgets, with the grading key sealed until after I had written every grade. Those tuned answer quality, latency and fallback rate, and settled which model to run. They did not move the accuracy number.
 
-In the committed games, one first draft in nine still trips the placement check. The 1350 rating is a hard-coded placeholder anyone who downloads this inherits; a rating judged from how you actually play is on the roadmap.
+In the committed games, one first draft in nine tripped the placement check. The 1350 rating is a hard-coded placeholder anyone who downloads this inherits; a rating judged from how you actually play is on the roadmap.
 
 ## Two ordinary questions, from the record
 
-The game-195 screenshot above is the showpiece. Most coaching is smaller. Two exchanges from `data/girlchess-demo.db`, both against mallow at 1300, both games I won.
+Two exchanges from `data/girlchess-demo.db`, both against mallow at 1300, both games I won.
 
 Game 141, before my tenth move. I had a bishop check lined up and asked why the judge disliked it:
 
@@ -86,7 +86,7 @@ Two follow-ups on the same moment sit beside it, one rated down, one up. The 82 
 
 ## Run it yourself
 
-A working local app, not a hosted product. It runs on your own machine, and the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) covers what you need and what degrades if you skip a step.
+A working local app: everything but the coach's words runs on your own machine. The [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) covers what you need and what degrades if you skip a step.
 
 Or read these six pages, no clone needed.
 
@@ -97,22 +97,22 @@ How it is built:
 
 Three evaluations, in the order they happened. Each answers the question the one before it left open:
 
-4. [Sonnet against Opus](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html) (2026-07-23): which model to run, graded blind with the key sealed. It carries its own correction where later work moved one of its numbers.
+4. [Sonnet against Opus](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html) (2026-07-23): which model to run, scored by an audited checker under a rule written before the data. Its top note says what later work changed.
 5. [Why the answers feel slow](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html) (2026-08-02): the latency investigation. It ends on a question it could not close, and says so.
-6. [Three thinking budgets, one pick](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html) (2026-08-03): the three-repeat run that closed it. Shipped the next day.
+6. [Three thinking budgets, one pick](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html) (2026-08-03): the three-repeat run that closed it. Shipped the same day.
 
 ## Code
 
-The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). Every merge is gated against the 51 committed games (`npm run gate`). A fresh clone runs `setup.sh` once for lc0, the pinned Stockfish 19, and the nine opponent files, then `npm run doctor` to say what is missing; the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) has the steps. [The hint ladder and the coach](hint-ladder-and-coach.md) walks the three coach text surfaces (ladder, band, chat) cited straight to the code. The [changelog](changelog.md) is the full work log, newest first.
+The rest of this repository is the app: `server/` (game engine, coach, analysis), `src/` (React client), `CLAUDE.md` (the architecture map and runbook a future Claude session reads first). Every merge is gated (`npm run gate`): on every finished game in my history locally, on the 51 committed games in CI. A fresh clone runs `setup.sh` once for lc0, the pinned Stockfish 19, and the nine opponent files, then `npm run doctor` to say what is missing; the [repository README](https://github.com/tiffygk/girl-chess-demo#running-the-game-locally) has the steps. [The hint ladder and the coach](hint-ladder-and-coach.md) walks the three text surfaces around a move (ladder, band, chat) and where each lives in the code. The [changelog](changelog.md) is the full work log, newest first.
 
 ## Sample documentation
 
 - [The product spec](prd-lite.md): who the tutor is for, what it promises, and how success is measured.
 - [The hint ladder and the coach](hint-ladder-and-coach.md): how a hint is checked before it is shown, and how the chat stays on the same facts.
 - [Technical decisions](technical-decisions.md): five decisions, the evidence behind each, and what each gave up or left open.
-- [How the tutor is kept honest](evaluation.md): the checks every merge runs against the committed games.
+- [How the tutor is checked](evaluation.md): the checks on each coach reply and on every merge.
 - [The component library](https://tiffygk.github.io/girl-chess-demo/component-library.html): every piece of the interface as it ships, grouped by where you meet it in the game.
 - [The architecture walkthrough](https://tiffygk.github.io/girl-chess-demo/architecture.html): how a move becomes a checked sentence, and where the deterministic code ends and the model begins.
-- [The coach eval v3 dashboard](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html): Sonnet graded against Opus with the key sealed until after every grade, and which model it recommended.
-- [The coach quality dashboard](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html): why the coach's answers felt slow, and where a slow answer's time actually goes.
+- [The coach eval v3 dashboard](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html): Sonnet scored against Opus under a rule fixed in advance, and which model it recommended.
+- [The coach quality dashboard](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html): why the coach's answers felt slow, and where a slow answer's time goes.
 - [The thinking arm dashboard](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html): three thinking budgets tested against each other, and the one pick that shipped.

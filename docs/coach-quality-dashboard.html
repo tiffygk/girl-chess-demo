@@ -139,7 +139,7 @@
 
   <div class="thesis">
     <div class="lead">The slow answers aren't the network or our code: the assistant is silently "thinking" before it replies.</div>
-    <div class="body">On hard questions it spends <b>20-50 seconds reasoning privately</b> before writing the first word. A <b>3-minute budget alone fixed the timeouts</b>: retries now rescue every stalled answer (10 of 10), proving retrying was never broken, just starved. Capping the thinking on top makes answers <b>~3× faster</b>, but costs correctness (<b>6.2% of first drafts failed fact-checks vs 0%</b>), so the verified-facts work should ship before or alongside it. One subjective quality read stays sealed.</div>
+    <div class="body">On hard questions it spends <b>20-50 seconds reasoning privately</b> before writing the first word. A <b>3-minute budget alone fixed the timeouts</b>: retries now rescue every stalled answer (10 of 10), proving retrying was never broken, just starved. Capping the thinking on top makes answers <b>~3× faster</b>, but costs correctness (<b>6.2% of answers failed fact-checks after retry vs 0%</b>), so the verified-facts work should ship before or alongside it. One subjective quality read stays sealed.</div>
   </div>
 
     <div style="background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:var(--radius);padding:13px 17px;margin:0 0 22px">
@@ -216,9 +216,9 @@
     <div class="chartbox" id="c5"></div>
     <button class="tbtn" onclick="tog('t5')">Show data table</button>
     <table class="dt" id="t5"></table>
-    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The speed win is about 3× at the median, and it tames the 64-second tail to 15, but it has a cost.</b> Bounding the thinking made roughly 1 in 16 first drafts (6.2%) fail the coach's fact-checks and turn into apologies, versus none at normal thinking. That argues for shipping the <b>verified-facts work before or alongside</b> the thinking limit, so the faster answers don't trade speed for being wrong.</p></div>
+    <div class="concl"><span class="tag">TAKEAWAY</span><p><b>The speed win is about 3× at the median, and it tames the 64-second tail to 15, but it has a cost.</b> Bounding the thinking made roughly 1 in 16 answers (6.2%) fail the coach's fact-checks after the retry and turn into apologies, versus none at normal thinking. That argues for shipping the <b>verified-facts work before or alongside</b> the thinking limit, so the faster answers don't trade speed for being wrong.</p></div>
     <div class="concl pend"><span class="tag">STILL SEALED</span><p>The subjective, blinded quality read (is a limited-thinking answer actually as helpful to learn from?) is built but its answer key is unopened. Until it is read, "cap the thinking" is a strong speed lead, not a shipping decision.</p></div>
-    <div class="foot">Source: the three overnight 3-minute runs, 65 questions each. Speed = wall time to the answer; fact-check failures = first drafts rejected by the coach's own validators. Subjective grade: <code>blinded worksheet built, key sealed</code>.</div>
+    <div class="foot">Source: the three overnight 3-minute runs, 65 questions each. Speed = wall time to the answer; fact-check failures = answers rejected by the coach's own validators after the retry. Subjective grade: <code>blinded worksheet built, key sealed</code>.</div>
   </section>
 
   <!-- MY VOICE -->
@@ -247,7 +247,7 @@ const DATA = {
     {l:"Give-ups at the old 45-second limit", v:"18%", d:"the problem we set out to fix", cls:"hot"},
     {l:"Retries rescued at a 3-minute budget", v:"10 of 10", d:"100%, up from 9 of 21 at 45s", cls:"cool"},
     {l:"Faster with thinking capped", v:"~3×", d:"median 13.5s → 4.7s; 64s tail → 15s", cls:"cool"},
-    {l:"Wrong first drafts when thinking is capped", v:"6.2%", d:"vs 0% at normal thinking: the cost", cls:"hot"}
+    {l:"Answers that failed fact-checks when thinking is capped", v:"6.2%", d:"vs 0% at normal thinking: the cost", cls:"hot"}
   ],
   // CHART 1 — stage anatomy of one instrumented 20.3s answer (seconds)
   stages:[
@@ -491,7 +491,7 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
   // QUALITY — measured fact-check failures + sealed subjective note
   const q=document.createElement("div");
   q.style.cssText="margin-top:18px;border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--line2)";
-  q.innerHTML=`<div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:800;margin-bottom:2px">The cost: first drafts that failed the coach's own fact-checks <span style="color:var(--ink2);font-weight:600;text-transform:none;letter-spacing:0">· measured, 65 questions each</span></div>
+  q.innerHTML=`<div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:800;margin-bottom:2px">The cost: answers that failed the coach's own fact-checks after the retry <span style="color:var(--ink2);font-weight:600;text-transform:none;letter-spacing:0">· measured, 65 questions each</span></div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px">
       ${Q.map(a=>`
         <div style="background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 12px 14px;text-align:center">
@@ -500,10 +500,10 @@ function table(id,head,rows){const t=$(id);let h="<thead><tr>"+head.map(x=>`<th>
             <div style="width:52px;height:${Math.max(a.failPct/6.2*54,3)}px;background:${a.failPct>0?'var(--bad)':'var(--good)'};border-radius:4px 4px 0 0"></div>
           </div>
           <div style="font-size:23px;font-weight:750;color:${a.failPct>0?'var(--bad)':'var(--good)'};margin-top:6px">${a.failPct}%</div>
-          <div style="font-size:11px;color:var(--muted)">${a.failN} of 65 wrong first drafts</div>
+          <div style="font-size:11px;color:var(--muted)">${a.failN} of 65 answers failed after the retry</div>
         </div>`).join("")}
     </div>
-    <div style="font-size:12.5px;color:var(--ink2);margin-top:13px"><b>Mechanical checks</b> (grounding, length, plain language) scored ≥95% and comparable across all three arms. But bounding the thinking made <b>about 1 in 16 first drafts fail the coach's fact-checks</b>, versus none at normal thinking; those became apologies. <span style="opacity:.9">The <b>subjective blinded read</b> (does the answer actually teach well?) is built but the answer key is still sealed, so that verdict stays <b>pending</b>.</span></div>`;
+    <div style="font-size:12.5px;color:var(--ink2);margin-top:13px"><b>Mechanical checks</b> (grounding, length, plain language) scored ≥95% and comparable across all three arms. But bounding the thinking made <b>about 1 in 16 answers fail the coach's fact-checks after the retry</b>, versus none at normal thinking; those became apologies. <span style="opacity:.9">The <b>subjective blinded read</b> (does the answer actually teach well?) is built but the answer key is still sealed, so that verdict stays <b>pending</b>.</span></div>`;
   $("c5").appendChild(q);
   table("t5",["Version","Median","p90","Slowest","Fact-check failures"],S.map((r,i)=>[r.k,r.med+"s",r.p90+"s",r.max+"s",Q[i].failPct+"% ("+Q[i].failN+"/65)"]));
 })();

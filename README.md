@@ -44,9 +44,9 @@ The move-4 turning point replayed: solid arrows for what happened, dashed for wh
 
 ## Coach guardrails: hallucinations, voice drift, and overclaiming
 
-The coach kept stating things about the board that weren't true, and the easy story was "try a bigger model" or "shrink the system prompt." I measured the baseline first. The cause was a fact gap: the coach reasoned from facts it never had. Feeding it the facts and holding it to them fixed it. A bigger model does not fill a gap in the facts. Those facts now come from the hint ladder's own verified search, for the position and any move you name but have not picked up (code improvements in September 2026). Placement errors went from 7.5% to 0 and explanation answers from 13 to 15 seconds to about 4. In the committed games, one first draft in nine still trips the placement check.
+The coach kept stating things about the board that weren't true, and the easy story was "try a bigger model" or "shrink the system prompt." I measured the baseline first. The cause was a fact gap: the coach reasoned from facts it never had. Feeding it the facts and holding it to them fixed it. A bigger model does not fill a gap in the facts. Those facts now come from the hint ladder's own verified search, for the position and any move you name but have not picked up (code improvements in September 2026). Placement errors went from 7.5% to 0 and explanation answers from 13 to 15 seconds to about 4. In the committed games, one first draft in nine tripped the placement check.
 
-Two guardrails: every coach reply is checked before it reaches you, and the debrief code is checked before it ships. On questions about the board, a claim about a move, placement, defence or checkmate that the facts don't support gets one retry, then a written fallback answer. The check overcorrects: ten of the 113 committed chat replies ended in a fallback answer. That is the trade I chose, so nothing the checks can disprove reaches the player. The post-game analysis is written by code, not the model, from a replay of the game's own moves. Nineteen deterministic rules check it against that replay over every finished game in my history before any change can merge. That took the debrief's "you could have won faster" claims from 60% contradicted to about zero. [docs/evaluation.md](docs/evaluation.md) explains the checks, thinking budget iterations, and model comparisons; [docs/technical-decisions.md](docs/technical-decisions.md) has the fact-gap diagnosis.
+Two guardrails: every coach reply is checked before it reaches you, and the debrief code is checked before it ships. On questions about the board, a claim about a move, placement, defence or checkmate that the facts don't support gets one retry, then a written fallback answer. Ten of the 113 committed chat replies ended in a fallback answer, after a failed check or a timeout. That is the trade I chose, so nothing the checks can disprove reaches the player. The post-game analysis is written by code, not the model, from a replay of the game's own moves. Nineteen deterministic rules check it against that replay over every finished game in my history before any change can merge. That took the debrief's "you could have won faster" claims from 60% contradicted to about zero. [docs/evaluation.md](docs/evaluation.md) explains the checks, thinking budget iterations, and model comparisons; [docs/technical-decisions.md](docs/technical-decisions.md) has the fact-gap diagnosis.
 
 *Two limits*:
 
@@ -55,7 +55,7 @@ Two guardrails: every coach reply is checked before it reaches you, and the debr
 
 ## How it's built
 
-I designed and built this 0-to-1 as a product manager's first vibed project ever, via Claude Code: spec, plan, execute, adversarial review, gate. The spec came first: [the PRD-lite](docs/prd-lite.md) names three hypotheses and the metric that would kill each one. A live playtest and evals drove each increment.
+I designed and built this 0-to-1 as a product manager's first vibed project ever, via Claude Code: spec, plan, execute, adversarial review, gate. The spec came first: [the PRD-lite](docs/prd-lite.md) names three hypotheses and the leading indicator for each. A live playtest and evals drove each increment.
 
 <details>
 <summary>Developer detail</summary>
@@ -72,7 +72,7 @@ I designed and built this 0-to-1 as a product manager's first vibed project ever
 The docs are published at [tiffygk.github.io/girl-chess-demo](https://tiffygk.github.io/girl-chess-demo/), so none of them need a clone to read.
 
 - [docs/index.md](docs/index.md) is the docs site's home page: the product spec and the measured decisions.
-- [docs/evaluation.md](docs/evaluation.md) is how the tutor is kept honest.
+- [docs/evaluation.md](docs/evaluation.md) is how the tutor is checked.
 - The five interactive pages on the site: [component library](https://tiffygk.github.io/girl-chess-demo/component-library.html), [architecture](https://tiffygk.github.io/girl-chess-demo/architecture.html), [coach eval v3 dashboard](https://tiffygk.github.io/girl-chess-demo/coach-eval-v3-dashboard.html), [coach quality dashboard](https://tiffygk.github.io/girl-chess-demo/coach-quality-dashboard.html), [thinking arm dashboard](https://tiffygk.github.io/girl-chess-demo/thinking-arm-dashboard.html).
 - [CLAUDE.md](CLAUDE.md) is the architecture map and runbook a future Claude session reads first.
 

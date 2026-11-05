@@ -4,9 +4,9 @@ Five decisions from building this chess coach. In each one the obvious fix was t
 
 ## The coach gave wrong answers, and a bigger model was not the fix
 
-The coach answers questions about your game while you play. It used to work out where your pieces were by reading back through the move list, and it got that wrong often enough to matter. Now it reads the position the app has already computed. A check catches any claim that contradicts the board before the answer reaches you.
+The coach answers questions about your game while you play. It used to work out where your pieces were by reading back through the move list, and it got that wrong often enough to matter. Now it reads the position the app has already computed. Before you see an answer, a check rejects placement claims it can disprove.
 
-For the player: wrong statements about where pieces stand went from 7.5% to 0. The wait on an explanation question went from 13 to 15 seconds down to about 4 seconds.
+For the player, in the July 2026 eval: wrong statements about where pieces stand went from 7.5% to 0, and the wait on an explanation question from 13 to 15 seconds to about 4.
 
 ### The evidence
 
@@ -14,7 +14,7 @@ Before the change, 1 in 13 piece-placement statements were false, and nothing ch
 
 Both numbers held for Sonnet and Opus. The two models were tied on these two measures. A bigger model does not fill a gap in the facts. It reasons more fluently from the same missing information.
 
-Getting an honest measurement took two attempts. The first one leaned on a language model as the judge. Rows it graded "wrong" held a placement error 13% of the time, and rows it graded "accurate" still held one 5% of the time. Too weak a gap on small samples to trust, so I retired it. One of the mechanical checks was flattering itself too. It asked whether the coach knew about the move being considered, and its raw pass rate read about 70%, because it counted a square as known whenever a piece happened to be there already. A hand audit put the genuine rate near 4 in 14, and that is the number I reported.
+Measuring this took two attempts. The first one leaned on a language model as the judge. Rows it graded "wrong" held a placement error 13% of the time, and rows it graded "accurate" still held one 5% of the time. Too weak a gap on small samples to trust, so I retired it. One of the mechanical checks was flattering itself too. It asked whether the coach knew about the move being considered, and its raw pass rate read about 70%, because it counted a square as known whenever a piece happened to be there already. A hand audit put the rate near 4 in 14, and that is the number I reported.
 
 The rebuilt measurement, baseline v2, runs the same fixed questions against both models: completeness 100% for both, length within budget 25% for Sonnet and 3% for Opus, jargon-free 53% and 15%, latency medians about 9.7 seconds for both.
 
@@ -24,37 +24,37 @@ The coach gave up room to reason. Every placement claim now has to survive a che
 
 ![Placement errors fell to zero and explanation answers got faster](images/diagrams/placement-errors-before-after.svg)
 
-Where this lives: question routing in `server/coach/intent.ts`, the facts and the validator in `server/coach/chat.ts`, the harness in `tools/coach-eval/`, and the full results in [the eval dashboard](coach-eval-v3-dashboard.html).
+Where this lives: question routing in `server/coach/intent.ts`, the facts and the validator in `server/coach/chat.ts`, the harness in `tools/coach-eval/`, and the later v3 run in [the eval dashboard](coach-eval-v3-dashboard.html).
 
 ## The coach was too slow, and I did not pay to fix it
 
-The coach talks to you during the game, not only when you ask it something. Those live comments run on a fifteen second budget. They missed it so often that most of what I saw was a canned template rather than a real answer. Keeping one assistant process warm instead of starting a new one per message fixed it without adding a bill.
+At the time the coach also commented during the game without being asked. Those live comments ran on a fifteen second budget. They missed it so often that most of what I saw was a canned template instead of a model answer. Moving the coach from the command-line tool to the Agent SDK fixed it without adding a bill.
 
-For the player: live narration now lands in about 3.6 seconds and chat in about 7.
+For the player: at ship, narration landed in about 3.6 seconds and chat in about 7.
 
 ### The evidence
 
-Every coach reply writes a row saying which path served it, whether it was a real answer or a fallback template, and how long it took. I read the rows rather than guessing.
+Every coach reply writes a row saying which path served it, whether the model or a fallback template answered, and how long it took. I read the rows rather than guessing.
 
-Chat was acceptable, about 9 seconds a reply. The live comments were not. 13 of 14 nudges and 16 of 23 warnings had blown the budget and dropped to a template. From the outside, a template looks like a real answer. Most of those 9 seconds was the process starting up, not the model thinking.
+Chat was acceptable, about 9 seconds a reply. The live comments were not. 13 of 14 nudges and 16 of 23 warnings had blown the budget and dropped to a template. From the outside, a template looks like a model answer. Part of that wait was process setup, and the rest was the model.
 
-That gave three options. A metered interface would answer in about 1 to 2 seconds for about $10 to $15 a month, billed outside my personal plan. Starting one assistant once and keeping it warm would answer in 2 to 4 seconds at $0, still on the plan. Leaving it alone kept the 9 seconds and the templates.
+That gave three options. A metered interface would answer in about 1 to 2 seconds for about $10 to $15 a month, billed outside my personal plan. The Agent SDK would answer in 2 to 4 seconds at $0, still on the plan. Leaving it alone kept the 9 seconds and the templates.
 
 ### What it cost
 
 I turned down the fastest option. Only I use this tool. A recurring bill to save a second or two on it buys nothing. The metered interface stays documented as the route for a hosted version, where a personal account could not be the login anyway.
 
-The other half of the fix cost me a layout. The chat used to open as a window over the board, so even a quick reply made me stop and wait for it. It now sits in the coach's corner, beside the board on a wide screen and under it on a laptop. I can keep playing while a reply arrives. The warm process fixes how long a reply takes. The corner fixes how long it feels. Both were needed.
+The other half of the fix cost me a layout. The chat used to open as a window over the board, so even a quick reply made me stop and wait for it. It now sits in the coach's corner, beside the board on a wide screen and under it on a laptop. I can keep playing while a reply arrives. The Agent SDK fixes how long a reply takes. The corner fixes how long it feels. Both were needed.
 
 ![The three options weighed, and what the chosen one did to reply time](images/diagrams/coach-latency-options.svg)
 
-Where this lives: the warm path drops in as a third coach backend behind a swap seam designed three increments earlier, and every reply it serves writes a trace row.
+Where this lives: the Agent SDK path drops in as a third coach backend behind an interface I designed three increments earlier, and every reply it serves writes a trace row.
 
 ## The coach could not tell which pieces were protected
 
 Mid game I asked whether my pawn on e4 protected my bishop on f5. The coach said no, and called the bishop undefended. It was defended. A separate warning told me I was about to lose that same bishop, and I was not. Two surfaces, one blind spot.
 
-For the player: the app works out which pieces protect which directly from the board. That map goes to the coach as a fact, and any claim that contradicts it never sends. The warning calls a capture you can take back a trade rather than a loss.
+For the player: the app works out which pieces protect which directly from the board. That map goes to the coach as a fact, and a claim it can disprove never sends. The warning no longer calls a capture you can take back a clean loss, and it calls an even one a trade.
 
 ### The evidence
 
@@ -62,7 +62,7 @@ The game settled it a few moves later. mallow, the computer opponent, took my bi
 
 ### What I did not do
 
-The tempting fix was to run every answer past the chess engine first. I rejected it. The engine returns a move and a score. It never says that one square protects another, because that is geometry rather than a search. It would also have cost an engine call on every chat message, on the one surface I had just made fast. It breaks a rule I set early on: the chat never touches the engine's queue.
+The tempting fix was to run every answer past the chess engine first. I rejected it. The engine returns a move and a score. It never says that one square protects another, because that is geometry rather than a search. It would also have cost an engine call on every chat message, on the one surface I had just made fast. It would have broken a rule I held then: the chat stayed off the engine's queue.
 
 What I built instead closes one specific hole, false claims about what protects what. It does not make the coach right about everything else, and it should not be read that way.
 
@@ -72,9 +72,9 @@ Where this lives: the defender map is read off the board by the chess library th
 
 ## When real chess terms sound like AI-isms: banning "quietly" and "quiet move" while teaching chess vocabulary
 
-The coach kept calling moves "quiet". "Quietly" as a softener is a language-model tic, and I had banned it in the coach's persona on 2026-09-08 with a carve-out for the chess term "quiet move", a move that is not a check, a capture or a threat. The carve-out was the problem. "A quiet regrouping move" and "a quiet move to untangle her pieces" both reached me in game 198, and to a player they read as the same tic. The term is real. It still tells you nothing about why the move was played.
+The coach kept calling moves "quiet". "Quietly" as a softener is a language-model tic, and I had banned it in the coach's persona on 2026-09-08 with a carve-out for the chess term "quiet move", a move that is not a check, a capture or a threat. The carve-out was the problem. "A quiet regrouping move" and "a quiet move to untangle her pieces" both reached me in game 198, and to a player they read as the same tic. The term is standard. It still tells you nothing about why the move was played.
 
-For the player: the coach never says quiet, quietly or quieter about a move. It names what the move does instead, from a fixed vocabulary.
+For the player: the chat never says quiet, quietly or quieter about a move. It names what the move does instead, from a fixed vocabulary.
 
 ### The evidence
 
@@ -127,8 +127,8 @@ A move that does two things is named by the forcing one, because that is what th
 <thead><tr><th style="background:#e5e5e5;color:#1f1f1f;text-align:left;padding:6px 10px">layer</th><th style="background:#e5e5e5;color:#1f1f1f;text-align:left;padding:6px 10px">where it runs</th><th style="background:#e5e5e5;color:#1f1f1f;text-align:left;padding:6px 10px">what it does</th><th style="background:#e5e5e5;color:#1f1f1f;text-align:left;padding:6px 10px">if it fails</th></tr></thead>
 <tbody>
 <tr><td style="padding:6px 10px">persona paragraph</td><td style="padding:6px 10px">in the prompt, every coach call</td><td style="padding:6px 10px">steers the first attempt toward the vocabulary</td><td style="padding:6px 10px">nothing stops the word yet</td></tr>
-<tr><td style="padding:6px 10px">live check</td><td style="padding:6px 10px">on every reply before it sends</td><td style="padding:6px 10px">rejects any form of "quiet" and tells the retry to name what the move does, without repeating the banned word</td><td style="padding:6px 10px">the reply is rewritten once, then falls back to a template</td></tr>
-<tr><td style="padding:6px 10px">template lint</td><td style="padding:6px 10px">in the test suite, before any merge</td><td style="padding:6px 10px">fails the build if a code-written string or the persona file uses the word</td><td style="padding:6px 10px">the change cannot merge</td></tr>
+<tr><td style="padding:6px 10px">live check</td><td style="padding:6px 10px">before each chat reply sends</td><td style="padding:6px 10px">rejects any form of "quiet" and tells the retry to name what the move does, without repeating the banned word</td><td style="padding:6px 10px">the reply is rewritten once, then falls back to a template</td></tr>
+<tr><td style="padding:6px 10px">template lint</td><td style="padding:6px 10px">in the test suite, before any merge</td><td style="padding:6px 10px">fails the build if the debrief, ladder or persona text uses the word</td><td style="padding:6px 10px">the change cannot merge</td></tr>
 </tbody>
 </table>
 
@@ -136,13 +136,13 @@ Two debrief strings changed under the lint: "fifty quiet moves" became "fifty mo
 
 ### What it cost
 
-The coach can no longer say "quiet move", a term real chess books use, and its prompt is one paragraph longer. Code checks only that the banned word is gone. It does not check that the coach picked the right word for a move. I judge that reply by reply, the same way I judge any other claim it makes.
+The coach can no longer say "quiet move", a term chess books use, and its prompt is one paragraph longer. Code checks only that the banned word is gone. It does not check that the coach picked the right word for a move. I judge that reply by reply, the same way I judge any other claim it makes.
 
 Where this lives: the vocabulary in `server/coach/personas/coach.md`, the live check and the retry instruction in `server/coach/chat.ts`, the template lint in `src/review/templateVoice.test.ts`, the harness copy of the banned list in `server/coach/voiceRules.ts`.
 
 ## 7 in 8 rejections were wrong: fixing the board check's precision instead of deleting it
 
-The coach checks every claim about where a piece stands before you see it. It compared each claim to the current board only. When the coach described where a piece would stand after a move in the line it was explaining, the check called that false and threw the answer away. The easy fix was to delete the check. I kept it and taught it which boards the coach was talking about.
+Chat replies are checked for where pieces stand before you see them. The check compared each claim to the current board only. When the coach described where a piece would stand after a move in the line it was explaining, the check called that false and threw the answer away. The easy fix was to delete the check. I kept it and taught it which boards the coach was talking about.
 
 For the player: fewer thrown-out coach answers, each of which cost a 20-second retry or a canned template.
 
@@ -150,7 +150,7 @@ For the player: fewer thrown-out coach answers, each of which cost a 20-second r
 
 In game 198 the check rejected 16 coach answers. 14 were true statements about the position after a move. The other 2 were wrong, and the check still catches both.
 
-I did not want to wait for new games to prove the fix. I took the positions from 201 stored coach conversations and generated true and false statements about each, labelled by the rules engine. Then I ran them through the check before and after the change.
+I did not want to wait for new games to prove the fix. I took the positions from 201 stored coach exchanges and generated true and false statements about each, labelled by the rules engine. Then I ran them through the check before and after the change.
 
 **How well the board check judged the coach's claims.** A statement is one claim the coach makes about where a piece stands, such as "your knight is on f3". A rejection is the check refusing a coach answer because it judged a statement in it false.
 
@@ -164,7 +164,7 @@ I did not want to wait for new games to prove the fix. I took the positions from
 </tbody>
 </table>
 
-<sub>Precision comes from game 198's real rejections, since generated statements would inflate it: I chose how many false ones to make. Recall and the false positive rates come from the generated statements, because nobody has labelled every claim the coach made in play.</sub>
+<sub>Precision comes from game 198's real rejections, since generated statements would inflate it: I chose how many false ones to make. Recall and false positive rates come from statements generated in the check's own wording; nobody has labelled the coach's claims in play.</sub>
 
 A check that has only been seen passing proves nothing, so I broke the fix on purpose. With the move lines taken out, the after-move rejections came straight back.
 
