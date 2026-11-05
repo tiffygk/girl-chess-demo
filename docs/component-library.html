@@ -1569,6 +1569,8 @@ body.gc-app { align-items: center; }
    override bites only at narrow widths, so the 1512px render is unchanged. */
 .cc-mock-frame { max-width: 100%; overflow-x: auto; }
 @media (max-width: 560px) {
+  .lib-table { display: block; overflow-x: auto; }
+  .lgd-rows { overflow-x: auto; max-width: 100%; width: 100%; box-sizing: border-box; }
   .cc-mock-frame { width: auto !important; height: auto !important; }
   .lib-cell { max-width: 100%; }
   .lib-code, .lib-label { max-width: 100%; overflow-wrap: break-word; }
@@ -2233,7 +2235,7 @@ body.gc-app { align-items: center; }
       <thead><tr><th>belongs to</th><th>colour</th><th>rule</th><th>examples</th></tr></thead>
       <tbody>
         <tr><td>you</td><td><span class="own-dot own-you" aria-hidden="true"></span>cyan</td><td>your plate wears the four-point star</td><td>your name plate, turn chip, "you took" tray, the hints toggle</td></tr>
-        <tr><td>mallow, the opponent</td><td><span class="own-dot own-mallow" aria-hidden="true"></span>magenta, the only alarm colour</td><td>its plate wears the melting drip</td><td>mallow's plate, its moves and arrows, warnings, thumbs-down</td></tr>
+        <tr><td>mallow, the opponent</td><td><span class="own-dot own-mallow" aria-hidden="true"></span>magenta, also the warning colour</td><td>its plate wears the melting drip</td><td>mallow's plate, its moves and arrows, warnings, thumbs-down</td></tr>
         <tr><td>the coach</td><td><span class="own-dot own-coach" aria-hidden="true"></span>lavender</td><td>speech floats and is never pressed; the fortune slip is only for lessons</td><td>chat, the band under the board, the coach's plate</td></tr>
         <tr><td>the menu</td><td><span class="own-dot own-coach" aria-hidden="true"></span><span class="own-dot own-mint" aria-hidden="true"></span>lavender, with mint for good or go</td><td>rounded, with a press shadow, so you know you can press it</td><td>buttons, settings, back, start new game, resign and draw</td></tr>
       </tbody>
@@ -2300,7 +2302,7 @@ body.gc-app { align-items: center; }
 
 <section class="lib-section" id="sec-tokens">
   <h3>Design tokens</h3>
-  <p class="lib-caption">The closed palette, three type registers, spacing and radius. Mint means good or legal; magenta is the only alarm.</p>
+  <p class="lib-caption">The closed palette, three type registers, spacing and radius. Mint means good or legal. Magenta means a warning.</p>
   <div class="lib-card">
     <span class="lib-label">PALETTE</span>
     <div class="tok-grid">
@@ -2310,7 +2312,7 @@ body.gc-app { align-items: center; }
       <div class="tok"><div class="tok-chip" style="background:#C9BFEF"></div><div class="tok-meta"><span class="tok-name">shadow-lav</span><span class="tok-hex">#C9BFEF</span><span class="tok-role">universal squishy drop-shadow</span></div></div>
       <div class="tok"><div class="tok-chip" style="background:#E3D9F5"></div><div class="tok-meta"><span class="tok-name">quiet-shadow</span><span class="tok-hex">#E3D9F5</span><span class="tok-role">unfilled-control shadow</span></div></div>
       <div class="tok"><div class="tok-chip" style="background:#E7DFFF"></div><div class="tok-meta"><span class="tok-name">badge-lav</span><span class="tok-hex">#E7DFFF / #6952C4</span><span class="tok-role">nudge, coach-on, hint fill/ink</span></div></div>
-      <div class="tok"><div class="tok-chip" style="background:#FF3DA6"></div><div class="tok-meta"><span class="tok-name">magenta</span><span class="tok-hex">#FF3DA6</span><span class="tok-role">primary, warning, mallow. the only alarm</span></div></div>
+      <div class="tok"><div class="tok-chip" style="background:#FF3DA6"></div><div class="tok-meta"><span class="tok-name">magenta</span><span class="tok-hex">#FF3DA6</span><span class="tok-role">primary, warning, mallow</span></div></div>
       <div class="tok"><div class="tok-chip" style="background:#C22B7E"></div><div class="tok-meta"><span class="tok-name">magenta-dark</span><span class="tok-hex">#C22B7E</span><span class="tok-role">magenta press-shadow, warning ink</span></div></div>
       <div class="tok"><div class="tok-chip" style="background:#FFD6EC"></div><div class="tok-meta"><span class="tok-name">warn-tint</span><span class="tok-hex">#FFD6EC</span><span class="tok-role">warning badge fill</span></div></div>
       <div class="tok"><div class="tok-chip" style="background:#23E5FF"></div><div class="tok-meta"><span class="tok-name">cyan</span><span class="tok-hex">#23E5FF</span><span class="tok-role">glitch split, your accent, target ring</span></div></div>
@@ -3699,7 +3701,7 @@ body.gc-app { align-items: center; }
         <span class="lib-label">OLD WARNING BADGE <span class="lib-arch">archived: not selected</span></span>
         <span class="judge-badge judge-badge-warning" style="margin-left:0">careful. this one hurts.</span>
         <span class="lib-code">saturated solid #FF3DA6 + white ink</span>
-        <p class="arch-why">why the color-only fix won: the solid broke the nudge's anatomy and paradoxically read <strong>flatter</strong> than its pale sibling. The shipped badge is anatomically identical to the nudge, #FFD6EC / #C22B7E, so severity is carried by hue alone, and magenta stays the only alarm.</p>
+        <p class="arch-why">why the color-only fix won: the solid broke the nudge's anatomy and paradoxically read <strong>flatter</strong> than its pale sibling. The shipped badge is anatomically identical to the nudge, #FFD6EC / #C22B7E, so colour alone carries the severity.</p>
       </div>
       <div class="lib-cell">
         <span class="lib-label">10PX NAME LOZENGES <span class="lib-arch">archived: not selected</span></span>
@@ -3876,7 +3878,7 @@ body.gc-app { align-items: center; }
         <span class="lib-label">THE SOLID "A REAL THREAT" ROW <span class="lib-arch">removed 2026-07-28: owner ruling</span></span>
         <div class="lgd-row" style="opacity:.55"><svg width="44" height="14" viewBox="0 0 44 14" aria-hidden="true"><line x1="3" y1="7" x2="35" y2="7" stroke-width="2.5" stroke-linecap="round" stroke="#FF3DA6"/><polygon points="42,7 35,2.8 35,11.2" fill="#FF3DA6"/></svg><span class="lgd-label" style="text-decoration:line-through">a real threat</span></div>
         <p class="arch-why">why it left: nothing in the app emits a threat-coloured arrow any more, in review OR live: it went dead the moment solid=happened/dashed=didn't became the rule, because a punishment mallow did NOT play has to be dashed. A legend row for a state that cannot render teaches a colour the player will never see, then leaves her waiting for it. #FF3DA6
-          stays reserved as the only alarm colour.</p>
+          stays reserved for warnings.</p>
       </div>
       <div class="lib-cell" style="max-width:340px">
         <span class="lib-label">MAP PLATE (D2) · DOSSIER (D3) <span class="lib-arch">archived: not selected</span></span>
