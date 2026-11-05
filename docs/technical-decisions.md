@@ -36,7 +36,7 @@ For the player: at ship, narration landed in about 3.6 seconds and chat in about
 
 Every coach reply writes a row saying which path served it, whether the model or a fallback template answered, and how long it took. I read the rows rather than guessing.
 
-Chat was acceptable, about 9 seconds a reply. The live comments were not. 13 of 14 nudges and 16 of 23 warnings had blown the budget and dropped to a template. From the outside, a template looks like a model answer. Most of those 9 seconds was the process starting up.
+Chat was acceptable, about 9 seconds a reply, most of it the process starting up. The live comments were not. 13 of 14 nudges and 16 of 23 warnings had blown the budget and dropped to a template. From the outside, a template looks like a model answer.
 
 That gave three options. A metered interface would answer in about 1 to 2 seconds for about $10 to $15 a month, billed outside my personal plan. The Agent SDK would answer in 2 to 4 seconds at $0, still on the plan. Leaving it alone kept the 9 seconds and the templates.
 
@@ -44,7 +44,7 @@ That gave three options. A metered interface would answer in about 1 to 2 second
 
 I turned down the fastest option. Only I use this tool. A recurring bill to save a second or two on it buys nothing. The metered interface stays documented as the route for a hosted version, where a personal account could not be the login anyway.
 
-The other half of the fix cost me a layout. The chat used to open as a window over the board, so even a quick reply made me stop and wait for it. It now sits in the coach's corner, beside the board on a wide screen and under it on a laptop. I can keep playing while a reply arrives. The Agent SDK fixes how long a reply takes. The corner fixes how long it feels. Both were needed.
+The other half of the fix cost me a layout. The chat used to open as a window over the board, so even a quick reply made me stop and wait for it. It now sits in the coach's corner, beside the board in a wide window and under it in a narrow one. I can keep playing while a reply arrives. The Agent SDK fixes how long a reply takes. The corner fixes how long it feels. Both were needed.
 
 ![The three options weighed, and what the chosen one did to reply time](images/diagrams/coach-latency-options.svg)
 
