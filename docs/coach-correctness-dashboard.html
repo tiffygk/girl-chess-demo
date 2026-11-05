@@ -29,16 +29,6 @@
     --warn:#bd8820; --bad:#e4602e; --good:#22a480;
     --tip-bg:#e9edf2; --tip-ink:#12161c;
   }
-  @media (prefers-color-scheme:dark){
-    :root:not([data-theme="light"]){
-      --bg:#12161c; --panel:#1a2029; --ink:#e9edf2; --ink2:#aeb9c6; --muted:#7f8b99;
-      --line:#2a323d; --line2:#232b35; --shadow:0 1px 3px rgba(0,0,0,.4);
-      --accent:#5aa0dd;
-      --before:#bd8820; --after:#3f8ccc; --up:#22a480; --down:#e4602e;
-      --warn:#bd8820; --bad:#e4602e; --good:#22a480;
-      --tip-bg:#e9edf2; --tip-ink:#12161c;
-    }
-  }
   *{margin:0;padding:0;box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -962,10 +952,7 @@ Run files: <b>${AB?AB.file:"A/B harness: not yet run"}</b> · <b>record/canonica
 /* ============================ theme toggle ============================ */
 function toggleTheme(){
   const cur=document.documentElement.getAttribute("data-theme");
-  const sysDark=matchMedia("(prefers-color-scheme:dark)").matches;
-  let next;
-  if(cur==="dark")next="light"; else if(cur==="light")next="dark"; else next=sysDark?"light":"dark";
-  document.documentElement.setAttribute("data-theme",next);
+  document.documentElement.setAttribute("data-theme",cur==="dark"?"light":"dark");
 }
 </script>
 </body>
